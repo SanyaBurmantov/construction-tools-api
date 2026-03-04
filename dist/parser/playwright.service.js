@@ -59,6 +59,9 @@ let PlaywrightService = class PlaywrightService {
                     timeout: 10000,
                 });
             }
+            if (options?.clickTabs) {
+                await this.clickAllTabs(page);
+            }
             if (options?.waitForTimeout) {
                 await page.waitForTimeout(options.waitForTimeout);
             }
@@ -73,6 +76,34 @@ let PlaywrightService = class PlaywrightService {
         }
         finally {
             await page.close();
+        }
+    }
+    async clickAllTabs(page) {
+        const tabSelectors = [
+            '.tab-link',
+            '.tab-button',
+            '[role="tab"]',
+            '.nav-tabs a',
+            '.tabs a',
+            '.tab-header',
+            '[data-toggle="tab"]',
+            '.accordion-header',
+            '.section-link',
+        ];
+        for (const selector of tabSelectors) {
+            try {
+                const tabs = await page.$$(selector);
+                for (const tab of tabs) {
+                    try {
+                        await tab.click({ timeout: 2000 });
+                        await page.waitForTimeout(500);
+                    }
+                    catch {
+                    }
+                }
+            }
+            catch {
+            }
         }
     }
     async scrapeWithSelectors(url, selectors, options) {

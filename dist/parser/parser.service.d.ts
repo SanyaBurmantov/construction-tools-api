@@ -52,12 +52,14 @@ export interface ParserConfig {
         warranty?: string;
         manufacturer?: string;
         categoryId?: string;
+        tabs?: string[];
     };
     pricePattern?: string;
     baseUrl?: string;
     usePlaywright?: boolean;
     waitForSelector?: string;
     waitForTimeout?: number;
+    clickTabs?: boolean;
 }
 export declare class ParserService {
     private playwrightService;
@@ -72,5 +74,6 @@ export declare class ParserService {
     private extractDimensions;
     private resolveUrl;
     private extractSourceId;
+    private clickTabsOnPage;
     getDefaultConfigForSite(siteName: string): ParserConfig;
 }

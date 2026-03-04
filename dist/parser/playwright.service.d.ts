@@ -10,7 +10,9 @@ export declare class PlaywrightService implements OnModuleInit, OnModuleDestroy 
         waitForSelector?: string;
         waitForTimeout?: number;
         scroll?: boolean;
+        clickTabs?: boolean;
     }): Promise<string>;
+    private clickAllTabs;
     scrapeWithSelectors(url: string, selectors: Record<string, string>, options?: {
         waitForSelector?: string;
         waitForTimeout?: number;

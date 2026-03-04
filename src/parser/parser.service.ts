@@ -56,12 +56,14 @@ export interface ParserConfig {
     warranty?: string;
     manufacturer?: string;
     categoryId?: string;
+    tabs?: string[];  // Селекторы для табов
   };
   pricePattern?: string;
   baseUrl?: string;
   usePlaywright?: boolean;
   waitForSelector?: string;
   waitForTimeout?: number;
+  clickTabs?: boolean;  // Кликаем по табам
 }
 
 @Injectable()
@@ -98,6 +100,39 @@ export class ParserService {
         waitForTimeout: config.waitForTimeout,
       },
     );
+
+    // If tabs configured, click them and scrape again
+    if (config.clickTabs || config.selectors.tabs) {
+      const page = await this.playwrightService.getPage();
+      try {
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        
+        // Click tabs
+        await this.clickTabsOnPage(page, config.selectors.tabs);
+        
+        // Wait for content to load
+        await page.waitForTimeout(2000);
+        
+        // Re-scrape after tabs clicked
+        for (const [key, value] of Object.entries(selectors)) {
+          if (!scrapedData[key] || !String(scrapedData[key]).trim()) {
+            try {
+              const element = await page.$(value);
+              if (element) {
+                const text = await element.textContent();
+                if (text && text.trim()) {
+                  scrapedData[key] = text.trim();
+                }
+              }
+            } catch {
+              // Ignore errors for optional fields
+            }
+          }
+        }
+      } finally {
+        await page.close();
+      }
+    }
 
     // Scrape specifications table if configured
     let specifications: Record<string, any> | undefined;
@@ -325,6 +360,34 @@ export class ParserService {
       }
     }
     return undefined;
+  }
+
+  private async clickTabsOnPage(page: any, tabs?: string[]): Promise<void> {
+    const tabSelectors = tabs || [
+      '.tab-link',
+      '.tab-button',
+      '[role="tab"]',
+      '.nav-tabs a',
+      '.tabs a',
+      '[data-toggle="tab"]',
+      '.accordion-header',
+    ];
+
+    for (const selector of tabSelectors) {
+      try {
+        const tabs = await page.$$(selector);
+        for (const tab of tabs) {
+          try {
+            await tab.click({ timeout: 2000 });
+            await page.waitForTimeout(500);
+          } catch {
+            // Tab might not be clickable
+          }
+        }
+      } catch {
+        // Selector not found
+      }
+    }
   }
 
   getDefaultConfigForSite(siteName: string): ParserConfig {

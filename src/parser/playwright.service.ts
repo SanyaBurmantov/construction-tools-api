@@ -51,6 +51,7 @@ export class PlaywrightService implements OnModuleInit, OnModuleDestroy {
       waitForSelector?: string;
       waitForTimeout?: number;
       scroll?: boolean;
+      clickTabs?: boolean;  // Новый параметр для клика по табам
     },
   ): Promise<string> {
     const page = await this.getPage();
@@ -66,6 +67,11 @@ export class PlaywrightService implements OnModuleInit, OnModuleDestroy {
         await page.waitForSelector(options.waitForSelector, {
           timeout: 10000,
         });
+      }
+
+      // Click tabs to load their content
+      if (options?.clickTabs) {
+        await this.clickAllTabs(page);
       }
 
       // Wait for timeout if provided (for dynamic content)
@@ -85,6 +91,40 @@ export class PlaywrightService implements OnModuleInit, OnModuleDestroy {
       return content;
     } finally {
       await page.close();
+    }
+  }
+
+  /**
+   * Click all tabs to load their content
+   */
+  private async clickAllTabs(page: Page): Promise<void> {
+    // Common tab selectors
+    const tabSelectors = [
+      '.tab-link',
+      '.tab-button',
+      '[role="tab"]',
+      '.nav-tabs a',
+      '.tabs a',
+      '.tab-header',
+      '[data-toggle="tab"]',
+      '.accordion-header',
+      '.section-link',
+    ];
+
+    for (const selector of tabSelectors) {
+      try {
+        const tabs = await page.$$(selector);
+        for (const tab of tabs) {
+          try {
+            await tab.click({ timeout: 2000 });
+            await page.waitForTimeout(500); // Wait for tab content to load
+          } catch {
+            // Tab might not be clickable or visible
+          }
+        }
+      } catch {
+        // Selector not found on this page
+      }
     }
   }
 

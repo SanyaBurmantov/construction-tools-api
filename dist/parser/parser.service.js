@@ -66,6 +66,32 @@ let ParserService = class ParserService {
             waitForSelector: config.waitForSelector,
             waitForTimeout: config.waitForTimeout,
         });
+        if (config.clickTabs || config.selectors.tabs) {
+            const page = await this.playwrightService.getPage();
+            try {
+                await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+                await this.clickTabsOnPage(page, config.selectors.tabs);
+                await page.waitForTimeout(2000);
+                for (const [key, value] of Object.entries(selectors)) {
+                    if (!scrapedData[key] || !String(scrapedData[key]).trim()) {
+                        try {
+                            const element = await page.$(value);
+                            if (element) {
+                                const text = await element.textContent();
+                                if (text && text.trim()) {
+                                    scrapedData[key] = text.trim();
+                                }
+                            }
+                        }
+                        catch {
+                        }
+                    }
+                }
+            }
+            finally {
+                await page.close();
+            }
+        }
         let specifications;
         if (config.selectors.specifications?.container) {
             specifications = await this.playwrightService.scrapeTable(url, config.selectors.specifications.container, config.selectors.specifications.item || 'tr', config.selectors.specifications.key || 'td:first-child', config.selectors.specifications.value || 'td:last-child');
@@ -266,6 +292,32 @@ let ParserService = class ParserService {
             }
         }
         return undefined;
+    }
+    async clickTabsOnPage(page, tabs) {
+        const tabSelectors = tabs || [
+            '.tab-link',
+            '.tab-button',
+            '[role="tab"]',
+            '.nav-tabs a',
+            '.tabs a',
+            '[data-toggle="tab"]',
+            '.accordion-header',
+        ];
+        for (const selector of tabSelectors) {
+            try {
+                const tabs = await page.$$(selector);
+                for (const tab of tabs) {
+                    try {
+                        await tab.click({ timeout: 2000 });
+                        await page.waitForTimeout(500);
+                    }
+                    catch {
+                    }
+                }
+            }
+            catch {
+            }
+        }
     }
     getDefaultConfigForSite(siteName) {
         const configs = {
