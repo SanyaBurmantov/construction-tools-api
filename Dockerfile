@@ -2,7 +2,7 @@ FROM node:20-bookworm
 
 WORKDIR /app
 
-# Install Playwright dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libnss3 \
     libnspr4 \
@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
+    python3 \
+    python3-pip \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -31,6 +33,9 @@ RUN npm install --legacy-peer-deps
 RUN npx playwright install chromium --with-deps
 
 COPY . .
+
+# Create directories for parsers and logs
+RUN mkdir -p /app/logs /app/parsers /app/configs
 
 RUN npx prisma generate
 
