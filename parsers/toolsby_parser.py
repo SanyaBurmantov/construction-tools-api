@@ -273,7 +273,7 @@ const {{ chromium }} = require('playwright');
             products_resp = requests.get(f"{BASE_API}/products", params={"limit": 1000})
             products = products_resp.json().get('data', []) if products_resp.ok else []
             db_product = next((p for p in products if p['sourceUrl'] == url), None)
-            
+
             if db_product:
                 requests.patch(f"{BASE_API}/products/{db_product['id']}", json={"categoryId": category_id})
                 self.stats['products_updated'] += 1
@@ -329,6 +329,7 @@ const {{ chromium }} = require('playwright');
                     if self.stats['products_parsed'] >= BATCH_CONFIG['products_limit']:
                         break
                     self.parse_product(url)
+
                     time.sleep(BATCH_CONFIG['delay'])
                 
                 if self.stats['products_parsed'] >= BATCH_CONFIG['products_limit']:

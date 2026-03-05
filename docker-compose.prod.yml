@@ -21,10 +21,10 @@ services:
       - app-network
     restart: unless-stopped
 
-  # NestJS API
+  # Backend API (NestJS)
   app:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: construction-tools-api
     ports:
@@ -39,9 +39,9 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./logs:/app/logs
-      - ./parsers:/app/parsers
-      - ./configs:/app/configs
+      - ./backend/logs:/app/logs
+      - ./backend/parsers:/app/parsers
+      - ./backend/configs:/app/configs
     networks:
       - app-network
     restart: unless-stopped
@@ -53,23 +53,6 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-
-  # Nginx Reverse Proxy
-  nginx:
-    image: nginx:alpine
-    container_name: construction-tools-nginx
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ./logs/nginx:/var/log/nginx
-    depends_on:
-      - app
-    networks:
-      - app-network
-    restart: unless-stopped
 
 volumes:
   postgres_data:

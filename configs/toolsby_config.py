@@ -108,9 +108,9 @@ EXCLUDE_PATTERNS = [
 
 # Настройки пакетной обработки
 BATCH_CONFIG = {
-    "brands_limit": 10,      # Лимит брендов для теста
-    "categories_per_brand": 5,  # Лимит категорий на бренд
-    "products_limit": 100,   # Общий лимит товаров
+    "brands_limit": 1,      # Лимит брендов для теста
+    "categories_per_brand": 1,  # Лимит категорий на бренд
+    "products_limit": 1,   # Общий лимит товаров
     "concurrency": 1,
     "delay": 0.5,
 }

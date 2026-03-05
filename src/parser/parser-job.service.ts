@@ -1,10 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import * as cheerio from 'cheerio';
+
 import { SourceWebsitesService } from '../source-websites/source-websites.service';
 import { ProductsService } from '../products/products.service';
 import { CategoriesService } from '../categories/categories.service';
+
 import { ParserService, ParsedProduct, ParserConfig } from './parser.service';
 import { PlaywrightService } from './playwright.service';
-import { SitemapService, SitemapUrl } from './sitemap.service';
+import { SitemapService } from './sitemap.service';
+
 import { CreateProductDto } from '../products/dto/create-product.dto';
 
 export interface ParseResult {
@@ -37,55 +41,37 @@ export class ParserJobService {
     private categoriesService: CategoriesService,
   ) {}
 
-  async parseUrl(
-    url: string,
-    sourceWebsiteId?: string,
-  ): Promise<ParseResult> {
+  async parseUrl(url: string, sourceWebsiteId?: string): Promise<ParseResult> {
     try {
-      // Get source website and config
       let config: ParserConfig;
       let websiteName = 'default';
 
       if (sourceWebsiteId) {
-        const website = await this.sourceWebsitesService.findOne(
-          sourceWebsiteId,
-        );
+        const website =
+          await this.sourceWebsitesService.findOne(sourceWebsiteId);
+
         config = (website.parserConfig as unknown as ParserConfig) || {};
         websiteName = website.name;
       } else {
-        // Auto-detect from URL
-        const hostname = new URL(url).hostname;
-        websiteName = hostname.replace('www.', '');
-        config = this.parserService.getDefaultConfigForSite(websiteName);
+        const hostname = new URL(url).hostname.replace('www.', '');
+        websiteName = hostname;
+        config = this.parserService.getDefaultConfigForSite(hostname);
       }
 
       let parsedProduct: ParsedProduct;
 
-      // Use Playwright if configured or if it's a known JS-heavy site
       if (config.usePlaywright) {
-        console.log(`Using Playwright to parse: ${url}`);
-        parsedProduct = await this.parserService.parseWithPlaywright(url, config);
+        parsedProduct = await this.parserService.parseWithPlaywright(
+          url,
+          config,
+        );
       } else {
-        // Fallback to cheerio
-        console.log(`Using Cheerio to parse: ${url}`);
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          },
-        });
+        const html = await this.fetchHtml(url);
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch URL: ${response.status}`);
-        }
-
-        const html = await response.text();
         parsedProduct = await this.parserService.parseHtml(html, config, url);
       }
 
-      // Save or update the product
-      const productDto: CreateProductDto = {
+      const dto: CreateProductDto = {
         name: parsedProduct.name,
         price: parsedProduct.price,
         oldPrice: parsedProduct.oldPrice,
@@ -110,19 +96,13 @@ export class ParserJobService {
         sourceWebsiteId,
       };
 
-      const savedProduct = await this.productsService.upsertBySourceUrl(
-        url,
-        productDto,
-      );
-
-      console.log(`Successfully parsed and saved product: ${savedProduct.id}`);
+      await this.productsService.upsertBySourceUrl(url, dto);
 
       return {
         success: true,
         product: parsedProduct,
       };
     } catch (error) {
-      console.error('Parse error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -130,9 +110,19 @@ export class ParserJobService {
     }
   }
 
-  /**
-   * Parse sitemap and return URLs
-   */
+  private async fetchHtml(url: string): Promise<string> {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+      },
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    return response.text();
+  }
+
   async parseSitemap(
     sitemapUrl: string,
     options?: {
@@ -140,42 +130,27 @@ export class ParserJobService {
       maxDepth?: number;
     },
   ): Promise<SitemapParseResult> {
-    try {
-      console.log(`Parsing sitemap: ${sitemapUrl}`);
+    const urls = await this.sitemapService.parseSitemapRecursive(
+      sitemapUrl,
+      options?.maxDepth || 3,
+    );
 
-      // Parse sitemap recursively (handles nested sitemaps)
-      const allUrls = await this.sitemapService.parseSitemapRecursive(
-        sitemapUrl,
-        options?.maxDepth || 3,
+    let filtered = urls;
+
+    if (options?.productPattern) {
+      filtered = this.sitemapService.filterUrlsByPattern(
+        urls,
+        options.productPattern,
       );
-
-      // Filter URLs by pattern if provided
-      let filteredUrls = allUrls;
-      if (options?.productPattern) {
-        filteredUrls = this.sitemapService.filterUrlsByPattern(
-          allUrls,
-          options.productPattern,
-        );
-        console.log(`Filtered to ${filteredUrls.length} product URLs`);
-      }
-
-      const productUrls = filteredUrls.map((u) => u.loc);
-      const sitemaps = new Set<string>();
-
-      return {
-        totalUrls: filteredUrls.length,
-        productUrls,
-        sitemaps: Array.from(sitemaps),
-      };
-    } catch (error) {
-      console.error('Sitemap parse error:', error);
-      throw error;
     }
+
+    return {
+      totalUrls: filtered.length,
+      productUrls: filtered.map((u) => u.loc),
+      sitemaps: [],
+    };
   }
 
-  /**
-   * Parse all products from sitemap
-   */
   async parseProductsFromSitemap(
     sitemapUrl: string,
     sourceWebsiteId?: string,
@@ -186,65 +161,32 @@ export class ParserJobService {
       delayMs?: number;
     },
   ): Promise<MassParseResult> {
-    const sitemapResult = await this.parseSitemap(sitemapUrl, {
-      productPattern: options?.productPattern,
-      maxDepth: options?.maxDepth,
-    });
+    const sitemap = await this.parseSitemap(sitemapUrl, options);
 
-    const urls = sitemapResult.productUrls;
+    const urls = sitemap.productUrls;
     const concurrency = options?.concurrency || 5;
-    const delayMs = options?.delayMs || 100;
-
-    console.log(
-      `Parsing ${urls.length} products with concurrency ${concurrency}`,
-    );
+    const delay = options?.delayMs || 100;
 
     const results: ParseResult[] = [];
+
     const batches = this.chunkArray(urls, concurrency);
 
     for (const batch of batches) {
-      const batchResults = await Promise.all(
+      const r = await Promise.all(
         batch.map((url) => this.parseUrl(url, sourceWebsiteId)),
       );
-      results.push(...batchResults);
 
-      // Delay between batches to avoid rate limiting
-      if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+      results.push(...r);
+
+      if (delay) await new Promise((r) => setTimeout(r, delay));
     }
-
-    const success = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
 
     return {
       total: urls.length,
-      success,
-      failed,
+      success: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
       results,
     };
-  }
-
-  private chunkArray<T>(array: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += size) {
-      chunks.push(array.slice(i, i + size));
-    }
-    return chunks;
-  }
-
-  async parseMultipleUrls(
-    urls: string[],
-    sourceWebsiteId?: string,
-  ): Promise<ParseResult[]> {
-    const results: ParseResult[] = [];
-
-    for (const url of urls) {
-      const result = await this.parseUrl(url, sourceWebsiteId);
-      results.push(result);
-    }
-
-    return results;
   }
 
   async parseCategoryPage(
@@ -252,21 +194,19 @@ export class ParserJobService {
     sourceWebsiteId: string,
   ): Promise<{ productUrls: string[]; error?: string }> {
     try {
-      const website = await this.sourceWebsitesService.findOne(
-        sourceWebsiteId,
-      );
-      const config = (website.parserConfig as unknown as ParserConfig) || {};
+      const website = await this.sourceWebsitesService.findOne(sourceWebsiteId);
 
-      // Use Playwright for category pages (often JS-rendered)
+      const config = (website.parserConfig as ParserConfig) || {};
+
       const html = await this.playwrightService.fetchPageContent(url, {
         waitForSelector: config.waitForSelector,
         scroll: true,
       });
 
       const $ = cheerio.load(html);
-      const productUrls: string[] = [];
 
-      // Try common product link selectors
+      const urls = new Set<string>();
+
       const selectors = [
         '.product-link a',
         '.product-item a',
@@ -278,16 +218,16 @@ export class ParserJobService {
       for (const selector of selectors) {
         $(selector).each((_, el) => {
           const href = $(el).attr('href');
-          if (href && href.includes('/product/')) {
-            const fullUrl = this.resolveUrl(href, config.baseUrl || url);
-            if (!productUrls.includes(fullUrl)) {
-              productUrls.push(fullUrl);
-            }
-          }
+
+          if (!href) return;
+
+          if (!href.includes('/product/')) return;
+
+          urls.add(this.resolveUrl(href, url));
         });
       }
 
-      return { productUrls };
+      return { productUrls: Array.from(urls) };
     } catch (error) {
       return {
         productUrls: [],
@@ -296,80 +236,89 @@ export class ParserJobService {
     }
   }
 
-  private resolveUrl(url: string, baseUrl: string): string {
-    if (url.startsWith('http')) return url;
-    const base = new URL(baseUrl);
-    if (url.startsWith('/')) {
-      return `${base.protocol}//${base.host}${url}`;
-    }
-    return `${base.protocol}//${base.host}${base.pathname}${url}`;
+  async parseMultipleUrls(
+    urls: string[],
+    sourceWebsiteId?: string,
+  ): Promise<ParseResult[]> {
+    const results: ParseResult[] = [];
+
+    for (const url of urls)
+      results.push(await this.parseUrl(url, sourceWebsiteId));
+
+    return results;
   }
 
-  /**
-   * Parse categories from sitemap and create them in DB
-   */
+  async parseUrlWithCategory(
+    url: string,
+    sourceWebsiteId?: string,
+  ): Promise<ParseResult> {
+    const result = await this.parseUrl(url, sourceWebsiteId);
+
+    if (!result.success || !sourceWebsiteId) return result;
+
+    try {
+      const categories = await this.categoriesService.findAll(sourceWebsiteId);
+
+      const path = new URL(url).pathname.split('/').filter(Boolean);
+
+      const category = categories.find((c) => path.includes(c.slug));
+
+      if (!category) return result;
+
+      const product = await this.productsService.findBySourceUrl(url);
+
+      if (!product) return result;
+
+      await this.productsService.update(product.id, {
+        categoryId: category.id,
+      });
+    } catch {}
+
+    return result;
+  }
+
   async parseCategoriesFromSitemap(
     sitemapUrl: string,
     sourceWebsiteId?: string,
-  ): Promise<{
-    totalCategories: number;
-    categories: any[];
-  }> {
-    console.log(`Parsing categories from sitemap: ${sitemapUrl}`);
+  ) {
+    const urls = await this.sitemapService.parseSitemapRecursive(sitemapUrl, 3);
 
-    // Get all URLs from sitemap
-    const allUrls = await this.sitemapService.parseSitemapRecursive(sitemapUrl, 3);
+    const categoryUrls = urls.filter((u) => u.loc.includes('/category/'));
 
-    // Filter category URLs
-    const categoryUrls = allUrls.filter((u) => u.loc.includes('/category/'));
-
-    console.log(`Found ${categoryUrls.length} category URLs`);
+    const map = new Map<string, any>();
 
     const categories: any[] = [];
 
-    // Create category tree
-    const categoryMap: Map<string, any> = new Map();
+    for (const cat of categoryUrls) {
+      const path = new URL(cat.loc).pathname
+        .replace('/category/', '')
+        .split('/')
+        .filter(Boolean);
 
-    for (const catUrl of categoryUrls) {
-      try {
-        const url = new URL(catUrl.loc);
-        const pathParts = url.pathname.replace('/category/', '').split('/').filter(Boolean);
+      let parentId: string | undefined;
 
-        let parentId: string | undefined = undefined;
-        let categoryId: string | undefined = undefined;
+      for (let i = 0; i < path.length; i++) {
+        const slug = path[i];
+        const full = path.slice(0, i + 1).join('/');
 
-        // Create or get each level of category
-        for (let i = 0; i < pathParts.length; i++) {
-          const slug = pathParts[i];
-          const fullPath = pathParts.slice(0, i + 1).join('/');
-          const mapKey = `cat_${fullPath}`;
-
-          if (categoryMap.has(mapKey)) {
-            const existing = categoryMap.get(mapKey);
-            parentId = existing.id;
-            categoryId = parentId;
-            continue;
-          }
-
-          // Create category
-          const categoryData = {
-            name: this.slugToName(slug),
-            slug: slug,
-            parentId: parentId,
-            sourceWebsiteId: sourceWebsiteId || undefined,
-            depth: i,
-          };
-
-          const category = await this.categoriesService.create(categoryData);
-          categoryMap.set(mapKey, category);
-          parentId = category.id;
-          categoryId = parentId;
-          categories.push(category);
-
-          console.log(`Created category: ${category.name} (depth: ${i})`);
+        if (map.has(full)) {
+          parentId = map.get(full).id;
+          continue;
         }
-      } catch (error) {
-        console.error(`Failed to create category from ${catUrl.loc}:`, error);
+
+        const created = await this.categoriesService.create({
+          name: this.slugToName(slug),
+          slug,
+          parentId,
+          depth: i,
+          sourceWebsiteId,
+        });
+
+        map.set(full, created);
+
+        parentId = created.id;
+
+        categories.push(created);
       }
     }
 
@@ -379,137 +328,28 @@ export class ParserJobService {
     };
   }
 
-  /**
-   * Parse products with categories from sitemap
-   */
-  async parseProductsWithCategories(
-    sitemapUrl: string,
-    sourceWebsiteId?: string,
-    options?: {
-      productPattern?: string;
-      maxDepth?: number;
-      concurrency?: number;
-      delayMs?: number;
-      parseCategoriesFirst?: boolean;
-    },
-  ): Promise<MassParseResult> {
-    // First parse and create categories if requested
-    if (options?.parseCategoriesFirst) {
-      await this.parseCategoriesFromSitemap(sitemapUrl, sourceWebsiteId);
-    }
+  private chunkArray<T>(arr: T[], size: number): T[][] {
+    const res: T[][] = [];
 
-    // Get all URLs
-    const allUrls = await this.sitemapService.parseSitemapRecursive(
-      sitemapUrl,
-      options?.maxDepth || 3,
-    );
+    for (let i = 0; i < arr.length; i += size) res.push(arr.slice(i, i + size));
 
-    // Filter product URLs (exclude categories, hub, photos, etc.)
-    let productUrls = allUrls.filter(
-      (u) =>
-        !u.loc.includes('/category/') &&
-        !u.loc.includes('/hub/') &&
-        !u.loc.includes('/photos/') &&
-        !u.loc.includes('/o-nas/') &&
-        !u.loc.includes('/dealers/') &&
-        !u.loc.includes('/garantii/') &&
-        !u.loc.includes('/dostavka/') &&
-        !u.loc.includes('/kontakty/') &&
-        !u.loc.includes('/service-center/') &&
-        !u.loc.includes('/obligatsii/') &&
-        !u.loc.includes('/politika/') &&
-        u.loc !== 'https://th-tool.by/',
-    );
-
-    // Apply custom pattern if provided
-    if (options?.productPattern) {
-      const regex = new RegExp(options.productPattern);
-      productUrls = productUrls.filter((u) => regex.test(u.loc));
-    }
-
-    console.log(`Parsing ${productUrls.length} products`);
-
-    const urls = productUrls.map((u) => u.loc);
-    const concurrency = options?.concurrency || 5;
-    const delayMs = options?.delayMs || 100;
-
-    const results: ParseResult[] = [];
-    const batches = this.chunkArray(urls, concurrency);
-
-    for (const batch of batches) {
-      const batchResults = await Promise.all(
-        batch.map((url) => this.parseUrlWithCategory(url, sourceWebsiteId)),
-      );
-      results.push(...batchResults);
-
-      if (delayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-
-    const success = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
-
-    return {
-      total: urls.length,
-      success,
-      failed,
-      results,
-    };
+    return res;
   }
 
-  /**
-   * Parse single product and assign to category
-   */
-  async parseUrlWithCategory(
-    url: string,
-    sourceWebsiteId?: string,
-  ): Promise<ParseResult> {
-    const result = await this.parseUrl(url, sourceWebsiteId);
+  private resolveUrl(url: string, base: string) {
+    if (url.startsWith('http')) return url;
 
-    if (result.success && sourceWebsiteId) {
-      try {
-        // Extract category from URL path
-        const urlObj = new URL(url);
-        const pathParts = urlObj.pathname.split('/').filter(Boolean);
+    const b = new URL(base);
 
-        if (pathParts.length > 0) {
-          // Try to find matching category by slug
-          const lastSlug = pathParts[pathParts.length - 1];
-          const categories = await this.categoriesService.findAll(sourceWebsiteId);
+    if (url.startsWith('/')) return `${b.protocol}//${b.host}${url}`;
 
-          // Find category with matching slug
-          const matchingCategory = categories.find(
-            (c) => c.slug === lastSlug || pathParts.includes(c.slug),
-          );
-
-          if (matchingCategory) {
-            // Update product with category
-            const product = await this.productsService.findOne(result.product!.sourceId || url);
-            if (product && product.id) {
-              await this.productsService.update(product.id, {
-                categoryId: matchingCategory.id,
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.warn(`Failed to assign category for ${url}:`, error);
-      }
-    }
-
-    return result;
+    return `${b.protocol}//${b.host}/${url}`;
   }
 
-  private slugToName(slug: string): string {
-    // Convert slug to readable name
-    // e.g., "gidravlicheskie-pressy" -> "Гидравлические прессы"
+  private slugToName(slug: string) {
     return slug
       .split('-')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .map((w) => w[0].toUpperCase() + w.slice(1))
       .join(' ');
   }
 }
-
-// Need to import cheerio for the category parsing
-import * as cheerio from 'cheerio';

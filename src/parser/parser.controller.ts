@@ -35,7 +35,7 @@ export class ParserController {
       type: 'object',
       properties: {
         url: { type: 'string', example: 'https://tools.by/product/1605300' },
-        sourceWebsiteId: { type: 'string', description: 'ID источника (необязательно)' },
+        sourceWebsiteId: { type: 'string', description: 'e5bd13ac-3f1a-486a-8fef-c9cc039cce04' },
       },
       required: ['url'],
     },
@@ -45,6 +45,7 @@ export class ParserController {
     @Body('url') url: string,
     @Body('sourceWebsiteId') sourceWebsiteId?: string,
   ) {
+    console.log('1111111111111111111111111111');
     return this.parserJobService.parseUrl(url, sourceWebsiteId);
   }
 
