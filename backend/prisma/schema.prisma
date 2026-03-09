@@ -1,0 +1,121 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String   @unique
+  parentId       String?
+  level          Int
+  path           String[]
+  description    String?
+  image          String?
+  seoTitle       String
+  seoDescription String
+
+  parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryChildren")
+
+  products       Product[]
+  specifications Specification[]
+}
+
+model Brand {
+  id             String    @id @default(uuid())
+  name           String
+  slug           String    @unique
+  description    String?
+  logo           String?
+  country        String?
+  seoTitle       String
+  seoDescription String
+  products       Product[]
+}
+
+model Specification {
+  id           String                 @id @default(uuid())
+  name         String
+  key          String
+  categoryId   String
+  category     Category               @relation(fields: [categoryId], references: [id])
+  unit         String?
+  group        String?
+  filterable   Boolean                @default(false)
+  productSpecs ProductSpecification[]
+}
+
+model Product {
+  id               String                 @id @default(uuid())
+  slug             String                 @unique
+  name             String
+  brand            Brand?                 @relation(fields: [brandId], references: [id])
+  brandId          String?
+  category         Category               @relation(fields: [categoryId], references: [id])
+  categoryId       String
+  sku              String?
+  barcode          String?
+  model            String?
+  images           ProductImage[]
+  priceValue       Float
+  priceCurrency    String
+  oldPrice         Float?
+  stockStatus      String
+  stockQuantity    Int?
+  descriptionShort String?
+  descriptionFull  String?
+  seoTitle         String
+  seoDescription   String
+  productSpecs     ProductSpecification[]
+  sourceProducts   SourceProduct[]
+}
+
+model ProductSpecification {
+  id              String        @id @default(uuid())
+  product         Product       @relation(fields: [productId], references: [id])
+  productId       String
+  specification   Specification @relation(fields: [specificationId], references: [id])
+  specificationId String
+  value           String
+}
+
+model ProductImage {
+  id        String  @id @default(uuid())
+  url       String
+  alt       String?
+  order     Int
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+}
+
+model Source {
+  id             String          @id @default(uuid())
+  name           String
+  code           String          @unique
+  url            String
+  sourceProducts SourceProduct[]
+}
+
+model SourceProduct {
+  id             String   @id @default(uuid())
+  source         Source   @relation(fields: [sourceId], references: [id])
+  sourceId       String
+  externalId     String
+  url            String
+  name           String
+  price          Float?
+  currency       String?
+  stock          Boolean  @default(true)
+  images         String[]
+  description    String?
+  specifications Json
+  product        Product? @relation(fields: [productId], references: [id])
+  productId      String?
+  lastSync       DateTime @default(now())
+}
