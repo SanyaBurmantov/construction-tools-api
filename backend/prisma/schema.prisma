@@ -63,17 +63,18 @@ model Product {
   barcode          String?
   model            String?
   images           ProductImage[]
-  priceValue       Float
-  priceCurrency    String
+  priceValue       Float?
+  priceCurrency    String?
   oldPrice         Float?
-  stockStatus      String
+  stockStatus      String?
   stockQuantity    Int?
   descriptionShort String?
   descriptionFull  String?
-  seoTitle         String
-  seoDescription   String
+  seoTitle         String?
+  seoDescription   String?
   productSpecs     ProductSpecification[]
   sourceProducts   SourceProduct[]
+  specs            Json[]
 }
 
 model ProductSpecification {
@@ -118,4 +119,10 @@ model SourceProduct {
   product        Product? @relation(fields: [productId], references: [id])
   productId      String?
   lastSync       DateTime @default(now())
+}
+
+model SitemapsThTools {
+  id        String  @id @default(uuid())
+  url       String  @unique
+  isVisited Boolean @default(false)
 }

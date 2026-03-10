@@ -3,7 +3,6 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { parseTM } from './sites/tm.parser';
 import { parseTools } from './sites/tools.parser';
-import { parseThTools } from './sites/th-tools.parser';
 import { parse7745 } from './sites/7745.parser';
 
 @Injectable()
@@ -25,9 +24,6 @@ export class ParserService {
       return parseTools(html);
     }
 
-    if (url.includes('th-tool.by')) {
-      return parseThTools(html);
-    }
 
     if (url.includes('7745.by')) {
       return parse7745(html);

@@ -9,6 +9,7 @@ import { SpecificationsModule } from './specifications/specifications.module';
 import { BrandsModule } from './brands/brands.module';
 import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ParserModule } from './parser/parser.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     ProductsModule,
     CategoriesModule,

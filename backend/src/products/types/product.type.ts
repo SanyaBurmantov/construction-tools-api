@@ -60,6 +60,6 @@ export type TProduct = {
   description: ProductDescription;
 
   specifications: ProductSpecification[];
-
+  specs: [{name: string, value:string}];
   seo: ProductSEO;
 };
