@@ -18,6 +18,8 @@ RUN npm install -g @nestjs/cli
 # Генерируем Prisma клиент
 COPY prisma ./prisma
 RUN npx prisma generate
+RUN npx prisma migrate dev
+
 # Открываем порт для приложения
 EXPOSE 8000
 
