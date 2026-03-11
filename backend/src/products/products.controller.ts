@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product-dto';
 import { ProductService } from './products.service';
 import * as productFilterType from './types/product-filter.type';
@@ -18,5 +18,11 @@ export class ProductController {
   @Get()
   getAll(@Query() filter: ProductFilterDto) {
     return this.service.findAllFiltered(filter);
+  }
+
+  @Get(':slug')
+  getOne(@Param('slug') slug: string) {
+    console.log(slug);
+    return this.service.getProductBySlug(slug)
   }
 }

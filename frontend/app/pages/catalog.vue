@@ -1,21 +1,31 @@
-<script setup lang="ts">
-import { productMock } from '~/data/mocks/products'
-import type { ProductData } from '~/types/product'
+<script setup>
 
-const product: ProductData = productMock
+import ProductCatalogCard from '~/components/product/productCatalogCard.vue';
+
+const { data: products } = useAsyncData('products', () =>
+    $fetch('http://localhost:8000/products?limit=20')
+)
+
 </script>
 
 <template>
-  <div class="grid">
-    <ProductCard :product="product" />
+  <div v-if="products?.data" class="products-listing">
+    <div v-for="product of products.data">
+      <ProductCatalogCard :product="product" />
+    </div>
   </div>
 </template>
 
-<style scoped>
-.grid {
-  width: 100%;
+<style scoped lang="scss">
+.products-listing {
   display: grid;
-  gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: 1fr 1fr;
+  @include media-breakpoint-up(md){
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+  @include media-breakpoint-up(lg) {
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+  }
+
 }
 </style>

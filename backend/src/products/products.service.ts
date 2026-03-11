@@ -24,6 +24,21 @@ export class ProductService {
     });
   }
 
+  async getProductBySlug(slug: string) {
+    return this.prisma.product.findUnique({
+      where: { slug },
+      include: {
+        brand: true,
+        category: true,
+        images: true,
+        sourceProducts: true,
+        productSpecs: {
+          include: { specification: true },
+        },
+      },
+    })
+  }
+
   async findAll() {
     return this.prisma.product.findMany({
       include: {
@@ -37,6 +52,7 @@ export class ProductService {
         images: true,
         sourceProducts: true,
       },
+
     });
   }
 

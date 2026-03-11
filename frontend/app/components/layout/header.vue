@@ -48,114 +48,30 @@ const items = computed<NavigationMenuItem[]>(() => [
 
 <template>
   <header class="header">
-    <div class="top-bar">
-      <div class="container">
-        <div class="row">
-          <div class="col-left">
-            <p class="location">
-              <span class="fa fa-map-marker" />
-              Беларусь, г. Витебск, пр-т Фрунзе, 39а, к.17
-            </p>
-          </div>
-
-          <div class="col-right">
-            <div class="basket">
-              <a href="/order/">
-                <span id="basket-status">
-                  <i class="fa fa-shopping-basket" /> В корзине нет товаров
-                </span>
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div class="">
+      Gost.By
+    </div>
+    <div class="">
+    Беларусь, г. Витебск, пр-т Фрунзе, 39а, к.17
     </div>
 
-    <UHeader class="main-header" mode="slideover">
-      <template #title>
-        <ULink to="/" class="navbar-brand">Gost.By</ULink>
-      </template>
-
-      <UNavigationMenu
-          :items="items"
-          class="desktop-menu"
-      />
-
-      <template #body>
-        <UNavigationMenu
-            :items="items"
-            orientation="vertical"
-            class="mobile-menu -mx-2.5"
-        />
-      </template>
-    </UHeader>
+    <div class="links">
+      <div v-for="link of items">
+        <NuxtLink :to="link.to">
+          {{ link.label }}
+        </NuxtLink>
+      </div>
+    </div>
   </header>
 </template>
 
-<style scoped>
-
-/* ---------------- Верхняя панель ---------------- */
-
-.top-bar {
-  background: var(--color-bg-light);
-  padding: 12px 0;
-  font-size: 14px;
-  color: var(--color-text);
-}
-
-.container {
-  margin: 0 auto;
-}
-
-.row {
+<style scoped lang="scss">
+header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 0 20px;
-  gap: 40px;
+  gap: 8px
 }
-
-/* ---------------- Основной хедер ---------------- */
-
-.main-header {
-  background: var(--color-primary) !important;
-  color: var(--color-text-light);
-}
-
-.navbar-brand {
-  font-size: 22px;
-  text-decoration: none;
-  color: var(--color-text);
-}
-
-.desktop-menu a,
-.mobile-menu a {
-  color: var(--color-text-light);
-  text-decoration: none;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-
-.desktop-menu {
+.links {
   display: flex;
-  gap: 1rem;
-}
-
-.mobile-menu {
-  display: none;
-  background: var(--color-primary);
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-}
-
-/* ---------------- Адаптив ---------------- */
-
-@media (max-width: 768px) {
-  .desktop-menu {
-    display: none !important;
-  }
-
-  .mobile-menu {
-    display: block !important;
-  }
+  gap: 8px
 }
 </style>

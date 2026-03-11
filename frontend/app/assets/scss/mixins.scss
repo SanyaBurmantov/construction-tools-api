@@ -1,0 +1,17 @@
+$breakpoints: (
+        sm: 390px,
+        md: 640px,
+        lg: 960px,
+        xl: 1280px,
+);
+
+@mixin media-breakpoint-up($size) {
+  $value: map-get($breakpoints, $size);
+  @if $value {
+    @media (min-width: $value) {
+      @content;
+    }
+  } @else {
+    @warn "Брейкпоинт `#{$size}` не найден!";
+  }
+}
