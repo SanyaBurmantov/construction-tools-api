@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
-import { ProductImage, TProduct } from '../../products/types/product.type';
 import { generateSlug } from '../../common/utils/generate-slug';
+import { Cheerio } from 'cheerio';
 
 @Injectable()
 export class ThToolsParserService {
@@ -30,7 +30,6 @@ export class ThToolsParserService {
   }
 
   async processSitemapUrl(url: string) {
-    console.log(url);
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to fetch ${url}`);
@@ -38,76 +37,239 @@ export class ThToolsParserService {
       const html = await res.text();
       const $ = cheerio.load(html);
 
-      const specs: TProduct['specs'] = [{name: '', value: ''}];
-      $('.features-two-val__block').each((i, block) => {
-        const name = $(block).find('.features-two-val__name span').text().trim();
-        const value = $(block).find('.features-two-val__value').text().trim();
-        specs.push({ name, value });
+      const name = $('h1').text().trim();
+
+      const brandName = $('.product__top-brand-name').text().trim();
+      const sku = $('.product__code span').text().trim();
+
+      const slug = generateSlug(name);
+
+      const description = $('.desc.desc_max').text().trim();
+
+      const priceText = $('.price.product__price').first().text().trim();
+      const priceValue = parseFloat(
+        priceText.replace(/[^\d.,]/g, '').replace(',', '.'),
+      );
+      const priceCurrency = priceText.replace(/[\d.,\s]/g, '') || 'BYN';
+
+      // ---------- CATEGORY ----------
+      const category = await this.prisma.category.upsert({
+        where: { slug: 'tools' },
+        update: {},
+        create: {
+          name: 'Tools',
+          slug: 'tools',
+          level: 0,
+          path: ['tools'],
+          seoTitle: 'Tools',
+          seoDescription: 'Tools',
+        },
       });
 
-      const images: ProductImage[] = [];
+      // ---------- BRAND ----------
+      let brandId: string | undefined;
 
-      $('.p-images__wrap img').each((i, el) => {
-        const alt = $(el).attr('alt');
-        const src = $(el).attr('src');
+      if (brandName) {
+        const brandSlug = generateSlug(brandName);
+
+        const brand = await this.prisma.brand.upsert({
+          where: { slug: brandSlug },
+          update: {},
+          create: {
+            name: brandName,
+            slug: brandSlug,
+            seoTitle: brandName,
+            seoDescription: brandName,
+          },
+        });
+
+        brandId = brand.id;
+      }
+
+      // ---------- IMAGES ----------
+      const images: { url: string; alt?: string; order: number }[] = [];
+
+      $('.p-images__slider-item').each((i, el) => {
+        const src = $(el).attr('href');
+
         if (src) {
-          const image: ProductImage = {
-            alt: alt,
-            order: 0,
-            url: src
-
-          }
-          images.push(image)
-        };
+          images.push({
+            url: `https://th-tool.by${src}`,
+            alt: name,
+            order: i,
+          });
+        }
       });
 
-      const product: TProduct = {
-        id: '',
-        slug: generateSlug($('h1').text()?.trim()),
-        name: $('h1').text()?.trim(),
-        categoryId: '',
-        images: images,
-        price: {
-          value: Number($('.price.product__price').first().text().split(' ')[0]?.trim()),
-          currency: String($('.price.product__price').first().text().split(' ')[1]?.trim()),
-          oldValue: undefined,
-        },
-        stock: {
-          status: 'in_stock',
-          quantity: undefined,
-        },
-        specs: specs as TProduct['specs'],
-        description: {
-          short: undefined,
-          full: $('.desc.desc_max').text()?.trim(),
-          features: undefined,
-        },
-        specifications: [],
-        seo: {
-          title: $('h1').text().trim(),
-          description: $('.desc.desc_max').text()?.trim(),
-          keywords: undefined,
-        },
-      };
+      // ---------- PRODUCT ----------
+      const { id: categoryId } = await this.parseAndSaveCategory($);
+      if (!categoryId) {
+        console.warn('Пиздец продукт говна', slug, url);
+        return;
+      }
 
+      const product = await this.prisma.product.upsert({
+        where: { slug },
+        update: {
+          priceValue,
+          priceCurrency,
+          descriptionFull: description,
+          sku,
+          categoryId: categoryId ? categoryId : ' ',
+          images: {
+            deleteMany: {},
+            create: images,
+          },
+        },
+        create: {
+          name,
+          slug,
+          sku,
+          brandId,
+          categoryId: categoryId ? categoryId : ' ',
+          priceValue,
+          priceCurrency,
+          descriptionFull: description,
+          images: {
+            create: images,
+          },
+        },
+      });
 
-      console.log(product);
-      // Сохраняем товар (можно отдельную таблицу)
-      // await this.prisma.product.create({
-      //   data: {
-      //     url,
-      //     title,
-      //     price,
-      //   },
-      // });
+      // ---------- SPECS PARSE ----------
+      const specs: { name: string; value: string }[] = [];
 
-      // await this.prisma.sitemapsThTools.update({
-      //   where: { url },
-      //   data: { isVisited: true },
-      // });
+      $('.features-two-val__block').each((i, block) => {
+        const specName = $(block)
+          .find('.features-two-val__name span')
+          .text()
+          .trim();
+
+        const specValue = $(block)
+          .find('.features-two-val__value')
+          .text()
+          .trim();
+
+        if (specName && specValue) {
+          specs.push({
+            name: specName,
+            value: specValue,
+          });
+        }
+      });
+
+      // ---------- SAVE SPECS ----------
+      await this.saveSpecifications(specs, product.id, category.id);
+
+      // ---------- MARK VISITED ----------
+      await this.prisma.sitemapsThTools.update({
+        where: { url },
+        data: { isVisited: true },
+      });
+
+      console.log(`Saved product: ${name}`);
     } catch (e) {
       console.error(`Error processing ${url}`, e);
     }
   }
 
+  async saveSpecifications(
+    specs: { name: string; value: string }[],
+    productId: string,
+    categoryId: string,
+  ) {
+    for (const spec of specs) {
+      const key = generateSlug(spec.name);
+
+      const specification = await this.prisma.specification.upsert({
+        where: {
+          categoryId_key: {
+            categoryId,
+            key,
+          },
+        },
+        update: {},
+        create: {
+          name: spec.name,
+          key,
+          categoryId,
+          filterable: true,
+        },
+      });
+
+      await this.prisma.productSpecification.upsert({
+        where: {
+          productId_specificationId: {
+            productId,
+            specificationId: specification.id,
+          },
+        },
+        update: {
+          value: spec.value,
+        },
+        create: {
+          productId,
+          specificationId: specification.id,
+          value: spec.value,
+        },
+      });
+    }
+  }
+
+  async parseAndSaveCategory($: cheerio.CheerioAPI): Promise<{ id: string }> {
+    // Берем все ссылки хлебных крошек
+    const categoryLinks = $('.bread__link')
+      .not('.bread__link_last')
+      .map((i, el) => $(el).text().trim())
+      .get()
+      .filter(Boolean);
+
+    console.log(categoryLinks);
+
+    if (!categoryLinks.length) {
+      // fallback, если что-то не парсится
+      const category = await this.prisma.category.upsert({
+        where: { slug: 'tools' },
+        update: {},
+        create: {
+          name: 'Tools',
+          slug: 'tools',
+          level: 0,
+          path: ['tools'],
+          seoTitle: 'Tools',
+          seoDescription: 'Tools',
+        },
+      });
+      return { id: category.id };
+    }
+
+    // Создаем категории рекурсивно
+    let parentId: string | null = null;
+    let pathArray: string[] = [];
+
+    for (const name of categoryLinks) {
+      const slug = generateSlug(name);
+      if (!slug) continue;
+      pathArray.push(slug);
+
+      const category = await this.prisma.category.upsert({
+        where: { slug },
+        update: {},
+        create: {
+          name,
+          slug,
+          level: pathArray.length - 1,
+          path: [...pathArray],
+          parentId,
+          seoTitle: name,
+          seoDescription: name,
+        },
+      });
+
+      parentId = category.id;
+    }
+
+    // Возвращаем id конечной категории для продукта
+    return { id: parentId! };
+  }
 }

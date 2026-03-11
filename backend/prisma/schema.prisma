@@ -49,6 +49,8 @@ model Specification {
   group        String?
   filterable   Boolean                @default(false)
   productSpecs ProductSpecification[]
+
+  @@unique([categoryId, key])
 }
 
 model Product {
@@ -74,7 +76,6 @@ model Product {
   seoDescription   String?
   productSpecs     ProductSpecification[]
   sourceProducts   SourceProduct[]
-  specs            Json[]
 }
 
 model ProductSpecification {
@@ -84,6 +85,8 @@ model ProductSpecification {
   specification   Specification @relation(fields: [specificationId], references: [id])
   specificationId String
   value           String
+
+  @@unique([productId, specificationId])
 }
 
 model ProductImage {

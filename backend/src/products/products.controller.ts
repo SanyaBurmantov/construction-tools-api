@@ -1,7 +1,11 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product-dto';
 import { ProductService } from './products.service';
+import * as productFilterType from './types/product-filter.type';
+import { ApiTags } from '@nestjs/swagger';
+import { ProductFilterDto } from './dto/product-filter-dto';
 
+@ApiTags('Products')
 @Controller('products')
 export class ProductController {
   constructor(private service: ProductService) {}
@@ -12,7 +16,7 @@ export class ProductController {
   }
 
   @Get()
-  getAll() {
-    return this.service.findAll();
+  getAll(@Query() filter: ProductFilterDto) {
+    return this.service.findAllFiltered(filter);
   }
 }

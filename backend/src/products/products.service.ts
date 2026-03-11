@@ -1,6 +1,8 @@
 import { CreateProductDto } from './dto/create-product-dto';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProductFilter } from './types/product-filter.type';
+import { ProductFilterDto } from './dto/product-filter-dto';
 
 @Injectable()
 export class ProductService {
@@ -27,10 +29,76 @@ export class ProductService {
       include: {
         brand: true,
         category: true,
-        productSpecs: true,
+        productSpecs: {
+          include: {
+            specification: true,
+          },
+        },
         images: true,
         sourceProducts: true,
       },
     });
+  }
+
+  async findAllFiltered(filter: ProductFilterDto) {
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (filter.search) {
+      where.name = { contains: filter.search, mode: 'insensitive' };
+    }
+    if (filter.categoryId) where.categoryId = filter.categoryId;
+    if (filter.brandId) where.brandId = filter.brandId;
+    if (filter.priceMin !== undefined || filter.priceMax !== undefined) {
+      where.priceValue = {};
+      if (filter.priceMin !== undefined) where.priceValue.gte = filter.priceMin;
+      if (filter.priceMax !== undefined) where.priceValue.lte = filter.priceMax;
+    }
+
+    const orderBy: any = {};
+    if (filter.sortBy) {
+      const field = filter.sortBy === 'price' ? 'priceValue' : 'name';
+      orderBy[field] = filter.sortOrder ?? 'asc';
+    } else {
+      orderBy.name = 'asc';
+    }
+
+    const total = await this.prisma.product.count({ where });
+
+    const products = await this.prisma.product.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy,
+      include: {
+        brand: true,
+        category: true,
+        images: true,
+        sourceProducts: true,
+        productSpecs: {
+          include: { specification: true },
+        },
+      },
+    });
+
+    const data = products.map(p => ({
+      ...p,
+      productSpecs: p.productSpecs.map(ps => ({
+        name: ps.specification.name,
+        value: ps.value,
+      })),
+    }));
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
   }
 }

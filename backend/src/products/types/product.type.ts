@@ -1,65 +1,60 @@
 export type ProductImage = {
-  url: string;
-  alt?: string;
-  order: number;
-};
+  url: string
+  alt?: string
+  order?: number
+}
+
+export type ProductSpec = {
+  name: string
+  value: string
+}
 
 export type ProductPrice = {
-  value: number;
-  currency: string;
-
-  oldValue?: number;
-};
+  value?: number
+  currency?: string
+  oldValue?: number
+}
 
 export type ProductStock = {
-  status: 'in_stock' | 'out_of_stock' | 'preorder';
-
-  quantity?: number;
-};
+  status?: string
+  quantity?: number
+}
 
 export type ProductDescription = {
-  short?: string;
+  short?: string
+  full?: string
+  features?: string[]
+}
 
-  full?: string;
-
-  features?: string[];
-};
-
-export type ProductSpecification = {
-  specId: string;
-
-  value: string;
-};
-
-export type ProductSEO = {
-  title: string;
-  description: string;
-  keywords?: string[];
-};
+export type ProductSeo = {
+  title?: string
+  description?: string
+  keywords?: string[]
+}
 
 export type TProduct = {
-  id: string;
+  id?: string
 
-  slug: string;
+  name: string
+  slug: string
 
-  name: string;
+  brand?: string
+  brandId?: string
 
-  brandId?: string;
-  categoryId: string;
+  categoryId: string
 
-  sku?: string;
-  barcode?: string;
-  model?: string;
+  sku?: string
+  barcode?: string
+  model?: string
 
-  images: ProductImage[];
+  price?: ProductPrice
+  stock?: ProductStock
 
-  price: ProductPrice;
+  images?: ProductImage[]
 
-  stock: ProductStock;
+  specs?: ProductSpec[]
 
-  description: ProductDescription;
+  description?: ProductDescription
 
-  specifications: ProductSpecification[];
-  specs: [{name: string, value:string}];
-  seo: ProductSEO;
-};
+  seo?: ProductSeo
+}
