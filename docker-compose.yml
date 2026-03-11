@@ -24,7 +24,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: construction-tools-api
+    container_name: construction-tools-backend
     ports:
       - "3000:3000"
     environment:

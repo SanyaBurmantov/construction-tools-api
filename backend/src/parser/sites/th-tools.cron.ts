@@ -6,8 +6,8 @@ import { ThToolsParserService } from './th-tools.parser';
 export class ThToolsCron {
   constructor(private readonly thToolsService: ThToolsParserService) {}
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @Cron(CronExpression.EVERY_30_MINUTES)
   async handleCron() {
-    await this.thToolsService.processSitemapsBatch(1, 1);
+    await this.thToolsService.processSitemapsBatch();
   }
 }
