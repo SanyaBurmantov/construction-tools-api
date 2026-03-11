@@ -22,7 +22,6 @@ export class ProductController {
 
   @Get(':slug')
   getOne(@Param('slug') slug: string) {
-    console.log(slug);
     return this.service.getProductBySlug(slug)
   }
 }
