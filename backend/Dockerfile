@@ -1,46 +1,25 @@
-FROM node:20-bookworm
+# Dockerfile
+FROM node:20-bullseye AS development
 
-WORKDIR /app
+WORKDIR /backend
 
-# Install system dependencies for Playwright
-RUN apt-get update && apt-get install -y \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpango-1.0-0 \
-    libcairo2 \
-    python3 \
-    python3-pip \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
+# Копируем файлы зависимостей
 COPY package*.json ./
+COPY prisma ./prisma/
 
-RUN npm install --legacy-peer-deps
+# Устанавливаем зависимости
+RUN npm ci
 
-# Install Playwright browsers
-RUN npx playwright install chromium --with-deps
-
+# Копируем исходный код
 COPY . .
 
-# Create directories for parsers and logs
-RUN mkdir -p /app/logs /app/parsers /app/configs
+RUN npm install -g @nestjs/cli
 
+# Генерируем Prisma клиент
+COPY prisma ./prisma
 RUN npx prisma generate
+# Открываем порт для приложения
+EXPOSE 8000
 
-RUN npm run build
-
-EXPOSE 3000
-
-CMD ["npm", "run", "start:prod"]
+# Запускаем в режиме разработки
+CMD ["npm", "run", "start:dev"]

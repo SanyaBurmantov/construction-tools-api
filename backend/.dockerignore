@@ -1,0 +1,46 @@
+# Зависимости
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Сборка
+dist
+build
+
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose*.yml
+
+# Локальные файлы окружения
+.env
+.env.local
+.env.*.local
+
+# Тесты
+coverage
+test
+*.spec.ts
+*.e2e-spec.ts
+
+# Логи
+*.log
+
+# Prisma (кроме схемы)
+prisma/*.db
+prisma/*.db-journal
+
+# Временные файлы
+tmp
+temp
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo

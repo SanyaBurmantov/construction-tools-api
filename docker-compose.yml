@@ -1,5 +1,4 @@
 services:
-  # PostgreSQL Database
   db:
     image: postgres:15-alpine
     container_name: construction-tools-db
@@ -19,28 +18,44 @@ services:
     networks:
       - app-network
 
-  # Backend API (NestJS)
-  app:
+  back:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: construction-tools-backend
+      target: development
+    container_name: construction-tools-api
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8000:8000"
+    volumes:
+      - ./backend:/backend:cached
+      - /backend/node_modules
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/construction_tools?schema=public
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
       JWT_EXPIRATION: 7d
     depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./backend/logs:/app/logs
-      - ./backend/parsers:/app/parsers
-      - ./backend/configs:/app/configs
+      - db
     networks:
       - app-network
+    command: npm run start:dev
+
+  front:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: construction-tools-front
     restart: unless-stopped
+    volumes:
+      - ./frontend:/frontend:cached
+      - /frontend/node_modules
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    environment:
+      NODE_ENV: development
+    command: npm run dev
 
 volumes:
   postgres_data:
