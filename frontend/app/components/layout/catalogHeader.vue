@@ -62,6 +62,7 @@ const items = computed<NavigationMenuItem[]>(() => [
 .catalog-header {
   display: flex;
   justify-content: center;
+  gap: 8px;
 
   &__links{
     display: flex;

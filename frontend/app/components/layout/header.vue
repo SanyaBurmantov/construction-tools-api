@@ -1,49 +1,5 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from '@nuxt/ui'
-const route = useRoute()
 
-const items = computed<NavigationMenuItem[]>(() => [
-  {
-    label: 'Главная',
-    to: '/',
-    active: route.path === '/'
-  },
-  {
-    label: 'Каталог',
-    to: '/catalog/',
-    active: route.path.startsWith('/catalog')
-  },
-  {
-    label: 'Поиск',
-    to: '/search/',
-    active: route.path.startsWith('/search')
-  },
-  {
-    label: 'Бренды',
-    to: '/brand/',
-    active: route.path.startsWith('/brand')
-  },
-  {
-    label: 'Акции',
-    to: '/sales/',
-    active: route.path.startsWith('/sales')
-  },
-  {
-    label: 'Оплата и доставка',
-    to: '/delivery/',
-    active: route.path.startsWith('/delivery')
-  },
-  {
-    label: 'Контакты',
-    to: '/contacts/',
-    active: route.path.startsWith('/contacts')
-  },
-  {
-    label: 'Вход',
-    to: '/auth/',
-    active: route.path.startsWith('/auth')
-  }
-])
 </script>
 
 <template>
@@ -58,6 +14,7 @@ const items = computed<NavigationMenuItem[]>(() => [
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
+  padding: 20px;
 }
 </style>
