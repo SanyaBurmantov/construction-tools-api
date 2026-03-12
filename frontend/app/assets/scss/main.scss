@@ -18,6 +18,12 @@ h1, h2, h3, h4, h5 {
   font-family: var(--font-heading);
 }
 
+.container {
+  max-width: 1320px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
 
 :root {
   /* Основная палитра */

@@ -68,12 +68,6 @@
   font-size: 16px;
   line-height: 1.7;
 
-  .container {
-    margin: 0 auto;
-    padding: 0 20px;
-    max-width: 1320px;
-  }
-
   .row {
     &.top {
       display: flex;
