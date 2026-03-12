@@ -47,17 +47,25 @@ const items = computed<NavigationMenuItem[]>(() => [
 </script>
 
 <template>
-  <header class="header">
-    <LayoutTopHeader class="container"></LayoutTopHeader>
-    <LayoutCatalogHeader class="container"></LayoutCatalogHeader>
+  <header class="catalog-header">
+    <div class="catalog-header__links">
+      <div v-for="link of items">
+        <NuxtLink :to="link.to">
+          {{ link.label }}
+        </NuxtLink>
+      </div>
+    </div>
   </header>
 </template>
 
 <style scoped lang="scss">
-.header {
+.catalog-header {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  justify-content: center;
+
+  &__links{
+    display: flex;
+    gap: 20px
+  }
 }
 </style>
