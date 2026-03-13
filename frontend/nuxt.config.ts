@@ -6,6 +6,17 @@ export default defineNuxtConfig({
   css: ['@/assets/scss/main.scss'],
   ssr: true,
   vite: {
+    server: {
+      watch: {
+        usePolling: true,
+        interval: 1000,
+      },
+      hmr: {
+        protocol: 'ws',
+        host: 'localhost',
+        port: 3000,
+      },
+    },
     css: {
       preprocessorOptions: {
         scss: {
