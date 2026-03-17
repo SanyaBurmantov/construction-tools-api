@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// Пустые категории, которые потом будут парситься
 const categories = ref([
   { label: 'Электроника', to: '', children: [] },
   { label: 'Бытовая техника', to: '', children: [] },
@@ -11,20 +10,19 @@ const categories = ref([
   { label: 'Детям', to: '', children: [] },
   { label: 'Красота', to: '', children: [] },
 ])
-
-// Заглушка для подкатегорий (будет заполняться после парсинга)
-const placeholderSubcategories = [
-  'Подкатегория 1',
-  'Подкатегория 2',
-  'Подкатегория 3',
-  'Подкатегория 4',
-]
 </script>
 
 <template>
   <nav class="catalog-nav">
     <div class="catalog-nav__container">
+      <div class="main-header__catalog-btn">
+        <NuxtLink to="/catalog" class="catalog-btn">
+          <span class="catalog-btn__icon">☰</span>
+          <span class="catalog-btn__text">Каталог</span>
+        </NuxtLink>
+      </div>
       <ul class="catalog-nav__list">
+
         <li
           v-for="category in categories"
           :key="category.label"
@@ -38,7 +36,6 @@ const placeholderSubcategories = [
             {{ category.label }}
           </NuxtLink>
 
-          <!-- Заглушка подменю -->
           <ul v-if="category.isDropdown || category.children?.length" class="catalog-nav__submenu">
             <li v-if="category.children?.length">
               <NuxtLink
@@ -50,7 +47,6 @@ const placeholderSubcategories = [
               </NuxtLink>
             </li>
             <li v-else>
-              <!-- Пустые заглушки, пока нет данных -->
               <NuxtLink
                 v-for="i in 4"
                 :key="i"
@@ -75,7 +71,35 @@ const placeholderSubcategories = [
     max-width: 1400px;
     margin: 0 auto;
     padding: 0 20px;
+    display: flex;
+    align-items: center;
   }
+
+  &__catalog-btn {
+    flex-shrink: 0;
+  }
+
+  .catalog-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #e67e22;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 600;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #d35400;
+    }
+
+    &__icon {
+      font-size: 18px;
+    }
+  }
+
 
   &__list {
     display: flex;

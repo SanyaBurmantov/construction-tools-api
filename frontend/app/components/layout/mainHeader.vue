@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// Заглушки для будущих данных
 const userActions = [
   { label: 'Избранное', to: '/favorites', icon: '❤️', counter: null },
   { label: 'Статус заказа', to: '#', icon: '🕐', modal: 'checkstatus' },
@@ -11,22 +10,14 @@ const userActions = [
 <template>
   <div class="main-header">
     <div class="main-header__container">
-      <!-- Логотип -->
       <div class="main-header__logo">
         <NuxtLink to="/" class="main-header__logo-link">
           <span class="main-header__logo-text">Gost.By</span>
         </NuxtLink>
       </div>
 
-      <!-- Кнопка каталога -->
-      <div class="main-header__catalog-btn">
-        <NuxtLink to="/catalog" class="catalog-btn">
-          <span class="catalog-btn__icon">☰</span>
-          <span class="catalog-btn__text">Каталог</span>
-        </NuxtLink>
-      </div>
 
-      <!-- Поиск -->
+
       <div class="main-header__search">
         <form action="/search" method="GET" class="search-form">
           <input
@@ -39,7 +30,6 @@ const userActions = [
         </form>
       </div>
 
-      <!-- Действия пользователя -->
       <div class="main-header__actions">
         <div
           v-for="action in userActions"
@@ -88,30 +78,6 @@ const userActions = [
     }
   }
 
-  &__catalog-btn {
-    flex-shrink: 0;
-  }
-
-  .catalog-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: #e67e22;
-    color: #fff;
-    text-decoration: none;
-    border-radius: 4px;
-    font-weight: 600;
-    transition: background 0.2s;
-
-    &:hover {
-      background: #d35400;
-    }
-
-    &__icon {
-      font-size: 18px;
-    }
-  }
 
   &__search {
     flex: 1;
