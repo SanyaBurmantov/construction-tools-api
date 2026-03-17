@@ -1,12 +1,9 @@
 <script setup lang="ts">
 // Заглушки для будущих данных
-const city = ref('г. Минск')
+const city = ref('Беларусь, г. Витебск, пр-т Фрунзе, 39а, к.17')
 const phones = [
-  { label: '+375 29 664-77-45', href: 'tel:+375296647745', operator: 'velcom' },
-  { label: '+375 29 764-77-45', href: 'tel:+375297647745', operator: 'mts' },
-  { label: '+375 25 964-77-45', href: 'tel:+375259647745', operator: 'life' },
+  { label: '+375 29 813-57-97', href: 'tel:+375298135797' },
 ]
-const workTime = 'с 8:00 до 22:00'
 
 const topLinks = [
   { label: 'Услуги', to: '/catalog/uslugi', highlight: true },
@@ -35,7 +32,6 @@ const topLinks = [
 <template>
   <div class="top-bar">
     <div class="top-bar__container">
-      <!-- Гео -->
       <div class="top-bar__geo">
         <button class="top-bar__city-btn">
           {{ city }}
@@ -43,7 +39,6 @@ const topLinks = [
         </button>
       </div>
 
-      <!-- Телефоны и время -->
       <div class="top-bar__contacts">
         <div class="top-bar__phones">
           <a
@@ -52,19 +47,11 @@ const topLinks = [
             :href="phone.href"
             class="top-bar__phone"
           >
-            <span class="top-bar__operator">{{ phone.operator }}</span>
             <span>{{ phone.label }}</span>
           </a>
-          <a href="tel:7745" class="top-bar__phone top-bar__phone--unified">
-            Единый моб. — 7745
-          </a>
-        </div>
-        <div class="top-bar__schedule">
-          <span class="top-bar__label">Контакт-центр</span> {{ workTime }}
         </div>
       </div>
 
-      <!-- Доп. навигация -->
       <nav class="top-bar__nav">
         <ul class="top-bar__list">
           <li
@@ -87,7 +74,6 @@ const topLinks = [
               {{ link.label }}
             </NuxtLink>
 
-            <!-- Подменю (заглушка) -->
             <ul v-if="link.submenu" class="top-bar__submenu">
               <li v-for="sub in link.submenu" :key="sub.label">
                 <NuxtLink :to="sub.to">{{ sub.label }}</NuxtLink>
