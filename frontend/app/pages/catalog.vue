@@ -477,6 +477,8 @@ useHead({
 
 .filter-group {
   padding-top: 4px;
+  max-height: 250px;
+  overflow-y: auto;
 }
 
 .filter-group.highlighted {
