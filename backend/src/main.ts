@@ -40,7 +40,7 @@ async function bootstrap() {
     },
   });
 
-  await app.listen(8000);
+  await app.listen(8000, '0.0.0.0');
   console.log(`Application is running on: http://localhost:8000`);
   console.log(`Swagger documentation: http://localhost:8000/api`);
 }
