@@ -26,8 +26,9 @@ export default defineNuxtConfig({
     transpile: ['vuetify'],
   },
   runtimeConfig: {
+    apiBaseServer: process.env.API_BASE_SERVER || process.env.API_BASE || 'http://localhost:8000',
     public: {
-      apiBase: process.env.API_BASE || 'http://localhost:8000',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || process.env.API_BASE || 'http://localhost:8000',
     },
   }
 })

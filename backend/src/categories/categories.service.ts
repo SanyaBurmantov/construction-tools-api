@@ -1,45 +1,17 @@
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { Injectable } from '@nestjs/common';
-import { TCategory } from './types/category.type';
-import * as crypto from 'node:crypto';
+
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class CategoriesService {
-  private categories: TCategory[] = [];
+  constructor(private prisma: PrismaService) {}
 
   create(dto: CreateCategoryDto) {
-    const parent = dto.parentId
-      ? this.categories.find((c) => c.id === dto.parentId)
-      : undefined;
-
-    const category: TCategory = {
-      path: [],
-      id: crypto.randomUUID(),
-
-      name: dto.name,
-
-      slug: dto.slug,
-
-      parentId: dto.parentId,
-
-      description: dto.description,
-
-      level: parent ? parent.level + 1 : 0,
-
-      children: [],
-
-      seo: {
-        title: dto.name,
-        description: dto.name,
-      },
-    };
-
-    this.categories.push(category);
-
-    return category;
+    return []
   }
 
   findAll() {
-    return this.categories;
+    return this.prisma.category.findMany()
   }
 }

@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsNumber, IsOptional, IsIn, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class ProductFilterDto {
   @ApiProperty({ required: false, description: 'Поиск по названию товара' })
@@ -20,21 +20,25 @@ export class ProductFilterDto {
 
   @ApiProperty({ required: false, description: 'Минимальная цена' })
   @IsOptional()
+  @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
   @IsNumber()
   priceMin?: number;
 
   @ApiProperty({ required: false, description: 'Максимальная цена' })
   @IsOptional()
+  @Transform(({ value }) => (value === '' || value === undefined ? undefined : Number(value)))
   @IsNumber()
   priceMax?: number;
 
   @ApiProperty({ required: false, description: 'Сортировка', enum: ['name', 'price'] })
   @IsOptional()
+  @IsIn(['name', 'price'])
   @IsString()
   sortBy?: 'name' | 'price';
 
   @ApiProperty({ required: false, description: 'Порядок сортировки', enum: ['asc', 'desc'] })
   @IsOptional()
+  @IsIn(['asc', 'desc'])
   @IsString()
   sortOrder?: 'asc' | 'desc';
 

@@ -6,18 +6,8 @@ import { CreateBrandDto } from './dto/create-brand.dto';
 export class BrandsController {
   constructor(private service: BrandsService) {}
 
-  @Post()
-  create(@Body() dto: CreateBrandDto) {
-    return this.service.create(dto);
-  }
-
   @Get()
   getAll() {
     return this.service.findAll();
-  }
-
-  @Get(':slug')
-  getBySlug(@Param('slug') slug: string) {
-    return this.service.findBySlug(slug);
   }
 }

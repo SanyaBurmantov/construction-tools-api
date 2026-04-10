@@ -19,9 +19,15 @@
 
 .main-content {
   flex: 1;
-  padding: 20px;
-  max-width: 1320px;
+  padding: 32px 16px 72px;
+  max-width: 1360px;
   width: 100%;
   margin: 0 auto;
+}
+
+@media (min-width: 960px) {
+  .main-content {
+    padding: 44px 20px 88px;
+  }
 }
 </style>
