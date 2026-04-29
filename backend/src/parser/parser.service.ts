@@ -24,7 +24,6 @@ export class ParserService {
       return parseTools(html);
     }
 
-
     if (url.includes('7745.by')) {
       return parse7745(html);
     }

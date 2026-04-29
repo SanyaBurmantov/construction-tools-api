@@ -21,7 +21,11 @@ const price = computed(() => {
     return 'Цена по запросу'
   }
 
-  return props.product.priceValue;
+  return new Intl.NumberFormat('ru-BY', {
+    style: 'currency',
+    currency: currency.value,
+    maximumFractionDigits: 2
+  }).format(props.product.priceValue)
 })
 
 const specs = computed(() => props.product.productSpecs?.slice(0, 3) || [])

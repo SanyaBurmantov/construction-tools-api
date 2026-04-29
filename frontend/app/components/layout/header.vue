@@ -3,9 +3,7 @@ const route = useRoute()
 
 const links = computed(() => [
   { label: 'Каталог', to: '/catalog/', active: route.path.startsWith('/catalog') },
-  { label: 'Бренды', to: '/catalog/?focus=brands', active: route.query.focus === 'brands' },
-  { label: 'Доставка', to: '/delivery/', active: route.path.startsWith('/delivery') },
-  { label: 'Контакты', to: '/contacts/', active: route.path.startsWith('/contacts') }
+  { label: 'Бренды', to: '/catalog/?focus=brands', active: route.query.focus === 'brands' }
 ])
 </script>
 

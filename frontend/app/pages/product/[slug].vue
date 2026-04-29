@@ -26,7 +26,7 @@ const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBas
 const { data: product, pending, error } = await useAsyncData<Product>(
   `product-${slug.value}`,
   () => $fetch(`${apiBase}/products/${slug.value}`),
-  { server: false, watch: [slug] }
+  { watch: [slug] }
 )
 
 const activeImage = ref(0)

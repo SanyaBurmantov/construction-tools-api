@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product-dto';
 import { ProductService } from './products.service';
-import * as productFilterType from './types/product-filter.type';
 import { ApiTags } from '@nestjs/swagger';
 import { ProductFilterDto } from './dto/product-filter-dto';
 
@@ -22,6 +21,6 @@ export class ProductController {
 
   @Get(':slug')
   getOne(@Param('slug') slug: string) {
-    return this.service.getProductBySlug(slug)
+    return this.service.getProductBySlug(slug);
   }
 }

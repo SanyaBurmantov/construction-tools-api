@@ -18,7 +18,6 @@ export class SourcesProductsController {
   }
 }
 
-
 @Controller('sources')
 export class SourceController {
   constructor(private service: SourcesService) {}
@@ -32,4 +31,3 @@ export class SourceController {
     return this.service.getAll();
   }
 }
-

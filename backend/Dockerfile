@@ -1,26 +1,29 @@
-# Dockerfile
-FROM node:20-bullseye AS development
+FROM node:22-bookworm-slim AS base
 
 WORKDIR /backend
 
-# Копируем файлы зависимостей
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Устанавливаем зависимости
+FROM base AS development
 RUN npm ci
-
-# Копируем исходный код
 COPY . .
-
-RUN npm install -g @nestjs/cli
-
-# Генерируем Prisma клиент
-COPY prisma ./prisma
 RUN npx prisma generate
-
-# Открываем порт для приложения
 EXPOSE 8000
-
-# Запускаем в режиме разработки
 CMD ["npm", "run", "start:dev"]
+
+FROM base AS build
+RUN npm ci
+COPY . .
+RUN npx prisma generate
+RUN npm run build
+
+FROM node:22-bookworm-slim AS production
+ENV NODE_ENV=production
+WORKDIR /backend
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm ci --omit=dev && npx prisma generate
+COPY --from=build /backend/dist ./dist
+EXPOSE 8000
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]

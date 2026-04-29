@@ -1,11 +1,9 @@
 export class CreateProductDto {
+  name: string;
 
-  name: string
+  slug: string;
 
-  slug: string
+  categoryId: string;
 
-  categoryId: string
-
-  brandId?: string
-
+  brandId?: string;
 }

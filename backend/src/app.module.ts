@@ -10,6 +10,7 @@ import { BrandsModule } from './brands/brands.module';
 import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     BrandsModule,
     SourcesModule,
     ParserModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

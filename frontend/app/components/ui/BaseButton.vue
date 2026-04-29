@@ -1,5 +1,5 @@
 <script setup>
-const props = defineProps({
+defineProps({
   text: {
     type: String,
     required: false,
@@ -17,7 +17,7 @@ const props = defineProps({
   <button class="base-button">
     <span v-if="prependIcon">
       <slot name="icon">
-        <v-icon>{{prependIcon}}</v-icon>
+        <v-icon>{{ prependIcon }}</v-icon>
       </slot>
     </span>
     <slot name="default">

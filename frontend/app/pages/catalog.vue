@@ -87,7 +87,6 @@ const { data: products, pending, error, refresh } = await useAsyncData<ProductRe
   () => $fetch(`${apiBase}/products`, { params: queryParams.value }),
   {
     default: () => ({ data: [], pagination: { page: 1, limit: 20, total: 0, pages: 0 } }),
-    server: false,
     watch: [queryParams]
   }
 )
@@ -95,13 +94,13 @@ const { data: products, pending, error, refresh } = await useAsyncData<ProductRe
 const { data: categories } = await useAsyncData<FacetItem[]>(
   'catalog-categories',
   () => $fetch<FacetItem[]>(`${apiBase}/categories`).catch(() => []),
-  { default: () => [], server: false }
+  { default: () => [] }
 )
 
 const { data: brands } = await useAsyncData<FacetItem[]>(
   'catalog-brands',
   () => $fetch<FacetItem[]>(`${apiBase}/brands`).catch(() => []),
-  { default: () => [], server: false }
+  { default: () => [] }
 )
 
 const { data: facetProducts } = await useAsyncData<ProductResponse>(
@@ -110,8 +109,7 @@ const { data: facetProducts } = await useAsyncData<ProductResponse>(
     $fetch<ProductResponse>(`${apiBase}/products`, { params: { limit: 200 } })
       .catch(() => ({ data: [], pagination: { page: 1, limit: 200, total: 0, pages: 0 } })),
   {
-    default: () => ({ data: [], pagination: { page: 1, limit: 200, total: 0, pages: 0 } }),
-    server: false
+    default: () => ({ data: [], pagination: { page: 1, limit: 200, total: 0, pages: 0 } })
   }
 )
 
@@ -202,31 +200,32 @@ useHead({
 </script>
 
 <template>
-  <section class="catalog-hero">
-    <div>
-      <span class="eyebrow">Каталог</span>
-      <h1>
-        Инструмент, крепеж и расходники для стройки без лишней витрины
-      </h1>
-      <p>
-        Поиск подключен к бэку: категории, бренды, цена, сортировка и пагинация
-        работают через query-параметры.
-      </p>
-    </div>
+  <div>
+    <section class="catalog-hero">
+      <div>
+        <span class="eyebrow">Каталог</span>
+        <h1>
+          Инструмент, крепеж и расходники для стройки без лишней витрины
+        </h1>
+        <p>
+          Поиск подключен к бэку: категории, бренды, цена, сортировка и пагинация
+          работают через query-параметры.
+        </p>
+      </div>
 
-    <form class="hero-search" @submit.prevent="applyFilters()">
-      <input
-        v-model.trim="filters.search"
-        type="search"
-        placeholder="Найти перфоратор, сверло, крепеж..."
-      >
-      <button type="submit">Искать</button>
-    </form>
-  </section>
+      <form class="hero-search" @submit.prevent="applyFilters()">
+        <input
+          v-model.trim="filters.search"
+          type="search"
+          placeholder="Найти перфоратор, сверло, крепеж..."
+        >
+        <button type="submit">Искать</button>
+      </form>
+    </section>
 
-  <section class="catalog-layout">
-    <aside class="filters-panel" aria-label="Фильтры каталога">
-      <div class="filters-head">
+    <section class="catalog-layout">
+      <aside class="filters-panel" aria-label="Фильтры каталога">
+        <div class="filters-head">
         <div>
           <span class="eyebrow">Фасеты</span>
           <h2>Фильтры</h2>
@@ -350,8 +349,9 @@ useHead({
           Вперед
         </button>
       </div>
-    </div>
-  </section>
+      </div>
+    </section>
+  </div>
 </template>
 
 <style scoped lang="scss">

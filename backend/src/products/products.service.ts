@@ -1,7 +1,6 @@
 import { CreateProductDto } from './dto/create-product-dto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { ProductFilter } from './types/product-filter.type';
 import { ProductFilterDto } from './dto/product-filter-dto';
 
 @Injectable()
@@ -25,7 +24,7 @@ export class ProductService {
   }
 
   async getProductBySlug(slug: string) {
-    return this.prisma.product.findUnique({
+    const product = await this.prisma.product.findUnique({
       where: { slug },
       include: {
         brand: true,
@@ -36,7 +35,19 @@ export class ProductService {
           include: { specification: true },
         },
       },
-    })
+    });
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    return {
+      ...product,
+      productSpecs: product.productSpecs.map((productSpec) => ({
+        name: productSpec.specification.name,
+        value: productSpec.value,
+      })),
+    };
   }
 
   async findAll() {
@@ -52,13 +63,12 @@ export class ProductService {
         images: true,
         sourceProducts: true,
       },
-
     });
   }
 
   async findAllFiltered(filter: ProductFilterDto) {
     const page = filter.page ?? 1;
-    const limit = filter.limit ?? 20;
+    const limit = Math.min(filter.limit ?? 20, 100);
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -99,11 +109,11 @@ export class ProductService {
       },
     });
 
-    const data = products.map(p => ({
-      ...p,
-      productSpecs: p.productSpecs.map(ps => ({
-        name: ps.specification.name,
-        value: ps.value,
+    const data = products.map((product) => ({
+      ...product,
+      productSpecs: product.productSpecs.map((productSpec) => ({
+        name: productSpec.specification.name,
+        value: productSpec.value,
       })),
     }));
 

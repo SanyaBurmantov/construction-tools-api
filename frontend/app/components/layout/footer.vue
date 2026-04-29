@@ -14,11 +14,10 @@
           <h2 class="footer-heading">Ссылки</h2>
           <ul class="footer-links">
             <li><NuxtLink to="/catalog/">Каталог</NuxtLink></li>
-            <li><NuxtLink to="/search/">Поиск</NuxtLink></li>
-            <li><NuxtLink to="/brand/">Бренды</NuxtLink></li>
-            <li><NuxtLink to="/sales/">Акции</NuxtLink></li>
-            <li><NuxtLink to="/delivery/">Оплата и доставка</NuxtLink></li>
-            <li><NuxtLink to="/contacts/">Контакты</NuxtLink></li>
+            <li><NuxtLink to="/catalog/">Поиск</NuxtLink></li>
+            <li><NuxtLink to="/catalog/?focus=brands">Бренды</NuxtLink></li>
+            <li><a href="tel:+375298135797">Позвонить</a></li>
+            <li><a href="mailto:dm.krep@mail.ru">Написать</a></li>
           </ul>
         </div>
 

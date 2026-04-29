@@ -1,61 +1,86 @@
-# Production Docker Compose
-version: '3.8'
-
 services:
-  # PostgreSQL Database
   db:
     image: postgres:15-alpine
     container_name: construction-tools-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_in_production}
-      POSTGRES_DB: construction_tools
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-construction_tools}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-construction_tools}"]
+      interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - app-network
-    restart: unless-stopped
 
-  # Backend API (NestJS)
-  app:
+  backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      target: production
     container_name: construction-tools-api
-    ports:
-      - "${API_PORT:-3000}:3000"
+    restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-changeme_in_production}@db:5432/construction_tools?schema=public
-      JWT_SECRET: ${JWT_SECRET:-change_this_secret_in_production}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-7d}
-      PORT: 3000
+      PORT: 8000
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - ./backend/logs:/app/logs
-      - ./backend/parsers:/app/parsers
-      - ./backend/configs:/app/configs
     networks:
       - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        NUXT_PUBLIC_API_BASE: /api
+    container_name: construction-tools-front
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      API_BASE_SERVER: http://backend:8000
+      NUXT_PUBLIC_API_BASE: /api
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: construction-tools-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   app-network:

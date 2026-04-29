@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as cheerio from 'cheerio';
-import pLimit from 'p-limit';
 import { generateSlug } from '../../common/utils/generate-slug';
-import { Cheerio } from 'cheerio';
+import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
+import { ParserLogService } from '../parser-log.service';
 
 @Injectable()
 export class ThToolsParserService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private parserLogService: ParserLogService,
+  ) {}
 
   async getUnvisitedSitemaps(limit = 10) {
     return this.prisma.sitemapsThTools.findMany({
@@ -20,12 +23,8 @@ export class ThToolsParserService {
     const urls = await this.getUnvisitedSitemaps(limit);
     if (!urls.length) return;
 
-    const limitConcurrency = pLimit(concurrency);
-
-    await Promise.all(
-      urls.map((sitemap) =>
-        limitConcurrency(() => this.processSitemapUrl(sitemap.url)),
-      ),
+    await runWithConcurrency(urls, concurrency, (sitemap) =>
+      this.processSitemapUrl(sitemap.url),
     );
   }
 
@@ -104,7 +103,10 @@ export class ThToolsParserService {
       // ---------- PRODUCT ----------
       const { id: categoryId } = await this.parseAndSaveCategory($);
       if (!categoryId) {
-        console.warn('Пиздец продукт говна', slug, url);
+        this.parserLogService.addError(
+          url,
+          `Category was not parsed for ${slug}`,
+        );
         return;
       }
 
@@ -169,6 +171,7 @@ export class ThToolsParserService {
 
       console.log(`Saved product: ${name}`);
     } catch (e) {
+      this.parserLogService.addError(url, e);
       console.error(`Error processing ${url}`, e);
     }
   }
@@ -245,7 +248,7 @@ export class ThToolsParserService {
 
     // Создаем категории рекурсивно
     let parentId: string | null = null;
-    let pathArray: string[] = [];
+    const pathArray: string[] = [];
 
     for (const name of categoryLinks) {
       const slug = generateSlug(name);

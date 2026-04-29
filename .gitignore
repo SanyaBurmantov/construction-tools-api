@@ -3,6 +3,7 @@ node_modules
 .env
 dist
 backend/dist
+backend/dist.root-owned.*
 frontend/dist
 backend/node_modules
 frontend/node_modules

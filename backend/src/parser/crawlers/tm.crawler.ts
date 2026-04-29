@@ -2,7 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 
 export async function crawlTMCategory(url: string) {
-  const { data } = await axios.get(url);
+  const { data } = await axios.get<string>(url);
 
   const $ = cheerio.load(data);
 

@@ -8,6 +8,8 @@ export class SitemapCron {
 
   @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_NOON)
   async handleCron() {
+    if (process.env.PARSER_CRON_ENABLED !== 'true') return;
+
     await this.sitemapService.parseAllSitemapsThTools();
   }
 }
