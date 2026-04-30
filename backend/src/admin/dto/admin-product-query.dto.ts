@@ -22,8 +22,12 @@ export class AdminProductQueryDto {
   brandId?: string;
 
   @IsOptional()
-  @IsIn(['name', 'priceValue', 'created'])
-  sortBy?: 'name' | 'priceValue' | 'created';
+  @IsIn(['DRAFT', 'PUBLISHED', 'HIDDEN', 'ARCHIVED'])
+  status?: 'DRAFT' | 'PUBLISHED' | 'HIDDEN' | 'ARCHIVED';
+
+  @IsOptional()
+  @IsIn(['name', 'priceValue', 'created', 'updated'])
+  sortBy?: 'name' | 'priceValue' | 'created' | 'updated';
 
   @IsOptional()
   @IsIn(['asc', 'desc'])

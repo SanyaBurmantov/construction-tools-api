@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminCreateBrandDto } from './dto/admin-create-brand.dto';
 import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
@@ -7,10 +11,13 @@ import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { SitemapsService } from '../parser/sitemaps/sitemaps.service';
 import { ThToolsParserService } from '../parser/sites/th-tools.parser';
+import { DukonParserService } from '../parser/sites/dukon.parser';
 import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { ParserLogService } from '../parser/parser-log.service';
+import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
+import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
 
 @Injectable()
 export class AdminService {
@@ -18,6 +25,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly sitemapsService: SitemapsService,
     private readonly thToolsParserService: ThToolsParserService,
+    private readonly dukonParserService: DukonParserService,
     private readonly parserLogService: ParserLogService,
   ) {}
 
@@ -44,8 +52,14 @@ export class AdminService {
         : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.brandId ? { brandId: query.brandId } : {}),
+      ...(query.status ? { status: query.status } : {}),
     };
-    const sortBy = query.sortBy === 'created' ? 'id' : query.sortBy || 'name';
+    const sortBy =
+      query.sortBy === 'created'
+        ? 'createdAt'
+        : query.sortBy === 'updated'
+          ? 'updatedAt'
+          : query.sortBy || 'name';
 
     const [data, total] = await Promise.all([
       this.prisma.product.findMany({
@@ -53,7 +67,11 @@ export class AdminService {
         orderBy: { [sortBy]: query.sortOrder || 'asc' },
         skip,
         take: limit,
-        include: { brand: true, category: true },
+        include: {
+          brand: true,
+          category: true,
+          sourceProducts: { include: { source: true } },
+        },
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -72,17 +90,18 @@ export class AdminService {
   createProduct(dto: AdminCreateProductDto) {
     return this.prisma.product.create({
       data: {
-        name: dto.name,
-        slug: dto.slug,
+        name: dto.name.trim(),
+        slug: dto.slug.trim(),
         categoryId: dto.categoryId,
-        brandId: dto.brandId,
+        brandId: dto.brandId || null,
         priceValue: dto.priceValue,
-        priceCurrency: 'BYN',
         stockStatus: dto.stockStatus || 'in_stock',
-        descriptionShort: dto.descriptionShort,
-        descriptionFull: dto.descriptionFull,
-        sku: dto.sku,
-        model: dto.model,
+        status: dto.status || 'PUBLISHED',
+        descriptionShort: dto.descriptionShort || null,
+        descriptionFull: dto.descriptionFull || null,
+        sku: dto.sku || null,
+        model: dto.model || null,
+        priceCurrency: 'BYN',
         seoTitle: dto.name,
         seoDescription: dto.descriptionShort || dto.name,
       },
@@ -94,7 +113,7 @@ export class AdminService {
 
     return this.prisma.product.update({
       where: { id },
-      data: dto,
+      data: this.productData(dto),
     });
   }
 
@@ -116,6 +135,57 @@ export class AdminService {
     return this.prisma.source.findMany({ orderBy: { name: 'asc' } });
   }
 
+  async importSourceProduct(dto: AdminImportSourceProductDto) {
+    const source = await this.prisma.source.findUnique({
+      where: { id: dto.sourceId },
+    });
+    if (!source) throw new NotFoundException('Source not found');
+
+    const isDukon =
+      source.code === 'dukon' ||
+      source.url.includes('dukon.by') ||
+      dto.url.includes('dukon.by');
+    const isThTools =
+      source.code === 'th-tools' ||
+      source.url.includes('th-tool.by') ||
+      dto.url.includes('th-tool.by');
+    if (!isThTools && !isDukon) {
+      throw new BadRequestException('Unsupported source parser');
+    }
+
+    const product = isDukon
+      ? await this.dukonParserService.parseProductUrl(dto.url)
+      : await this.thToolsParserService.parseProductUrl(dto.url);
+    const sourceProduct = await this.prisma.sourceProduct.findFirst({
+      where: { sourceId: source.id, url: dto.url },
+    });
+    const data = {
+      sourceId: source.id,
+      externalId: dto.url,
+      url: dto.url,
+      name: product.name,
+      price: product.priceValue,
+      currency: product.priceCurrency,
+      stock: product.stockStatus !== 'out_of_stock',
+      images: [],
+      description: product.descriptionFull,
+      specifications: {},
+      productId: product.id,
+      lastSync: new Date(),
+    };
+
+    if (sourceProduct) {
+      await this.prisma.sourceProduct.update({
+        where: { id: sourceProduct.id },
+        data,
+      });
+    } else {
+      await this.prisma.sourceProduct.create({ data });
+    }
+
+    return { ok: true, product };
+  }
+
   async getQueueStats() {
     const [queued, visited] = await Promise.all([
       this.prisma.sitemapsThTools.count({ where: { isVisited: false } }),
@@ -123,6 +193,14 @@ export class AdminService {
     ]);
 
     return { queued, visited, total: queued + visited };
+  }
+
+  getDukonQueueStats() {
+    return this.dukonParserService.getQueueStats();
+  }
+
+  getDukonSitemaps(query: AdminDukonSitemapQueryDto) {
+    return this.dukonParserService.getSitemaps(query);
   }
 
   async refreshSitemaps() {
@@ -133,6 +211,18 @@ export class AdminService {
   async processQueuedProducts(limit = 25) {
     await this.thToolsParserService.processSitemapsBatch(limit, 5);
     return this.getQueueStats();
+  }
+
+  refreshDukonSitemaps() {
+    return this.dukonParserService.refreshSitemaps();
+  }
+
+  processDukonQueuedProducts(limit = 25) {
+    return this.dukonParserService.processSitemapsBatch(limit, 2);
+  }
+
+  retryDukonSitemap(id: string) {
+    return this.dukonParserService.retrySitemap(id);
   }
 
   getBrands() {
@@ -172,9 +262,46 @@ export class AdminService {
     return { ok: true };
   }
 
+  async mergeBrand(id: string, targetBrandId: string) {
+    if (id === targetBrandId) {
+      throw new BadRequestException('Cannot merge brand into itself');
+    }
+
+    await this.ensureBrandExists(id);
+    await this.ensureBrandExists(targetBrandId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.product.updateMany({
+        where: { brandId: id },
+        data: { brandId: targetBrandId },
+      });
+      await tx.brand.delete({ where: { id } });
+
+      return { ok: true, movedProducts: updated.count };
+    });
+  }
+
   getCategories() {
     return this.prisma.category.findMany({
       orderBy: [{ level: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  getSourceCategories(sourceId?: string) {
+    return this.prisma.sourceCategory.findMany({
+      where: sourceId ? { sourceId } : {},
+      orderBy: [{ source: { name: 'asc' } }, { level: 'asc' }, { name: 'asc' }],
+      include: { source: true, mappedCategory: true },
+    });
+  }
+
+  async mapSourceCategory(id: string, categoryId?: string) {
+    if (categoryId) await this.ensureCategoryExists(categoryId);
+
+    return this.prisma.sourceCategory.update({
+      where: { id },
+      data: { mappedCategoryId: categoryId || null },
+      include: { source: true, mappedCategory: true },
     });
   }
 
@@ -221,6 +348,17 @@ export class AdminService {
 
   async deleteCategory(id: string) {
     await this.ensureCategoryExists(id);
+    const [children, products] = await Promise.all([
+      this.prisma.category.count({ where: { parentId: id } }),
+      this.prisma.product.count({ where: { categoryId: id } }),
+    ]);
+
+    if (children || products) {
+      throw new BadRequestException(
+        `Cannot delete category: ${children} child categories, ${products} products linked`,
+      );
+    }
+
     await this.prisma.category.delete({ where: { id } });
     return { ok: true };
   }
@@ -272,5 +410,27 @@ export class AdminService {
     const category = await this.prisma.category.findUnique({ where: { id } });
     if (!category) throw new NotFoundException('Category not found');
     return category;
+  }
+
+  private productData(dto: AdminCreateProductDto | AdminUpdateProductDto) {
+    return {
+      ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+      ...(dto.slug !== undefined ? { slug: dto.slug.trim() } : {}),
+      ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+      ...(dto.brandId !== undefined ? { brandId: dto.brandId || null } : {}),
+      ...(dto.priceValue !== undefined ? { priceValue: dto.priceValue } : {}),
+      ...(dto.stockStatus !== undefined
+        ? { stockStatus: dto.stockStatus || 'in_stock' }
+        : {}),
+      ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(dto.descriptionShort !== undefined
+        ? { descriptionShort: dto.descriptionShort || null }
+        : {}),
+      ...(dto.descriptionFull !== undefined
+        ? { descriptionFull: dto.descriptionFull || null }
+        : {}),
+      ...(dto.sku !== undefined ? { sku: dto.sku || null } : {}),
+      ...(dto.model !== undefined ? { model: dto.model || null } : {}),
+    };
   }
 }

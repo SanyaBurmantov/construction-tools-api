@@ -17,6 +17,7 @@ export class ProductService {
         priceValue: 0,
         priceCurrency: 'BYN',
         stockStatus: 'out_of_stock',
+        status: 'DRAFT',
         seoTitle: dto.name,
         seoDescription: dto.name,
       },
@@ -24,8 +25,8 @@ export class ProductService {
   }
 
   async getProductBySlug(slug: string) {
-    const product = await this.prisma.product.findUnique({
-      where: { slug },
+    const product = await this.prisma.product.findFirst({
+      where: { slug, status: 'PUBLISHED' },
       include: {
         brand: true,
         category: true,
@@ -71,7 +72,7 @@ export class ProductService {
     const limit = Math.min(filter.limit ?? 20, 100);
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = { status: 'PUBLISHED' };
     if (filter.search) {
       where.name = { contains: filter.search, mode: 'insensitive' };
     }

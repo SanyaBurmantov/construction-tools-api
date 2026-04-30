@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class AdminCreateProductDto {
   @IsString()
@@ -37,4 +37,8 @@ export class AdminCreateProductDto {
   @IsOptional()
   @IsString()
   stockStatus?: string;
+
+  @IsOptional()
+  @IsIn(['DRAFT', 'PUBLISHED', 'HIDDEN', 'ARCHIVED'])
+  status?: 'DRAFT' | 'PUBLISHED' | 'HIDDEN' | 'ARCHIVED';
 }

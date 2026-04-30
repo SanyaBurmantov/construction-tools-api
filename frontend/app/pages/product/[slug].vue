@@ -32,7 +32,10 @@ const { data: product, pending, error } = await useAsyncData<Product>(
 const activeImage = ref(0)
 const images = computed(() => product.value?.images || [])
 const selectedImage = computed(() => images.value[activeImage.value])
-const currency = computed(() => product.value?.priceCurrency || 'BYN')
+const currency = computed(() => {
+  const value = product.value?.priceCurrency?.trim().toUpperCase()
+  return value && /^[A-Z]{3}$/.test(value) ? value : 'BYN'
+})
 const price = computed(() => {
   if (!product.value || product.value.priceValue === null || product.value.priceValue === undefined) {
     return 'Цена по запросу'

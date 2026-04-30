@@ -19,6 +19,10 @@ import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
+import { AdminMergeBrandDto } from './dto/admin-merge-brand.dto';
+import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
+import { AdminMapSourceCategoryDto } from './dto/admin-map-source-category.dto';
+import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
@@ -65,6 +69,11 @@ export class AdminController {
     return this.adminService.updateBrand(id, dto);
   }
 
+  @Post('brands/:id/merge')
+  mergeBrand(@Param('id') id: string, @Body() dto: AdminMergeBrandDto) {
+    return this.adminService.mergeBrand(id, dto.targetBrandId);
+  }
+
   @Delete('brands/:id')
   deleteBrand(@Param('id') id: string) {
     return this.adminService.deleteBrand(id);
@@ -75,14 +84,42 @@ export class AdminController {
     return this.adminService.getCategories();
   }
 
+  @Get('source-categories')
+  getSourceCategories(@Query('sourceId') sourceId?: string) {
+    return this.adminService.getSourceCategories(sourceId);
+  }
+
+  @Patch('source-categories/:id/mapping')
+  mapSourceCategory(
+    @Param('id') id: string,
+    @Body() dto: AdminMapSourceCategoryDto,
+  ) {
+    return this.adminService.mapSourceCategory(id, dto.categoryId);
+  }
+
   @Get('sources')
   getSources() {
     return this.adminService.getSources();
   }
 
+  @Post('source-products/import')
+  importSourceProduct(@Body() dto: AdminImportSourceProductDto) {
+    return this.adminService.importSourceProduct(dto);
+  }
+
   @Get('queue')
   getQueueStats() {
     return this.adminService.getQueueStats();
+  }
+
+  @Get('queue/dukon')
+  getDukonQueueStats() {
+    return this.adminService.getDukonQueueStats();
+  }
+
+  @Get('queue/dukon/sitemaps')
+  getDukonSitemaps(@Query() query: AdminDukonSitemapQueryDto) {
+    return this.adminService.getDukonSitemaps(query);
   }
 
   @Get('queue/sitemaps')
@@ -108,6 +145,21 @@ export class AdminController {
   @Post('queue/process')
   processQueuedProducts(@Body('limit') limit?: number) {
     return this.adminService.processQueuedProducts(limit || 25);
+  }
+
+  @Post('queue/dukon/refresh-sitemaps')
+  refreshDukonSitemaps() {
+    return this.adminService.refreshDukonSitemaps();
+  }
+
+  @Post('queue/dukon/process')
+  processDukonQueuedProducts(@Body('limit') limit?: number) {
+    return this.adminService.processDukonQueuedProducts(limit || 25);
+  }
+
+  @Post('queue/dukon/sitemaps/:id/retry')
+  retryDukonSitemap(@Param('id') id: string) {
+    return this.adminService.retryDukonSitemap(id);
   }
 
   @Post('categories')

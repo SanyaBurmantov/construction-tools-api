@@ -15,7 +15,10 @@ const props = defineProps<{
 }>()
 
 const image = computed(() => props.product.images?.[0])
-const currency = computed(() => props.product.priceCurrency || 'BYN')
+const currency = computed(() => {
+  const value = props.product.priceCurrency?.trim().toUpperCase()
+  return value && /^[A-Z]{3}$/.test(value) ? value : 'BYN'
+})
 const price = computed(() => {
   if (props.product.priceValue === null || props.product.priceValue === undefined) {
     return 'Цена по запросу'

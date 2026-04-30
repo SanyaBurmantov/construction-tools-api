@@ -24,8 +24,9 @@ model Category {
   parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id])
   children Category[] @relation("CategoryChildren")
 
-  products       Product[]
-  specifications Specification[]
+  products               Product[]
+  specifications         Specification[]
+  mappedSourceCategories SourceCategory[] @relation("MappedSourceCategory")
 }
 
 model Brand {
@@ -54,6 +55,13 @@ model Specification {
   @@unique([categoryId, key])
 }
 
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  HIDDEN
+  ARCHIVED
+}
+
 model Product {
   id               String                 @id @default(uuid())
   slug             String                 @unique
@@ -71,10 +79,13 @@ model Product {
   oldPrice         Float?
   stockStatus      String?
   stockQuantity    Int?
+  status           ProductStatus          @default(PUBLISHED)
   descriptionShort String?
   descriptionFull  String?
   seoTitle         String?
   seoDescription   String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
   productSpecs     ProductSpecification[]
   sourceProducts   SourceProduct[]
 }
@@ -100,11 +111,32 @@ model ProductImage {
 }
 
 model Source {
-  id             String          @id @default(uuid())
-  name           String
-  code           String          @unique
-  url            String
-  sourceProducts SourceProduct[]
+  id               String           @id @default(uuid())
+  name             String
+  code             String           @unique
+  url              String
+  sourceProducts   SourceProduct[]
+  sourceCategories SourceCategory[]
+}
+
+model SourceCategory {
+  id               String           @id @default(uuid())
+  source           Source           @relation(fields: [sourceId], references: [id])
+  sourceId         String
+  externalId       String
+  name             String
+  slug             String
+  url              String?
+  parent           SourceCategory?  @relation("SourceCategoryChildren", fields: [parentId], references: [id])
+  parentId         String?
+  children         SourceCategory[] @relation("SourceCategoryChildren")
+  level            Int
+  path             String[]
+  mappedCategory   Category?        @relation("MappedSourceCategory", fields: [mappedCategoryId], references: [id])
+  mappedCategoryId String?
+  sourceProducts   SourceProduct[]
+
+  @@unique([sourceId, externalId])
 }
 
 model SourceProduct {
@@ -122,6 +154,8 @@ model SourceProduct {
   specifications Json
   product        Product? @relation(fields: [productId], references: [id])
   productId      String?
+  sourceCategory SourceCategory? @relation(fields: [sourceCategoryId], references: [id])
+  sourceCategoryId String?
   lastSync       DateTime @default(now())
 }
 
@@ -129,4 +163,15 @@ model SitemapsThTools {
   id        String  @id @default(uuid())
   url       String  @unique
   isVisited Boolean @default(false)
+}
+
+model SitemapsDukon {
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
 }

@@ -23,157 +23,156 @@ export class ThToolsParserService {
     const urls = await this.getUnvisitedSitemaps(limit);
     if (!urls.length) return;
 
-    await runWithConcurrency(urls, concurrency, (sitemap) =>
-      this.processSitemapUrl(sitemap.url),
-    );
+    await runWithConcurrency(urls, concurrency, async (sitemap) => {
+      await this.processSitemapUrl(sitemap.url);
+    });
   }
 
   async processSitemapUrl(url: string) {
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+      const product = await this.parseProductUrl(url);
 
-      const html = await res.text();
-      const $ = cheerio.load(html);
-
-      const name = $('h1').text().trim();
-
-      const brandName = $('.product__top-brand-name').text().trim();
-      const sku = $('.product__code span').text().trim();
-
-      const slug = generateSlug(name);
-
-      const description = $('.desc.desc_max').text().trim();
-
-      const priceText = $('.price.product__price').first().text().trim();
-      const priceValue = parseFloat(
-        priceText.replace(/[^\d.,]/g, '').replace(',', '.'),
-      );
-      const priceCurrency = priceText.replace(/[\d.,\s]/g, '') || 'BYN';
-
-      // ---------- CATEGORY ----------
-      const category = await this.prisma.category.upsert({
-        where: { slug: 'tools' },
-        update: {},
-        create: {
-          name: 'Tools',
-          slug: 'tools',
-          level: 0,
-          path: ['tools'],
-          seoTitle: 'Tools',
-          seoDescription: 'Tools',
-        },
-      });
-
-      // ---------- BRAND ----------
-      let brandId: string | undefined;
-
-      if (brandName) {
-        const brandSlug = generateSlug(brandName);
-
-        const brand = await this.prisma.brand.upsert({
-          where: { slug: brandSlug },
-          update: {},
-          create: {
-            name: brandName,
-            slug: brandSlug,
-            seoTitle: brandName,
-            seoDescription: brandName,
-          },
-        });
-
-        brandId = brand.id;
-      }
-
-      // ---------- IMAGES ----------
-      const images: { url: string; alt?: string; order: number }[] = [];
-
-      $('.p-images__slider-item').each((i, el) => {
-        const src = $(el).attr('href');
-
-        if (src) {
-          images.push({
-            url: `https://th-tool.by${src}`,
-            alt: name,
-            order: i,
-          });
-        }
-      });
-
-      // ---------- PRODUCT ----------
-      const { id: categoryId } = await this.parseAndSaveCategory($);
-      if (!categoryId) {
-        this.parserLogService.addError(
-          url,
-          `Category was not parsed for ${slug}`,
-        );
-        return;
-      }
-
-      const product = await this.prisma.product.upsert({
-        where: { slug },
-        update: {
-          priceValue,
-          priceCurrency,
-          descriptionFull: description,
-          sku,
-          categoryId: categoryId ? categoryId : ' ',
-          images: {
-            deleteMany: {},
-            create: images,
-          },
-        },
-        create: {
-          name,
-          slug,
-          sku,
-          brandId,
-          categoryId: categoryId ? categoryId : ' ',
-          priceValue,
-          priceCurrency,
-          descriptionFull: description,
-          images: {
-            create: images,
-          },
-        },
-      });
-
-      // ---------- SPECS PARSE ----------
-      const specs: { name: string; value: string }[] = [];
-
-      $('.features-two-val__block').each((i, block) => {
-        const specName = $(block)
-          .find('.features-two-val__name span')
-          .text()
-          .trim();
-
-        const specValue = $(block)
-          .find('.features-two-val__value')
-          .text()
-          .trim();
-
-        if (specName && specValue) {
-          specs.push({
-            name: specName,
-            value: specValue,
-          });
-        }
-      });
-
-      // ---------- SAVE SPECS ----------
-      await this.saveSpecifications(specs, product.id, category.id);
-
-      // ---------- MARK VISITED ----------
-      await this.prisma.sitemapsThTools.update({
+      await this.prisma.sitemapsThTools.updateMany({
         where: { url },
         data: { isVisited: true },
       });
 
-      console.log(`Saved product: ${name}`);
+      console.log(`Saved product: ${product.name}`);
     } catch (e) {
       this.parserLogService.addError(url, e);
       console.error(`Error processing ${url}`, e);
     }
+  }
+
+  async parseProductUrl(url: string) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    const name = $('h1').text().trim();
+
+    const brandName = $('.product__top-brand-name').text().trim();
+    const sku = $('.product__code span').text().trim();
+
+    const slug = generateSlug(name);
+
+    const description = $('.desc.desc_max').text().trim();
+
+    const priceText = $('.price.product__price').first().text().trim();
+    const priceValue = parseFloat(
+      priceText.replace(/[^\d.,]/g, '').replace(',', '.'),
+    );
+    const priceCurrency = 'BYN';
+
+    // ---------- CATEGORY ----------
+    const category = await this.prisma.category.upsert({
+      where: { slug: 'tools' },
+      update: {},
+      create: {
+        name: 'Tools',
+        slug: 'tools',
+        level: 0,
+        path: ['tools'],
+        seoTitle: 'Tools',
+        seoDescription: 'Tools',
+      },
+    });
+
+    // ---------- BRAND ----------
+    let brandId: string | undefined;
+
+    if (brandName) {
+      const brandSlug = generateSlug(brandName);
+
+      const brand = await this.prisma.brand.upsert({
+        where: { slug: brandSlug },
+        update: {},
+        create: {
+          name: brandName,
+          slug: brandSlug,
+          seoTitle: brandName,
+          seoDescription: brandName,
+        },
+      });
+
+      brandId = brand.id;
+    }
+
+    // ---------- IMAGES ----------
+    const images: { url: string; alt?: string; order: number }[] = [];
+
+    $('.p-images__slider-item').each((i, el) => {
+      const src = $(el).attr('href');
+
+      if (src) {
+        images.push({
+          url: `https://th-tool.by${src}`,
+          alt: name,
+          order: i,
+        });
+      }
+    });
+
+    // ---------- PRODUCT ----------
+    const { id: categoryId } = await this.parseAndSaveCategory($);
+    if (!categoryId) {
+      throw new Error(`Category was not parsed for ${slug}`);
+    }
+
+    const product = await this.prisma.product.upsert({
+      where: { slug },
+      update: {
+        priceValue,
+        priceCurrency,
+        descriptionFull: description,
+        sku,
+        categoryId: categoryId ? categoryId : ' ',
+        images: {
+          deleteMany: {},
+          create: images,
+        },
+      },
+      create: {
+        name,
+        slug,
+        sku,
+        brandId,
+        categoryId: categoryId ? categoryId : ' ',
+        priceValue,
+        priceCurrency,
+        status: 'DRAFT',
+        descriptionFull: description,
+        images: {
+          create: images,
+        },
+      },
+    });
+
+    // ---------- SPECS PARSE ----------
+    const specs: { name: string; value: string }[] = [];
+
+    $('.features-two-val__block').each((i, block) => {
+      const specName = $(block)
+        .find('.features-two-val__name span')
+        .text()
+        .trim();
+
+      const specValue = $(block).find('.features-two-val__value').text().trim();
+
+      if (specName && specValue) {
+        specs.push({
+          name: specName,
+          value: specValue,
+        });
+      }
+    });
+
+    // ---------- SAVE SPECS ----------
+    await this.saveSpecifications(specs, product.id, category.id);
+
+    return product;
   }
 
   async saveSpecifications(
