@@ -5,6 +5,10 @@ import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
 
+type SavedCategoryRef = { id: string };
+
+const TH_TOOLS_BASE_URL = 'https://th-tool.by';
+
 @Injectable()
 export class ThToolsParserService {
   constructor(
@@ -20,11 +24,23 @@ export class ThToolsParserService {
   }
 
   async processSitemapsBatch(limit = 100, concurrency = 5) {
+    await this.publishDraftProducts();
+
     const urls = await this.getUnvisitedSitemaps(limit);
     if (!urls.length) return;
 
     await runWithConcurrency(urls, concurrency, async (sitemap) => {
       await this.processSitemapUrl(sitemap.url);
+    });
+  }
+
+  async publishDraftProducts() {
+    return this.prisma.product.updateMany({
+      where: {
+        status: 'DRAFT',
+        sourceProducts: { some: { source: { code: 'th-tools' } } },
+      },
+      data: { status: 'PUBLISHED' },
     });
   }
 
@@ -39,7 +55,7 @@ export class ThToolsParserService {
 
       console.log(`Saved product: ${product.name}`);
     } catch (e) {
-      this.parserLogService.addError(url, e);
+      await this.parserLogService.addError(url, e);
       console.error(`Error processing ${url}`, e);
     }
   }
@@ -65,20 +81,6 @@ export class ThToolsParserService {
       priceText.replace(/[^\d.,]/g, '').replace(',', '.'),
     );
     const priceCurrency = 'BYN';
-
-    // ---------- CATEGORY ----------
-    const category = await this.prisma.category.upsert({
-      where: { slug: 'tools' },
-      update: {},
-      create: {
-        name: 'Tools',
-        slug: 'tools',
-        level: 0,
-        path: ['tools'],
-        seoTitle: 'Tools',
-        seoDescription: 'Tools',
-      },
-    });
 
     // ---------- BRAND ----------
     let brandId: string | undefined;
@@ -108,7 +110,7 @@ export class ThToolsParserService {
 
       if (src) {
         images.push({
-          url: `https://th-tool.by${src}`,
+          url: `${TH_TOOLS_BASE_URL}${src}`,
           alt: name,
           order: i,
         });
@@ -120,10 +122,19 @@ export class ThToolsParserService {
     if (!categoryId) {
       throw new Error(`Category was not parsed for ${slug}`);
     }
+    const existingProduct = await this.prisma.product.findUnique({
+      where: { slug },
+      select: { status: true },
+    });
+    const statusUpdate =
+      existingProduct?.status === 'DRAFT'
+        ? { status: 'PUBLISHED' as const }
+        : {};
 
     const product = await this.prisma.product.upsert({
       where: { slug },
       update: {
+        ...statusUpdate,
         priceValue,
         priceCurrency,
         descriptionFull: description,
@@ -142,7 +153,7 @@ export class ThToolsParserService {
         categoryId: categoryId ? categoryId : ' ',
         priceValue,
         priceCurrency,
-        status: 'DRAFT',
+        status: 'PUBLISHED',
         descriptionFull: description,
         images: {
           create: images,
@@ -170,9 +181,73 @@ export class ThToolsParserService {
     });
 
     // ---------- SAVE SPECS ----------
-    await this.saveSpecifications(specs, product.id, category.id);
+    await this.saveSpecifications(specs, product.id, categoryId);
+    await this.saveSourceProduct(url, product.id, {
+      name,
+      sku,
+      priceValue,
+      priceCurrency,
+      description,
+      images: images.map((image) => image.url),
+      specs,
+    });
 
     return product;
+  }
+
+  private async saveSourceProduct(
+    url: string,
+    productId: string,
+    data: {
+      name: string;
+      sku?: string;
+      priceValue?: number;
+      priceCurrency?: string;
+      description?: string;
+      images: string[];
+      specs: { name: string; value: string }[];
+    },
+  ) {
+    const source = await this.prisma.source.upsert({
+      where: { code: 'th-tools' },
+      update: { name: 'TH-Tools', url: TH_TOOLS_BASE_URL },
+      create: { name: 'TH-Tools', code: 'th-tools', url: TH_TOOLS_BASE_URL },
+    });
+
+    await this.prisma.sourceProduct.upsert({
+      where: { sourceId_url: { sourceId: source.id, url } },
+      update: {
+        externalId: url,
+        name: data.name,
+        sku: data.sku,
+        price: data.priceValue,
+        currency: data.priceCurrency,
+        stock: true,
+        images: data.images,
+        description: data.description,
+        specifications: Object.fromEntries(
+          data.specs.map((spec) => [spec.name, spec.value]),
+        ),
+        productId,
+        lastSync: new Date(),
+      },
+      create: {
+        sourceId: source.id,
+        externalId: url,
+        url,
+        name: data.name,
+        sku: data.sku,
+        price: data.priceValue,
+        currency: data.priceCurrency,
+        stock: true,
+        images: data.images,
+        description: data.description,
+        specifications: Object.fromEntries(
+          data.specs.map((spec) => [spec.name, spec.value]),
+        ),
+        productId,
+      },
+    });
   }
 
   async saveSpecifications(
@@ -254,7 +329,7 @@ export class ThToolsParserService {
       if (!slug) continue;
       pathArray.push(slug);
 
-      const category = await this.prisma.category.upsert({
+      const category = (await this.prisma.category.upsert({
         where: { slug },
         update: {},
         create: {
@@ -266,7 +341,7 @@ export class ThToolsParserService {
           seoTitle: name,
           seoDescription: name,
         },
-      });
+      })) as SavedCategoryRef;
 
       parentId = category.id;
     }

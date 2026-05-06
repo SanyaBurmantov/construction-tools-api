@@ -52,6 +52,6 @@ export class SourcesService {
   }
 
   getAll() {
-    return this.prisma.source.findMany();
+    return this.prisma.source.findMany({ orderBy: { name: 'asc' } });
   }
 }

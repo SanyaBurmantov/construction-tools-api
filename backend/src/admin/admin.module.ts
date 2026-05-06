@@ -5,7 +5,10 @@ import { AdminService } from './admin.service';
 import { SitemapsService } from '../parser/sitemaps/sitemaps.service';
 import { ThToolsParserService } from '../parser/sites/th-tools.parser';
 import { DukonParserService } from '../parser/sites/dukon.parser';
+import { Supplier7745ParserService } from '../parser/sites/7745-source.parser';
+import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
 import { ParserLogService } from '../parser/parser-log.service';
+import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
 
 @Module({
   controllers: [AdminController],
@@ -15,7 +18,10 @@ import { ParserLogService } from '../parser/parser-log.service';
     SitemapsService,
     ThToolsParserService,
     DukonParserService,
+    Supplier7745ParserService,
+    ToolsByParserService,
     ParserLogService,
+    ParserRuntimeStatusService,
   ],
 })
 export class AdminModule {}

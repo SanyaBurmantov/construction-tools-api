@@ -1,5 +1,6 @@
 import { CreateProductDto } from './dto/create-product-dto';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
 
@@ -72,21 +73,24 @@ export class ProductService {
     const limit = Math.min(filter.limit ?? 20, 100);
     const skip = (page - 1) * limit;
 
-    const where: any = { status: 'PUBLISHED' };
+    const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
     if (filter.search) {
       where.name = { contains: filter.search, mode: 'insensitive' };
     }
     if (filter.categoryId) where.categoryId = filter.categoryId;
     if (filter.brandId) where.brandId = filter.brandId;
+    if (filter.sourceCode) {
+      where.sourceProducts = { some: { source: { code: filter.sourceCode } } };
+    }
     if (filter.priceMin !== undefined || filter.priceMax !== undefined) {
       where.priceValue = {};
       if (filter.priceMin !== undefined) where.priceValue.gte = filter.priceMin;
       if (filter.priceMax !== undefined) where.priceValue.lte = filter.priceMax;
     }
 
-    const orderBy: any = {};
+    const orderBy: Prisma.ProductOrderByWithRelationInput = {};
     if (filter.sortBy) {
-      const field = filter.sortBy === 'price' ? 'priceValue' : 'name';
+      const field = filter.sortBy === 'price' ? 'priceValue' : filter.sortBy;
       orderBy[field] = filter.sortOrder ?? 'asc';
     } else {
       orderBy.name = 'asc';
@@ -94,21 +98,53 @@ export class ProductService {
 
     const total = await this.prisma.product.count({ where });
 
-    const products = await this.prisma.product.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy,
-      include: {
-        brand: true,
-        category: true,
-        images: true,
-        sourceProducts: true,
-        productSpecs: {
-          include: { specification: true },
-        },
-      },
-    });
+    const [products, categoryCounts, brandCounts, sourceCounts] =
+      await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy,
+          include: {
+            brand: true,
+            category: true,
+            images: true,
+            sourceProducts: true,
+            productSpecs: {
+              include: { specification: true },
+            },
+          },
+        }),
+        this.prisma.product.groupBy({
+          by: ['categoryId'],
+          where: { status: 'PUBLISHED' },
+          _count: { _all: true },
+        }),
+        this.prisma.product.groupBy({
+          by: ['brandId'],
+          where: { status: 'PUBLISHED', brandId: { not: null } },
+          _count: { _all: true },
+        }),
+        this.prisma.sourceProduct.groupBy({
+          by: ['sourceId'],
+          where: { product: { status: 'PUBLISHED' } },
+          _count: { _all: true },
+        }),
+      ]);
+
+    const facets = {
+      categories: Object.fromEntries(
+        categoryCounts.map((item) => [item.categoryId, item._count._all]),
+      ),
+      brands: Object.fromEntries(
+        brandCounts
+          .filter((item) => item.brandId)
+          .map((item) => [item.brandId as string, item._count._all]),
+      ),
+      sources: Object.fromEntries(
+        sourceCounts.map((item) => [item.sourceId, item._count._all]),
+      ),
+    };
 
     const data = products.map((product) => ({
       ...product,
@@ -126,6 +162,7 @@ export class ProductService {
         total,
         pages: Math.ceil(total / limit),
       },
+      facets,
     };
   }
 }

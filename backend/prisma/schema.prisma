@@ -146,6 +146,7 @@ model SourceProduct {
   externalId     String
   url            String
   name           String
+  sku            String?
   price          Float?
   currency       String?
   stock          Boolean  @default(true)
@@ -157,6 +158,8 @@ model SourceProduct {
   sourceCategory SourceCategory? @relation(fields: [sourceCategoryId], references: [id])
   sourceCategoryId String?
   lastSync       DateTime @default(now())
+
+  @@unique([sourceId, url])
 }
 
 model SitemapsThTools {
@@ -174,4 +177,54 @@ model SitemapsDukon {
   lastError   String?
   lastTriedAt DateTime?
   visitedAt   DateTime?
+}
+
+model Sitemaps7745 {
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
+}
+
+model SitemapsToolsBy {
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
+}
+
+model ParserError {
+  id        String   @id @default(uuid())
+  url       String
+  message   String
+  stack     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([url])
+}
+
+model ParserRuntimeStatus {
+  id            String   @id @default(uuid())
+  key           String   @unique
+  label         String
+  isRunning     Boolean  @default(false)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  lastError     String?
+  lastResult    Json?
+  runs          Int      @default(0)
+  successes     Int      @default(0)
+  failures      Int      @default(0)
+  updatedAt     DateTime @updatedAt
 }

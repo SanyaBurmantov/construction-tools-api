@@ -11,6 +11,7 @@ import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AdminModule } from './admin/admin.module';
+import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
 
 @Module({
   imports: [
@@ -29,6 +30,6 @@ import { AdminModule } from './admin/admin.module';
     AdminModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, ParserRuntimeStatusService],
 })
 export class AppModule {}

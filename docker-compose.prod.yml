@@ -31,6 +31,13 @@ services:
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
       CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
       PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
+      DUKON_CRON_BATCH_LIMIT: ${DUKON_CRON_BATCH_LIMIT:-30}
+      TH_TOOLS_CRON_BATCH_LIMIT: ${TH_TOOLS_CRON_BATCH_LIMIT:-30}
+      SUPPLIER_7745_CRON_BATCH_LIMIT: ${SUPPLIER_7745_CRON_BATCH_LIMIT:-30}
+      SUPPLIER_7745_CRON_ENABLED: ${SUPPLIER_7745_CRON_ENABLED:-false}
+      SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
+      SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
+      DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
       db:

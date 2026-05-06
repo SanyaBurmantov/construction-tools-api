@@ -1,16 +1,45 @@
 <script setup lang="ts">
+type Source = { id: string, name: string, code: string }
+
 const route = useRoute()
+const search = ref('')
+const config = useRuntimeConfig()
+const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+
+const { data: sources } = await useAsyncData<Source[]>(
+  'layout-sources',
+  () => $fetch<Source[]>(`${apiBase}/sources`).catch(() => []),
+  { default: () => [] }
+)
 
 const links = computed(() => [
   { label: 'Каталог', to: '/catalog/', active: route.path.startsWith('/catalog') },
+  ...(sources.value || [])
+    .filter(source => source.code)
+    .map(source => ({
+      label: source.name,
+      to: `/catalog/?sourceCode=${source.code}`,
+      active: route.query.sourceCode === source.code
+    })),
   { label: 'Бренды', to: '/catalog/?focus=brands', active: route.query.focus === 'brands' }
 ])
+
+function submitSearch() {
+  const query = search.value.trim()
+  navigateTo({ path: '/catalog/', query: query ? { search: query } : undefined })
+}
 </script>
 
 <template>
   <header class="site-header">
+    <div class="topbar">
+      <span>Витебск</span>
+      <a href="tel:+375298135797">+375 29 813-57-97</a>
+      <a href="mailto:dm.krep@mail.ru">dm.krep@mail.ru</a>
+    </div>
+
     <div class="header-shell">
-      <NuxtLink to="/" class="brand">
+      <NuxtLink to="/" class="brand" aria-label="Мультитул">
         <span class="brand-mark">М</span>
         <span>
           <strong>Мультитул</strong>
@@ -18,23 +47,25 @@ const links = computed(() => [
         </span>
       </NuxtLink>
 
-      <nav class="navigation" aria-label="Основная навигация">
-        <NuxtLink
-          v-for="link in links"
-          :key="link.to"
-          :to="link.to"
-          class="nav-link"
-          :class="{ active: link.active }"
-        >
-          {{ link.label }}
-        </NuxtLink>
-      </nav>
+      <form class="header-search" @submit.prevent="submitSearch">
+        <input v-model="search" type="search" placeholder="Искать инструмент, артикул, бренд">
+        <button type="submit">Найти</button>
+      </form>
 
-      <div class="header-actions">
-        <a class="phone" href="tel:+375298135797">+375 29 813-57-97</a>
-        <NuxtLink class="catalog-cta" to="/catalog/">В каталог</NuxtLink>
-      </div>
+      <NuxtLink class="post-button" to="/catalog/">Каталог</NuxtLink>
     </div>
+
+    <nav class="nav-row" aria-label="Основная навигация">
+      <NuxtLink
+        v-for="link in links"
+        :key="link.to"
+        :to="link.to"
+        class="nav-link"
+        :class="{ active: link.active }"
+      >
+        {{ link.label }}
+      </NuxtLink>
+    </nav>
   </header>
 </template>
 
@@ -42,27 +73,49 @@ const links = computed(() => [
 .site-header {
   position: sticky;
   top: 0;
-  z-index: 20;
-  border-bottom: 1px solid rgba(22, 28, 45, 0.08);
-  background: rgba(248, 244, 235, 0.86);
-  backdrop-filter: blur(18px);
+  z-index: 30;
+  border-bottom: 1px solid var(--color-line);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+}
+
+.topbar {
+  display: none;
+  width: min(1280px, calc(100% - 32px));
+  min-height: 34px;
+  align-items: center;
+  gap: 18px;
+  margin: 0 auto;
+  color: var(--color-muted);
+  font-size: 13px;
+
+  a {
+    text-decoration: none;
+  }
+
+  @include media-breakpoint-up(md) {
+    display: flex;
+  }
 }
 
 .header-shell {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  width: min(1280px, calc(100% - 32px));
+  min-height: 68px;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  width: min(1320px, calc(100% - 32px));
-  min-height: 82px;
   margin: 0 auto;
+
+  @include media-breakpoint-up(md) {
+    grid-template-columns: 260px minmax(0, 1fr) auto;
+  }
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  color: var(--color-ink);
+  gap: 10px;
   text-decoration: none;
 
   strong,
@@ -71,109 +124,97 @@ const links = computed(() => [
   }
 
   strong {
-    font-family: var(--font-heading);
-    font-size: 21px;
+    color: #101828;
+    font-size: 20px;
+    font-weight: 900;
     letter-spacing: -0.04em;
   }
 
   small {
-    margin-top: 2px;
     color: var(--color-muted);
     font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 }
 
 .brand-mark {
   display: grid;
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   place-items: center;
-  border-radius: 16px;
-  background: var(--color-ink);
-  color: var(--color-cream);
-  font-family: var(--font-heading);
-  font-size: 22px;
-  font-weight: 800;
-  box-shadow: 8px 8px 0 var(--color-accent);
+  border-radius: 12px;
+  background: var(--color-primary);
+  color: white;
+  font-weight: 900;
 }
 
-.navigation {
+.header-search {
   display: none;
-  align-items: center;
-  gap: 8px;
+  overflow: hidden;
+  height: 44px;
+  border: 2px solid var(--color-primary);
+  border-radius: 12px;
+  background: white;
 
-  @include media-breakpoint-up(lg) {
-    display: flex;
+  @include media-breakpoint-up(md) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 96px;
   }
+
+  input {
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    padding: 0 14px;
+  }
+
+  button {
+    background: var(--color-primary);
+    color: white;
+    cursor: pointer;
+    font-weight: 800;
+  }
+}
+
+.post-button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: #ffcf26;
+  color: #101828;
+  font-weight: 900;
+  padding: 0 18px;
+  text-decoration: none;
+}
+
+.nav-row {
+  display: flex;
+  gap: 4px;
+  width: min(1280px, calc(100% - 32px));
+  margin: 0 auto;
+  overflow-x: auto;
+  padding: 0 0 10px;
 }
 
 .nav-link {
-  padding: 10px 14px;
+  flex: 0 0 auto;
   border-radius: 999px;
   color: var(--color-muted);
   font-weight: 700;
-  text-decoration: none;
-  transition: 0.2s ease;
-
-  &:hover,
-  &.active {
-    background: rgba(15, 23, 42, 0.08);
-    color: var(--color-ink);
-  }
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.phone {
-  display: none;
-  color: var(--color-ink);
-  font-weight: 800;
+  padding: 8px 12px;
   text-decoration: none;
 
-  @include media-breakpoint-up(md) {
-    display: inline-flex;
-  }
-}
-
-.catalog-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 42px;
-  padding: 0 18px;
-  border: 2px solid var(--color-ink);
-  border-radius: 999px;
-  background: var(--color-accent);
-  color: var(--color-ink);
-  font-weight: 900;
-  text-decoration: none;
-  box-shadow: 4px 4px 0 var(--color-ink);
-  transition: 0.18s ease;
-
+  &.active,
   &:hover {
-    transform: translate(-2px, -2px);
-    box-shadow: 6px 6px 0 var(--color-ink);
+    background: #eef4ff;
+    color: var(--color-primary);
   }
 }
 
 @media (max-width: 520px) {
-  .header-shell {
-    min-height: 72px;
-  }
-
   .brand small {
     display: none;
-  }
-
-  .catalog-cta {
-    min-height: 38px;
-    padding: 0 14px;
   }
 }
 </style>

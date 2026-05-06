@@ -23,6 +23,7 @@ import { AdminMergeBrandDto } from './dto/admin-merge-brand.dto';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
 import { AdminMapSourceCategoryDto } from './dto/admin-map-source-category.dto';
 import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
+import { Admin7745SitemapQueryDto } from './dto/admin-7745-sitemap-query.dto';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
@@ -122,6 +123,16 @@ export class AdminController {
     return this.adminService.getDukonSitemaps(query);
   }
 
+  @Get('queue/7745')
+  get7745QueueStats() {
+    return this.adminService.get7745QueueStats();
+  }
+
+  @Get('queue/7745/sitemaps')
+  get7745Sitemaps(@Query() query: Admin7745SitemapQueryDto) {
+    return this.adminService.get7745Sitemaps(query);
+  }
+
   @Get('queue/sitemaps')
   getSitemaps(@Query() query: AdminSitemapQueryDto) {
     return this.adminService.getSitemaps(query);
@@ -130,6 +141,21 @@ export class AdminController {
   @Get('queue/errors')
   getParserErrors() {
     return this.adminService.getParserErrors();
+  }
+
+  @Get('queue/runtime-status')
+  getParserRuntimeStatus() {
+    return this.adminService.getParserRuntimeStatus();
+  }
+
+  @Get('queue/health')
+  getParserHealth() {
+    return this.adminService.getParserHealth();
+  }
+
+  @Get('queue/supplier-summary')
+  getSupplierCatalogSummary() {
+    return this.adminService.getSupplierCatalogSummary();
   }
 
   @Delete('queue/errors')
@@ -157,9 +183,34 @@ export class AdminController {
     return this.adminService.processDukonQueuedProducts(limit || 25);
   }
 
+  @Post('queue/dukon/sitemaps/retry-problems')
+  retryProblemDukonSitemaps() {
+    return this.adminService.retryProblemDukonSitemaps();
+  }
+
   @Post('queue/dukon/sitemaps/:id/retry')
   retryDukonSitemap(@Param('id') id: string) {
     return this.adminService.retryDukonSitemap(id);
+  }
+
+  @Post('queue/7745/refresh-sitemaps')
+  refresh7745Sitemaps() {
+    return this.adminService.refresh7745Sitemaps();
+  }
+
+  @Post('queue/7745/process')
+  process7745QueuedProducts(@Body('limit') limit?: number) {
+    return this.adminService.process7745QueuedProducts(limit || 25);
+  }
+
+  @Post('queue/7745/sitemaps/retry-problems')
+  retryProblem7745Sitemaps() {
+    return this.adminService.retryProblem7745Sitemaps();
+  }
+
+  @Post('queue/7745/sitemaps/:id/retry')
+  retry7745Sitemap(@Param('id') id: string) {
+    return this.adminService.retry7745Sitemap(id);
   }
 
   @Post('categories')

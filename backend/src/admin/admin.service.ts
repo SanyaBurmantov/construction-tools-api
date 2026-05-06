@@ -12,12 +12,16 @@ import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { SitemapsService } from '../parser/sitemaps/sitemaps.service';
 import { ThToolsParserService } from '../parser/sites/th-tools.parser';
 import { DukonParserService } from '../parser/sites/dukon.parser';
+import { Supplier7745ParserService } from '../parser/sites/7745-source.parser';
+import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
 import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { ParserLogService } from '../parser/parser-log.service';
+import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
 import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
+import { Admin7745SitemapQueryDto } from './dto/admin-7745-sitemap-query.dto';
 
 @Injectable()
 export class AdminService {
@@ -26,7 +30,10 @@ export class AdminService {
     private readonly sitemapsService: SitemapsService,
     private readonly thToolsParserService: ThToolsParserService,
     private readonly dukonParserService: DukonParserService,
+    private readonly supplier7745ParserService: Supplier7745ParserService,
+    private readonly toolsByParserService: ToolsByParserService,
     private readonly parserLogService: ParserLogService,
+    private readonly runtimeStatus: ParserRuntimeStatusService,
   ) {}
 
   async getStats() {
@@ -149,39 +156,25 @@ export class AdminService {
       source.code === 'th-tools' ||
       source.url.includes('th-tool.by') ||
       dto.url.includes('th-tool.by');
-    if (!isThTools && !isDukon) {
+    const is7745 =
+      source.code === '7745' ||
+      source.url.includes('7745.by') ||
+      dto.url.includes('7745.by');
+    const isToolsBy =
+      source.code === 'tools-by' ||
+      source.url.includes('tools.by') ||
+      dto.url.includes('tools.by');
+    if (!isThTools && !isDukon && !is7745 && !isToolsBy) {
       throw new BadRequestException('Unsupported source parser');
     }
 
     const product = isDukon
       ? await this.dukonParserService.parseProductUrl(dto.url)
-      : await this.thToolsParserService.parseProductUrl(dto.url);
-    const sourceProduct = await this.prisma.sourceProduct.findFirst({
-      where: { sourceId: source.id, url: dto.url },
-    });
-    const data = {
-      sourceId: source.id,
-      externalId: dto.url,
-      url: dto.url,
-      name: product.name,
-      price: product.priceValue,
-      currency: product.priceCurrency,
-      stock: product.stockStatus !== 'out_of_stock',
-      images: [],
-      description: product.descriptionFull,
-      specifications: {},
-      productId: product.id,
-      lastSync: new Date(),
-    };
-
-    if (sourceProduct) {
-      await this.prisma.sourceProduct.update({
-        where: { id: sourceProduct.id },
-        data,
-      });
-    } else {
-      await this.prisma.sourceProduct.create({ data });
-    }
+      : is7745
+        ? await this.supplier7745ParserService.parseProductUrl(dto.url)
+        : isToolsBy
+          ? await this.toolsByParserService.parseProductUrl(dto.url)
+          : await this.thToolsParserService.parseProductUrl(dto.url);
 
     return { ok: true, product };
   }
@@ -201,6 +194,76 @@ export class AdminService {
 
   getDukonSitemaps(query: AdminDukonSitemapQueryDto) {
     return this.dukonParserService.getSitemaps(query);
+  }
+
+  get7745QueueStats() {
+    return this.supplier7745ParserService.getQueueStats();
+  }
+
+  get7745Sitemaps(query: Admin7745SitemapQueryDto) {
+    return this.supplier7745ParserService.getSitemaps(query);
+  }
+
+  async getParserRuntimeStatus() {
+    return this.runtimeStatus.getAll();
+  }
+
+  async getParserHealth() {
+    return this.runtimeStatus.getHealth();
+  }
+
+  async getSupplierCatalogSummary() {
+    const sources = await this.prisma.source.findMany({
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, code: true },
+    });
+
+    return Promise.all(
+      sources.map(async (source) => {
+        const where = { sourceProducts: { some: { sourceId: source.id } } };
+        const [
+          total,
+          published,
+          draft,
+          hidden,
+          archived,
+          withoutPrice,
+          withoutImages,
+          withoutSku,
+        ] = await Promise.all([
+          this.prisma.product.count({ where }),
+          this.prisma.product.count({
+            where: { ...where, status: 'PUBLISHED' },
+          }),
+          this.prisma.product.count({ where: { ...where, status: 'DRAFT' } }),
+          this.prisma.product.count({ where: { ...where, status: 'HIDDEN' } }),
+          this.prisma.product.count({
+            where: { ...where, status: 'ARCHIVED' },
+          }),
+          this.prisma.product.count({
+            where: { ...where, OR: [{ priceValue: null }, { priceValue: 0 }] },
+          }),
+          this.prisma.product.count({
+            where: { ...where, images: { none: {} } },
+          }),
+          this.prisma.product.count({
+            where: { ...where, OR: [{ sku: null }, { sku: '' }] },
+          }),
+        ]);
+
+        return {
+          source,
+          total,
+          published,
+          draft,
+          hidden,
+          archived,
+          withoutPrice,
+          withoutImages,
+          withoutSku,
+        };
+      }),
+    );
   }
 
   async refreshSitemaps() {
@@ -223,6 +286,26 @@ export class AdminService {
 
   retryDukonSitemap(id: string) {
     return this.dukonParserService.retrySitemap(id);
+  }
+
+  retryProblemDukonSitemaps() {
+    return this.dukonParserService.retryProblemSitemaps();
+  }
+
+  refresh7745Sitemaps() {
+    return this.supplier7745ParserService.refreshSitemaps();
+  }
+
+  process7745QueuedProducts(limit = 25) {
+    return this.supplier7745ParserService.processSitemapsBatch(limit, 1);
+  }
+
+  retry7745Sitemap(id: string) {
+    return this.supplier7745ParserService.retrySitemap(id);
+  }
+
+  retryProblem7745Sitemaps() {
+    return this.supplier7745ParserService.retryProblemSitemaps();
   }
 
   getBrands() {

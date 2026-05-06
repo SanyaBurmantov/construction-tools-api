@@ -14,8 +14,8 @@ export class AdminDukonSitemapQueryDto {
   search?: string;
 
   @IsOptional()
-  @IsIn(['PENDING', 'DONE', 'FAILED', 'SKIPPED'])
-  status?: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED';
+  @IsIn(['PENDING', 'DONE', 'FAILED', 'SKIPPED', 'PROBLEM'])
+  status?: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 
   @IsOptional()
   @Type(() => Number)

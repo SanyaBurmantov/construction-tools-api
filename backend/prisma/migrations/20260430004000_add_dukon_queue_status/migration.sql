@@ -1,0 +1,10 @@
+ALTER TABLE "SitemapsDukon"
+ADD COLUMN "status" TEXT NOT NULL DEFAULT 'PENDING',
+ADD COLUMN "attempts" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "lastError" TEXT,
+ADD COLUMN "lastTriedAt" TIMESTAMP(3),
+ADD COLUMN "visitedAt" TIMESTAMP(3);
+
+UPDATE "SitemapsDukon"
+SET "status" = CASE WHEN "isVisited" = true THEN 'DONE' ELSE 'PENDING' END,
+    "visitedAt" = CASE WHEN "isVisited" = true THEN CURRENT_TIMESTAMP ELSE NULL END;

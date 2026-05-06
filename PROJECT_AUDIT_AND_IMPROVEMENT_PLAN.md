@@ -34,18 +34,17 @@ The main weak areas are:
 
 Current state:
 
-- Public controllers include creation endpoints like `POST /products`, `POST /sources`, `POST /source-products`, and likely similar create endpoints for entities.
-- Admin has guarded endpoints, but public mutation endpoints are not clearly protected.
+- Public catalog/source controllers are read-only.
+- `POST /specifications` and legacy parser trigger routes are guarded with `AdminGuard`.
+- Admin has guarded endpoints for catalog mutations and parser operations.
 
 Risk:
 
-- Anyone could create products/sources if API is exposed publicly.
-- Data integrity and security risk.
+- Keep checking new public controllers so write endpoints do not accidentally bypass admin auth.
 
 Plan:
 
-- Remove public mutation endpoints that are not required by the storefront.
-- Or guard them with admin/auth guards.
+- Keep public mutation endpoints removed or guarded with admin/auth guards.
 - Keep public API mostly read-only: catalog, product detail, categories, brands.
 
 ### P0: Admin Auth Is Token-Only And Stored In localStorage
@@ -128,17 +127,16 @@ Plan:
 
 Current state:
 
-- Admin delete category directly calls Prisma delete.
+- Admin delete category checks linked child categories and products before deleting.
 
 Risk:
 
-- DB errors if products/children exist.
-- Admin gets generic failure.
+- Source category mappings or future relations may still need checks if new relations are added.
 
 Plan:
 
-- Add pre-delete checks: products count, children count.
-- Return clear error with counts.
+- Keep pre-delete checks for products and child categories.
+- Extend checks when new category relations are added.
 - Add safer actions: reassign products, move children, hide category.
 
 ### P1: Product Update Accepts DTO Directly
@@ -216,17 +214,17 @@ Plan:
 
 Current state:
 
-- Parser catches errors and logs to in-memory/parser log service.
+- Parser catches errors and persists them through `ParserLogService` into `ParserError`.
 - Some parsing data is not validated before save.
 
 Risk:
 
 - Bad data can be saved without explicit failure.
-- Parser logs can be lost on restart if in memory.
+- Individual parser errors are persisted, but parser run/session grouping is still missing.
 
 Plan:
 
-- Persist parser runs and errors in DB.
+- Add parser run/session tracking in DB.
 - Add validation before product upsert: name, slug, category, price parse sanity.
 - Mark queue item failed with error count rather than retrying blindly.
 
@@ -234,7 +232,10 @@ Plan:
 
 Current state:
 
-- Single import creates `SourceProduct` with empty `images` and `specifications`.
+- Dukon parser stores supplier specs/images/description/price and separate `sku` in `SourceProduct`.
+- Th-tools parser also stores supplier specs/images/description/price and separate `sku` in `SourceProduct`.
+- Admin single import calls source parsers and does not overwrite parser-created snapshots with empty fallback data.
+- `SourceProduct` has unique source URL identity via `[sourceId, url]`.
 - Older `SourcesProductsService` has in-memory sourceProducts stub.
 
 Risk:
@@ -245,8 +246,8 @@ Risk:
 Plan:
 
 - Remove or replace in-memory `SourcesProductsService` with Prisma-backed implementation.
-- Store parsed raw supplier specs/images/description/price in `SourceProduct`.
-- Add unique constraint on `[sourceId, externalId]` or `[sourceId, url]`.
+- Keep storing parsed raw supplier specs/images/description/price/sku in `SourceProduct` for every parser.
+- Keep source identity unique through `[sourceId, url]`.
 
 ### P2: Query Types Use `any`
 
@@ -355,6 +356,8 @@ Plan:
 Current state:
 
 - Local Node `v21.5.0` breaks Nuxt/Vite build with `crypto.hash is not a function`.
+- Root, backend, and frontend `.nvmrc` files are pinned to `22.12.0`.
+- Backend and frontend `package.json` files require `node >=22.12.0`.
 
 Risk:
 
@@ -362,8 +365,7 @@ Risk:
 
 Plan:
 
-- Add `.nvmrc` or `.node-version` with supported Node version, recommended `22.12+` LTS/current-compatible.
-- Add `engines.node` in `frontend/package.json`.
+- Keep Node version pins in sync across root, backend, frontend, CI, and production.
 - Ensure CI/deploy uses the pinned version.
 
 ### P1: Admin UI Is Functional But Hard To Maintain
@@ -516,7 +518,7 @@ Plan:
 
 Current state:
 
-- Product has optional `sku`, `model`; source product has `externalId` but no unique constraint.
+- Product has optional `sku`, `model`; source product has separate optional supplier `sku` and unique `[sourceId, url]`.
 
 Risk:
 
@@ -524,7 +526,8 @@ Risk:
 
 Plan:
 
-- Add unique source identity: `[sourceId, externalId]` or `[sourceId, url]`.
+- Keep unique source identity: `[sourceId, url]`.
+- Preserve supplier article numbers in `SourceProduct.sku` separately from free-form specifications.
 - Add product matching service rather than name-only slug upsert.
 
 ### P1: No Product Publication Metadata
@@ -548,12 +551,11 @@ Plan:
 
 Current state:
 
-- Local Node version breaks frontend build.
+- Local Node version breaks frontend build if developers use unsupported Node.
+- Root, backend, and frontend `.nvmrc` files are pinned to `22.12.0`; backend and frontend `package.json` files require `node >=22.12.0`.
 
 Plan:
 
-- Add root `.nvmrc` or per-app `.nvmrc`.
-- Add package `engines`.
 - Use the same Node version in CI and production.
 
 ### P1: No Visible Docker/Process Plan In Knowledge Base
@@ -584,12 +586,12 @@ Plan:
 
 Current state:
 
-- Console logs and in-memory parser errors.
+- Console logs and persisted parser errors; parser run/session tracking is still missing.
 
 Plan:
 
 - Add structured logs.
-- Persist parser runs/errors.
+- Persist parser runs and connect them to persisted parser errors.
 - Add health endpoint.
 - Monitor uptime and disk space.
 
@@ -609,10 +611,10 @@ Plan:
 
 - Introduce a common parsed product interface.
 - Split supplier raw data from curated product data.
-- Add `SourceProduct` unique constraints and store parsed images/specs.
+- Add complete `SourceProduct` snapshots for every parser, including `sku`, images, specs, description, and price.
 - Prevent parser from overwriting admin-curated fields.
 - Add parser fixtures and tests.
-- Add persisted parser runs/errors.
+- Add persisted parser runs and connect them to parser errors.
 
 ### Phase 3: Image Storage
 

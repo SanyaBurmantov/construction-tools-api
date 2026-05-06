@@ -49,6 +49,7 @@ Current commerce state:
 - `CORS_ORIGIN`: optional comma-separated frontend origins.
 - `ADMIN_TOKEN`: token required by admin endpoints through `x-admin-token`.
 - `SWAGGER_ENABLED`: enables Swagger in production when `true`.
+- `PARSER_CRON_ENABLED`: when `true`, enables automatic supplier parser cron jobs.
 
 ### Main Modules
 
@@ -71,10 +72,15 @@ Core Prisma models:
 - `Specification`: category-specific specification definition, unique by `[categoryId, key]`.
 - `ProductSpecification`: product values, unique by `[productId, specificationId]`.
 - `Source`: supplier/source record with unique `code`.
-- `SourceProduct`: supplier product link/data connected optionally to normalized `Product`.
+- `SourceProduct`: supplier product link/data connected optionally to normalized `Product`. It stores supplier URL identity, separate supplier `sku`/article, price, images, description, specifications, and category mapping.
 - `SitemapsThTools`: queue of th-tool.by product URLs, with `isVisited` flag.
+- `SitemapsDukon`: queue of dukon.by catalog URLs with `PENDING`, `DONE`, `FAILED`, and `SKIPPED` statuses, attempts, and last error metadata.
 
 ## Public API
+
+### Health
+
+- `GET /health/parser`: public/internal-safe parser cron health endpoint for uptime monitoring. It returns overall `ok`, max accepted job age, and sanitized job statuses without admin token or parser error details.
 
 ### Products
 
@@ -87,6 +93,7 @@ Product list supports filters in `ProductFilterDto`:
 - `search`
 - `categoryId`
 - `brandId`
+- `sourceCode`
 - `priceMin`
 - `priceMax`
 - `sortBy`
@@ -103,7 +110,8 @@ Product list supports filters in `ProductFilterDto`:
 - `GET /sources`
 - `POST /sources`
 - `GET /source-products`
-- `POST /source-products`
+
+Public source/source-product APIs are read-only. Supplier import and mutations should go through guarded admin endpoints.
 
 ## Admin API
 
@@ -155,8 +163,17 @@ Category creation calculates `level` and `path` from parent.
 - `POST /admin/queue/refresh-sitemaps`
 - `POST /admin/queue/process`
 - `POST /admin/source-products/import`
+- `GET /admin/queue/dukon`
+- `GET /admin/queue/dukon/sitemaps`
+- `POST /admin/queue/dukon/refresh-sitemaps`
+- `POST /admin/queue/dukon/process`
+- `POST /admin/queue/dukon/sitemaps/:id/retry`
+- `POST /admin/queue/dukon/sitemaps/retry-problems`
+- `GET /admin/queue/runtime-status`: persisted parser/cron runtime status by job.
+- `GET /admin/queue/health`: parser cron health summary. Jobs are `OK`, `RUNNING`, `ERROR`, or `STALE` based on latest persisted runtime status.
+- `GET /admin/queue/supplier-summary`: per-source catalog quality summary: total/published/draft/hidden/archived and missing price/images/SKU counts.
 
-`POST /admin/source-products/import` imports a single product from a selected source and URL. Currently it supports `th-tool.by`/`th-tools` only.
+`POST /admin/source-products/import` imports a single product from a selected source and URL. Currently it supports `th-tool.by`/`th-tools` and `dukon.by`/`dukon`.
 
 Import DTO:
 
@@ -166,9 +183,85 @@ Import DTO:
 
 ## Parser
 
+Legacy parser trigger routes `GET /products-from-sitemap-initial` and `GET /sitemap-initial` still exist, but are guarded by `AdminGuard`. Prefer `/admin/queue/*` endpoints from the admin panel for normal operations.
+
 ### Current Main Parser
 
-`backend/src/parser/sites/th-tools.parser.ts` is the active catalog-saving parser.
+Primary supplier focus is now `dukon`, `th-tools`, and `tools-by`. `7745.by` remains available as a secondary source, but its cron is disabled by default and requires `SUPPLIER_7745_CRON_ENABLED=true`.
+
+`backend/src/parser/sites/th-tools.parser.ts` is an active catalog-saving parser.
+
+`backend/src/parser/sites/dukon.parser.ts` is also wired into admin import and its own sitemap queue. It stores supplier data in `SourceProduct`, tracks queue item status, and uses a low-concurrency delayed batch process.
+
+`backend/src/parser/sites/7745-source.parser.ts` is the catalog-saving parser for `7745.by`. It uses the helper parser in `7745.parser.ts`, stores normalized `Product`, rich `SourceProduct` snapshots, category/brand/spec data, and tracks queue items in `Sitemaps7745`.
+
+`backend/src/parser/sites/tools-by-source.parser.ts` is the safe catalog-saving parser for `tools.by` single URL imports. `tools.by` has `robots.txt` with `Disallow: /` and no public sitemap, so do not run unattended discovery/cron unless supplier permission/access changes. Manual admin import supports `tools.by/product/...` URLs and writes normalized `Product`, `SourceProduct`, category, brand, image and specification data.
+
+Dukon category behavior: breadcrumbs create both `SourceCategory` records and internal `Category` records. If a source category has a manual mapping, the mapped internal category is used; otherwise the parsed internal breadcrumb leaf category is used for `Product.categoryId`.
+
+Dukon automation uses `DukonCron` when `PARSER_CRON_ENABLED=true`:
+
+- every 30 minutes: processes up to `DUKON_CRON_BATCH_LIMIT` pending Dukon URLs with concurrency `1`; default `30`;
+- every day at 06:00: refreshes Dukon sitemap and adds newly found URLs as `PENDING`;
+- every 1st day of month at 12:00: refreshes sitemap and resets all Dukon queue items to `PENDING` for monthly revalidation.
+
+7745 automation uses `Supplier7745Cron` when `PARSER_CRON_ENABLED=true`:
+
+- every 30 minutes: processes up to `SUPPLIER_7745_CRON_BATCH_LIMIT` pending 7745 URLs with concurrency `1`; default `30`;
+- every day at 06:20: refreshes `https://7745.by/sitemap.xml` and adds discovered catalog URLs as `PENDING`.
+
+7745 cron also requires `SUPPLIER_7745_CRON_ENABLED=true`; default is `false` so `PARSER_CRON_ENABLED=true` focuses on priority sources instead of the broad 7745 catalog.
+
+7745 sitemap detail: root sitemap is an index. Product URLs are loaded from `https://7745.by/sitemaps/products_*.xml`, canonicalized by removing URL hashes like `#p175`, and stored in `Sitemaps7745`.
+
+Latest local 7745 smoke test: migration `20260506000100_add_7745_sitemaps` applied, refresh loaded `66696` product URLs. After live selector fixes, controlled batches processed `40` products successfully with `0 FAILED`; `40` `SourceProduct` snapshots were saved, and quality counts for saved 7745 products were `withoutImages=0`, `withoutPrice=0`, `withoutSku=0`.
+
+7745 parser caveat: the site can return an anti-bot `Verification` page to backend fetches. The parser now detects this and refuses to save it as a product. If verification responses return again at scale, treat them as a fetch/access issue rather than product data quality.
+
+Remaining 7745 work before unattended full import:
+
+- run a larger sample of several hundred URLs and check `DONE/FAILED/SKIPPED` ratio;
+- review category accuracy for mixed supplier categories and add source-category mappings where needed;
+- decide whether to keep all `66696` products or limit by priority branches/categories;
+- later move product images from supplier URLs to first-party object storage/CDN.
+
+7745 category selection can be controlled with env regex filters checked against breadcrumbs:
+
+- `SUPPLIER_7745_CATEGORY_INCLUDE_REGEX`: if set, only matching category paths are imported;
+- `SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX`: matching category paths are marked `SKIPPED` and not saved.
+
+Current recommended exclude draft for construction/tools focus: `семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур`.
+
+Current recommended include draft for construction/tools focus: `запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар`.
+
+Filter smoke test with recommended include/exclude processed another sample successfully: queue reached `DONE=177`, `SKIPPED=7`, `FAILED=0`. Skipped examples were non-target categories: cat food, electric shavers, toasters, office PCs, seeds, fishing feeders, car cosmetics.
+
+Dukon discovery priority is currently focused on `Наборы инструментов и специнструмент` (`/catalog/nabory-instrumentov/`). This branch has about `23134` products and is discovered through category pagination before child category pages. Discovery has a safety cap controlled by `DUKON_DISCOVERY_MAX_PAGES`, default `5000`.
+
+During Dukon discovery, category pages also persist the category tree. The parser stores the current category from breadcrumbs plus `h1`, and all visible child category links, into both `SourceCategory` and internal `Category`.
+
+Article/SKU handling is important: parsers should save article numbers into both normalized `Product.sku` when appropriate and supplier snapshot `SourceProduct.sku` as a separate field. Do not store supplier articles only inside free-form specifications.
+
+Th-tools, Dukon, Tools.by, and 7745 parser flows now write `SourceProduct` snapshots themselves. Admin single import should call the parser and avoid overwriting parser-created snapshots with empty fallback data.
+
+Parser-created supplier products are intended to be storefront-visible by default: new th-tools and Dukon products are created as `PUBLISHED`. On reparse, only existing `DRAFT` products are promoted to `PUBLISHED`; manually hidden or archived products stay `HIDDEN`/`ARCHIVED`.
+
+New supplier development guide: `SUPPLIER_PARSER_DEVELOPMENT_GUIDE.md`. Use it when adding another supplier parser so each source writes both normalized `Product` data and a rich `SourceProduct` snapshot.
+
+Dukon product snapshots now preserve extra card metadata. The normalized `Product` stores model, barcode, old price, stock status, short/full descriptions, SEO title/description, images, specs, SKU, brand, category and price. `SourceProduct.specifications` stores `{ attributes, source }`, where `source` includes canonical URL, breadcrumbs, JSON-LD product data, stock status, SEO fields and parse timestamp.
+
+Homepage product rail uses `/products?limit=8&sortBy=createdAt&sortOrder=desc`, so newly parsed and published supplier products appear on the frontend homepage without old maintenance updates pushing stale records to the top.
+
+Parser cron observability:
+
+- `ParserRuntimeStatus` stores last run state for cron jobs in DB, so status survives backend restarts.
+- Admin parsing UI shows runtime status and supplier catalog quality summary.
+- Admin health endpoint reports stale/error cron jobs for deployment checks.
+- Public/internal `GET /health/parser` can be used by external uptime monitoring without exposing admin endpoints.
+- Supplier summary helps verify that imported products are visible and have core storefront data: price, image, SKU.
+- Public catalog supports `sourceCode`, for example `/catalog?sourceCode=dukon`, to inspect one supplier's storefront-visible products.
+
+Dukon parsing helpers have a fixture-backed unit test in `backend/src/parser/sites/dukon.parser.spec.ts`. It validates current Dukon selectors for SKU, brand, price, description, images, breadcrumbs, child categories, listing product links, and pagination.
 
 Important methods:
 
@@ -188,7 +281,7 @@ Known parser behavior:
 
 ### Parser Logs
 
-`ParserLogService` stores parser errors for admin display. Check `/admin/queue/errors` from UI/API.
+`ParserLogService` persists parser errors in the `ParserError` table for admin display. Check `/admin/queue/errors` from UI/API. The admin clear action deletes persisted parser errors.
 
 ## Frontend
 
@@ -293,7 +386,7 @@ Do not move dashboard content back into `admin.vue`, or child routes will render
 
 - Frontend production build fails in this environment with Node `v21.5.0`: `crypto.hash is not a function` from Vite/Nuxt. Use Node `22.12+` or compatible `20.19+`.
 - Backend lint has existing warnings in parser/products around `any` usage, but no current errors.
-- Single URL import currently supports th-tool.by only.
+- Single URL import currently supports th-tool.by, tools.by, dukon.by, and 7745.by.
 - Product images currently store remote supplier URLs; object storage integration is not implemented yet.
 - Admin category delete may fail if DB constraints block deleting categories with children/products.
 
@@ -345,6 +438,10 @@ Minimal VPS for small traffic/testing:
 If active parsing runs on the same host, prefer at least 2 vCPU and 4 GB RAM.
 
 ## Common Commands
+
+Node.js version:
+
+Use Node `22.12.0` or newer compatible Node `22.x`. The repo has root, backend, and frontend `.nvmrc` files pinned to `22.12.0`, and backend/frontend `package.json` require `node >=22.12.0`.
 
 Backend:
 

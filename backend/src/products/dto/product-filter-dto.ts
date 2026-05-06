@@ -25,6 +25,11 @@ export class ProductFilterDto {
   @IsString()
   brandId?: string;
 
+  @ApiProperty({ required: false, description: 'Код источника' })
+  @IsOptional()
+  @IsString()
+  sourceCode?: string;
+
   @ApiProperty({ required: false, description: 'Минимальная цена' })
   @IsOptional()
   @Transform(({ value }) =>
@@ -44,12 +49,12 @@ export class ProductFilterDto {
   @ApiProperty({
     required: false,
     description: 'Сортировка',
-    enum: ['name', 'price'],
+    enum: ['name', 'price', 'createdAt', 'updatedAt'],
   })
   @IsOptional()
-  @IsIn(['name', 'price'])
+  @IsIn(['name', 'price', 'createdAt', 'updatedAt'])
   @IsString()
-  sortBy?: 'name' | 'price';
+  sortBy?: 'name' | 'price' | 'createdAt' | 'updatedAt';
 
   @ApiProperty({
     required: false,
