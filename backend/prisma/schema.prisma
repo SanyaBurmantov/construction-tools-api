@@ -163,9 +163,14 @@ model SourceProduct {
 }
 
 model SitemapsThTools {
-  id        String  @id @default(uuid())
-  url       String  @unique
-  isVisited Boolean @default(false)
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
 }
 
 model SitemapsDukon {

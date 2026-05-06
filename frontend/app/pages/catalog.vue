@@ -74,6 +74,7 @@ const filters = reactive<{
 })
 
 const page = computed(() => Number(route.query.page || 1))
+const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
 
 const queryParams = computed(() => {
   const sort = queryValue(route.query.sort)
@@ -93,7 +94,7 @@ const queryParams = computed(() => {
 })
 
 const { data: products, pending, error, refresh } = await useAsyncData<ProductResponse>(
-  'catalog-products',
+  catalogDataKey,
   () => $fetch(`${apiBase}/products`, { params: queryParams.value }),
   {
     default: () => ({ data: [], pagination: { page: 1, limit: 20, total: 0, pages: 0 } }),

@@ -21,10 +21,11 @@ type Product = {
 const route = useRoute()
 const config = useRuntimeConfig()
 const slug = computed(() => String(route.params.slug))
+const productDataKey = computed(() => `product:${slug.value}`)
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
 
 const { data: product, pending, error } = await useAsyncData<Product>(
-  `product-${slug.value}`,
+  productDataKey,
   () => $fetch(`${apiBase}/products/${slug.value}`),
   { watch: [slug] }
 )

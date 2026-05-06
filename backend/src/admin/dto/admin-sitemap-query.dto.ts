@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -17,6 +18,10 @@ export class AdminSitemapQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   isVisited?: boolean;
+
+  @IsOptional()
+  @IsIn(['PENDING', 'DONE', 'FAILED', 'SKIPPED', 'PROBLEM'])
+  status?: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 
   @IsOptional()
   @Type(() => Number)

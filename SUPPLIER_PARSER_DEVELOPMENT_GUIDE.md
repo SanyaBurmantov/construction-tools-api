@@ -140,9 +140,12 @@ export class SupplierParserService {
   async getQueueStats() {}
   async processSitemapsBatch(limit = 30, concurrency = 1) {}
   async processSitemapUrl(url: string) {}
+  async previewProductUrl(url: string) {}
   async parseProductUrl(url: string) {}
 }
 ```
+
+`previewProductUrl` must parse and return supplier data without writing to the database. Use it for production dry-runs before enabling batch processing for a source/category.
 
 Если источник большой, добавь HTML discovery каталога, а не полагайся только на sitemap.
 

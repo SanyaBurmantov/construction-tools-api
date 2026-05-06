@@ -299,6 +299,7 @@ export class DukonParserService {
 
   async parseProductUrl(url: string) {
     const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    if (res.status === 404) throw new NonProductPageError('Product page returned 404');
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
 
     const html = await res.text();
@@ -318,11 +319,13 @@ export class DukonParserService {
       this.findSpecValue(specs, 'артикул') ||
       this.findSpecValue(specs, 'sku') ||
       jsonLd?.sku ||
-      jsonLd?.mpn;
+      jsonLd?.mpn ||
+      this.parseModelCodeFromName(name);
     const model =
       this.findSpecValue(specs, 'модель') ||
       this.findSpecValue(specs, 'код модели') ||
-      jsonLd?.mpn;
+      jsonLd?.mpn ||
+      this.parseModelCodeFromName(name);
     const barcode =
       this.findSpecValue(specs, 'штрихкод') ||
       this.findSpecValue(specs, 'ean') ||
@@ -428,6 +431,69 @@ export class DukonParserService {
     });
 
     return product;
+  }
+
+  async previewProductUrl(url: string) {
+    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    if (res.status === 404) throw new NonProductPageError('Product page returned 404');
+    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const jsonLd = this.parseJsonLdProduct($);
+    const name = this.clean(
+      $('h1').first().text() || jsonLd?.name || this.parseMeta($, 'og:title'),
+    );
+    if (!name) throw new Error('Product name was not parsed');
+    if (!this.isProductPage($)) {
+      throw new NonProductPageError('URL is not a product page');
+    }
+
+    const specs = this.parseSpecs($);
+    const sku =
+      this.findSpecValue(specs, 'артикул') ||
+      this.findSpecValue(specs, 'sku') ||
+      jsonLd?.sku ||
+      jsonLd?.mpn ||
+      this.parseModelCodeFromName(name);
+    const brandName =
+      this.findSpecValue(specs, 'производитель') ||
+      this.findSpecValue(specs, 'бренд') ||
+      jsonLd?.brand ||
+      this.parseBrand($);
+    const priceValue =
+      this.parsePrice($('.price.gen').first().text()) || jsonLd?.price;
+    const descriptionFull =
+      this.parseDescription($) || this.clean(jsonLd?.description || '');
+
+    return {
+      source: 'dukon',
+      url,
+      canonicalUrl: this.parseCanonicalUrl($, url),
+      name,
+      sku,
+      model:
+        this.findSpecValue(specs, 'модель') ||
+        this.findSpecValue(specs, 'код модели') ||
+        jsonLd?.mpn ||
+        this.parseModelCodeFromName(name),
+      barcode:
+        this.findSpecValue(specs, 'штрихкод') ||
+        this.findSpecValue(specs, 'ean') ||
+        this.findSpecValue(specs, 'gtin') ||
+        jsonLd?.barcode,
+      brandName,
+      priceValue,
+      priceCurrency: this.normalizeCurrency(jsonLd?.currency) || 'BYN',
+      oldPrice: this.parseOldPrice($, priceValue),
+      stockStatus: this.parseStockStatus($, jsonLd?.availability),
+      descriptionFull,
+      descriptionShort: this.parseDescriptionShort($, descriptionFull),
+      images: this.parseImages($, name, jsonLd?.images).map((image) => image.url),
+      specifications: specs,
+      breadcrumbs: this.parseBreadcrumbNames($),
+      jsonLd,
+    };
   }
 
   private async saveSourceProduct(
@@ -876,7 +942,7 @@ export class DukonParserService {
     return Boolean(
       $('#properties .groupedprops.table .table__item').length ||
       $('.price.gen').length ||
-      $('.detail-product__info').length,
+      this.parseJsonLdProduct($).name,
     );
   }
 
@@ -1179,6 +1245,15 @@ export class DukonParserService {
     if (/в наличии|есть в наличии|на складе/.test(pageText)) return 'in_stock';
 
     return 'unknown';
+  }
+
+  private parseModelCodeFromName(name: string) {
+    const normalized = this.clean(name);
+    const spacedCode = normalized.match(/([A-ZА-Я]{2,}\s+\d[\wА-Яа-я.-]*)$/u);
+    if (spacedCode) return spacedCode[1];
+
+    const tailCode = normalized.match(/([A-ZА-Я0-9]+[\wА-Яа-я.-]*\d[\wА-Яа-я.-]*)$/u);
+    return tailCode?.[1];
   }
 
   private normalizeCurrency(value?: string) {

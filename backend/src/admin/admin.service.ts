@@ -143,49 +143,35 @@ export class AdminService {
   }
 
   async importSourceProduct(dto: AdminImportSourceProductDto) {
-    const source = await this.prisma.source.findUnique({
-      where: { id: dto.sourceId },
-    });
-    if (!source) throw new NotFoundException('Source not found');
+    const parser = await this.resolveSourceParser(dto);
 
-    const isDukon =
-      source.code === 'dukon' ||
-      source.url.includes('dukon.by') ||
-      dto.url.includes('dukon.by');
-    const isThTools =
-      source.code === 'th-tools' ||
-      source.url.includes('th-tool.by') ||
-      dto.url.includes('th-tool.by');
-    const is7745 =
-      source.code === '7745' ||
-      source.url.includes('7745.by') ||
-      dto.url.includes('7745.by');
-    const isToolsBy =
-      source.code === 'tools-by' ||
-      source.url.includes('tools.by') ||
-      dto.url.includes('tools.by');
-    if (!isThTools && !isDukon && !is7745 && !isToolsBy) {
-      throw new BadRequestException('Unsupported source parser');
-    }
-
-    const product = isDukon
+    const product = parser.isDukon
       ? await this.dukonParserService.parseProductUrl(dto.url)
-      : is7745
+      : parser.is7745
         ? await this.supplier7745ParserService.parseProductUrl(dto.url)
-        : isToolsBy
+        : parser.isToolsBy
           ? await this.toolsByParserService.parseProductUrl(dto.url)
           : await this.thToolsParserService.parseProductUrl(dto.url);
 
     return { ok: true, product };
   }
 
-  async getQueueStats() {
-    const [queued, visited] = await Promise.all([
-      this.prisma.sitemapsThTools.count({ where: { isVisited: false } }),
-      this.prisma.sitemapsThTools.count({ where: { isVisited: true } }),
-    ]);
+  async previewSourceProduct(dto: AdminImportSourceProductDto) {
+    const parser = await this.resolveSourceParser(dto);
 
-    return { queued, visited, total: queued + visited };
+    const parsed = parser.isDukon
+      ? await this.dukonParserService.previewProductUrl(dto.url)
+      : parser.is7745
+        ? await this.supplier7745ParserService.previewProductUrl(dto.url)
+        : parser.isToolsBy
+          ? await this.toolsByParserService.previewProductUrl(dto.url)
+          : await this.thToolsParserService.previewProductUrl(dto.url);
+
+    return { ok: true, dryRun: true, parsed };
+  }
+
+  async getQueueStats() {
+    return this.thToolsParserService.getQueueStats();
   }
 
   getDukonQueueStats() {
@@ -272,8 +258,16 @@ export class AdminService {
   }
 
   async processQueuedProducts(limit = 25) {
-    await this.thToolsParserService.processSitemapsBatch(limit, 5);
+    await this.thToolsParserService.processSitemapsBatch(limit, 1);
     return this.getQueueStats();
+  }
+
+  retrySitemap(id: string) {
+    return this.thToolsParserService.retrySitemap(id);
+  }
+
+  retryProblemSitemaps() {
+    return this.thToolsParserService.retryProblemSitemaps();
   }
 
   refreshDukonSitemaps() {
@@ -447,28 +441,16 @@ export class AdminService {
   }
 
   async getSitemaps(query: AdminSitemapQueryDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 25;
-    const where = {
-      ...(query.search
-        ? { url: { contains: query.search, mode: 'insensitive' as const } }
-        : {}),
-      ...(query.isVisited === undefined ? {} : { isVisited: query.isVisited }),
-    };
-    const [data, total] = await Promise.all([
-      this.prisma.sitemapsThTools.findMany({
-        where,
-        orderBy: { url: 'asc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.sitemapsThTools.count({ where }),
-    ]);
-
-    return {
-      data,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    };
+    if (query.status) return this.thToolsParserService.getSitemaps(query);
+    return this.thToolsParserService.getSitemaps({
+      ...query,
+      status:
+        query.isVisited === undefined
+          ? undefined
+          : query.isVisited
+            ? 'DONE'
+            : 'PENDING',
+    });
   }
 
   getParserErrors() {
@@ -515,5 +497,34 @@ export class AdminService {
       ...(dto.sku !== undefined ? { sku: dto.sku || null } : {}),
       ...(dto.model !== undefined ? { model: dto.model || null } : {}),
     };
+  }
+
+  private async resolveSourceParser(dto: AdminImportSourceProductDto) {
+    const source = await this.prisma.source.findUnique({
+      where: { id: dto.sourceId },
+    });
+    if (!source) throw new NotFoundException('Source not found');
+
+    const isDukon =
+      source.code === 'dukon' ||
+      source.url.includes('dukon.by') ||
+      dto.url.includes('dukon.by');
+    const isThTools =
+      source.code === 'th-tools' ||
+      source.url.includes('th-tool.by') ||
+      dto.url.includes('th-tool.by');
+    const is7745 =
+      source.code === '7745' ||
+      source.url.includes('7745.by') ||
+      dto.url.includes('7745.by');
+    const isToolsBy =
+      source.code === 'tools-by' ||
+      source.url.includes('tools.by') ||
+      dto.url.includes('tools.by');
+    if (!isThTools && !isDukon && !is7745 && !isToolsBy) {
+      throw new BadRequestException('Unsupported source parser');
+    }
+
+    return { isDukon, isThTools, is7745, isToolsBy };
   }
 }

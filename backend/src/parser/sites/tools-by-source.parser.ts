@@ -214,7 +214,11 @@ export class ToolsByParserService {
       'код товара',
       'sku',
     ]);
-    const brandName = this.parseBrand($, breadcrumbs);
+    const brandName =
+      this.findSpecValue(parsed.specifications, [
+        'бренд',
+        'торговая марка',
+      ]) || this.parseBrand($);
     const brandId = brandName ? await this.upsertBrand(brandName) : undefined;
     const slug = this.productSlug(parsed.name, sku);
     const existingProduct = await this.prisma.product.findUnique({
@@ -288,6 +292,42 @@ export class ToolsByParserService {
     });
 
     return product;
+  }
+
+  async previewProductUrl(url: string) {
+    const canonicalUrl = this.canonicalUrl(url);
+    const html = await this.fetchText(canonicalUrl);
+    const $ = cheerio.load(html);
+    const parsed = parseTools(html);
+    if (!parsed.name) throw new Error('Product name was not parsed');
+
+    const breadcrumbs = this.parseBreadcrumbs($);
+    const sku = this.findSpecValue(parsed.specifications, [
+      'артикул',
+      'код товара',
+      'sku',
+    ]);
+
+    return {
+      source: SOURCE_CODE,
+      url: canonicalUrl,
+      name: parsed.name,
+      sku,
+      brandName:
+        this.findSpecValue(parsed.specifications, [
+          'бренд',
+          'торговая марка',
+        ]) || this.parseBrand($),
+      priceValue: parsed.price,
+      priceCurrency: 'BYN',
+      description: parsed.description,
+      images: parsed.images,
+      specifications: parsed.specifications,
+      breadcrumbs,
+      seoTitle: this.parseMeta($, 'og:title') || parsed.name,
+      seoDescription:
+        this.parseMeta($, 'description') || parsed.description || parsed.name,
+    };
   }
 
   private async saveSourceProduct(
@@ -516,11 +556,8 @@ export class ToolsByParserService {
       .filter(Boolean);
   }
 
-  private parseBrand($: cheerio.CheerioAPI, breadcrumbs: string[]) {
-    return (
-      this.clean($('.brand a, .product__brand a').first().text()) ||
-      breadcrumbs.at(-1)
-    );
+  private parseBrand($: cheerio.CheerioAPI) {
+    return this.clean($('.brand a, .product__brand a').first().text());
   }
 
   private parseProductLinks($: cheerio.CheerioAPI) {

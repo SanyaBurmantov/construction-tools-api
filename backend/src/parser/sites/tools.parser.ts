@@ -9,12 +9,15 @@ export function parseTools(html: string): TParsedProduct {
   const name = clean(
     $('h1').first().text() ||
       $('[itemprop="name"]').first().attr('content') ||
+      $('[itemprop="name"]').first().text() ||
       parseMeta($, 'og:title') ||
       $('title').first().text(),
   );
 
   const price = parsePrice(
     $('.js-markup-price').first().attr('data-price') ||
+      $('[itemprop="price"]').first().attr('content') ||
+      parseMeta($, 'product:price:amount') ||
       $('.product-parameter__price-value, .price').first().text(),
   );
   const images = parseImages($);
@@ -55,18 +58,31 @@ function parseSpecs($: cheerio.CheerioAPI) {
     );
   });
 
+  $('dl').each((_, el) => {
+    $(el)
+      .find('dt')
+      .each((__, dt) => {
+        addSpec(specs, $(dt).text(), $(dt).next('dd').text());
+      });
+  });
+
   return [...specs.entries()].map(([name, value]) => ({ name, value }));
 }
 
 function parseImages($: cheerio.CheerioAPI) {
   const urls = new Set<string>();
 
-  $('meta[property="og:image"], .product__carousel img, .carousel img').each(
-    (_, el) => {
-      const src = $(el).attr('content') || $(el).attr('src');
-      if (src && isProductImage(src)) urls.add(absoluteUrl(src));
-    },
-  );
+  $(
+    'meta[property="og:image"], .product__carousel img, .carousel img, .product__carousel a, .carousel a',
+  ).each((_, el) => {
+    const src =
+      $(el).attr('content') ||
+      $(el).attr('data-src') ||
+      $(el).attr('data-large') ||
+      $(el).attr('href') ||
+      $(el).attr('src');
+    if (src && isProductImage(src)) urls.add(absoluteUrl(src));
+  });
 
   return [...urls].slice(0, 12);
 }

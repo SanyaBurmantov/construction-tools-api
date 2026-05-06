@@ -14,4 +14,5 @@ Developer docs:
 - Backend: `backend/README.md`
 - Frontend: `frontend/README.md`
 - Project knowledge base: `PROJECT_KNOWLEDGE.md`
+- Production deploy: `DEPLOY_PRODUCTION.md`
 - Dukon parsing roadmap: `DUKON_PARSING_ROADMAP.md`

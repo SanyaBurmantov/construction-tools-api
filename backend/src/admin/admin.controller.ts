@@ -108,6 +108,11 @@ export class AdminController {
     return this.adminService.importSourceProduct(dto);
   }
 
+  @Post('source-products/preview')
+  previewSourceProduct(@Body() dto: AdminImportSourceProductDto) {
+    return this.adminService.previewSourceProduct(dto);
+  }
+
   @Get('queue')
   getQueueStats() {
     return this.adminService.getQueueStats();
@@ -171,6 +176,16 @@ export class AdminController {
   @Post('queue/process')
   processQueuedProducts(@Body('limit') limit?: number) {
     return this.adminService.processQueuedProducts(limit || 25);
+  }
+
+  @Post('queue/sitemaps/retry-problems')
+  retryProblemSitemaps() {
+    return this.adminService.retryProblemSitemaps();
+  }
+
+  @Post('queue/sitemaps/:id/retry')
+  retrySitemap(@Param('id') id: string) {
+    return this.adminService.retrySitemap(id);
   }
 
   @Post('queue/dukon/refresh-sitemaps')

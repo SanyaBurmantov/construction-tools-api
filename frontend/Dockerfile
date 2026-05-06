@@ -11,6 +11,8 @@ EXPOSE 3000
 CMD ["npm", "run", "dev"]
 
 FROM base AS build
+ARG NUXT_PUBLIC_API_BASE=/api
+ENV NUXT_PUBLIC_API_BASE=${NUXT_PUBLIC_API_BASE}
 RUN npm ci
 COPY . .
 RUN npm run build

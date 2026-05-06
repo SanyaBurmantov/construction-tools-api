@@ -6,8 +6,16 @@ import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
 
 type SavedCategoryRef = { id: string };
+type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 
 const TH_TOOLS_BASE_URL = 'https://th-tool.by';
+
+class NonProductPageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NonProductPageError';
+  }
+}
 
 @Injectable()
 export class ThToolsParserService {
@@ -18,8 +26,83 @@ export class ThToolsParserService {
 
   async getUnvisitedSitemaps(limit = 10) {
     return this.prisma.sitemapsThTools.findMany({
-      where: { isVisited: false },
+      where: { status: 'PENDING' },
       take: limit,
+    });
+  }
+
+  async getQueueStats() {
+    const [queued, visited, failed, skipped] = await Promise.all([
+      this.prisma.sitemapsThTools.count({ where: { status: 'PENDING' } }),
+      this.prisma.sitemapsThTools.count({ where: { status: 'DONE' } }),
+      this.prisma.sitemapsThTools.count({ where: { status: 'FAILED' } }),
+      this.prisma.sitemapsThTools.count({ where: { status: 'SKIPPED' } }),
+    ]);
+
+    return {
+      queued,
+      visited,
+      failed,
+      skipped,
+      total: queued + visited + failed + skipped,
+    };
+  }
+
+  async getSitemaps(query: {
+    search?: string;
+    status?: QueueStatus;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 25;
+    const where = {
+      ...(query.search
+        ? { url: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
+      ...(query.status === 'PROBLEM'
+        ? { status: { in: ['FAILED', 'SKIPPED'] } }
+        : query.status
+          ? { status: query.status }
+          : {}),
+    };
+    const [data, total] = await Promise.all([
+      this.prisma.sitemapsThTools.findMany({
+        where,
+        orderBy: [{ status: 'asc' }, { url: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.sitemapsThTools.count({ where }),
+    ]);
+
+    return {
+      data,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
+  }
+
+  async retrySitemap(id: string) {
+    return this.prisma.sitemapsThTools.update({
+      where: { id },
+      data: {
+        isVisited: false,
+        status: 'PENDING',
+        lastError: null,
+        visitedAt: null,
+      },
+    });
+  }
+
+  async retryProblemSitemaps() {
+    return this.prisma.sitemapsThTools.updateMany({
+      where: { status: { in: ['FAILED', 'SKIPPED'] } },
+      data: {
+        isVisited: false,
+        status: 'PENDING',
+        lastError: null,
+        visitedAt: null,
+      },
     });
   }
 
@@ -45,18 +128,44 @@ export class ThToolsParserService {
   }
 
   async processSitemapUrl(url: string) {
+    await this.prisma.sitemapsThTools.updateMany({
+      where: { url },
+      data: { attempts: { increment: 1 }, lastTriedAt: new Date() },
+    });
+
     try {
       const product = await this.parseProductUrl(url);
 
       await this.prisma.sitemapsThTools.updateMany({
         where: { url },
-        data: { isVisited: true },
+        data: {
+          isVisited: true,
+          status: 'DONE',
+          lastError: null,
+          visitedAt: new Date(),
+        },
       });
 
       console.log(`Saved product: ${product.name}`);
     } catch (e) {
-      await this.parserLogService.addError(url, e);
-      console.error(`Error processing ${url}`, e);
+      const isSkipped = e instanceof NonProductPageError;
+      if (!isSkipped) {
+        await this.parserLogService.addError(url, e);
+      }
+      await this.prisma.sitemapsThTools.updateMany({
+        where: { url },
+        data: {
+          isVisited: true,
+          status: isSkipped ? 'SKIPPED' : 'FAILED',
+          lastError: e instanceof Error ? e.message : String(e),
+          visitedAt: new Date(),
+        },
+      });
+      if (isSkipped) {
+        console.warn(`Skipped non-product TH-Tools URL: ${url}`);
+      } else {
+        console.error(`Error processing ${url}`, e);
+      }
     }
   }
 
@@ -67,18 +176,23 @@ export class ThToolsParserService {
     const html = await res.text();
     const $ = cheerio.load(html);
 
-    const name = $('h1').text().trim();
+    const name = this.parseName($);
+    if (!name) throw new Error('Product name was not parsed');
+    if (!this.isProductPage(url, $)) {
+      throw new NonProductPageError('URL is not a product page');
+    }
 
-    const brandName = $('.product__top-brand-name').text().trim();
-    const sku = $('.product__code span').text().trim();
+    const specs = this.parseSpecs($);
+    const brandName = this.parseBrand($, specs);
+    const sku = this.parseSku($, specs);
 
     const slug = generateSlug(name);
 
-    const description = $('.desc.desc_max').text().trim();
+    const description = this.parseDescription($);
 
-    const priceText = $('.price.product__price').first().text().trim();
-    const priceValue = parseFloat(
-      priceText.replace(/[^\d.,]/g, '').replace(',', '.'),
+    const priceValue = this.parsePrice(
+      $('.price.product__price, [itemprop="price"]').first().attr('content') ||
+        $('.price.product__price, [itemprop="price"]').first().text(),
     );
     const priceCurrency = 'BYN';
 
@@ -103,19 +217,7 @@ export class ThToolsParserService {
     }
 
     // ---------- IMAGES ----------
-    const images: { url: string; alt?: string; order: number }[] = [];
-
-    $('.p-images__slider-item').each((i, el) => {
-      const src = $(el).attr('href');
-
-      if (src) {
-        images.push({
-          url: `${TH_TOOLS_BASE_URL}${src}`,
-          alt: name,
-          order: i,
-        });
-      }
-    });
+    const images = this.parseImages($, name);
 
     // ---------- PRODUCT ----------
     const { id: categoryId } = await this.parseAndSaveCategory($);
@@ -162,24 +264,6 @@ export class ThToolsParserService {
     });
 
     // ---------- SPECS PARSE ----------
-    const specs: { name: string; value: string }[] = [];
-
-    $('.features-two-val__block').each((i, block) => {
-      const specName = $(block)
-        .find('.features-two-val__name span')
-        .text()
-        .trim();
-
-      const specValue = $(block).find('.features-two-val__value').text().trim();
-
-      if (specName && specValue) {
-        specs.push({
-          name: specName,
-          value: specValue,
-        });
-      }
-    });
-
     // ---------- SAVE SPECS ----------
     await this.saveSpecifications(specs, product.id, categoryId);
     await this.saveSourceProduct(url, product.id, {
@@ -193,6 +277,36 @@ export class ThToolsParserService {
     });
 
     return product;
+  }
+
+  async previewProductUrl(url: string) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const name = this.parseName($);
+    if (!name) throw new Error('Product name was not parsed');
+    if (!this.isProductPage(url, $)) {
+      throw new NonProductPageError('URL is not a product page');
+    }
+
+    return {
+      source: 'th-tools',
+      url,
+      name,
+      sku: this.parseSku($, this.parseSpecs($)),
+      brandName: this.parseBrand($, this.parseSpecs($)),
+      priceValue: this.parsePrice(
+        $('.price.product__price, [itemprop="price"]').first().attr('content') ||
+          $('.price.product__price, [itemprop="price"]').first().text(),
+      ),
+      priceCurrency: 'BYN',
+      description: this.parseDescription($),
+      images: this.parseImages($, name).map((image) => image.url),
+      specifications: this.parseSpecs($),
+      breadcrumbs: this.parseBreadcrumbs($),
+    };
   }
 
   private async saveSourceProduct(
@@ -301,8 +415,6 @@ export class ThToolsParserService {
       .get()
       .filter(Boolean);
 
-    console.log(categoryLinks);
-
     if (!categoryLinks.length) {
       // fallback, если что-то не парсится
       const category = await this.prisma.category.upsert({
@@ -348,5 +460,151 @@ export class ThToolsParserService {
 
     // Возвращаем id конечной категории для продукта
     return { id: parentId! };
+  }
+
+  private parseName($: cheerio.CheerioAPI) {
+    return this.clean(
+      $('h1').first().text() ||
+        $('[itemprop="name"]').first().attr('content') ||
+        $('[itemprop="name"]').first().text() ||
+        this.parseMeta($, 'og:title'),
+    );
+  }
+
+  private isProductPage(url: string, $: cheerio.CheerioAPI) {
+    if (url.includes('/category/')) return false;
+    return Boolean(
+      $('.product__code span, [itemprop="sku"]').length ||
+        $('.price.product__price, [itemprop="price"]').length ||
+        $('.features-two-val__block').length ||
+        $('.p-images__slider-item').length,
+    );
+  }
+
+  private parseBreadcrumbs($: cheerio.CheerioAPI) {
+    return $('.bread__link')
+      .not('.bread__link_last')
+      .map((_, el) => this.clean($(el).text()))
+      .get()
+      .filter(Boolean);
+  }
+
+  private parseBrand($: cheerio.CheerioAPI, specs: { name: string; value: string }[] = []) {
+    return (
+      this.clean(
+        $('.product__top-brand-name, .product__brand a, .brand a')
+          .first()
+          .text(),
+      ) || this.findSpecValue(specs, ['бренд', 'поставщик']) || ''
+    );
+  }
+
+  private parseSku($: cheerio.CheerioAPI, specs: { name: string; value: string }[] = []) {
+    return (
+      this.clean(
+        $('.product__code span, [itemprop="sku"]').first().text() ||
+          $('[itemprop="sku"]').first().attr('content'),
+      ) || this.findSpecValue(specs, ['артикул', 'код', 'sku']) || ''
+    );
+  }
+
+  private parseDescription($: cheerio.CheerioAPI) {
+    return this.clean(
+      $('.desc.desc_max, .product__description, [itemprop="description"]')
+        .first()
+        .text() || this.parseMeta($, 'description'),
+    );
+  }
+
+  private parseImages($: cheerio.CheerioAPI, name: string) {
+    const urls = new Set<string>();
+
+    $('meta[property="og:image"], .p-images__slider-item, .p-images img').each(
+      (_, el) => {
+        const src =
+          $(el).attr('content') ||
+          $(el).attr('href') ||
+          $(el).attr('data-src') ||
+          $(el).attr('src');
+        if (src && this.isProductImage(src)) urls.add(this.absoluteUrl(src));
+      },
+    );
+
+    return [...urls]
+      .slice(0, 12)
+      .map((url, order) => ({ url, alt: name, order }));
+  }
+
+  private parseSpecs($: cheerio.CheerioAPI) {
+    const specs = new Map<string, string>();
+
+    $('.features-two-val__block').each((_, block) => {
+      this.addSpec(
+        specs,
+        $(block).find('.features-two-val__name span').text(),
+        $(block).find('.features-two-val__value').text(),
+      );
+    });
+
+    $('.characteristics tr, .product__specifications tr').each((_, row) => {
+      this.addSpec(
+        specs,
+        $(row).find('th, td').first().text(),
+        $(row).find('td').last().text(),
+      );
+    });
+
+    return [...specs.entries()].map(([name, value]) => ({ name, value }));
+  }
+
+  private addSpec(specs: Map<string, string>, name: string, value: string) {
+    const cleanName = this.clean(name).replace(/:$/, '');
+    const cleanValue = this.clean(value);
+    if (cleanName && cleanValue) specs.set(cleanName, cleanValue);
+  }
+
+  private findSpecValue(
+    specs: { name: string; value: string }[],
+    needles: string[],
+  ) {
+    return specs.find((spec) =>
+      needles.some((needle) => spec.name.toLowerCase().includes(needle)),
+    )?.value;
+  }
+
+  private parseMeta($: cheerio.CheerioAPI, name: string) {
+    return this.clean(
+      $(`meta[name="${name}"], meta[property="${name}"]`)
+        .first()
+        .attr('content') || '',
+    );
+  }
+
+  private parsePrice(value: string) {
+    const normalized = value.replace(/\s/g, '').replace(',', '.');
+    const match = normalized.match(/\d+(?:\.\d+)?/);
+    if (!match) return undefined;
+
+    const price = Number.parseFloat(match[0]);
+    return Number.isFinite(price) ? price : undefined;
+  }
+
+  private isProductImage(url: string) {
+    const normalized = url.toLowerCase();
+    return (
+      !normalized.startsWith('data:') &&
+      !normalized.includes('no_photo') &&
+      !normalized.includes('favicon') &&
+      /\.(jpe?g|png|webp|svg)(?:\?|$)/.test(normalized)
+    );
+  }
+
+  private absoluteUrl(url: string) {
+    if (url.startsWith('http')) return url;
+    return `${TH_TOOLS_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  }
+
+  private clean(value?: string) {
+    return (value || '').replace(/\s+/g, ' ').trim();
   }
 }

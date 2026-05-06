@@ -2,6 +2,10 @@ FROM node:22-bookworm-slim AS base
 
 WORKDIR /backend
 
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 COPY prisma ./prisma/
 
@@ -21,9 +25,12 @@ RUN npm run build
 FROM node:22-bookworm-slim AS production
 ENV NODE_ENV=production
 WORKDIR /backend
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 COPY prisma ./prisma/
 RUN npm ci --omit=dev && npx prisma generate
 COPY --from=build /backend/dist ./dist
 EXPOSE 8000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "npx prisma db push && node dist/main"]

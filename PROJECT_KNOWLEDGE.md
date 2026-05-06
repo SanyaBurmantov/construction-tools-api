@@ -31,6 +31,8 @@ Current commerce state:
 - `backend/prisma/schema.prisma`: database model source of truth.
 - `frontend/nuxt.config.ts`: Nuxt SSR/ISR/proxy configuration.
 
+Frontend deployment note: public pages use Nuxt route rules with both `isr` and `swr`. `/api/*` is proxied by `frontend/server/api/[...path].ts` at runtime through `API_BASE_SERVER`; this avoids baking the backend URL at Docker build time.
+
 ## Backend
 
 ### Stack
@@ -73,7 +75,7 @@ Core Prisma models:
 - `ProductSpecification`: product values, unique by `[productId, specificationId]`.
 - `Source`: supplier/source record with unique `code`.
 - `SourceProduct`: supplier product link/data connected optionally to normalized `Product`. It stores supplier URL identity, separate supplier `sku`/article, price, images, description, specifications, and category mapping.
-- `SitemapsThTools`: queue of th-tool.by product URLs, with `isVisited` flag.
+- `SitemapsThTools`: queue of th-tool.by product URLs with `PENDING`, `DONE`, `FAILED`, and `SKIPPED` statuses, attempts, and last error metadata. Legacy `isVisited` remains for compatibility.
 - `SitemapsDukon`: queue of dukon.by catalog URLs with `PENDING`, `DONE`, `FAILED`, and `SKIPPED` statuses, attempts, and last error metadata.
 
 ## Public API
@@ -163,6 +165,9 @@ Category creation calculates `level` and `path` from parent.
 - `POST /admin/queue/refresh-sitemaps`
 - `POST /admin/queue/process`
 - `POST /admin/source-products/import`
+- `POST /admin/source-products/preview`: dry-run parser preview for one supplier URL without writing `Product`/`SourceProduct` records.
+- `POST /admin/queue/sitemaps/:id/retry`
+- `POST /admin/queue/sitemaps/retry-problems`
 - `GET /admin/queue/dukon`
 - `GET /admin/queue/dukon/sitemaps`
 - `POST /admin/queue/dukon/refresh-sitemaps`
@@ -173,13 +178,15 @@ Category creation calculates `level` and `path` from parent.
 - `GET /admin/queue/health`: parser cron health summary. Jobs are `OK`, `RUNNING`, `ERROR`, or `STALE` based on latest persisted runtime status.
 - `GET /admin/queue/supplier-summary`: per-source catalog quality summary: total/published/draft/hidden/archived and missing price/images/SKU counts.
 
-`POST /admin/source-products/import` imports a single product from a selected source and URL. Currently it supports `th-tool.by`/`th-tools` and `dukon.by`/`dukon`.
+`POST /admin/source-products/import` imports a single product from a selected source and URL. `POST /admin/source-products/preview` uses the same parser selection logic but returns parsed JSON only and does not write catalog records. Currently these endpoints support `th-tool.by`/`th-tools`, `dukon.by`/`dukon`, `tools.by`/`tools-by`, and `7745.by`/`7745`.
 
 Import DTO:
 
 ```ts
 { sourceId: string, url: string }
 ```
+
+Production parser rollout notes are maintained in `PARSER_PRODUCTION_RUNBOOK.md`.
 
 ## Parser
 

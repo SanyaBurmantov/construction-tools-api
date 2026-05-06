@@ -298,6 +298,51 @@ export class Supplier7745ParserService {
     return product;
   }
 
+  async previewProductUrl(url: string) {
+    const canonicalUrl = this.absoluteUrl(url);
+    const html = await this.fetchText(canonicalUrl);
+    const $ = cheerio.load(html);
+    const parsed = parse7745(html);
+    if (!parsed.name) throw new Error('Product name was not parsed');
+    if (this.isVerificationPage($, parsed.name)) {
+      throw new Error('7745 anti-bot verification page was returned');
+    }
+
+    const breadcrumbs = this.parseBreadcrumbs($);
+    const sku = this.findSpecValue(parsed.specifications, [
+      'артикул',
+      'код товара',
+      'sku',
+    ]);
+
+    return {
+      source: SOURCE_CODE,
+      url: canonicalUrl,
+      name: parsed.name,
+      sku,
+      model: this.findSpecValue(parsed.specifications, ['модель']),
+      barcode: this.findSpecValue(parsed.specifications, [
+        'штрихкод',
+        'ean',
+        'gtin',
+      ]),
+      brandName: this.findSpecValue(parsed.specifications, [
+        'производитель',
+        'бренд',
+        'торговая марка',
+      ]),
+      priceValue: parsed.price,
+      priceCurrency: 'BYN',
+      description: parsed.description,
+      images: parsed.images,
+      specifications: parsed.specifications,
+      breadcrumbs,
+      seoTitle: this.parseMeta($, 'og:title') || parsed.name,
+      seoDescription:
+        this.parseMeta($, 'description') || parsed.description || parsed.name,
+    };
+  }
+
   async publishDraftProducts() {
     return this.prisma.product.updateMany({
       where: {

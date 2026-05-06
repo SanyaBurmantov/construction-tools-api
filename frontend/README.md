@@ -31,6 +31,28 @@ Important env/config behavior:
 - Server-side requests use `API_BASE_SERVER`.
 - In production Docker, frontend uses `API_BASE_SERVER=http://backend:8000` and `NUXT_PUBLIC_API_BASE=/api`.
 
+`/api/*` is handled by `server/api/[...path].ts`, which proxies requests to `API_BASE_SERVER` at runtime. Do not reintroduce a build-time `routeRules` proxy for `/api/**`; that can bake `localhost:8000` into the production bundle during Docker build.
+
+## ISR / SWR Deployment
+
+Public pages are configured in `nuxt.config.ts` with route rules:
+
+- `/`: `isr: 300`, `swr: 300`
+- `/catalog` and `/catalog/**`: `isr: 300`, `swr: 300`
+- `/product/**`: `isr: 900`, `swr: 900`
+- `/admin/**`: client-side only (`ssr: false`)
+
+`isr` is for ISR-capable providers. `swr` gives equivalent stale-while-revalidate behavior for the self-hosted Nitro node-server Docker deployment. Product TTL is intentionally shorter than a day because supplier prices matter.
+
+Production smoke-test expectations:
+
+```text
+GET /                         -> 200, cache-control: s-maxage=300, stale-while-revalidate
+GET /catalog/?sourceCode=...   -> 200, cache-control: s-maxage=300, stale-while-revalidate
+GET /product/:slug             -> 200, cache-control: s-maxage=900, stale-while-revalidate
+GET /api/products?limit=1      -> 200 JSON via runtime backend proxy
+```
+
 ## Main Pages
 
 - `app/pages/index.vue`: homepage with hero and latest published product rail.
@@ -138,7 +160,9 @@ Current public-site direction is a practical marketplace/catalog UI inspired by 
 ## Production Checklist
 
 - Build with Node `22.12.0+`.
+- Local Node below `22.12.0` fails Nuxt/Vite build with `crypto.hash is not a function`; use Docker `node:22-bookworm-slim` or upgrade Node.
 - Verify `/catalog` loads products.
 - Verify `/catalog?sourceCode=dukon` filters Dukon products.
 - Verify homepage product rail shows latest parsed products.
 - Verify admin parsing page loads queue/runtime/supplier summary with a valid admin token.
+- Verify ISR/SWR response headers on public pages after deployment.

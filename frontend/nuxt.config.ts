@@ -15,11 +15,11 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    '/': { isr: 3600 },
-    '/catalog/**': { ssr: true },
-    '/product/**': { isr: 86400 },
-    '/admin/**': { ssr: false },
-    '/api/**': { proxy: `${process.env.API_BASE_SERVER || process.env.API_BASE || 'http://localhost:8000'}/**` }
+    '/': { isr: 300, swr: 300 },
+    '/catalog': { isr: 300, swr: 300 },
+    '/catalog/**': { isr: 300, swr: 300 },
+    '/product/**': { isr: 900, swr: 900 },
+    '/admin/**': { ssr: false }
   },
   build: {
     transpile: ['vuetify'],
