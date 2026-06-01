@@ -299,7 +299,8 @@ export class DukonParserService {
 
   async parseProductUrl(url: string) {
     const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
-    if (res.status === 404) throw new NonProductPageError('Product page returned 404');
+    if (res.status === 404)
+      throw new NonProductPageError('Product page returned 404');
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
 
     const html = await res.text();
@@ -435,7 +436,8 @@ export class DukonParserService {
 
   async previewProductUrl(url: string) {
     const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
-    if (res.status === 404) throw new NonProductPageError('Product page returned 404');
+    if (res.status === 404)
+      throw new NonProductPageError('Product page returned 404');
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
 
     const html = await res.text();
@@ -489,7 +491,9 @@ export class DukonParserService {
       stockStatus: this.parseStockStatus($, jsonLd?.availability),
       descriptionFull,
       descriptionShort: this.parseDescriptionShort($, descriptionFull),
-      images: this.parseImages($, name, jsonLd?.images).map((image) => image.url),
+      images: this.parseImages($, name, jsonLd?.images).map(
+        (image) => image.url,
+      ),
       specifications: specs,
       breadcrumbs: this.parseBreadcrumbNames($),
       jsonLd,
@@ -1252,7 +1256,9 @@ export class DukonParserService {
     const spacedCode = normalized.match(/([A-ZА-Я]{2,}\s+\d[\wА-Яа-я.-]*)$/u);
     if (spacedCode) return spacedCode[1];
 
-    const tailCode = normalized.match(/([A-ZА-Я0-9]+[\wА-Яа-я.-]*\d[\wА-Яа-я.-]*)$/u);
+    const tailCode = normalized.match(
+      /([A-ZА-Я0-9]+[\wА-Яа-я.-]*\d[\wА-Яа-я.-]*)$/u,
+    );
     return tailCode?.[1];
   }
 

@@ -215,10 +215,8 @@ export class ToolsByParserService {
       'sku',
     ]);
     const brandName =
-      this.findSpecValue(parsed.specifications, [
-        'бренд',
-        'торговая марка',
-      ]) || this.parseBrand($);
+      this.findSpecValue(parsed.specifications, ['бренд', 'торговая марка']) ||
+      this.parseBrand($);
     const brandId = brandName ? await this.upsertBrand(brandName) : undefined;
     const slug = this.productSlug(parsed.name, sku);
     const existingProduct = await this.prisma.product.findUnique({

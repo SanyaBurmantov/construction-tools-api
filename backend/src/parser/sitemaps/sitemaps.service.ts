@@ -70,7 +70,11 @@ export class SitemapsService {
 
     for (const chunk of chunks) {
       await this.prisma.sitemapsThTools.createMany({
-        data: chunk.map((url) => ({ url, isVisited: false, status: 'PENDING' })),
+        data: chunk.map((url) => ({
+          url,
+          isVisited: false,
+          status: 'PENDING',
+        })),
         skipDuplicates: true,
       });
     }

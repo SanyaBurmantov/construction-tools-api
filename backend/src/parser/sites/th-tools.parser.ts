@@ -298,7 +298,9 @@ export class ThToolsParserService {
       sku: this.parseSku($, this.parseSpecs($)),
       brandName: this.parseBrand($, this.parseSpecs($)),
       priceValue: this.parsePrice(
-        $('.price.product__price, [itemprop="price"]').first().attr('content') ||
+        $('.price.product__price, [itemprop="price"]')
+          .first()
+          .attr('content') ||
           $('.price.product__price, [itemprop="price"]').first().text(),
       ),
       priceCurrency: 'BYN',
@@ -475,9 +477,9 @@ export class ThToolsParserService {
     if (url.includes('/category/')) return false;
     return Boolean(
       $('.product__code span, [itemprop="sku"]').length ||
-        $('.price.product__price, [itemprop="price"]').length ||
-        $('.features-two-val__block').length ||
-        $('.p-images__slider-item').length,
+      $('.price.product__price, [itemprop="price"]').length ||
+      $('.features-two-val__block').length ||
+      $('.p-images__slider-item').length,
     );
   }
 
@@ -489,22 +491,32 @@ export class ThToolsParserService {
       .filter(Boolean);
   }
 
-  private parseBrand($: cheerio.CheerioAPI, specs: { name: string; value: string }[] = []) {
+  private parseBrand(
+    $: cheerio.CheerioAPI,
+    specs: { name: string; value: string }[] = [],
+  ) {
     return (
       this.clean(
         $('.product__top-brand-name, .product__brand a, .brand a')
           .first()
           .text(),
-      ) || this.findSpecValue(specs, ['бренд', 'поставщик']) || ''
+      ) ||
+      this.findSpecValue(specs, ['бренд', 'поставщик']) ||
+      ''
     );
   }
 
-  private parseSku($: cheerio.CheerioAPI, specs: { name: string; value: string }[] = []) {
+  private parseSku(
+    $: cheerio.CheerioAPI,
+    specs: { name: string; value: string }[] = [],
+  ) {
     return (
       this.clean(
         $('.product__code span, [itemprop="sku"]').first().text() ||
           $('[itemprop="sku"]').first().attr('content'),
-      ) || this.findSpecValue(specs, ['артикул', 'код', 'sku']) || ''
+      ) ||
+      this.findSpecValue(specs, ['артикул', 'код', 'sku']) ||
+      ''
     );
   }
 

@@ -50,10 +50,14 @@ sh deploy-prod.sh
 The backend production container runs:
 
 ```bash
-npx prisma db push && node dist/main
+npx prisma migrate deploy && node dist/main
 ```
 
-This is intentional because this repository currently does not contain Prisma migration files. When real migrations are introduced later, change the backend Dockerfile back to `prisma migrate deploy`.
+The schema is managed by Prisma migrations in `backend/prisma/migrations`. The current
+history starts from a single squashed baseline migration (`00000000000000_init`) generated
+from `schema.prisma`; the original pre-baseline migrations are kept for reference in
+`backend/prisma/_migrations_archive_pre_baseline` and are not applied. New schema changes
+must be added as new migrations (`npx prisma migrate dev --name <change>`) and committed.
 
 ## Useful Commands
 

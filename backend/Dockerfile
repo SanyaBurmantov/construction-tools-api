@@ -33,4 +33,4 @@ COPY prisma ./prisma/
 RUN npm ci --omit=dev && npx prisma generate
 COPY --from=build /backend/dist ./dist
 EXPOSE 8000
-CMD ["sh", "-c", "npx prisma db push && node dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
