@@ -190,15 +190,22 @@ watch(
   }
 )
 
-useHead({
+const catalogDescription =
+  'Каталог инструментов, крепежа и расходников с фильтрами по брендам, категориям и цене.'
+const catalogUrl = `${String(config.public.siteUrl).replace(/\/$/, '')}/catalog`
+
+useSeoMeta({
   title: 'Каталог инструмента и крепежа | Мультитул',
-  meta: [
-    {
-      name: 'description',
-      content:
-        'Каталог инструментов, крепежа и расходников с фильтрами по брендам, категориям и цене.'
-    }
-  ]
+  description: catalogDescription,
+  ogTitle: 'Каталог инструмента и крепежа | Мультитул',
+  ogDescription: catalogDescription,
+  ogType: 'website',
+  ogUrl: catalogUrl,
+  twitterCard: 'summary'
+})
+
+useHead({
+  link: [{ rel: 'canonical', href: catalogUrl }]
 })
 </script>
 

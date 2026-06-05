@@ -52,6 +52,15 @@ export class ProductService {
     };
   }
 
+  /** Slim list of published products for sitemap generation. */
+  getSitemapEntries() {
+    return this.prisma.product.findMany({
+      where: { status: 'PUBLISHED' },
+      select: { slug: true, updatedAt: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   async findAll() {
     return this.prisma.product.findMany({
       include: {

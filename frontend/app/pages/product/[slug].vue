@@ -85,16 +85,86 @@ watch(images, () => {
   activeImage.value = 0
 })
 
-useHead(() => ({
-  title: product.value?.name ? `${product.value.name} | Мультитул` : 'Товар | Мультитул',
-  meta: [
-    {
-      name: 'description',
-      content:
-        product.value?.descriptionShort || product.value?.name || 'Карточка товара Мультитул'
+const siteBase = computed(() => String(config.public.siteUrl).replace(/\/$/, ''))
+const canonicalUrl = computed(() => `${siteBase.value}/product/${slug.value}`)
+const ogImage = computed(() => images.value[0]?.url || undefined)
+const metaDescription = computed(
+  () => product.value?.descriptionShort || product.value?.name || 'Карточка товара Мультитул'
+)
+
+useSeoMeta({
+  title: () => (product.value?.name ? `${product.value.name} | Мультитул` : 'Товар | Мультитул'),
+  description: () => metaDescription.value,
+  ogTitle: () => product.value?.name || 'Товар | Мультитул',
+  ogDescription: () => metaDescription.value,
+  ogType: 'website',
+  ogUrl: () => canonicalUrl.value,
+  ogImage: () => ogImage.value,
+  twitterCard: 'summary_large_image',
+  twitterTitle: () => product.value?.name || 'Товар | Мультитул',
+  twitterDescription: () => metaDescription.value,
+  twitterImage: () => ogImage.value
+})
+
+useHead(() => {
+  const p = product.value
+  const ld: Record<string, unknown>[] = []
+
+  if (p) {
+    const productLd: Record<string, unknown> = {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: p.name,
+      url: canonicalUrl.value
     }
-  ]
-}))
+    if (p.sku) productLd.sku = p.sku
+    if (p.descriptionShort || p.descriptionFull) {
+      productLd.description = p.descriptionShort || p.descriptionFull
+    }
+    if (images.value.length) productLd.image = images.value.map((image) => image.url)
+    if (p.brand?.name) productLd.brand = { '@type': 'Brand', name: p.brand.name }
+    if (p.priceValue != null && p.priceValue > 0) {
+      productLd.offers = {
+        '@type': 'Offer',
+        price: p.priceValue,
+        priceCurrency: currency.value,
+        availability:
+          p.stockStatus === 'out_of_stock'
+            ? 'https://schema.org/BackOrder'
+            : 'https://schema.org/InStock',
+        url: canonicalUrl.value
+      }
+    }
+    ld.push(productLd)
+
+    const crumbs: Array<{ name: string, url: string }> = [
+      { name: 'Главная', url: `${siteBase.value}/` },
+      { name: 'Каталог', url: `${siteBase.value}/catalog` }
+    ]
+    if (p.category?.name) {
+      crumbs.push({ name: p.category.name, url: `${siteBase.value}/catalog?categoryId=${p.category.id}` })
+    }
+    crumbs.push({ name: p.name, url: canonicalUrl.value })
+    ld.push({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: crumbs.map((crumb, index) => ({
+        '@type': 'ListItem',
+        position: index + 1,
+        name: crumb.name,
+        item: crumb.url
+      }))
+    })
+  }
+
+  return {
+    link: [{ rel: 'canonical', href: canonicalUrl.value }],
+    script: ld.map((node) => ({
+      type: 'application/ld+json',
+      innerHTML: JSON.stringify(node)
+    }))
+  }
+})
 </script>
 
 <template>

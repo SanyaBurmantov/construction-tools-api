@@ -13,6 +13,12 @@ export class ProductController {
     return this.service.findAllFiltered(filter);
   }
 
+  // Must precede the ':slug' route so '/products/sitemap' isn't treated as a slug.
+  @Get('sitemap')
+  getSitemap() {
+    return this.service.getSitemapEntries();
+  }
+
   @Get(':slug')
   getOne(@Param('slug') slug: string) {
     return this.service.getProductBySlug(slug);

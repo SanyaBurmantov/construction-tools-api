@@ -67,6 +67,8 @@ services:
       HOST: 0.0.0.0
       API_BASE_SERVER: http://backend:8000
       NUXT_PUBLIC_API_BASE: /api
+      # Absolute origin for canonical URLs, sitemap.xml and robots.txt.
+      NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-https://${DOMAIN:-localhost}}
     depends_on:
       backend:
         condition: service_healthy

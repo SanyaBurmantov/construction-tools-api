@@ -21,7 +21,8 @@ export default defineNuxtConfig({
     '/product/**': { isr: 900, swr: 900 },
     '/cart/**': { ssr: false },
     '/checkout/**': { ssr: false },
-    '/admin/**': { ssr: false }
+    '/admin/**': { ssr: false },
+    '/sitemap.xml': { swr: 3600 }
   },
   build: {
     transpile: ['vuetify'],
@@ -30,6 +31,7 @@ export default defineNuxtConfig({
     apiBaseServer: process.env.API_BASE_SERVER || process.env.API_BASE || 'http://localhost:8000',
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
+      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
     },
   }
 })

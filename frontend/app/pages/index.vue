@@ -64,14 +64,22 @@ function submitSearch() {
   navigateTo({ path: '/catalog/', query: query ? { search: query } : undefined })
 }
 
-useHead({
+const homeDescription =
+  'Мультитул: каталог инструмента, оборудования, крепежа и расходных материалов.'
+const homeUrl = `${String(config.public.siteUrl).replace(/\/$/, '')}/`
+
+useSeoMeta({
   title: 'Мультитул | Каталог инструмента и оборудования',
-  meta: [
-    {
-      name: 'description',
-      content: 'Мультитул: каталог инструмента, оборудования, крепежа и расходных материалов.'
-    }
-  ]
+  description: homeDescription,
+  ogTitle: 'Мультитул | Каталог инструмента и оборудования',
+  ogDescription: homeDescription,
+  ogType: 'website',
+  ogUrl: homeUrl,
+  twitterCard: 'summary'
+})
+
+useHead({
+  link: [{ rel: 'canonical', href: homeUrl }]
 })
 </script>
 
