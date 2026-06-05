@@ -260,6 +260,7 @@ useHead({
             type="button"
             class="facet-button"
             :class="{ active: filters.brandId === brand.id }"
+            :aria-pressed="filters.brandId === brand.id"
             @click="setFacet('brandId', brand.id)"
           >
             <span>{{ brand.name }}</span>
@@ -277,6 +278,7 @@ useHead({
             type="button"
             class="facet-button"
             :class="{ active: filters.sourceCode === source.code }"
+            :aria-pressed="filters.sourceCode === source.code"
             :disabled="!source.code"
             @click="source.code && setFacet('sourceCode', source.code)"
           >
@@ -295,6 +297,7 @@ useHead({
             type="button"
             class="facet-button"
             :class="{ active: filters.categoryId === category.id }"
+            :aria-pressed="filters.categoryId === category.id"
             @click="setFacet('categoryId', category.id)"
           >
             <span>{{ category.name }}</span>

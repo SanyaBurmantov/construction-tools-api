@@ -42,6 +42,9 @@ async function loadData() {
 function resetProductForm() { editingId.value = ''; Object.assign(productForm, { name: '', slug: '', sku: '', model: '', categoryId: '', brandId: '', priceValue: '', stockStatus: 'in_stock', status: 'PUBLISHED', descriptionShort: '', descriptionFull: '' }) }
 function openCreateProduct() { resetProductForm(); isProductModalOpen.value = true }
 function closeProductModal() { isProductModalOpen.value = false; resetProductForm() }
+
+const productModalRef = ref<HTMLElement | null>(null)
+useModalA11y(isProductModalOpen, productModalRef, closeProductModal)
 function editProduct(product: AdminProduct) { editingId.value = product.id; Object.assign(productForm, { name: product.name, slug: product.slug, sku: product.sku || '', model: product.model || '', categoryId: product.categoryId, brandId: product.brandId || '', priceValue: product.priceValue ?? '', stockStatus: product.stockStatus || 'in_stock', status: product.status || 'PUBLISHED', descriptionShort: product.descriptionShort || '', descriptionFull: product.descriptionFull || '' }); isProductModalOpen.value = true }
 function productBody() { return { ...productForm, brandId: productForm.brandId || undefined, priceValue: productForm.priceValue !== '' ? Number(productForm.priceValue) : undefined } }
 function productSources(product: AdminProduct) { return product.sourceProducts?.length ? product.sourceProducts.map(item => item.source?.name || item.url).join(', ') : 'Вручную' }
@@ -92,8 +95,15 @@ useHead({ title: 'Товары | Админка', meta: [{ name: 'robots', conte
     </section>
 
     <div v-if="isProductModalOpen" class="modal-backdrop" @click.self="closeProductModal">
-      <form class="admin-card form-grid product-modal" @submit.prevent="saveProduct">
-        <div class="card-head"><h2>{{ editingId ? 'Редактировать товар' : 'Новый товар' }}</h2><button type="button" class="ghost" @click="closeProductModal">Закрыть</button></div>
+      <form
+        ref="productModalRef"
+        class="admin-card form-grid product-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-modal-title"
+        @submit.prevent="saveProduct"
+      >
+        <div class="card-head"><h2 id="product-modal-title">{{ editingId ? 'Редактировать товар' : 'Новый товар' }}</h2><button type="button" class="ghost" @click="closeProductModal">Закрыть</button></div>
         <input v-model="productForm.name" required placeholder="Название"><input v-model="productForm.slug" required placeholder="slug">
         <div class="two-cols"><input v-model="productForm.sku" placeholder="Артикул"><input v-model="productForm.model" placeholder="Модель"></div>
         <select v-model="productForm.categoryId" required><option value="" disabled>Категория</option><option v-for="category in categories" :key="category.id" :value="category.id">{{ category.name }}</option></select>
