@@ -166,6 +166,15 @@ export class AdminController {
     return this.adminService.getParserHealth();
   }
 
+  @Get('queue/runs')
+  getParserRuns(@Query('key') key?: string, @Query('limit') limit?: string) {
+    const parsedLimit = limit ? Number(limit) : undefined;
+    return this.adminService.getParserRuns(
+      key,
+      Number.isFinite(parsedLimit) ? parsedLimit : undefined,
+    );
+  }
+
   @Get('queue/supplier-summary')
   getSupplierCatalogSummary() {
     return this.adminService.getSupplierCatalogSummary();

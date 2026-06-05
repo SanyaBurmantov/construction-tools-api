@@ -215,6 +215,10 @@ export class AdminService {
     return this.runtimeStatus.getHealth();
   }
 
+  async getParserRuns(key?: string, limit?: number) {
+    return this.runtimeStatus.getRuns(key, limit);
+  }
+
   async getSupplierCatalogSummary() {
     const sources = await this.prisma.source.findMany({
       orderBy: { name: 'asc' },

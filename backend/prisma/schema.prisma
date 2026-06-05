@@ -278,6 +278,30 @@ model ParserError {
   @@index([url])
 }
 
+enum ParserRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model ParserRun {
+  id         String          @id @default(uuid())
+  key        String
+  label      String
+  status     ParserRunStatus @default(RUNNING)
+  startedAt  DateTime        @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  result     Json?
+  error      String?
+  // ParserError rows created in this run's time window (loose link by time).
+  errorCount Int             @default(0)
+  createdAt  DateTime        @default(now())
+
+  @@index([key, startedAt])
+  @@index([startedAt])
+}
+
 model ParserRuntimeStatus {
   id            String   @id @default(uuid())
   key           String   @unique

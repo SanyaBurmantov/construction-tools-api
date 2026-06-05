@@ -30,7 +30,8 @@ Schedules: process every 30 min, refresh sitemap daily. State is persisted in
 ## Monitoring
 ```bash
 curl https://$DOMAIN/health/parser                              # public health (ok + per-job status)
-curl -H "x-admin-token: $T" https://$DOMAIN/api/admin/queue/runtime-status
+curl -H "x-admin-token: $T" https://$DOMAIN/api/admin/queue/runtime-status   # last-state + counters per job
+curl -H "x-admin-token: $T" "https://$DOMAIN/api/admin/queue/runs?key=<code>-process&limit=20"  # run history (per-run duration/result/errorCount)
 curl -H "x-admin-token: $T" https://$DOMAIN/api/admin/queue/<code>           # queued/visited/failed/skipped counts
 curl -H "x-admin-token: $T" https://$DOMAIN/api/admin/queue/<code>/sitemaps?status=PROBLEM   # FAILED+SKIPPED rows
 curl -H "x-admin-token: $T" https://$DOMAIN/api/admin/queue/errors           # last 200 ParserError entries

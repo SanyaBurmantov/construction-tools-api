@@ -1,18 +1,32 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+// How many historical ParserRun rows to keep per key. Older rows are pruned
+// after each run so the table stays bounded (mirrors ParserLogService).
+const MAX_RUNS_PER_KEY = 100;
+
 @Injectable()
 export class ParserRuntimeStatusService {
+  private readonly logger = new Logger(ParserRuntimeStatusService.name);
+
+  // Maps a parser key to its currently-RUNNING ParserRun, so success()/failure()
+  // can finalize the row that start() opened without changing call signatures.
+  private readonly activeRuns = new Map<
+    string,
+    { id: string; startedAt: Date }
+  >();
+
   constructor(private readonly prisma: PrismaService) {}
 
   async start(key: string, label: string) {
+    const startedAt = new Date();
     await this.prisma.parserRuntimeStatus.upsert({
       where: { key },
       update: {
         label,
         isRunning: true,
-        startedAt: new Date(),
+        startedAt,
         finishedAt: null,
         lastError: null,
         runs: { increment: 1 },
@@ -21,10 +35,23 @@ export class ParserRuntimeStatusService {
         key,
         label,
         isRunning: true,
-        startedAt: new Date(),
+        startedAt,
         runs: 1,
       },
     });
+
+    try {
+      const run = await this.prisma.parserRun.create({
+        data: { key, label, status: 'RUNNING', startedAt },
+        select: { id: true },
+      });
+      this.activeRuns.set(key, { id: run.id, startedAt });
+    } catch (error) {
+      // Run history is best-effort; never let it break the actual parser run.
+      this.logger.warn(
+        `Failed to open ParserRun for ${key}: ${this.message(error)}`,
+      );
+    }
   }
 
   async success(key: string, result?: unknown) {
@@ -49,17 +76,20 @@ export class ParserRuntimeStatusService {
         successes: 1,
       },
     });
+
+    await this.finishRun(key, now, 'SUCCESS', { result });
   }
 
   async failure(key: string, error: unknown) {
     const now = new Date();
+    const message = this.message(error);
     await this.prisma.parserRuntimeStatus.upsert({
       where: { key },
       update: {
         isRunning: false,
         finishedAt: now,
         lastErrorAt: now,
-        lastError: error instanceof Error ? error.message : String(error),
+        lastError: message,
         failures: { increment: 1 },
       },
       create: {
@@ -68,10 +98,76 @@ export class ParserRuntimeStatusService {
         isRunning: false,
         finishedAt: now,
         lastErrorAt: now,
-        lastError: error instanceof Error ? error.message : String(error),
+        lastError: message,
         runs: 1,
         failures: 1,
       },
+    });
+
+    await this.finishRun(key, now, 'FAILED', { error: message });
+  }
+
+  /** Finalize the RUNNING ParserRun opened by start() for this key. */
+  private async finishRun(
+    key: string,
+    finishedAt: Date,
+    status: 'SUCCESS' | 'FAILED',
+    payload: { result?: unknown; error?: string },
+  ) {
+    const active = this.activeRuns.get(key);
+    if (!active) return;
+    this.activeRuns.delete(key);
+
+    try {
+      // Loosely attribute ParserError rows raised during this run's window.
+      const errorCount = await this.prisma.parserError.count({
+        where: { createdAt: { gte: active.startedAt, lte: finishedAt } },
+      });
+
+      await this.prisma.parserRun.update({
+        where: { id: active.id },
+        data: {
+          status,
+          finishedAt,
+          durationMs: finishedAt.getTime() - active.startedAt.getTime(),
+          errorCount,
+          result:
+            payload.result === undefined
+              ? undefined
+              : this.toJson(payload.result),
+          error: payload.error,
+        },
+      });
+
+      await this.pruneRuns(key);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to finalize ParserRun for ${key}: ${this.message(error)}`,
+      );
+    }
+  }
+
+  /** Keep only the most recent MAX_RUNS_PER_KEY runs for a key. */
+  private async pruneRuns(key: string) {
+    const stale = await this.prisma.parserRun.findMany({
+      where: { key },
+      orderBy: { startedAt: 'desc' },
+      skip: MAX_RUNS_PER_KEY,
+      select: { id: true },
+    });
+    if (stale.length) {
+      await this.prisma.parserRun.deleteMany({
+        where: { id: { in: stale.map((run) => run.id) } },
+      });
+    }
+  }
+
+  /** Recent run history, newest first. Optionally filtered by key. */
+  getRuns(key?: string, limit = 50) {
+    return this.prisma.parserRun.findMany({
+      where: key ? { key } : undefined,
+      orderBy: { startedAt: 'desc' },
+      take: Math.min(Math.max(limit, 1), 200),
     });
   }
 
@@ -112,5 +208,9 @@ export class ParserRuntimeStatusService {
   private toJson(value: unknown) {
     if (value === undefined) return Prisma.JsonNull;
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+  }
+
+  private message(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
   }
 }
