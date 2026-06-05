@@ -23,7 +23,7 @@ useHead({ title: 'Корзина | Мультитул' })
         <ul class="lines">
           <li v-for="item in cart.items" :key="item.productId" class="line">
             <NuxtLink :to="`/product/${item.slug}`" class="thumb">
-              <img v-if="item.image" :src="item.image" :alt="item.name">
+              <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy" decoding="async">
               <span v-else class="thumb-placeholder">нет фото</span>
             </NuxtLink>
 

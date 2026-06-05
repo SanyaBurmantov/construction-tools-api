@@ -180,6 +180,8 @@ useHead(() => {
             v-if="selectedImage?.url"
             :src="selectedImage.url"
             :alt="selectedImage.alt || product.name"
+            fetchpriority="high"
+            decoding="async"
           >
           <div v-else class="image-placeholder">нет фото</div>
         </div>
@@ -192,7 +194,7 @@ useHead(() => {
             :class="{ active: activeImage === index }"
             @click="activeImage = index"
           >
-            <img :src="image.url" :alt="image.alt || product.name">
+            <img :src="image.url" :alt="image.alt || product.name" loading="lazy" decoding="async">
           </button>
         </div>
       </div>

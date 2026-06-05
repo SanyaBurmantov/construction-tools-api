@@ -60,6 +60,7 @@ const availability = computed(() => {
         :src="image.url"
         :alt="image.alt || product.name"
         loading="lazy"
+        decoding="async"
       >
       <div v-else class="image-placeholder">Нет фото</div>
     </NuxtLink>
