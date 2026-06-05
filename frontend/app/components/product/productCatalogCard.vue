@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCartStore } from '~/stores/cart'
+
 const props = defineProps<{
   product: {
     id: string
@@ -14,22 +16,33 @@ const props = defineProps<{
   }
 }>()
 
-const image = computed(() => props.product.images?.[0])
-const currency = computed(() => {
-  const value = props.product.priceCurrency?.trim().toUpperCase()
-  return value && /^[A-Z]{3}$/.test(value) ? value : 'BYN'
-})
-const price = computed(() => {
-  if (props.product.priceValue === null || props.product.priceValue === undefined) {
-    return 'Цена по запросу'
-  }
+const cart = useCartStore()
+const { formatPrice, normalizeCurrency } = useFormatPrice()
 
-  return new Intl.NumberFormat('ru-BY', {
-    style: 'currency',
-    currency: currency.value,
-    maximumFractionDigits: 2
-  }).format(props.product.priceValue)
-})
+const image = computed(() => props.product.images?.[0])
+const currency = computed(() => normalizeCurrency(props.product.priceCurrency))
+const price = computed(() => formatPrice(props.product.priceValue, props.product.priceCurrency))
+const canBuy = computed(
+  () => props.product.priceValue != null && props.product.priceValue > 0
+)
+const added = ref(false)
+
+function addToCart() {
+  if (!canBuy.value) return
+  cart.add(
+    {
+      productId: props.product.id,
+      slug: props.product.slug,
+      name: props.product.name,
+      image: image.value?.url || null,
+      price: props.product.priceValue as number,
+      currency: currency.value
+    },
+    1
+  )
+  added.value = true
+  setTimeout(() => (added.value = false), 1500)
+}
 
 const specs = computed(() => props.product.productSpecs?.slice(0, 2) || [])
 const availability = computed(() => {
@@ -73,7 +86,17 @@ const availability = computed(() => {
           <strong class="price">{{ price }}</strong>
           <small>{{ availability }}</small>
         </div>
-        <NuxtLink :to="`/product/${product.slug}`" class="details-link">Подробнее</NuxtLink>
+        <button
+          v-if="canBuy"
+          type="button"
+          class="buy-button"
+          :class="{ added }"
+          :aria-label="`Добавить ${product.name} в корзину`"
+          @click="addToCart"
+        >
+          {{ added ? '✓' : 'В корзину' }}
+        </button>
+        <NuxtLink v-else :to="`/product/${product.slug}`" class="details-link">Подробнее</NuxtLink>
       </div>
     </div>
   </article>
@@ -222,5 +245,22 @@ const availability = computed(() => {
   font-weight: 800;
   padding: 9px 11px;
   text-decoration: none;
+}
+
+.buy-button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 10px;
+  background: var(--color-primary);
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 12px;
+  transition: background 0.16s ease;
+
+  &.added {
+    background: var(--color-green, #16a34a);
+  }
 }
 </style>

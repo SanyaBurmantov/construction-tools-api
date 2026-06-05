@@ -9,8 +9,10 @@ import { Supplier7745ParserService } from '../parser/sites/7745-source.parser';
 import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
 import { ParserLogService } from '../parser/parser-log.service';
 import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
+  imports: [OrdersModule],
   controllers: [AdminController],
   providers: [
     AdminGuard,

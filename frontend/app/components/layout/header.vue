@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { useCartStore } from '~/stores/cart'
+
 type Source = { id: string, name: string, code: string }
 
 const route = useRoute()
 const search = ref('')
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+const cart = useCartStore()
 
 const { data: sources } = await useAsyncData<Source[]>(
   'layout-sources',
@@ -52,7 +55,13 @@ function submitSearch() {
         <button type="submit">Найти</button>
       </form>
 
-      <NuxtLink class="post-button" to="/catalog/">Каталог</NuxtLink>
+      <NuxtLink class="cart-button" to="/cart/" aria-label="Корзина">
+        <span class="cart-icon" aria-hidden="true">🛒</span>
+        <span class="cart-label">Корзина</span>
+        <ClientOnly>
+          <span v-if="cart.count" class="cart-badge">{{ cart.count }}</span>
+        </ClientOnly>
+      </NuxtLink>
     </div>
 
     <nav class="nav-row" aria-label="Основная навигация">
@@ -175,17 +184,47 @@ function submitSearch() {
   }
 }
 
-.post-button {
+.cart-button {
+  position: relative;
   display: inline-flex;
   min-height: 42px;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
   border-radius: 12px;
   background: #ffcf26;
   color: #101828;
   font-weight: 900;
-  padding: 0 18px;
+  padding: 0 16px;
   text-decoration: none;
+}
+
+.cart-icon {
+  font-size: 18px;
+}
+
+.cart-label {
+  display: none;
+
+  @include media-breakpoint-up(md) {
+    display: inline;
+  }
+}
+
+.cart-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: inline-flex;
+  min-width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 6px;
 }
 
 .nav-row {

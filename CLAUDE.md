@@ -46,6 +46,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 - **Data model**: products are stored in two layers — `Product` (normalized
   storefront card) and `SourceProduct` (raw supplier snapshot, identity
   `@@unique([sourceId, url])`). See the parsing docs below.
+- **Storefront orders**: guest checkout (no accounts). The cart lives client-side
+  (Pinia `stores/cart.ts`, persisted to `localStorage`); `POST /orders`
+  (`orders/` module) re-prices every line from the DB (never trusts the client),
+  validates published/priced products, computes delivery cost, and snapshots
+  product name/slug/image/price into `OrderItem`. Admin manages orders via
+  `GET /admin/orders`, `GET /admin/orders/:id`, `PATCH /admin/orders/:id/status`.
+  Delivery costs are env-tunable (`DELIVERY_COST_COURIER`, `DELIVERY_COST_POST`).
 
 ## Database / migrations
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-type Stats = { products: number, categories: number, brands: number, sources: number, queuedSitemaps: number }
+type Stats = { products: number, categories: number, brands: number, sources: number, queuedSitemaps: number, orders: number, newOrders: number }
 
 const { token, loadToken, saveToken, adminFetch } = useAdminApi()
 const stats = ref<Stats | null>(null)
@@ -7,6 +7,7 @@ const errorMessage = ref('')
 const loading = ref(false)
 
 const sections = [
+  { title: 'Заказы', text: 'Список заказов покупателей, статусы и детали.', to: '/admin/orders' },
   { title: 'Товары', text: 'Поиск, список, создание, редактирование и удаление товаров.', to: '/admin/products' },
   { title: 'Категории', text: 'Структура каталога и управление категориями.', to: '/admin/categories' },
   { title: 'Бренды', text: 'Список брендов, создание и редактирование.', to: '/admin/brands' },
@@ -53,6 +54,8 @@ useHead({ title: 'Админка | Мультитул', meta: [{ name: 'robots',
     <div v-if="errorMessage" class="notice error">{{ errorMessage }}</div>
 
     <section v-if="stats" class="stats-grid">
+      <div><strong>{{ stats.orders }}</strong><span>заказов</span></div>
+      <div><strong>{{ stats.newOrders }}</strong><span>новых заказов</span></div>
       <div><strong>{{ stats.products }}</strong><span>товаров</span></div>
       <div><strong>{{ stats.categories }}</strong><span>категорий</span></div>
       <div><strong>{{ stats.brands }}</strong><span>брендов</span></div>
@@ -81,6 +84,6 @@ button { border: 2px solid var(--color-ink); border-radius: 999px; background: v
 .notice.error { color: var(--color-accent-strong); }
 .stats-grid, .section-grid { display: grid; gap: 18px; }
 .stats-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); > div { display: grid; gap: 6px; padding: 20px; } strong { font-family: var(--font-heading); font-size: 34px; } span { color: var(--color-muted); font-weight: 900; } }
-.section-grid { @include media-breakpoint-up(lg) { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.section-grid { @include media-breakpoint-up(md) { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } }
 .section-card { display: grid; gap: 12px; color: var(--color-ink); padding: 22px; text-decoration: none; transition: 0.18s ease; &:hover { transform: translate(-2px, -2px); box-shadow: 10px 10px 0 var(--color-ink); } p { color: var(--color-muted); line-height: 1.6; } }
 </style>

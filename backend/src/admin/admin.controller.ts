@@ -24,11 +24,19 @@ import { AdminImportSourceProductDto } from './dto/admin-import-source-product.d
 import { AdminMapSourceCategoryDto } from './dto/admin-map-source-category.dto';
 import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
 import { Admin7745SitemapQueryDto } from './dto/admin-7745-sitemap-query.dto';
+import { OrdersService } from '../orders/orders.service';
+import {
+  AdminOrderQueryDto,
+  AdminUpdateOrderStatusDto,
+} from '../orders/dto/admin-order-query.dto';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly ordersService: OrdersService,
+  ) {}
 
   @Get('stats')
   getStats() {
@@ -241,5 +249,23 @@ export class AdminController {
   @Delete('categories/:id')
   deleteCategory(@Param('id') id: string) {
     return this.adminService.deleteCategory(id);
+  }
+
+  @Get('orders')
+  getOrders(@Query() query: AdminOrderQueryDto) {
+    return this.ordersService.getOrders(query);
+  }
+
+  @Get('orders/:id')
+  getOrder(@Param('id') id: string) {
+    return this.ordersService.getOrder(id);
+  }
+
+  @Patch('orders/:id/status')
+  updateOrderStatus(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdateOrderStatusDto,
+  ) {
+    return this.ordersService.updateStatus(id, dto);
   }
 }

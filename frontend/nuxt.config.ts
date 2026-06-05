@@ -19,6 +19,8 @@ export default defineNuxtConfig({
     '/catalog': { isr: 300, swr: 300 },
     '/catalog/**': { isr: 300, swr: 300 },
     '/product/**': { isr: 900, swr: 900 },
+    '/cart/**': { ssr: false },
+    '/checkout/**': { ssr: false },
     '/admin/**': { ssr: false }
   },
   build: {

@@ -18,15 +18,24 @@ type ErrorResponse = {
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
+  // Honor HttpException, then express-style middleware errors that carry a
+  // numeric `status`/`statusCode` (e.g. body-parser's PayloadTooLargeError → 413).
+  private static resolveStatus(exception: unknown): number {
+    if (exception instanceof HttpException) return exception.getStatus();
+    if (typeof exception === 'object' && exception !== null) {
+      const candidate = exception as { status?: unknown; statusCode?: unknown };
+      const code = candidate.status ?? candidate.statusCode;
+      if (typeof code === 'number' && code >= 400 && code <= 599) return code;
+    }
+    return HttpStatus.INTERNAL_SERVER_ERROR;
+  }
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const status =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const status = HttpExceptionFilter.resolveStatus(exception);
 
     const exceptionResponse =
       exception instanceof HttpException ? exception.getResponse() : null;

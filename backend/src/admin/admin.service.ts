@@ -37,16 +37,33 @@ export class AdminService {
   ) {}
 
   async getStats() {
-    const [products, categories, brands, sources, queuedSitemaps] =
-      await Promise.all([
-        this.prisma.product.count(),
-        this.prisma.category.count(),
-        this.prisma.brand.count(),
-        this.prisma.source.count(),
-        this.prisma.sitemapsThTools.count({ where: { isVisited: false } }),
-      ]);
+    const [
+      products,
+      categories,
+      brands,
+      sources,
+      queuedSitemaps,
+      orders,
+      newOrders,
+    ] = await Promise.all([
+      this.prisma.product.count(),
+      this.prisma.category.count(),
+      this.prisma.brand.count(),
+      this.prisma.source.count(),
+      this.prisma.sitemapsThTools.count({ where: { isVisited: false } }),
+      this.prisma.order.count(),
+      this.prisma.order.count({ where: { status: 'NEW' } }),
+    ]);
 
-    return { products, categories, brands, sources, queuedSitemaps };
+    return {
+      products,
+      categories,
+      brands,
+      sources,
+      queuedSitemaps,
+      orders,
+      newOrders,
+    };
   }
 
   async getProducts(query: AdminProductQueryDto) {

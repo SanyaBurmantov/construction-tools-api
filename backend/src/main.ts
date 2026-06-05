@@ -1,14 +1,32 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
+import { json, urlencoded } from 'express';
 import { PrismaService } from './prisma/prisma.service';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
   const port = Number(process.env.PORT || 8000);
   const corsOrigin = process.env.CORS_ORIGIN;
+  const bodyLimit = process.env.BODY_LIMIT ?? '1mb';
+
+  // Behind the Caddy reverse proxy: trust the first hop so the throttler and
+  // logs see the real client IP from X-Forwarded-For, not the proxy address.
+  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS ?? 1));
+
+  // Security headers. CSP is disabled here: this process is a JSON API behind
+  // the Caddy/Nuxt edge, and the default CSP would break Swagger UI.
+  app.use(helmet({ contentSecurityPolicy: false }));
+
+  // Explicit body parsers with a size limit (Nest's defaults are disabled above).
+  app.use(json({ limit: bodyLimit }));
+  app.use(urlencoded({ extended: true, limit: bodyLimit }));
 
   app.enableCors({
     origin: corsOrigin
@@ -16,6 +34,7 @@ async function bootstrap() {
       : true,
   });
   app.useGlobalFilters(new HttpExceptionFilter());
+  app.enableShutdownHooks();
 
   // Global validation pipe
   app.useGlobalPipes(

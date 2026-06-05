@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useCartStore } from '~/stores/cart'
+
 type Product = {
   id: string
   slug: string
@@ -20,6 +22,7 @@ type Product = {
 
 const route = useRoute()
 const config = useRuntimeConfig()
+const cart = useCartStore()
 const slug = computed(() => String(route.params.slug))
 const productDataKey = computed(() => `product:${slug.value}`)
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
@@ -54,6 +57,29 @@ const availability = computed(() => {
   if (product.value?.stockStatus === 'out_of_stock') return 'Под заказ'
   return product.value?.stockStatus || 'Наличие уточняйте'
 })
+
+const canBuy = computed(
+  () => !!product.value && product.value.priceValue != null && product.value.priceValue > 0
+)
+const quantity = ref(1)
+const justAdded = ref(false)
+
+function addToCart() {
+  if (!product.value || !canBuy.value) return
+  cart.add(
+    {
+      productId: product.value.id,
+      slug: product.value.slug,
+      name: product.value.name,
+      image: images.value[0]?.url || null,
+      price: product.value.priceValue as number,
+      currency: currency.value
+    },
+    quantity.value
+  )
+  justAdded.value = true
+  setTimeout(() => (justAdded.value = false), 2000)
+}
 
 watch(images, () => {
   activeImage.value = 0
@@ -136,15 +162,16 @@ useHead(() => ({
           </div>
         </div>
 
-        <a
-          v-if="product.sourceProducts?.[0]?.url"
-          class="primary-action"
-          :href="product.sourceProducts[0].url"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Открыть у поставщика
-        </a>
+        <div v-if="canBuy" class="cart-row">
+          <div class="qty-control">
+            <button type="button" aria-label="Меньше" @click="quantity = Math.max(1, quantity - 1)">−</button>
+            <input v-model.number="quantity" type="number" min="1" max="999">
+            <button type="button" aria-label="Больше" @click="quantity = Math.min(999, quantity + 1)">+</button>
+          </div>
+          <button class="primary-action" type="button" @click="addToCart">
+            {{ justAdded ? 'Добавлено ✓' : 'В корзину' }}
+          </button>
+        </div>
         <button v-else class="primary-action" type="button">
           Запросить наличие
         </button>
@@ -341,6 +368,51 @@ useHead(() => ({
   display: block;
   color: var(--color-ink);
   font-size: 24px;
+}
+
+.cart-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.qty-control {
+  display: inline-flex;
+  align-items: center;
+  border: 2px solid var(--color-ink);
+  border-radius: 999px;
+  overflow: hidden;
+
+  button {
+    width: 44px;
+    height: 48px;
+    border: 0;
+    background: white;
+    cursor: pointer;
+    font-size: 22px;
+    font-weight: 900;
+  }
+
+  input {
+    width: 56px;
+    height: 48px;
+    border: 0;
+    border-left: 2px solid var(--color-ink);
+    border-right: 2px solid var(--color-ink);
+    text-align: center;
+    font-weight: 900;
+    font-size: 16px;
+    outline: 0;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  input::-webkit-outer-spin-button,
+  input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 }
 
 .primary-action {
