@@ -1,4 +1,11 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -11,5 +18,11 @@ export class OrdersController {
   @Post()
   create(@Body() dto: CreateOrderDto) {
     return this.ordersService.createOrder(dto);
+  }
+
+  // Public order confirmation by UUID (used by the /checkout/success page).
+  @Get(':id')
+  getConfirmation(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ordersService.getOrderConfirmation(id);
   }
 }

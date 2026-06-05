@@ -36,7 +36,6 @@ const form = reactive({
 
 const submitting = ref(false)
 const errorMessage = ref('')
-const placedOrder = ref<OrderResponse | null>(null)
 
 onMounted(() => cart.load())
 
@@ -76,7 +75,7 @@ async function submit() {
       },
     })
     cart.clear()
-    placedOrder.value = order
+    await navigateTo({ path: '/checkout/success', query: { id: order.id } })
   } catch (error) {
     const err = error as { data?: { message?: string | string[] } }
     const message = err?.data?.message
@@ -96,14 +95,7 @@ useHead({ title: 'Оформление заказа | Мультитул' })
     <h1>Оформление заказа</h1>
 
     <ClientOnly>
-      <div v-if="placedOrder" class="success">
-        <div class="success-mark">✓</div>
-        <h2>Заказ №{{ placedOrder.number }} принят</h2>
-        <p>Мы свяжемся с вами для подтверждения. Сумма заказа: <strong>{{ formatPrice(placedOrder.total, placedOrder.currency) }}</strong></p>
-        <NuxtLink to="/catalog/" class="primary">Продолжить покупки</NuxtLink>
-      </div>
-
-      <div v-else-if="cart.isEmpty" class="empty">
+      <div v-if="cart.isEmpty" class="empty">
         <p>Корзина пуста — нечего оформлять.</p>
         <NuxtLink to="/catalog/" class="primary">Перейти в каталог</NuxtLink>
       </div>
@@ -400,7 +392,6 @@ textarea {
   padding: 10px 12px;
 }
 
-.success,
 .empty {
   display: grid;
   gap: 14px;
@@ -410,17 +401,5 @@ textarea {
   background: white;
   box-shadow: var(--shadow-card);
   padding: 40px;
-}
-
-.success-mark {
-  display: grid;
-  width: 56px;
-  height: 56px;
-  place-items: center;
-  border-radius: 999px;
-  background: #dcfce7;
-  color: #16a34a;
-  font-size: 28px;
-  font-weight: 900;
 }
 </style>

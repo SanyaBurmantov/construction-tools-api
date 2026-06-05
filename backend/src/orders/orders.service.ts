@@ -114,6 +114,44 @@ export class OrdersService {
     });
   }
 
+  /**
+   * Public order confirmation, looked up by unguessable UUID (order numbers are
+   * sequential, so they must not be queryable). Projects out PII that isn't
+   * needed on the confirmation page (phone, email, comment).
+   */
+  async getOrderConfirmation(id: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      select: {
+        number: true,
+        status: true,
+        currency: true,
+        itemsTotal: true,
+        deliveryCost: true,
+        total: true,
+        deliveryMethod: true,
+        deliveryAddress: true,
+        paymentMethod: true,
+        customerName: true,
+        createdAt: true,
+        items: {
+          select: {
+            id: true,
+            productName: true,
+            productSlug: true,
+            productSku: true,
+            productImage: true,
+            unitPrice: true,
+            quantity: true,
+            lineTotal: true,
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Заказ не найден');
+    return order;
+  }
+
   async getOrders(query: AdminOrderQueryDto) {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 20, 100);
