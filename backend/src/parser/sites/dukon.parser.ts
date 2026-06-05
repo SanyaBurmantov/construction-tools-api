@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
 import { XMLParser } from 'fast-xml-parser';
 import { PrismaService } from '../../prisma/prisma.service';
+import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
@@ -298,7 +299,9 @@ export class DukonParserService {
   }
 
   async parseProductUrl(url: string) {
-    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    const res = await fetchWithTimeout(url, {
+      headers: { 'user-agent': 'Mozilla/5.0' },
+    });
     if (res.status === 404)
       throw new NonProductPageError('Product page returned 404');
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
@@ -435,7 +438,9 @@ export class DukonParserService {
   }
 
   async previewProductUrl(url: string) {
-    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    const res = await fetchWithTimeout(url, {
+      headers: { 'user-agent': 'Mozilla/5.0' },
+    });
     if (res.status === 404)
       throw new NonProductPageError('Product page returned 404');
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
@@ -885,7 +890,9 @@ export class DukonParserService {
   }
 
   private async fetchText(url: string) {
-    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    const res = await fetchWithTimeout(url, {
+      headers: { 'user-agent': 'Mozilla/5.0' },
+    });
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
     return res.text();
   }

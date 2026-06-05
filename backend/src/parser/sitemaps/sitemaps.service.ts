@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { XMLParser } from 'fast-xml-parser';
 import { chunkArray } from '../../common/utils/chunk-array';
 import { mapWithConcurrency } from '../../common/utils/run-with-concurrency';
+import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 
 type SitemapEntry = { loc: string };
 type SitemapXml = {
@@ -26,7 +27,7 @@ export class SitemapsService {
   }
 
   async getProductUrlsThTools(url: string): Promise<string[]> {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}`);

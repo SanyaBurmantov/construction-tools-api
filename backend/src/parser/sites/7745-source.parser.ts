@@ -5,6 +5,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
+import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ParserLogService } from '../parser-log.service';
 import { parse7745 } from './7745.parser';
 
@@ -699,7 +700,7 @@ export class Supplier7745ParserService {
   }
 
   private async fetchText(url: string) {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: {
         'user-agent':
           'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',

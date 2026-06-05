@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
+import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
 import { parseTools } from './tools.parser';
@@ -618,7 +619,9 @@ export class ToolsByParserService {
   }
 
   private async fetchText(url: string) {
-    const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
+    const res = await fetchWithTimeout(url, {
+      headers: { 'user-agent': 'Mozilla/5.0' },
+    });
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
     return res.text();
   }

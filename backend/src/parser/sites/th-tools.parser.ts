@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as cheerio from 'cheerio';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
+import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ParserLogService } from '../parser-log.service';
 
 type SavedCategoryRef = { id: string };
@@ -170,7 +171,7 @@ export class ThToolsParserService {
   }
 
   async parseProductUrl(url: string) {
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`Failed to fetch ${url}`);
 
     const html = await res.text();
@@ -280,7 +281,7 @@ export class ThToolsParserService {
   }
 
   async previewProductUrl(url: string) {
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
 
     const html = await res.text();
