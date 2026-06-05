@@ -74,6 +74,7 @@ export class OrdersService {
         product: { connect: { id: product.id } },
         productName: product.name,
         productSlug: product.slug,
+        productSku: product.sku ?? null,
         productImage: product.images[0]?.url ?? null,
         unitPrice,
         quantity,

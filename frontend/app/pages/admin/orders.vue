@@ -3,6 +3,7 @@ interface OrderItem {
   id: string
   productName: string
   productSlug: string
+  productSku: string | null
   unitPrice: number
   quantity: number
   lineTotal: number
@@ -173,7 +174,10 @@ useHead({ title: 'Заказы | Админка', meta: [{ name: 'robots', conte
         <div v-if="expanded === order.id" class="order-body">
           <ul class="items">
             <li v-for="item in order.items" :key="item.id">
-              <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">{{ item.productName }}</NuxtLink>
+              <span class="item-name">
+                <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">{{ item.productName }}</NuxtLink>
+                <small v-if="item.productSku">Арт. {{ item.productSku }}</small>
+              </span>
               <span>{{ item.quantity }} × {{ formatPrice(item.unitPrice, order.currency) }}</span>
               <strong>{{ formatPrice(item.lineTotal, order.currency) }}</strong>
             </li>
@@ -225,6 +229,7 @@ h1 { margin-top: 6px; font-size: clamp(28px, 5vw, 48px); }
 .order-body { display: grid; gap: 16px; border-top: 1px solid var(--color-line); padding: 16px; background: #fafafa; @include media-breakpoint-up(lg) { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
 .items { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .items li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 14px; a { color: var(--color-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+.item-name { display: grid; gap: 2px; min-width: 0; small { color: var(--color-muted); font-size: 12px; font-weight: 700; } }
 .details { display: grid; gap: 6px; margin: 0; > div { display: flex; justify-content: space-between; gap: 12px; } dt { color: var(--color-muted); } dd { margin: 0; font-weight: 700; text-align: right; } }
 .pager { display: flex; gap: 14px; align-items: center; justify-content: center; button { border: 1px solid var(--color-line); border-radius: 10px; background: white; cursor: pointer; padding: 8px 14px; &:disabled { opacity: 0.5; cursor: not-allowed; } } }
 </style>

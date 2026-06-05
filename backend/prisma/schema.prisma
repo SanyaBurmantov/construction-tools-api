@@ -259,6 +259,7 @@ model OrderItem {
   productId   String?
   productName String
   productSlug String
+  productSku  String?
   productImage String?
   unitPrice   Float
   quantity    Int

@@ -6,6 +6,7 @@ const props = defineProps<{
     id: string
     slug: string
     name: string
+    sku?: string | null
     priceValue?: number | null
     priceCurrency?: string | null
     stockStatus?: string | null
@@ -34,6 +35,7 @@ function addToCart() {
       productId: props.product.id,
       slug: props.product.slug,
       name: props.product.name,
+      sku: props.product.sku ?? null,
       image: image.value?.url || null,
       price: props.product.priceValue as number,
       currency: currency.value
@@ -69,6 +71,8 @@ const availability = computed(() => {
       <NuxtLink :to="`/product/${product.slug}`" class="title">
         {{ product.name }}
       </NuxtLink>
+
+      <span v-if="product.sku" class="sku">Арт. {{ product.sku }}</span>
 
       <div class="meta-row">
         <span v-if="product.brand?.name">{{ product.brand.name }}</span>
@@ -167,6 +171,13 @@ const availability = computed(() => {
   &:hover {
     color: var(--color-primary);
   }
+}
+
+.sku {
+  margin-top: -6px;
+  color: var(--color-subtle);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .meta-row {

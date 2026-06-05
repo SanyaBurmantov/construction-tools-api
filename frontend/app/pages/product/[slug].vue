@@ -71,6 +71,7 @@ function addToCart() {
       productId: product.value.id,
       slug: product.value.slug,
       name: product.value.name,
+      sku: product.value.sku ?? null,
       image: images.value[0]?.url || null,
       price: product.value.priceValue as number,
       currency: currency.value

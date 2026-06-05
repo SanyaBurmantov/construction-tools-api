@@ -29,6 +29,7 @@ useHead({ title: 'Корзина | Мультитул' })
 
             <div class="line-main">
               <NuxtLink :to="`/product/${item.slug}`" class="line-name">{{ item.name }}</NuxtLink>
+              <span v-if="item.sku" class="line-sku">Арт. {{ item.sku }}</span>
               <span class="line-price">{{ formatPrice(item.price, item.currency) }} / шт.</span>
             </div>
 
@@ -157,6 +158,12 @@ useHead({ title: 'Корзина | Мультитул' })
   &:hover {
     color: var(--color-primary);
   }
+}
+
+.line-sku {
+  color: var(--color-subtle);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .line-price {
