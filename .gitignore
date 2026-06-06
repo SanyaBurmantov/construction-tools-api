@@ -4,6 +4,7 @@ node_modules
 dist
 backend/dist
 frontend/dist
+frontend/.output
 backend/node_modules
 frontend/node_modules
 frontend/.nuxt
