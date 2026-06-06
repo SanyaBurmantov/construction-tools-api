@@ -1,3 +1,3 @@
 export type TSitemapSite = {
-  site: string
+  site: string;
 };

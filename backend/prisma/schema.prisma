@@ -24,8 +24,9 @@ model Category {
   parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id])
   children Category[] @relation("CategoryChildren")
 
-  products       Product[]
-  specifications Specification[]
+  products               Product[]
+  specifications         Specification[]
+  mappedSourceCategories SourceCategory[] @relation("MappedSourceCategory")
 }
 
 model Brand {
@@ -54,6 +55,13 @@ model Specification {
   @@unique([categoryId, key])
 }
 
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  HIDDEN
+  ARCHIVED
+}
+
 model Product {
   id               String                 @id @default(uuid())
   slug             String                 @unique
@@ -71,12 +79,16 @@ model Product {
   oldPrice         Float?
   stockStatus      String?
   stockQuantity    Int?
+  status           ProductStatus          @default(PUBLISHED)
   descriptionShort String?
   descriptionFull  String?
   seoTitle         String?
   seoDescription   String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
   productSpecs     ProductSpecification[]
   sourceProducts   SourceProduct[]
+  orderItems       OrderItem[]
 }
 
 model ProductSpecification {
@@ -100,11 +112,32 @@ model ProductImage {
 }
 
 model Source {
-  id             String          @id @default(uuid())
-  name           String
-  code           String          @unique
-  url            String
-  sourceProducts SourceProduct[]
+  id               String           @id @default(uuid())
+  name             String
+  code             String           @unique
+  url              String
+  sourceProducts   SourceProduct[]
+  sourceCategories SourceCategory[]
+}
+
+model SourceCategory {
+  id               String           @id @default(uuid())
+  source           Source           @relation(fields: [sourceId], references: [id])
+  sourceId         String
+  externalId       String
+  name             String
+  slug             String
+  url              String?
+  parent           SourceCategory?  @relation("SourceCategoryChildren", fields: [parentId], references: [id])
+  parentId         String?
+  children         SourceCategory[] @relation("SourceCategoryChildren")
+  level            Int
+  path             String[]
+  mappedCategory   Category?        @relation("MappedSourceCategory", fields: [mappedCategoryId], references: [id])
+  mappedCategoryId String?
+  sourceProducts   SourceProduct[]
+
+  @@unique([sourceId, externalId])
 }
 
 model SourceProduct {
@@ -114,6 +147,7 @@ model SourceProduct {
   externalId     String
   url            String
   name           String
+  sku            String?
   price          Float?
   currency       String?
   stock          Boolean  @default(true)
@@ -122,11 +156,166 @@ model SourceProduct {
   specifications Json
   product        Product? @relation(fields: [productId], references: [id])
   productId      String?
+  sourceCategory SourceCategory? @relation(fields: [sourceCategoryId], references: [id])
+  sourceCategoryId String?
   lastSync       DateTime @default(now())
+
+  @@unique([sourceId, url])
 }
 
 model SitemapsThTools {
-  id        String  @id @default(uuid())
-  url       String  @unique
-  isVisited Boolean @default(false)
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
+}
+
+model SitemapsDukon {
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
+}
+
+model Sitemaps7745 {
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
+}
+
+model SitemapsToolsBy {
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
+}
+
+enum OrderStatus {
+  NEW
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum DeliveryMethod {
+  PICKUP
+  COURIER
+  POST
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  INVOICE
+}
+
+model Order {
+  id             String         @id @default(uuid())
+  number         Int            @unique @default(autoincrement())
+  status         OrderStatus    @default(NEW)
+  customerName   String
+  customerPhone  String
+  customerEmail  String?
+  comment        String?
+  deliveryMethod DeliveryMethod @default(PICKUP)
+  deliveryAddress String?
+  paymentMethod  PaymentMethod  @default(CASH)
+  currency       String         @default("BYN")
+  itemsTotal     Float          @default(0)
+  deliveryCost   Float          @default(0)
+  total          Float          @default(0)
+  items          OrderItem[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  product     Product? @relation(fields: [productId], references: [id])
+  productId   String?
+  productName String
+  productSlug String
+  productSku  String?
+  productImage String?
+  unitPrice   Float
+  quantity    Int
+  lineTotal   Float
+
+  @@index([orderId])
+}
+
+model ParserError {
+  id        String   @id @default(uuid())
+  url       String
+  message   String
+  stack     String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([url])
+}
+
+enum ParserRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model ParserRun {
+  id         String          @id @default(uuid())
+  key        String
+  label      String
+  status     ParserRunStatus @default(RUNNING)
+  startedAt  DateTime        @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  result     Json?
+  error      String?
+  // ParserError rows created in this run's time window (loose link by time).
+  errorCount Int             @default(0)
+  createdAt  DateTime        @default(now())
+
+  @@index([key, startedAt])
+  @@index([startedAt])
+}
+
+model ParserRuntimeStatus {
+  id            String   @id @default(uuid())
+  key           String   @unique
+  label         String
+  isRunning     Boolean  @default(false)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  lastError     String?
+  lastResult    Json?
+  runs          Int      @default(0)
+  successes     Int      @default(0)
+  failures      Int      @default(0)
+  updatedAt     DateTime @updatedAt
 }

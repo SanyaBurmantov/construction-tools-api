@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { SitemapsService } from './sitemaps.service';
-import { ThToolsParserService } from '../sites/th-tools.parser';
+import { AdminGuard } from '../../admin/admin.guard';
 
 @Controller('sitemap-initial')
+@UseGuards(AdminGuard)
 export class SitemapController {
-  constructor(private service: SitemapsService) {
-  }
+  constructor(private service: SitemapsService) {}
 
   @Get()
   create() {

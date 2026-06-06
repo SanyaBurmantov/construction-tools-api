@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { CreateSourceProductDto } from './dto/create-source-product.dto';
 import { TSourceProduct } from './types/source-product.type';
-import { TSource } from './types/source.type';
 import { CreateSourceDto } from './dto/create-source.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -49,10 +48,10 @@ export class SourcesService {
   constructor(private prisma: PrismaService) {}
 
   create(dto: CreateSourceDto) {
-    console.log('test');
-    return this.prisma.source.create({data: dto});
+    return this.prisma.source.create({ data: dto });
   }
+
   getAll() {
-    return this.prisma.source.findMany()
+    return this.prisma.source.findMany({ orderBy: { name: 'asc' } });
   }
 }

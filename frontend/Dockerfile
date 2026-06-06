@@ -1,20 +1,25 @@
-FROM node:20-bullseye
+FROM node:22-bookworm-slim AS base
 
 WORKDIR /frontend
 
-# Копируем файлы package.json и package-lock.json (или yarn.lock)
 COPY package*.json ./
-COPY yarn.lock* ./
-COPY pnpm-lock.yaml* ./
 
-# Устанавливаем зависимости
+FROM base AS development
 RUN npm ci
-
-# Копируем исходный код
 COPY . .
-
-# Открываем порт для dev сервера
 EXPOSE 3000
-
-# Запускаем dev режим
 CMD ["npm", "run", "dev"]
+
+FROM base AS build
+ARG NUXT_PUBLIC_API_BASE=/api
+ENV NUXT_PUBLIC_API_BASE=${NUXT_PUBLIC_API_BASE}
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:22-bookworm-slim AS production
+ENV NODE_ENV=production
+WORKDIR /frontend
+COPY --from=build /frontend/.output ./.output
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]

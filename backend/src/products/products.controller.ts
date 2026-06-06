@@ -1,7 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { CreateProductDto } from './dto/create-product-dto';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ProductService } from './products.service';
-import * as productFilterType from './types/product-filter.type';
 import { ApiTags } from '@nestjs/swagger';
 import { ProductFilterDto } from './dto/product-filter-dto';
 
@@ -10,18 +8,19 @@ import { ProductFilterDto } from './dto/product-filter-dto';
 export class ProductController {
   constructor(private service: ProductService) {}
 
-  @Post()
-  create(@Body() dto: CreateProductDto) {
-    return this.service.create(dto);
-  }
-
   @Get()
   getAll(@Query() filter: ProductFilterDto) {
     return this.service.findAllFiltered(filter);
   }
 
+  // Must precede the ':slug' route so '/products/sitemap' isn't treated as a slug.
+  @Get('sitemap')
+  getSitemap() {
+    return this.service.getSitemapEntries();
+  }
+
   @Get(':slug')
   getOne(@Param('slug') slug: string) {
-    return this.service.getProductBySlug(slug)
+    return this.service.getProductBySlug(slug);
   }
 }

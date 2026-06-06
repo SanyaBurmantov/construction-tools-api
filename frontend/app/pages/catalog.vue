@@ -5,6 +5,7 @@ type FacetItem = {
   id: string
   name: string
   slug?: string
+  code?: string
 }
 
 type Product = {
@@ -18,6 +19,7 @@ type Product = {
   brand?: FacetItem | null
   category?: FacetItem | null
   images?: Array<{ url: string, alt?: string | null }>
+  sourceProducts?: Array<{ sourceId: string }>
   productSpecs?: Array<{ name: string, value: string }>
 }
 
@@ -28,6 +30,11 @@ type ProductResponse = {
     limit: number
     total: number
     pages: number
+  }
+  facets?: {
+    categories?: Record<string, number>
+    brands?: Record<string, number>
+    sources?: Record<string, number>
   }
 }
 
@@ -52,6 +59,7 @@ const filters = reactive<{
   search: string
   categoryId: string
   brandId: string
+  sourceCode: string
   priceMin: string | number
   priceMax: string | number
   sort: string
@@ -59,12 +67,14 @@ const filters = reactive<{
   search: queryValue(route.query.search) || '',
   categoryId: queryValue(route.query.categoryId) || '',
   brandId: queryValue(route.query.brandId) || '',
+  sourceCode: queryValue(route.query.sourceCode) || '',
   priceMin: queryValue(route.query.priceMin) || '',
   priceMax: queryValue(route.query.priceMax) || '',
   sort: queryValue(route.query.sort) || 'name-asc'
 })
 
 const page = computed(() => Number(route.query.page || 1))
+const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
 
 const queryParams = computed(() => {
   const sort = queryValue(route.query.sort)
@@ -73,6 +83,7 @@ const queryParams = computed(() => {
     search: queryValue(route.query.search),
     categoryId: queryValue(route.query.categoryId),
     brandId: queryValue(route.query.brandId),
+    sourceCode: queryValue(route.query.sourceCode),
     priceMin: queryValue(route.query.priceMin),
     priceMax: queryValue(route.query.priceMax),
     sortBy: sort?.split('-')[0],
@@ -83,11 +94,10 @@ const queryParams = computed(() => {
 })
 
 const { data: products, pending, error, refresh } = await useAsyncData<ProductResponse>(
-  'catalog-products',
+  catalogDataKey,
   () => $fetch(`${apiBase}/products`, { params: queryParams.value }),
   {
     default: () => ({ data: [], pagination: { page: 1, limit: 20, total: 0, pages: 0 } }),
-    server: false,
     watch: [queryParams]
   }
 )
@@ -95,36 +105,32 @@ const { data: products, pending, error, refresh } = await useAsyncData<ProductRe
 const { data: categories } = await useAsyncData<FacetItem[]>(
   'catalog-categories',
   () => $fetch<FacetItem[]>(`${apiBase}/categories`).catch(() => []),
-  { default: () => [], server: false }
+  { default: () => [] }
 )
 
 const { data: brands } = await useAsyncData<FacetItem[]>(
   'catalog-brands',
   () => $fetch<FacetItem[]>(`${apiBase}/brands`).catch(() => []),
-  { default: () => [], server: false }
+  { default: () => [] }
 )
 
-const { data: facetProducts } = await useAsyncData<ProductResponse>(
-  'catalog-facet-products',
-  () =>
-    $fetch<ProductResponse>(`${apiBase}/products`, { params: { limit: 200 } })
-      .catch(() => ({ data: [], pagination: { page: 1, limit: 200, total: 0, pages: 0 } })),
-  {
-    default: () => ({ data: [], pagination: { page: 1, limit: 200, total: 0, pages: 0 } }),
-    server: false
-  }
+const { data: sources } = await useAsyncData<FacetItem[]>(
+  'catalog-sources',
+  () => $fetch<FacetItem[]>(`${apiBase}/sources`).catch(() => []),
+  { default: () => [] }
 )
 
 const activeFiltersCount = computed(() => {
-  return [filters.search, filters.categoryId, filters.brandId, filters.priceMin, filters.priceMax]
+  return [filters.search, filters.categoryId, filters.brandId, filters.sourceCode, filters.priceMin, filters.priceMax]
     .filter(value => filterValue(value) !== undefined)
     .length
 })
 
-const categoryCounts = computed(() => countBy(facetProducts.value?.data || [], 'categoryId'))
-const brandCounts = computed(() => countBy(facetProducts.value?.data || [], 'brandId'))
+const categoryCounts = computed(() => products.value?.facets?.categories || {})
+const brandCounts = computed(() => products.value?.facets?.brands || {})
+const sourceCounts = computed(() => products.value?.facets?.sources || {})
 const priceRange = computed(() => {
-  const values = (facetProducts.value?.data || [])
+  const values = (products.value?.data || [])
     .map(product => product.priceValue)
     .filter((value): value is number => typeof value === 'number')
 
@@ -138,31 +144,24 @@ const priceRange = computed(() => {
 
 const selectedCategory = computed(() => categories.value?.find(item => item.id === filters.categoryId))
 const selectedBrand = computed(() => brands.value?.find(item => item.id === filters.brandId))
-
-function countBy(items: Product[], key: 'categoryId' | 'brandId') {
-  return items.reduce<Record<string, number>>((acc, item) => {
-    const value = item[key]
-    if (value) acc[value] = (acc[value] || 0) + 1
-    return acc
-  }, {})
-}
+const selectedSource = computed(() => sources.value?.find(item => item.code === filters.sourceCode))
 
 function applyFilters(nextPage = 1) {
-  const nextQuery = {
-    ...route.query,
+  const nextQuery = cleanParams({
     search: filterValue(filters.search),
     categoryId: filters.categoryId || undefined,
     brandId: filters.brandId || undefined,
+    sourceCode: filters.sourceCode || undefined,
     priceMin: filterValue(filters.priceMin),
     priceMax: filterValue(filters.priceMax),
     sort: filters.sort === 'name-asc' ? undefined : filters.sort,
     page: nextPage > 1 ? String(nextPage) : undefined
-  }
+  })
 
   router.push({ path: '/catalog/', query: nextQuery })
 }
 
-function setFacet(key: 'categoryId' | 'brandId', value: string) {
+function setFacet(key: 'categoryId' | 'brandId' | 'sourceCode', value: string) {
   filters[key] = filters[key] === value ? '' : value
   applyFilters()
 }
@@ -171,6 +170,7 @@ function clearFilters() {
   filters.search = ''
   filters.categoryId = ''
   filters.brandId = ''
+  filters.sourceCode = ''
   filters.priceMin = ''
   filters.priceMax = ''
   filters.sort = 'name-asc'
@@ -183,50 +183,59 @@ watch(
     filters.search = queryValue(query.search) || ''
     filters.categoryId = queryValue(query.categoryId) || ''
     filters.brandId = queryValue(query.brandId) || ''
+    filters.sourceCode = queryValue(query.sourceCode) || ''
     filters.priceMin = queryValue(query.priceMin) || ''
     filters.priceMax = queryValue(query.priceMax) || ''
     filters.sort = queryValue(query.sort) || 'name-asc'
   }
 )
 
-useHead({
+const catalogDescription =
+  'Каталог инструментов, крепежа и расходников с фильтрами по брендам, категориям и цене.'
+const catalogUrl = `${String(config.public.siteUrl).replace(/\/$/, '')}/catalog`
+
+useSeoMeta({
   title: 'Каталог инструмента и крепежа | Мультитул',
-  meta: [
-    {
-      name: 'description',
-      content:
-        'Каталог инструментов, крепежа и расходников с фильтрами по брендам, категориям и цене.'
-    }
-  ]
+  description: catalogDescription,
+  ogTitle: 'Каталог инструмента и крепежа | Мультитул',
+  ogDescription: catalogDescription,
+  ogType: 'website',
+  ogUrl: catalogUrl,
+  twitterCard: 'summary'
+})
+
+useHead({
+  link: [{ rel: 'canonical', href: catalogUrl }]
 })
 </script>
 
 <template>
-  <section class="catalog-hero">
-    <div>
-      <span class="eyebrow">Каталог</span>
-      <h1>
-        Инструмент, крепеж и расходники для стройки без лишней витрины
-      </h1>
-      <p>
-        Поиск подключен к бэку: категории, бренды, цена, сортировка и пагинация
-        работают через query-параметры.
-      </p>
-    </div>
+  <div>
+    <section class="catalog-hero">
+      <div>
+        <span class="eyebrow">Каталог</span>
+        <h1>
+          Инструмент, крепеж и расходники для стройки без лишней витрины
+        </h1>
+        <p>
+          Поиск подключен к бэку: категории, бренды, цена, сортировка и пагинация
+          работают через query-параметры.
+        </p>
+      </div>
 
-    <form class="hero-search" @submit.prevent="applyFilters()">
-      <input
-        v-model.trim="filters.search"
-        type="search"
-        placeholder="Найти перфоратор, сверло, крепеж..."
-      >
-      <button type="submit">Искать</button>
-    </form>
-  </section>
+      <form class="hero-search" @submit.prevent="applyFilters()">
+        <input
+          v-model.trim="filters.search"
+          type="search"
+          placeholder="Найти перфоратор, сверло, крепеж..."
+        >
+        <button type="submit">Искать</button>
+      </form>
+    </section>
 
-  <section class="catalog-layout">
-    <aside class="filters-panel" aria-label="Фильтры каталога">
-      <div class="filters-head">
+    <section class="catalog-layout">
+      <aside class="filters-panel" aria-label="Фильтры каталога">
+        <div class="filters-head">
         <div>
           <span class="eyebrow">Фасеты</span>
           <h2>Фильтры</h2>
@@ -242,37 +251,62 @@ useHead({
           <input v-model.trim="filters.search" type="search" placeholder="Название товара">
         </label>
 
-        <div class="filter-group" :class="{ highlighted: route.query.focus === 'brands' }">
-          <div class="filter-title">Бренды</div>
+        <div class="filter-section" :class="{ highlighted: route.query.focus === 'brands' }">
+          <div class="filter-title"><span>Бренды</span><small>{{ brands?.length || 0 }}</small></div>
+          <div class="facet-list">
           <button
             v-for="brand in brands || []"
             :key="brand.id"
             type="button"
             class="facet-button"
             :class="{ active: filters.brandId === brand.id }"
+            :aria-pressed="filters.brandId === brand.id"
             @click="setFacet('brandId', brand.id)"
           >
             <span>{{ brand.name }}</span>
-            <small>{{ brandCounts[brand.id] || 0 }}</small>
+            <small class="facet-count">{{ brandCounts[brand.id] || 0 }}</small>
           </button>
+          </div>
         </div>
 
-        <div class="filter-group">
-          <div class="filter-title">Категории</div>
+        <div class="filter-section">
+          <div class="filter-title"><span>Поставщики</span><small>{{ sources?.length || 0 }}</small></div>
+          <div class="facet-list compact">
+          <button
+            v-for="source in sources || []"
+            :key="source.id"
+            type="button"
+            class="facet-button"
+            :class="{ active: filters.sourceCode === source.code }"
+            :aria-pressed="filters.sourceCode === source.code"
+            :disabled="!source.code"
+            @click="source.code && setFacet('sourceCode', source.code)"
+          >
+            <span>{{ source.name }}</span>
+            <small class="facet-count">{{ sourceCounts[source.id] || 0 }}</small>
+          </button>
+          </div>
+        </div>
+
+        <div class="filter-section">
+          <div class="filter-title"><span>Категории</span><small>{{ categories?.length || 0 }}</small></div>
+          <div class="facet-list">
           <button
             v-for="category in categories || []"
             :key="category.id"
             type="button"
             class="facet-button"
             :class="{ active: filters.categoryId === category.id }"
+            :aria-pressed="filters.categoryId === category.id"
             @click="setFacet('categoryId', category.id)"
           >
             <span>{{ category.name }}</span>
-            <small>{{ categoryCounts[category.id] || 0 }}</small>
+            <small class="facet-count">{{ categoryCounts[category.id] || 0 }}</small>
           </button>
+          </div>
         </div>
 
-        <div class="filter-group">
+        <div class="filter-section plain">
           <div class="filter-title">Цена</div>
           <div v-if="priceRange" class="price-hint">
             В базе: {{ priceRange.min }} - {{ priceRange.max }} BYN
@@ -308,7 +342,7 @@ useHead({
         <div>
           <span class="eyebrow">Найдено {{ products?.pagination.total || 0 }}</span>
           <h2>
-            {{ selectedCategory?.name || selectedBrand?.name || 'Все товары' }}
+            {{ selectedCategory?.name || selectedBrand?.name || selectedSource?.name || 'Все товары' }}
           </h2>
         </div>
         <button class="refresh-button" type="button" @click="refresh()">
@@ -350,8 +384,9 @@ useHead({
           Вперед
         </button>
       </div>
-    </div>
-  </section>
+      </div>
+    </section>
+  </div>
 </template>
 
 <style scoped lang="scss">
@@ -649,6 +684,354 @@ useHead({
     align-items: stretch;
     flex-direction: column;
     border-radius: 24px;
+  }
+}
+</style>
+
+<style scoped lang="scss">
+.filters-panel {
+  overflow: hidden;
+  padding: 0;
+}
+
+.filters-head {
+  border-bottom: 1px solid var(--color-line);
+  padding: 16px 18px;
+
+  h2 {
+    font-size: 20px;
+  }
+}
+
+.filter-form {
+  gap: 0;
+  margin-top: 0;
+}
+
+.filter-form > .field,
+.filter-section,
+.filter-form > .apply-button {
+  margin: 0 18px;
+}
+
+.filter-form > .field {
+  padding: 16px 0;
+}
+
+.filter-section {
+  border-top: 1px solid var(--color-line);
+  padding: 16px 0;
+}
+
+.filter-section.highlighted {
+  margin: 0;
+  border-radius: 0;
+  background: #f5f8ff;
+  padding: 16px 18px;
+}
+
+.filter-section.plain {
+  display: grid;
+  gap: 10px;
+}
+
+.filter-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #101828;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: none;
+
+  small {
+    border-radius: 999px;
+    background: #f2f4f7;
+    color: var(--color-muted);
+    font-size: 11px;
+    padding: 2px 7px;
+  }
+}
+
+.facet-list {
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.facet-list.compact {
+  max-height: 180px;
+}
+
+.facet-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 650;
+  padding: 8px 10px;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &:hover {
+    background: #f8fafc;
+    color: #101828;
+  }
+
+  &.active {
+    background: #eef4ff;
+    color: var(--color-primary);
+  }
+}
+
+.facet-count {
+  min-width: 28px;
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 2px 7px;
+  text-align: center;
+}
+
+.facet-button.active .facet-count {
+  background: white;
+  color: var(--color-primary);
+}
+
+.price-hint {
+  font-size: 12px;
+}
+
+.apply-button {
+  margin-top: 16px;
+  margin-bottom: 18px;
+}
+</style>
+
+<style scoped lang="scss">
+.catalog-hero {
+  display: grid;
+  gap: 20px;
+  align-items: end;
+  margin-bottom: 22px;
+  border: 1px solid var(--color-line);
+  border-radius: 24px;
+  background: white;
+  box-shadow: var(--shadow-card);
+  padding: clamp(22px, 4vw, 38px);
+
+  @include media-breakpoint-up(lg) {
+    grid-template-columns: minmax(0, 1fr) 420px;
+  }
+
+  h1 {
+    max-width: 760px;
+    margin-top: 8px;
+    font-size: clamp(30px, 4vw, 46px);
+    line-height: 1.08;
+  }
+
+  p {
+    max-width: 650px;
+    margin-top: 12px;
+    color: var(--color-muted);
+    font-size: 16px;
+    line-height: 1.6;
+  }
+}
+
+.hero-search {
+  display: grid;
+  overflow: hidden;
+  gap: 0;
+  border: 2px solid var(--color-primary);
+  border-radius: 14px;
+  background: white;
+  padding: 0;
+
+  @include media-breakpoint-up(md) {
+    grid-template-columns: minmax(0, 1fr) 112px;
+  }
+
+  input {
+    min-width: 0;
+    min-height: 48px;
+    border: 0;
+    outline: 0;
+    padding: 0 14px;
+  }
+
+  button {
+    min-height: 48px;
+    border-radius: 0;
+    background: var(--color-primary);
+    color: white;
+    cursor: pointer;
+    font-weight: 800;
+    padding: 0 18px;
+  }
+}
+
+.catalog-layout {
+  gap: 20px;
+
+  @include media-breakpoint-up(lg) {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+}
+
+.filters-panel,
+.catalog-toolbar,
+.state-card {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: white;
+  box-shadow: none;
+}
+
+.filters-panel {
+  padding: 18px;
+
+  @include media-breakpoint-up(lg) {
+    top: 126px;
+  }
+}
+
+.filters-head h2,
+.catalog-toolbar h2 {
+  margin-top: 2px;
+  font-size: 22px;
+}
+
+.filter-form,
+.filter-group {
+  gap: 10px;
+}
+
+.filter-form {
+  margin-top: 16px;
+}
+
+.filter-group {
+  max-height: 230px;
+  padding-top: 0;
+}
+
+.filter-group.highlighted {
+  background: #eef4ff;
+}
+
+.filter-title,
+.field span {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.field input,
+.field select {
+  border-radius: 12px;
+  padding: 11px 12px;
+
+  &:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
+  }
+}
+
+.facet-button {
+  border-radius: 12px;
+  font-weight: 700;
+  padding: 9px 10px;
+
+  &.active {
+    border-color: #c7d7fe;
+    background: #eef4ff;
+    color: var(--color-primary);
+  }
+}
+
+.apply-button,
+.ghost-button,
+.refresh-button,
+.pagination button {
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.apply-button {
+  background: var(--color-primary);
+  color: white;
+  padding: 12px 14px;
+}
+
+.ghost-button,
+.refresh-button,
+.pagination button {
+  border: 1px solid var(--color-line);
+  background: white;
+  color: #344054;
+}
+
+.catalog-content {
+  gap: 18px;
+}
+
+.catalog-toolbar {
+  padding: 16px 18px;
+}
+
+.products-listing {
+  gap: 16px;
+
+  @include media-breakpoint-up(md) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include media-breakpoint-up(lg) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.state-card {
+  color: var(--color-muted);
+  padding: 32px;
+}
+
+.state-card.error {
+  color: #b42318;
+}
+
+.pagination {
+  margin-top: 0;
+}
+
+@media (max-width: 520px) {
+  .catalog-hero {
+    border-radius: 20px;
+    box-shadow: none;
+  }
+
+  .hero-search {
+    border-radius: 14px;
   }
 }
 </style>

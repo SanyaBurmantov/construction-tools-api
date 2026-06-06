@@ -1,60 +1,60 @@
 export type ProductImage = {
-  url: string
-  alt?: string
-  order?: number
-}
+  url: string;
+  alt?: string;
+  order?: number;
+};
 
 export type ProductSpec = {
-  name: string
-  value: string
-}
+  name: string;
+  value: string;
+};
 
 export type ProductPrice = {
-  value?: number
-  currency?: string
-  oldValue?: number
-}
+  value?: number;
+  currency?: string;
+  oldValue?: number;
+};
 
 export type ProductStock = {
-  status?: string
-  quantity?: number
-}
+  status?: string;
+  quantity?: number;
+};
 
 export type ProductDescription = {
-  short?: string
-  full?: string
-  features?: string[]
-}
+  short?: string;
+  full?: string;
+  features?: string[];
+};
 
 export type ProductSeo = {
-  title?: string
-  description?: string
-  keywords?: string[]
-}
+  title?: string;
+  description?: string;
+  keywords?: string[];
+};
 
 export type TProduct = {
-  id?: string
+  id?: string;
 
-  name: string
-  slug: string
+  name: string;
+  slug: string;
 
-  brand?: string
-  brandId?: string
+  brand?: string;
+  brandId?: string;
 
-  categoryId: string
+  categoryId: string;
 
-  sku?: string
-  barcode?: string
-  model?: string
+  sku?: string;
+  barcode?: string;
+  model?: string;
 
-  price?: ProductPrice
-  stock?: ProductStock
+  price?: ProductPrice;
+  stock?: ProductStock;
 
-  images?: ProductImage[]
+  images?: ProductImage[];
 
-  specs?: ProductSpec[]
+  specs?: ProductSpec[];
 
-  description?: ProductDescription
+  description?: ProductDescription;
 
-  seo?: ProductSeo
-}
+  seo?: ProductSeo;
+};

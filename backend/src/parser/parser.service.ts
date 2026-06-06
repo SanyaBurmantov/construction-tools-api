@@ -8,7 +8,9 @@ import { parse7745 } from './sites/7745.parser';
 @Injectable()
 export class ParserService {
   async fetch(url: string): Promise<string> {
-    const response = await axios.get<string>(url);
+    const response = await axios.get<string>(url, {
+      timeout: Number(process.env.PARSER_FETCH_TIMEOUT_MS ?? 20000),
+    });
 
     return response.data;
   }
@@ -23,7 +25,6 @@ export class ParserService {
     if (url.includes('tools.by')) {
       return parseTools(html);
     }
-
 
     if (url.includes('7745.by')) {
       return parse7745(html);

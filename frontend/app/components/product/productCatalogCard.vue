@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useCartStore } from '~/stores/cart'
+
 const props = defineProps<{
   product: {
     id: string
     slug: string
     name: string
+    sku?: string | null
     priceValue?: number | null
     priceCurrency?: string | null
     stockStatus?: string | null
@@ -14,21 +17,40 @@ const props = defineProps<{
   }
 }>()
 
+const cart = useCartStore()
+const { formatPrice, normalizeCurrency } = useFormatPrice()
+
 const image = computed(() => props.product.images?.[0])
-const currency = computed(() => props.product.priceCurrency || 'BYN')
-const price = computed(() => {
-  if (props.product.priceValue === null || props.product.priceValue === undefined) {
-    return 'Цена по запросу'
-  }
+const currency = computed(() => normalizeCurrency(props.product.priceCurrency))
+const price = computed(() => formatPrice(props.product.priceValue, props.product.priceCurrency))
+const canBuy = computed(
+  () => props.product.priceValue != null && props.product.priceValue > 0
+)
+const added = ref(false)
 
-  return props.product.priceValue;
-})
+function addToCart() {
+  if (!canBuy.value) return
+  cart.add(
+    {
+      productId: props.product.id,
+      slug: props.product.slug,
+      name: props.product.name,
+      sku: props.product.sku ?? null,
+      image: image.value?.url || null,
+      price: props.product.priceValue as number,
+      currency: currency.value
+    },
+    1
+  )
+  added.value = true
+  setTimeout(() => (added.value = false), 1500)
+}
 
-const specs = computed(() => props.product.productSpecs?.slice(0, 3) || [])
+const specs = computed(() => props.product.productSpecs?.slice(0, 2) || [])
 const availability = computed(() => {
   if (props.product.stockStatus === 'in_stock') return 'В наличии'
   if (props.product.stockStatus === 'out_of_stock') return 'Под заказ'
-  return props.product.stockStatus || 'Наличие уточняйте'
+  return props.product.stockStatus || 'Уточняйте'
 })
 </script>
 
@@ -40,21 +62,22 @@ const availability = computed(() => {
         :src="image.url"
         :alt="image.alt || product.name"
         loading="lazy"
+        decoding="async"
       >
-      <div v-else class="image-placeholder">
-        нет фото
-      </div>
+      <div v-else class="image-placeholder">Нет фото</div>
     </NuxtLink>
 
     <div class="card-body">
-      <div class="meta-row">
-        <span>{{ product.brand?.name || 'Без бренда' }}</span>
-        <span>{{ product.category?.name || 'Каталог' }}</span>
-      </div>
-
       <NuxtLink :to="`/product/${product.slug}`" class="title">
         {{ product.name }}
       </NuxtLink>
+
+      <span v-if="product.sku" class="sku">Арт. {{ product.sku }}</span>
+
+      <div class="meta-row">
+        <span v-if="product.brand?.name">{{ product.brand.name }}</span>
+        <span v-if="product.category?.name">{{ product.category.name }}</span>
+      </div>
 
       <ul v-if="specs.length" class="specs">
         <li v-for="spec in specs" :key="`${product.id}-${spec.name}`">
@@ -68,9 +91,17 @@ const availability = computed(() => {
           <strong class="price">{{ price }}</strong>
           <small>{{ availability }}</small>
         </div>
-        <NuxtLink :to="`/product/${product.slug}`" class="details-link">
-          Подробнее
-        </NuxtLink>
+        <button
+          v-if="canBuy"
+          type="button"
+          class="buy-button"
+          :class="{ added }"
+          :aria-label="`Добавить ${product.name} в корзину`"
+          @click="addToCart"
+        >
+          {{ added ? '✓' : 'В корзину' }}
+        </button>
+        <NuxtLink v-else :to="`/product/${product.slug}`" class="details-link">Подробнее</NuxtLink>
       </div>
     </div>
   </article>
@@ -78,90 +109,99 @@ const availability = computed(() => {
 
 <style scoped lang="scss">
 .catalog-card {
-  position: relative;
   display: flex;
+  min-width: 0;
   min-height: 100%;
   flex-direction: column;
   overflow: hidden;
-  border: 2px solid var(--color-ink);
-  border-radius: 28px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
   background: var(--color-card);
-  box-shadow: 8px 8px 0 rgba(22, 28, 45, 0.92);
-  transition: 0.22s ease;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 
   &:hover {
-    transform: translate(-3px, -3px);
-    box-shadow: 12px 12px 0 rgba(22, 28, 45, 0.92);
-
-    img {
-      transform: scale(1.05) rotate(-1deg);
-    }
+    border-color: #c7d7fe;
+    box-shadow: var(--shadow-card);
+    transform: translateY(-2px);
   }
 }
 
 .image-link {
   display: grid;
-  min-height: 220px;
+  height: 210px;
   place-items: center;
-  overflow: hidden;
-  border-bottom: 2px solid var(--color-ink);
-  background:
-    linear-gradient(135deg, rgba(243, 182, 31, 0.26), rgba(255, 250, 240, 0.82)),
-    repeating-linear-gradient(-45deg, transparent 0 12px, rgba(22, 28, 45, 0.05) 12px 14px);
+  background: #f8fafc;
   text-decoration: none;
 
   img {
     width: 100%;
-    height: 240px;
+    height: 100%;
     object-fit: contain;
-    padding: 22px;
-    transition: 0.25s ease;
+    padding: 16px;
   }
 }
 
 .image-placeholder {
   color: var(--color-subtle);
-  font-family: var(--font-heading);
-  font-size: 14px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .card-body {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 18px;
-  padding: 20px;
+  gap: 12px;
+  padding: 14px;
+}
+
+.title {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 42px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #101828;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-decoration: none;
+
+  &:hover {
+    color: var(--color-primary);
+  }
+}
+
+.sku {
+  margin-top: -6px;
+  color: var(--color-subtle);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 
   span {
-    padding: 6px 10px;
-    border: 1px solid var(--color-line);
+    overflow: hidden;
+    max-width: 100%;
     border-radius: 999px;
+    background: #f2f4f7;
     color: var(--color-muted);
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 700;
+    padding: 4px 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-}
-
-.title {
-  color: var(--color-ink);
-  font-family: var(--font-heading);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-decoration: none;
 }
 
 .specs {
   display: grid;
-  gap: 8px;
+  gap: 5px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -169,14 +209,18 @@ const availability = computed(() => {
   li {
     display: flex;
     justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     color: var(--color-muted);
-    font-size: 13px;
+    font-size: 12px;
   }
 
   strong {
-    color: var(--color-ink);
+    overflow: hidden;
+    max-width: 45%;
+    color: #344054;
     text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -184,31 +228,51 @@ const availability = computed(() => {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   margin-top: auto;
 
   small {
     display: block;
-    margin-top: 4px;
+    margin-top: 3px;
     color: var(--color-green);
-    font-weight: 800;
+    font-size: 12px;
+    font-weight: 700;
   }
 }
 
 .price {
   display: block;
-  color: var(--color-ink);
-  font-size: 21px;
-  line-height: 1;
+  color: #101828;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
 }
 
 .details-link {
   flex: 0 0 auto;
-  padding: 11px 14px;
-  border-radius: 999px;
-  background: var(--color-ink);
-  color: white;
-  font-weight: 900;
+  border-radius: 10px;
+  background: #eef4ff;
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 11px;
   text-decoration: none;
+}
+
+.buy-button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 10px;
+  background: var(--color-primary);
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 12px;
+  transition: background 0.16s ease;
+
+  &.added {
+    background: var(--color-green, #16a34a);
+  }
 }
 </style>

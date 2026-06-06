@@ -8,26 +8,23 @@
   </div>
 </template>
 
-<script setup></script>
-
 <style scoped>
 .app-layout {
-  min-height: 100vh;
   display: flex;
+  min-height: 100vh;
   flex-direction: column;
 }
 
 .main-content {
+  width: min(1280px, calc(100% - 24px));
   flex: 1;
-  padding: 32px 16px 72px;
-  max-width: 1360px;
-  width: 100%;
   margin: 0 auto;
+  padding: 24px 0 56px;
 }
 
 @media (min-width: 960px) {
   .main-content {
-    padding: 44px 20px 88px;
+    padding: 28px 0 72px;
   }
 }
 </style>

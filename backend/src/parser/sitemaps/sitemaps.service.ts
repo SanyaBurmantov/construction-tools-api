@@ -2,21 +2,32 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { XMLParser } from 'fast-xml-parser';
 import { chunkArray } from '../../common/utils/chunk-array';
-import pLimit from 'p-limit';
+import { mapWithConcurrency } from '../../common/utils/run-with-concurrency';
+import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
+
+type SitemapEntry = { loc: string };
+type SitemapXml = {
+  sitemapindex?: { sitemap?: SitemapEntry | SitemapEntry[] };
+  urlset?: { url?: SitemapEntry | SitemapEntry[] };
+};
 
 @Injectable()
 export class SitemapsService {
   constructor(private prisma: PrismaService) {}
 
   async parseAllSitemapsThTools() {
-    console.log('Началась загрузка и проверка сайтмапа https://th-tool.by/sitemap.xml');
-    const urls = await this.getProductUrlsThTools('https://th-tool.by/sitemap.xml')
+    console.log(
+      'Началась загрузка и проверка сайтмапа https://th-tool.by/sitemap.xml',
+    );
+    const urls = await this.getProductUrlsThTools(
+      'https://th-tool.by/sitemap.xml',
+    );
     await this.saveSitemaps(urls);
     console.log('Сайтмап спаршен https://th-tool.by/sitemap.xml');
   }
 
   async getProductUrlsThTools(url: string): Promise<string[]> {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}`);
@@ -25,26 +36,23 @@ export class SitemapsService {
     const xml = await response.text();
 
     const parser = new XMLParser();
-    const data = parser.parse(xml);
+    const data = parser.parse(xml) as SitemapXml;
 
-    let urls: string[] = [];
+    const urls: string[] = [];
 
     if (data.sitemapindex?.sitemap) {
-      const sitemaps = Array.isArray(data.sitemapindex.sitemap)
+      const sitemaps: SitemapEntry[] = Array.isArray(data.sitemapindex.sitemap)
         ? data.sitemapindex.sitemap
         : [data.sitemapindex.sitemap];
 
-      for (const sm of sitemaps) {
-        const limit = pLimit(5);
-        const nestedUrls = await Promise.all(
-          sitemaps.map((sm) => limit(() => this.getProductUrlsThTools(sm?.loc)))
-        );
-        urls.push(...nestedUrls.flat());
-      }
+      const nestedUrls = await mapWithConcurrency(sitemaps, 5, (sitemap) =>
+        this.getProductUrlsThTools(sitemap.loc),
+      );
+      urls.push(...nestedUrls.flat());
     }
 
     if (data.urlset?.url) {
-      const urlList = Array.isArray(data.urlset.url)
+      const urlList: SitemapEntry[] = Array.isArray(data.urlset.url)
         ? data.urlset.url
         : [data.urlset.url];
 
@@ -63,7 +71,11 @@ export class SitemapsService {
 
     for (const chunk of chunks) {
       await this.prisma.sitemapsThTools.createMany({
-        data: chunk.map((url) => ({ url, isVisited: false })),
+        data: chunk.map((url) => ({
+          url,
+          isVisited: false,
+          status: 'PENDING',
+        })),
         skipDuplicates: true,
       });
     }
