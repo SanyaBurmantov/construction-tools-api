@@ -9,6 +9,8 @@ docker compose up
 
 3. Profit.
 
+**Полный гайд по запуску (локально / нативно / прод + парсинг): [QUICKSTART.md](QUICKSTART.md).**
+
 Developer docs:
 
 - Backend: `backend/README.md`

@@ -1,5 +1,5 @@
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ThToolsParserService } from './th-tools.parser';
 import { ParserRuntimeStatusService } from '../parser-runtime-status.service';
 
@@ -15,6 +15,7 @@ function getPositiveEnvNumber(name: string, fallback: number) {
 
 @Injectable()
 export class ThToolsCron {
+  private readonly logger = new Logger(ThToolsCron.name);
   private isProcessing = false;
 
   constructor(
@@ -38,8 +39,13 @@ export class ThToolsCron {
       );
       await this.runtimeStatus.success('th-tools-process');
     } catch (error) {
+      // Failure is persisted to runtime status; do NOT rethrow — a thrown cron
+      // handler becomes an unhandled rejection that can crash the process.
       await this.runtimeStatus.failure('th-tools-process', error);
-      throw error;
+      this.logger.error(
+        'th-tools-process cron failed',
+        error instanceof Error ? error.stack : String(error),
+      );
     } finally {
       this.isProcessing = false;
     }

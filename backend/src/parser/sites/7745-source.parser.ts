@@ -223,6 +223,17 @@ export class Supplier7745ParserService {
     const seoTitle = this.parseMeta($, 'og:title') || parsed.name;
     const seoDescription =
       this.parseMeta($, 'description') || parsed.description || parsed.name;
+    const imageRows = parsed.images.map((image, order) => ({
+      url: image,
+      alt: parsed.name,
+      order,
+    }));
+    // Keep existing images if a (possibly flaky) re-parse returned none, so a
+    // partial fetch never wipes a product's gallery.
+    const imagesUpdate =
+      imageRows.length > 0
+        ? { images: { deleteMany: {}, create: imageRows } }
+        : {};
 
     const product = await this.prisma.product.upsert({
       where: { slug },
@@ -240,14 +251,7 @@ export class Supplier7745ParserService {
         descriptionFull: parsed.description,
         seoTitle,
         seoDescription,
-        images: {
-          deleteMany: {},
-          create: parsed.images.map((image, order) => ({
-            url: image,
-            alt: parsed.name,
-            order,
-          })),
-        },
+        ...imagesUpdate,
       },
       create: {
         name: parsed.name,
@@ -265,13 +269,7 @@ export class Supplier7745ParserService {
         descriptionFull: parsed.description,
         seoTitle,
         seoDescription,
-        images: {
-          create: parsed.images.map((image, order) => ({
-            url: image,
-            alt: parsed.name,
-            order,
-          })),
-        },
+        images: { create: imageRows },
       },
     });
 

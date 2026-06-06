@@ -8,6 +8,14 @@ import { PrismaService } from './prisma/prisma.service';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
+// Safety net: a stray rejected promise from a background job (e.g. a parser
+// cron) must not take the whole API process down. Errors are handled where they
+// happen; this only guarantees uptime if one ever slips through, and logs it
+// loudly so it is still visible.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,

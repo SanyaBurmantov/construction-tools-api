@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DukonParserService } from './dukon.parser';
 import { ParserRuntimeStatusService } from '../parser-runtime-status.service';
@@ -15,6 +15,7 @@ function getPositiveEnvNumber(name: string, fallback: number) {
 
 @Injectable()
 export class DukonCron {
+  private readonly logger = new Logger(DukonCron.name);
   private isProcessing = false;
   private isRefreshing = false;
   private isRevalidating = false;
@@ -37,8 +38,13 @@ export class DukonCron {
       );
       await this.runtimeStatus.success('dukon-process', result);
     } catch (error) {
+      // Failure is persisted to runtime status; do NOT rethrow — a thrown cron
+      // handler becomes an unhandled rejection that can crash the process.
       await this.runtimeStatus.failure('dukon-process', error);
-      throw error;
+      this.logger.error(
+        'dukon-process cron failed',
+        error instanceof Error ? error.stack : String(error),
+      );
     } finally {
       this.isProcessing = false;
     }
@@ -55,7 +61,10 @@ export class DukonCron {
       await this.runtimeStatus.success('dukon-refresh', result);
     } catch (error) {
       await this.runtimeStatus.failure('dukon-refresh', error);
-      throw error;
+      this.logger.error(
+        'dukon-refresh cron failed',
+        error instanceof Error ? error.stack : String(error),
+      );
     } finally {
       this.isRefreshing = false;
     }
@@ -76,7 +85,10 @@ export class DukonCron {
       await this.runtimeStatus.success('dukon-revalidate', result);
     } catch (error) {
       await this.runtimeStatus.failure('dukon-revalidate', error);
-      throw error;
+      this.logger.error(
+        'dukon-revalidate cron failed',
+        error instanceof Error ? error.stack : String(error),
+      );
     } finally {
       this.isRevalidating = false;
     }

@@ -233,6 +233,10 @@ export class ThToolsParserService {
       existingProduct?.status === 'DRAFT'
         ? { status: 'PUBLISHED' as const }
         : {};
+    // Keep existing images if a (possibly flaky) re-parse returned none, so a
+    // partial fetch never wipes a product's gallery.
+    const imagesUpdate =
+      images.length > 0 ? { images: { deleteMany: {}, create: images } } : {};
 
     const product = await this.prisma.product.upsert({
       where: { slug },
@@ -243,10 +247,7 @@ export class ThToolsParserService {
         descriptionFull: description,
         sku,
         categoryId: categoryId ? categoryId : ' ',
-        images: {
-          deleteMany: {},
-          create: images,
-        },
+        ...imagesUpdate,
       },
       create: {
         name,

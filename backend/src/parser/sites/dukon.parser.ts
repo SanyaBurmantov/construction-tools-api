@@ -363,6 +363,10 @@ export class DukonParserService {
     );
     const brandId = brandName ? await this.upsertBrand(brandName) : undefined;
     const images = this.parseImages($, name, jsonLd?.images);
+    // Keep existing images if a (possibly flaky) re-parse returned none, so a
+    // partial fetch never wipes a product's gallery.
+    const imagesUpdate =
+      images.length > 0 ? { images: { deleteMany: {}, create: images } } : {};
     const existingProduct = await this.prisma.product.findUnique({
       where: { slug },
       select: { status: true },
@@ -389,7 +393,7 @@ export class DukonParserService {
         descriptionFull,
         seoTitle,
         seoDescription,
-        images: { deleteMany: {}, create: images },
+        ...imagesUpdate,
       },
       create: {
         name,

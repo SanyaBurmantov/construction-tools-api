@@ -236,6 +236,10 @@ export class ToolsByParserService {
       alt: parsed.name,
       order,
     }));
+    // Keep existing images if a (possibly flaky) re-parse returned none, so a
+    // partial fetch never wipes a product's gallery.
+    const imagesUpdate =
+      images.length > 0 ? { images: { deleteMany: {}, create: images } } : {};
 
     const product = await this.prisma.product.upsert({
       where: { slug },
@@ -251,7 +255,7 @@ export class ToolsByParserService {
         descriptionFull: parsed.description,
         seoTitle,
         seoDescription,
-        images: { deleteMany: {}, create: images },
+        ...imagesUpdate,
       },
       create: {
         name: parsed.name,

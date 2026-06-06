@@ -1,5 +1,5 @@
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Supplier7745ParserService } from './7745-source.parser';
 import { ParserRuntimeStatusService } from '../parser-runtime-status.service';
 
@@ -15,6 +15,7 @@ function getPositiveEnvNumber(name: string, fallback: number) {
 
 @Injectable()
 export class Supplier7745Cron {
+  private readonly logger = new Logger(Supplier7745Cron.name);
   private isProcessing = false;
   private isRefreshing = false;
 
@@ -36,8 +37,13 @@ export class Supplier7745Cron {
       );
       await this.runtimeStatus.success('7745-process', result);
     } catch (error) {
+      // Failure is persisted to runtime status; do NOT rethrow — a thrown cron
+      // handler becomes an unhandled rejection that can crash the process.
       await this.runtimeStatus.failure('7745-process', error);
-      throw error;
+      this.logger.error(
+        '7745-process cron failed',
+        error instanceof Error ? error.stack : String(error),
+      );
     } finally {
       this.isProcessing = false;
     }
@@ -54,7 +60,10 @@ export class Supplier7745Cron {
       await this.runtimeStatus.success('7745-refresh', result);
     } catch (error) {
       await this.runtimeStatus.failure('7745-refresh', error);
-      throw error;
+      this.logger.error(
+        '7745-refresh cron failed',
+        error instanceof Error ? error.stack : String(error),
+      );
     } finally {
       this.isRefreshing = false;
     }
