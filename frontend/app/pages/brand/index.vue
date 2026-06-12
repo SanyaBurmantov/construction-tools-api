@@ -65,71 +65,73 @@ useHead({
 </script>
 
 <template>
-  <section class="brand-hero">
-    <div>
-      <span class="eyebrow">Бренды</span>
-      <h1>Все бренды в каталоге</h1>
-      <p>Выберите бренд, чтобы открыть страницу с его категориями и перейти к нужному разделу каталога.</p>
-    </div>
-
-    <div class="hero-meta">
-      <strong>{{ sortedBrands.length }}</strong>
-      <span>брендов доступно</span>
-    </div>
-  </section>
-
-  <section class="brand-tools">
-    <div class="tools-meta">
-      <strong>{{ filteredBrands.length }}</strong>
-      <span>{{ route.query.search ? 'найдено по запросу' : 'показано в списке' }}</span>
-    </div>
-  </section>
-
-  <div v-if="brandsPending" class="state-card">Загружаем бренды...</div>
-  <div v-else-if="brandsError" class="state-card error">Не удалось загрузить бренды: {{ brandsError.message }}</div>
-  <div v-else-if="!sortedBrands.length" class="state-card">Бренды пока не найдены.</div>
-  <div v-else-if="!filteredBrands.length" class="state-card">По вашему запросу бренды не найдены.</div>
-
-  <div v-else class="brand-groups">
-    <section v-for="group in groupedBrands" :key="group.letter" class="brand-group">
-      <div class="group-head">
-        <span>{{ group.letter }}</span>
-        <small>{{ group.items.length }} брендов</small>
+  <div>
+    <section class="brand-hero">
+      <div>
+        <span class="eyebrow">Бренды</span>
+        <h1>Все бренды в каталоге</h1>
+        <p>Выберите бренд, чтобы открыть страницу с его категориями и перейти к нужному разделу каталога.</p>
       </div>
 
-      <div class="brands-grid">
-        <NuxtLink
-          v-for="brand in group.items"
-          :key="brand.id"
-          :to="brandLink(brand)"
-          class="brand-card"
-        >
-          <div class="brand-card-glow" />
-
-          <div class="brand-card-label">
-            <span>Бренд</span>
-            <strong>{{ group.letter }}</strong>
-          </div>
-
-          <div class="brand-card-top">
-            <span class="brand-initial">{{ brand.name.charAt(0) }}</span>
-            <div>
-              <h2>{{ brand.name }}</h2>
-              <small>Категории и подборка товаров</small>
-            </div>
-          </div>
-
-          <p>
-            Открыть страницу бренда, посмотреть все категории и перейти в каталог с нужными фильтрами.
-          </p>
-
-          <div class="brand-card-footer">
-            <span>{{ brand._count?.products || 0 }} товаров</span>
-            <i aria-hidden="true">↗</i>
-          </div>
-        </NuxtLink>
+      <div class="hero-meta">
+        <strong>{{ sortedBrands.length }}</strong>
+        <span>брендов доступно</span>
       </div>
     </section>
+
+    <section class="brand-tools">
+      <div class="tools-meta">
+        <strong>{{ filteredBrands.length }}</strong>
+        <span>{{ route.query.search ? 'найдено по запросу' : 'показано в списке' }}</span>
+      </div>
+    </section>
+
+    <div v-if="brandsPending" class="state-card">Загружаем бренды...</div>
+    <div v-else-if="brandsError" class="state-card error">Не удалось загрузить бренды: {{ brandsError.message }}</div>
+    <div v-else-if="!sortedBrands.length" class="state-card">Бренды пока не найдены.</div>
+    <div v-else-if="!filteredBrands.length" class="state-card">По вашему запросу бренды не найдены.</div>
+
+    <div v-else class="brand-groups">
+      <section v-for="group in groupedBrands" :key="group.letter" class="brand-group">
+        <div class="group-head">
+          <span>{{ group.letter }}</span>
+          <small>{{ group.items.length }} брендов</small>
+        </div>
+
+        <div class="brands-grid">
+          <NuxtLink
+            v-for="brand in group.items"
+            :key="brand.id"
+            :to="brandLink(brand)"
+            class="brand-card"
+          >
+            <div class="brand-card-glow" />
+
+            <div class="brand-card-label">
+              <span>Бренд</span>
+              <strong>{{ group.letter }}</strong>
+            </div>
+
+            <div class="brand-card-top">
+              <span class="brand-initial">{{ brand.name.charAt(0) }}</span>
+              <div>
+                <h2>{{ brand.name }}</h2>
+                <small>Категории и подборка товаров</small>
+              </div>
+            </div>
+
+            <p>
+              Открыть страницу бренда, посмотреть все категории и перейти в каталог с нужными фильтрами.
+            </p>
+
+            <div class="brand-card-footer">
+              <span>{{ brand._count?.products || 0 }} товаров</span>
+              <i aria-hidden="true">↗</i>
+            </div>
+          </NuxtLink>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 

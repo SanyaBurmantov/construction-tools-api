@@ -31,6 +31,14 @@ type ProductResponse = {
   }
 }
 
+type CategoryTreeNode = {
+  id: string
+  name: string
+  slug: string
+  productCount: number
+  children: CategoryTreeNode[]
+}
+
 const search = ref('')
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
@@ -41,23 +49,20 @@ const { data: products } = await useAsyncData<ProductResponse>(
   { default: () => ({ data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } }) }
 )
 
-const { data: sources } = await useAsyncData<FacetItem[]>(
-  'home-sources',
-  () => $fetch<FacetItem[]>(`${apiBase}/sources`).catch(() => []),
+const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
+  'catalog-tree',
+  () => $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`).catch(() => []),
   { default: () => [] }
 )
 
-const quickLinks = computed(() => [
-  ...(sources.value || [])
-    .filter(source => source.code)
-    .map(source => ({
-      label: source.name,
-      to: `/catalog/?sourceCode=${source.code}`
-    })),
-  { label: 'Наборы инструментов', to: '/catalog/?search=набор' },
-  { label: 'Домкраты', to: '/catalog/?search=домкрат' },
-  { label: 'Ключи', to: '/catalog/?search=ключ' }
-])
+const quickLinks = computed(() =>
+  (tree.value || []).slice(0, 6).map(category => ({
+    label: category.name,
+    to: `/catalog/${category.slug}`
+  }))
+)
+
+const topCategories = computed(() => (tree.value || []).slice(0, 8))
 
 function submitSearch() {
   const query = search.value.trim()
@@ -90,7 +95,7 @@ useHead({
         <span class="eyebrow">Маркетплейс инструмента</span>
         <h1>Инструмент и оборудование от поставщиков в одном каталоге</h1>
         <p>
-          Ищите по названию, бренду, артикулу или поставщику. Новые товары автоматически попадают в каталог после парсинга.
+          Ищите по названию, бренду или артикулу — каталог пополняется новыми товарами каждый день.
         </p>
 
         <form class="hero-search" @submit.prevent="submitSearch">
@@ -118,6 +123,31 @@ useHead({
           <strong>BYN</strong>
           <span>цены в белорусских рублях</span>
         </div>
+      </div>
+    </section>
+
+    <section v-if="topCategories.length" class="home-categories">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">Каталог</span>
+          <h2>Популярные категории</h2>
+        </div>
+        <NuxtLink to="/catalog/" class="catalog-link">Весь каталог</NuxtLink>
+      </div>
+
+      <div class="categories-grid">
+        <NuxtLink
+          v-for="category in topCategories"
+          :key="category.id"
+          :to="`/catalog/${category.slug}`"
+          class="category-card"
+        >
+          <strong>{{ category.name }}</strong>
+          <span>{{ category.productCount }} товаров</span>
+          <small v-if="category.children.length">
+            {{ category.children.slice(0, 3).map(child => child.name).join(' · ') }}
+          </small>
+        </NuxtLink>
       </div>
     </section>
 
@@ -251,9 +281,60 @@ useHead({
   }
 }
 
-.home-products {
+.home-products,
+.home-categories {
   display: grid;
   gap: 18px;
+}
+
+.categories-grid {
+  display: grid;
+  gap: 12px;
+
+  @include media-breakpoint-up(sm) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @include media-breakpoint-up(lg) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.category-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: white;
+  padding: 18px;
+  text-decoration: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+
+  strong {
+    color: #101828;
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  span {
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  small {
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: 12px;
+    line-height: 1.5;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &:hover {
+    border-color: #c7d7fe;
+    box-shadow: var(--shadow-card);
+  }
 }
 
 .section-head {

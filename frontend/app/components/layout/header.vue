@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
 
-type Source = { id: string, name: string, code: string }
+type CategoryTreeNode = {
+  id: string
+  name: string
+  slug: string
+  productCount: number
+  children: CategoryTreeNode[]
+}
+
+const NAV_CATEGORY_LIMIT = 8
 
 const route = useRoute()
 const search = ref('')
@@ -9,22 +17,24 @@ const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
 const cart = useCartStore()
 
-const { data: sources } = await useAsyncData<Source[]>(
-  'layout-sources',
-  () => $fetch<Source[]>(`${apiBase}/sources`).catch(() => []),
+const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
+  'catalog-tree',
+  () => $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`).catch(() => []),
   { default: () => [] }
 )
 
 const links = computed(() => [
-  { label: 'Каталог', to: '/catalog/', active: route.path.startsWith('/catalog') },
-  ...(sources.value || [])
-    .filter(source => source.code)
-    .map(source => ({
-      label: source.name,
-      to: `/catalog/?sourceCode=${source.code}`,
-      active: route.query.sourceCode === source.code
-    })),
-  { label: 'Бренды', to: '/catalog/?focus=brands', active: route.query.focus === 'brands' }
+  {
+    label: 'Каталог',
+    to: '/catalog/',
+    active: route.path === '/catalog' || route.path === '/catalog/'
+  },
+  ...(tree.value || []).slice(0, NAV_CATEGORY_LIMIT).map(category => ({
+    label: category.name,
+    to: `/catalog/${category.slug}`,
+    active: route.path.startsWith(`/catalog/${category.slug}`)
+  })),
+  { label: 'Бренды', to: '/brand/', active: route.path.startsWith('/brand') }
 ])
 
 function submitSearch() {

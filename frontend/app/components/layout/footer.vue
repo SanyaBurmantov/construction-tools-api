@@ -17,8 +17,9 @@
       <nav class="footer-nav" aria-label="Ссылки в подвале">
         <h2>Каталог</h2>
         <NuxtLink to="/catalog/">Все товары</NuxtLink>
-        <NuxtLink to="/catalog/?sourceCode=dukon">Dukon</NuxtLink>
-        <NuxtLink to="/catalog/?focus=brands">Бренды</NuxtLink>
+        <NuxtLink to="/brand/">Бренды</NuxtLink>
+        <NuxtLink to="/delivery/">Доставка и оплата</NuxtLink>
+        <NuxtLink to="/contacts/">Контакты</NuxtLink>
       </nav>
 
       <div class="footer-contact">

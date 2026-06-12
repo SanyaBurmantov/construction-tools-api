@@ -93,9 +93,10 @@ const brand = computed(() => brandData.value?.brand || null)
 const categories = computed(() => brandData.value?.categories || emptyResponse.categories)
 const totalProducts = computed(() => categories.value.reduce((sum, category) => sum + category.count, 0))
 
-function categoryLink(categoryId: string) {
+function categoryLink(category: BrandCategory) {
   if (!brand.value?.id) return '/catalog/'
-  return `/catalog/?brandId=${brand.value.id}&categoryId=${categoryId}`
+  if (category.slug) return `/catalog/${category.slug}?brands=${brand.value.id}`
+  return `/catalog/?brandId=${brand.value.id}&categoryId=${category.id}`
 }
 
 useHead(() => ({
@@ -112,89 +113,89 @@ useHead(() => ({
 </script>
 
 <template>
-  <nav class="breadcrumbs" aria-label="Хлебные крошки">
-    <NuxtLink to="/">Главная</NuxtLink>
-    <span>/</span>
-    <NuxtLink to="/brand/">Бренды</NuxtLink>
+  <div>
+    <nav class="breadcrumbs" aria-label="Хлебные крошки">
+      <NuxtLink to="/">Главная</NuxtLink>
+      <span>/</span>
+      <NuxtLink to="/brand/">Бренды</NuxtLink>
+      <span v-if="brand">/</span>
+      <strong v-if="brand">{{ brand.name }}</strong>
+    </nav>
 
-    11111111111111111111111111111111111
-    <span v-if="brand">/</span>
-    <strong v-if="brand">{{ brand.name }}</strong>
-  </nav>
+    <NuxtLink to="/brand/" class="back-link">Все бренды</NuxtLink>
 
-  <NuxtLink to="/brand/" class="back-link">Все бренды</NuxtLink>
-
-  <div v-if="pending" class="state-card">Загружаем данные бренда...</div>
-  <div v-else-if="error" class="state-card error">
-    Ошибка: {{ error.message }}
-  </div>
-  <div v-else-if="!brand" class="state-card error">
-    Бренд не найден.
-  </div>
-  <article v-else class="brand-page">
-    <header class="brand-head">
-      <div>
-        <span class="eyebrow">Бренд</span>
-        <h1>{{ brand.name }}</h1>
-        <p>
-          Выберите категорию, чтобы открыть каталог с товарами этого бренда.
-        </p>
-      </div>
-
-      <div class="brand-badge">
-        <strong>{{ categories.length }}</strong>
-        <span>категорий</span>
-      </div>
-    </header>
-
-    <section v-if="categories.length" class="brand-summary">
-      <div class="summary-card accent">
-        <strong>{{ totalProducts }}</strong>
-        <span>товаров в категориях</span>
-      </div>
-      <div class="summary-card">
-        <strong>{{ categories[0]?.name }}</strong>
-        <span>самая заметная категория</span>
-      </div>
-    </section>
-
-    <div v-if="!categories.length" class="state-card">
-      У этого бренда пока нет товаров с категорией.
+    <div v-if="pending" class="state-card">Загружаем данные бренда...</div>
+    <div v-else-if="error" class="state-card error">
+      Ошибка: {{ error.message }}
     </div>
-
-    <section v-else class="categories-grid">
-      <NuxtLink
-        v-for="category in categories"
-        :key="category.id"
-        :to="categoryLink(category.id)"
-        class="category-card"
-      >
-        <div class="category-card-glow" />
-
-        <div class="category-card-label">
-          <span>Категория</span>
-          <strong>{{ category.count }}</strong>
+    <div v-else-if="!brand" class="state-card error">
+      Бренд не найден.
+    </div>
+    <article v-else class="brand-page">
+      <header class="brand-head">
+        <div>
+          <span class="eyebrow">Бренд</span>
+          <h1>{{ brand.name }}</h1>
+          <p>
+            Выберите категорию, чтобы открыть каталог с товарами этого бренда.
+          </p>
         </div>
 
-        <div class="category-card-top">
-          <span class="category-mark">{{ category.name.charAt(0) }}</span>
-          <div>
-            <h2>{{ category.name }}</h2>
-            <small>Товары бренда в этой категории</small>
+        <div class="brand-badge">
+          <strong>{{ categories.length }}</strong>
+          <span>категорий</span>
+        </div>
+      </header>
+
+      <section v-if="categories.length" class="brand-summary">
+        <div class="summary-card accent">
+          <strong>{{ totalProducts }}</strong>
+          <span>товаров в категориях</span>
+        </div>
+        <div class="summary-card">
+          <strong>{{ categories[0]?.name }}</strong>
+          <span>самая заметная категория</span>
+        </div>
+      </section>
+
+      <div v-if="!categories.length" class="state-card">
+        У этого бренда пока нет товаров с категорией.
+      </div>
+
+      <section v-else class="categories-grid">
+        <NuxtLink
+          v-for="category in categories"
+          :key="category.id"
+          :to="categoryLink(category)"
+          class="category-card"
+        >
+          <div class="category-card-glow" />
+
+          <div class="category-card-label">
+            <span>Категория</span>
+            <strong>{{ category.count }}</strong>
           </div>
-        </div>
 
-        <p>
-          Открыть каталог с уже выбранным брендом и перейти сразу к товарам в этой категории.
-        </p>
+          <div class="category-card-top">
+            <span class="category-mark">{{ category.name.charAt(0) }}</span>
+            <div>
+              <h2>{{ category.name }}</h2>
+              <small>Товары бренда в этой категории</small>
+            </div>
+          </div>
 
-        <div class="category-card-footer">
-          <span>{{ category.count }} товаров</span>
-          <i aria-hidden="true">↗</i>
-        </div>
-      </NuxtLink>
-    </section>
-  </article>
+          <p>
+            Открыть каталог с уже выбранным брендом и перейти сразу к товарам в этой категории.
+          </p>
+
+          <div class="category-card-footer">
+            <span>{{ category.count }} товаров</span>
+            <i aria-hidden="true">↗</i>
+          </div>
+        </NuxtLink>
+      </section>
+    </article>
+  </div>
 </template>
 
 <style scoped lang="scss">

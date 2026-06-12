@@ -46,6 +46,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 - **Data model**: products are stored in two layers — `Product` (normalized
   storefront card) and `SourceProduct` (raw supplier snapshot, identity
   `@@unique([sourceId, url])`). See the parsing docs below.
+- **Catalog browsing**: categories are a tree (parsers build it from supplier
+  breadcrumbs; products attach to leaves). Public API: `GET /categories/tree`
+  (aggregated counts, empty branches pruned), `GET /categories/:slug`
+  (ancestors + children for a category page), `GET /brands/:slug/categories`.
+  `GET /products` filters by `categorySlug`/`categoryId` **including the whole
+  subtree**, supports comma-separated `brandId`, `inStock`, and returns
+  filter-aware facets (each dimension excluded from its own counts) plus
+  `facets.priceRange`. Frontend: `/catalog` + `/catalog/<category-slug>` pages
+  share `components/catalog/CatalogView.vue`; filters live in query params
+  (`brands`, `source`, `priceMin/Max`, `inStock`, `sort`, `page`).
 - **Storefront orders**: guest checkout (no accounts). The cart lives client-side
   (Pinia `stores/cart.ts`, persisted to `localStorage`); `POST /orders`
   (`orders/` module) re-prices every line from the DB (never trusts the client),

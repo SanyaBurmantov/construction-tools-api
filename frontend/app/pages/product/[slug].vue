@@ -143,7 +143,12 @@ useHead(() => {
       { name: 'Каталог', url: `${siteBase.value}/catalog` }
     ]
     if (p.category?.name) {
-      crumbs.push({ name: p.category.name, url: `${siteBase.value}/catalog?categoryId=${p.category.id}` })
+      crumbs.push({
+        name: p.category.name,
+        url: p.category.slug
+          ? `${siteBase.value}/catalog/${p.category.slug}`
+          : `${siteBase.value}/catalog?categoryId=${p.category.id}`
+      })
     }
     crumbs.push({ name: p.name, url: canonicalUrl.value })
     ld.push({
@@ -172,7 +177,21 @@ useHead(() => {
   <div v-if="pending" class="state-card">Загрузка товара...</div>
   <div v-else-if="error" class="state-card error">Ошибка: {{ error.message }}</div>
   <article v-else-if="product" class="product-page">
-    <NuxtLink to="/catalog/" class="back-link">Назад в каталог</NuxtLink>
+    <nav class="breadcrumbs" aria-label="Хлебные крошки">
+      <NuxtLink to="/">Главная</NuxtLink>
+      <span aria-hidden="true">/</span>
+      <NuxtLink to="/catalog/">Каталог</NuxtLink>
+      <template v-if="product.category">
+        <span aria-hidden="true">/</span>
+        <NuxtLink
+          :to="product.category.slug ? `/catalog/${product.category.slug}` : `/catalog/?categoryId=${product.category.id}`"
+        >
+          {{ product.category.name }}
+        </NuxtLink>
+      </template>
+      <span aria-hidden="true">/</span>
+      <strong>{{ product.name }}</strong>
+    </nav>
 
     <section class="product-hero">
       <div class="gallery">
@@ -202,10 +221,13 @@ useHead(() => {
 
       <div class="summary">
         <div class="chips">
-          <NuxtLink v-if="product.category" :to="`/catalog/?categoryId=${product.category.id}`">
+          <NuxtLink
+            v-if="product.category"
+            :to="product.category.slug ? `/catalog/${product.category.slug}` : `/catalog/?categoryId=${product.category.id}`"
+          >
             {{ product.category.name }}
           </NuxtLink>
-          <NuxtLink v-if="product.brand" :to="`/catalog/?brandId=${product.brand.id}`">
+          <NuxtLink v-if="product.brand" :to="`/catalog/?brands=${product.brand.id}`">
             {{ product.brand.name }}
           </NuxtLink>
         </div>
@@ -294,11 +316,30 @@ useHead(() => {
   gap: 28px;
 }
 
-.back-link {
-  width: max-content;
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   color: var(--color-muted);
-  font-weight: 900;
-  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+
+  a {
+    color: inherit;
+    text-decoration: none;
+
+    &:hover {
+      color: var(--color-primary);
+    }
+  }
+
+  strong {
+    overflow: hidden;
+    max-width: 360px;
+    color: #101828;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .product-hero,
@@ -582,16 +623,6 @@ dd {
 
 .product-page {
   gap: 18px;
-}
-
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  width: max-content;
-  border-radius: 10px;
-  color: var(--color-primary);
-  font-weight: 800;
-  padding: 6px 0;
 }
 
 .product-hero,

@@ -1,7 +1,12 @@
 import { setResponseHeader } from 'h3'
 
 type ProductEntry = { slug: string, updatedAt?: string | null }
+type CategoryTreeNode = { slug: string, children: CategoryTreeNode[] }
 type SitemapUrl = { loc: string, lastmod?: string }
+
+function flattenCategories(nodes: CategoryTreeNode[]): string[] {
+  return nodes.flatMap((node) => [node.slug, ...flattenCategories(node.children)])
+}
 
 function escapeXml(value: string) {
   return value
@@ -23,15 +28,21 @@ export default defineEventHandler(async (event) => {
   const apiBase = String(config.apiBaseServer).replace(/\/$/, '')
   const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
 
-  // Product detail pages are the bulk of the catalog; categories are query-param
-  // filters on /catalog (no dedicated routes), so only static pages + products.
-  const products = await $fetch<ProductEntry[]>(`${apiBase}/products/sitemap`).catch(
-    () => [] as ProductEntry[]
-  )
+  const [products, categories] = await Promise.all([
+    $fetch<ProductEntry[]>(`${apiBase}/products/sitemap`).catch(
+      () => [] as ProductEntry[]
+    ),
+    $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`).catch(
+      () => [] as CategoryTreeNode[]
+    )
+  ])
 
   const urls: SitemapUrl[] = [
     { loc: `${siteUrl}/` },
     { loc: `${siteUrl}/catalog` },
+    ...flattenCategories(categories).map((slug) => ({
+      loc: `${siteUrl}/catalog/${slug}`
+    })),
     ...products.map((product) => ({
       loc: `${siteUrl}/product/${product.slug}`,
       lastmod: toLastmod(product.updatedAt)
