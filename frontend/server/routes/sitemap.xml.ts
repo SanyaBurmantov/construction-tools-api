@@ -40,6 +40,11 @@ export default defineEventHandler(async (event) => {
   const urls: SitemapUrl[] = [
     { loc: `${siteUrl}/` },
     { loc: `${siteUrl}/catalog` },
+    { loc: `${siteUrl}/brand` },
+    { loc: `${siteUrl}/delivery` },
+    { loc: `${siteUrl}/contacts` },
+    { loc: `${siteUrl}/oferta` },
+    { loc: `${siteUrl}/privacy` },
     ...flattenCategories(categories).map((slug) => ({
       loc: `${siteUrl}/catalog/${slug}`
     })),

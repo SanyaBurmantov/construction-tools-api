@@ -175,6 +175,12 @@ useHead({ title: 'Оформление заказа | Мультитул' })
           <button type="submit" class="primary" :disabled="!canSubmit">
             {{ submitting ? 'Оформляем…' : 'Подтвердить заказ' }}
           </button>
+          <p class="consent">
+            Нажимая «Подтвердить заказ», вы принимаете условия
+            <NuxtLink to="/oferta/">публичной оферты</NuxtLink> и даёте
+            согласие на обработку персональных данных в соответствии с
+            <NuxtLink to="/privacy/">политикой</NuxtLink>.
+          </p>
           <NuxtLink to="/cart/" class="back">Вернуться в корзину</NuxtLink>
         </aside>
       </form>
@@ -373,6 +379,17 @@ textarea {
   &:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+}
+
+.consent {
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 1.5;
+
+  a {
+    color: inherit;
+    text-decoration: underline;
   }
 }
 

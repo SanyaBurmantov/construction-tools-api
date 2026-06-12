@@ -1,3 +1,10 @@
+<script setup lang="ts">
+import { company } from '~/data/company'
+
+// заглушки вида «[...]» в футер не выводим — там им не место
+const unp = company.unp.startsWith('[') ? '' : company.unp
+</script>
+
 <template>
   <footer class="site-footer">
     <div class="footer-shell">
@@ -15,24 +22,26 @@
       </div>
 
       <nav class="footer-nav" aria-label="Ссылки в подвале">
-        <h2>Каталог</h2>
+        <h2>Покупателям</h2>
         <NuxtLink to="/catalog/">Все товары</NuxtLink>
         <NuxtLink to="/brand/">Бренды</NuxtLink>
         <NuxtLink to="/delivery/">Доставка и оплата</NuxtLink>
         <NuxtLink to="/contacts/">Контакты</NuxtLink>
+        <NuxtLink to="/oferta/">Публичная оферта</NuxtLink>
+        <NuxtLink to="/privacy/">Политика обработки персональных данных</NuxtLink>
       </nav>
 
       <div class="footer-contact">
         <h2>Контакты</h2>
-        <a href="tel:+375298135797">+375 (29) 813-57-97</a>
-        <a href="mailto:dm.krep@mail.ru">dm.krep@mail.ru</a>
-        <span>Витебск, пр-т Фрунзе, 39а, к.17</span>
+        <a :href="company.phoneHref">{{ company.phone }}</a>
+        <a :href="company.emailHref">{{ company.email }}</a>
+        <span>{{ company.storeAddress }}</span>
       </div>
     </div>
 
     <div class="footer-bottom">
-      <span>ООО Мультитул</span>
-      <span>Данные каталога обновляются автоматически.</span>
+      <span>{{ company.name }}{{ unp ? `, УНП ${unp}` : '' }}</span>
+      <span>Цены и наличие обновляются ежедневно.</span>
     </div>
   </footer>
 </template>
