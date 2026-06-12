@@ -1,3 +1,4 @@
+import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
@@ -512,13 +513,13 @@ export class Supplier7745ParserService {
       },
     });
     const category = await this.prisma.category.upsert({
-      where: { slug: 'unmapped-supplier-products' },
+      where: { slug: FALLBACK_CATEGORY_SLUG },
       update: {},
       create: {
         name: 'Неразобранные товары поставщиков',
-        slug: 'unmapped-supplier-products',
+        slug: FALLBACK_CATEGORY_SLUG,
         level: 0,
-        path: ['unmapped-supplier-products'],
+        path: [FALLBACK_CATEGORY_SLUG],
         seoTitle: 'Неразобранные товары поставщиков',
         seoDescription: 'Неразобранные товары поставщиков',
       },

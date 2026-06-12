@@ -18,6 +18,7 @@ function buildService() {
       _max: { priceValue: 99.6 },
     }),
   );
+  const queryRaw = jest.fn(() => Promise.resolve([]));
   const prisma = {
     category: {
       findMany: jest.fn(() => Promise.resolve(categories)),
@@ -31,12 +32,14 @@ function buildService() {
     sourceProduct: {
       groupBy: jest.fn(() => Promise.resolve([])),
     },
+    $queryRaw: queryRaw,
   } as unknown as PrismaService;
   return {
     service: new ProductService(prisma),
     productFindMany,
     productGroupBy,
     productAggregate,
+    queryRaw,
   };
 }
 
@@ -85,19 +88,40 @@ describe('ProductService.findAllFiltered', () => {
     expect(result.facets.priceRange).toEqual({ min: 10, max: 100 });
   });
 
-  it('searches across name, sku, model and brand name', async () => {
-    const { service, productFindMany } = buildService();
-    await service.findAllFiltered({ search: ' DF333D ' });
+  it('resolves search to ranked ids and filters by them, preserving rank order', async () => {
+    const { service, productFindMany, queryRaw } = buildService();
+    queryRaw.mockResolvedValue([{ id: 'p2' }, { id: 'p1' }] as never);
+    productFindMany
+      // findPageByRelevance: matching ids in arbitrary DB order
+      .mockResolvedValueOnce([{ id: 'p1' }, { id: 'p2' }] as never)
+      // page rows fetched by id
+      .mockResolvedValueOnce([
+        { id: 'p1', productSpecs: [] },
+        { id: 'p2', productSpecs: [] },
+      ] as never);
+
+    const result = await service.findAllFiltered({ search: ' DF333D ' });
 
     const args = productFindMany.mock.calls[0][0] as never as {
-      where: { OR: Array<Record<string, unknown>> };
+      where: { id: { in: string[] } };
     };
-    const fields = args.where.OR.map((clause) => Object.keys(clause)[0]);
-    expect(fields).toEqual(['name', 'sku', 'model', 'brand']);
-    // the term is trimmed before matching
-    expect(args.where.OR[0]).toEqual({
-      name: { contains: 'DF333D', mode: 'insensitive' },
-    });
+    expect(args.where.id.in).toEqual(['p2', 'p1']);
+    // page follows the ranked order, not DB order
+    expect(result.data.map((row) => row.id)).toEqual(['p2', 'p1']);
+  });
+
+  it('uses explicit sort instead of relevance when sortBy is set', async () => {
+    const { service, productFindMany, queryRaw } = buildService();
+    queryRaw.mockResolvedValue([{ id: 'p1' }] as never);
+
+    await service.findAllFiltered({ search: 'дрель', sortBy: 'price' });
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      orderBy: Record<string, string>;
+      where: { id: { in: string[] } };
+    };
+    expect(args.orderBy).toEqual({ priceValue: 'asc' });
+    expect(args.where.id.in).toEqual(['p1']);
   });
 
   it('filters by stock status when inStock is set', async () => {

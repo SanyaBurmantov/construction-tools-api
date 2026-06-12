@@ -10,6 +10,8 @@ import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
 import { ParserLogService } from '../parser/parser-log.service';
 import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
 import { OrdersModule } from '../orders/orders.module';
+import { DataQualityService } from './data-quality.service';
+import { CategoryMergeService } from './category-merge.service';
 
 @Module({
   imports: [OrdersModule],
@@ -24,6 +26,8 @@ import { OrdersModule } from '../orders/orders.module';
     ToolsByParserService,
     ParserLogService,
     ParserRuntimeStatusService,
+    DataQualityService,
+    CategoryMergeService,
   ],
 })
 export class AdminModule {}

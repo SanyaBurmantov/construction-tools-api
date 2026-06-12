@@ -2,11 +2,13 @@
 generator client {
   provider = "prisma-client-js"
   binaryTargets = ["native","debian-openssl-1.1.x","debian-openssl-3.0.x"]
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm]
 }
 
 model Category {
@@ -97,6 +99,8 @@ model Product {
   @@index([status, priceValue])
   @@index([status, createdAt])
   @@index([status, name])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 model ProductSpecification {

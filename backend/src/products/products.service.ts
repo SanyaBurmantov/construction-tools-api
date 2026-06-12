@@ -3,6 +3,26 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
+import { searchVariants } from '../common/utils/transliterate';
+
+const SEARCH_CANDIDATE_LIMIT = 1000;
+/** word_similarity threshold: below this trigram matches are noise */
+const SIMILARITY_THRESHOLD = 0.45;
+/** trigram matching needs a few characters to mean anything */
+const MIN_FUZZY_LENGTH = 4;
+
+const LIST_INCLUDE = {
+  brand: true,
+  category: true,
+  images: { orderBy: { order: 'asc' } },
+  productSpecs: {
+    include: { specification: true },
+  },
+} satisfies Prisma.ProductInclude;
+
+type ListProduct = Prisma.ProductGetPayload<{
+  include: typeof LIST_INCLUDE;
+}>;
 
 @Injectable()
 export class ProductService {
@@ -90,20 +110,21 @@ export class ProductService {
           .filter(Boolean)
       : undefined;
 
+    // Search resolves to a ranked id list first (trigram + transliteration);
+    // the relational where then just narrows to those ids.
+    const searchTerm = filter.search?.trim();
+    const searchIds = searchTerm
+      ? await this.searchProductIds(searchTerm)
+      : undefined;
+
     // Where is rebuilt per facet with that facet's own dimension excluded,
     // so counts answer "what would I get if I picked this value instead".
     const buildWhere = (
       omit?: 'category' | 'brand' | 'source' | 'price',
     ): Prisma.ProductWhereInput => {
       const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
-      if (filter.search) {
-        const term = filter.search.trim();
-        where.OR = [
-          { name: { contains: term, mode: 'insensitive' } },
-          { sku: { contains: term, mode: 'insensitive' } },
-          { model: { contains: term, mode: 'insensitive' } },
-          { brand: { name: { contains: term, mode: 'insensitive' } } },
-        ];
+      if (searchIds) {
+        where.id = { in: searchIds };
       }
       if (filter.inStock) where.stockStatus = 'in_stock';
       if (omit !== 'category' && categoryIds) {
@@ -138,24 +159,21 @@ export class ProductService {
     } else {
       orderBy.name = 'asc';
     }
+    // no explicit sort + active search → keep the relevance ranking
+    const useRelevance = !filter.sortBy && searchIds !== undefined;
 
     const [total, products, categoryCounts, brandCounts, sourceCounts, price] =
       await Promise.all([
         this.prisma.product.count({ where }),
-        this.prisma.product.findMany({
-          where,
-          skip,
-          take: limit,
-          orderBy,
-          include: {
-            brand: true,
-            category: true,
-            images: { orderBy: { order: 'asc' } },
-            productSpecs: {
-              include: { specification: true },
-            },
-          },
-        }),
+        useRelevance
+          ? this.findPageByRelevance(where, searchIds, skip, limit)
+          : this.prisma.product.findMany({
+              where,
+              skip,
+              take: limit,
+              orderBy,
+              include: LIST_INCLUDE,
+            }),
         this.prisma.product.groupBy({
           by: ['categoryId'],
           where: buildWhere('category'),
@@ -217,6 +235,147 @@ export class ProductService {
       },
       facets,
     };
+  }
+
+  /**
+   * Page of products ordered by search relevance: the ranked id list from
+   * searchProductIds defines the order, the relational where narrows it.
+   */
+  private async findPageByRelevance(
+    where: Prisma.ProductWhereInput,
+    rankedIds: string[],
+    skip: number,
+    limit: number,
+  ): Promise<ListProduct[]> {
+    const matching = await this.prisma.product.findMany({
+      where,
+      select: { id: true },
+    });
+    const position = new Map(rankedIds.map((id, index) => [id, index]));
+    const pageIds = matching
+      .map((row) => row.id)
+      .sort(
+        (a, b) =>
+          (position.get(a) ?? Number.MAX_SAFE_INTEGER) -
+          (position.get(b) ?? Number.MAX_SAFE_INTEGER),
+      )
+      .slice(skip, skip + limit);
+
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: pageIds } },
+      include: LIST_INCLUDE,
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return pageIds
+      .map((id) => byId.get(id))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  }
+
+  /**
+   * Ranked full-text-ish search: exact/prefix SKU first, then name prefix,
+   * substring matches, model/brand hits, and finally pg_trgm word similarity
+   * for typo tolerance. Matches the term and its transliterations.
+   */
+  private async searchProductIds(
+    term: string,
+    limit = SEARCH_CANDIDATE_LIMIT,
+  ): Promise<string[]> {
+    const variants = searchVariants(term);
+    if (!variants.length) return [];
+
+    const matchClauses = variants.map((variant) => {
+      const like = `%${variant}%`;
+      const fuzzy =
+        variant.length >= MIN_FUZZY_LENGTH
+          ? Prisma.sql`OR word_similarity(${variant}, p."name") > ${SIMILARITY_THRESHOLD}`
+          : Prisma.empty;
+      return Prisma.sql`(
+        p."name" ILIKE ${like}
+        OR p."sku" ILIKE ${like}
+        OR p."model" ILIKE ${like}
+        OR b."name" ILIKE ${like}
+        ${fuzzy}
+      )`;
+    });
+
+    const rankClauses = variants.map((variant) => {
+      const like = `%${variant}%`;
+      const prefix = `${variant}%`;
+      const fuzzy =
+        variant.length >= MIN_FUZZY_LENGTH
+          ? Prisma.sql`(word_similarity(${variant}, p."name") * 50)::int`
+          : Prisma.sql`0`;
+      return Prisma.sql`GREATEST(
+        CASE WHEN lower(p."sku") = lower(${variant}) THEN 100 ELSE 0 END,
+        CASE WHEN p."sku" ILIKE ${prefix} THEN 90 ELSE 0 END,
+        CASE WHEN p."name" ILIKE ${prefix} THEN 75 ELSE 0 END,
+        CASE WHEN p."name" ILIKE ${like} THEN 65 ELSE 0 END,
+        CASE WHEN p."model" ILIKE ${like} THEN 60 ELSE 0 END,
+        CASE WHEN b."name" ILIKE ${like} THEN 50 ELSE 0 END,
+        ${fuzzy}
+      )`;
+    });
+
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT p."id"
+      FROM "Product" p
+      LEFT JOIN "Brand" b ON b."id" = p."brandId"
+      WHERE p."status" = 'PUBLISHED' AND (${Prisma.join(matchClauses, ' OR ')})
+      ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."name" ASC
+      LIMIT ${limit}
+    `);
+    return rows.map((row) => row.id);
+  }
+
+  /** Live header suggestions: top products, categories and brands for a query. */
+  async suggest(query: string) {
+    const term = query?.trim() ?? '';
+    if (term.length < 2) {
+      return { products: [], categories: [], brands: [] };
+    }
+
+    const variants = searchVariants(term);
+    const nameMatch = {
+      OR: variants.map((variant) => ({
+        name: { contains: variant, mode: 'insensitive' as const },
+      })),
+    };
+
+    const ids = await this.searchProductIds(term, 6);
+    const [rows, categories, brands] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { id: { in: ids } },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          sku: true,
+          priceValue: true,
+          priceCurrency: true,
+          images: { orderBy: { order: 'asc' }, take: 1, select: { url: true } },
+        },
+      }),
+      this.prisma.category.findMany({
+        where: { ...nameMatch, products: { some: { status: 'PUBLISHED' } } },
+        select: { id: true, name: true, slug: true },
+        take: 4,
+        orderBy: { name: 'asc' },
+      }),
+      this.prisma.brand.findMany({
+        where: { ...nameMatch, products: { some: { status: 'PUBLISHED' } } },
+        select: { id: true, name: true, slug: true },
+        take: 4,
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const products = ids
+      .map((id) => byId.get(id))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      .map(({ images, ...row }) => ({ ...row, image: images[0]?.url ?? null }));
+
+    return { products, categories, brands };
   }
 
   /**

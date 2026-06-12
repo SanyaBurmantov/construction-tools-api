@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CategoryPage, CategoryTreeNode } from './types/category-tree.type';
+import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
 
 @Injectable()
 export class CategoriesService {
@@ -33,11 +34,14 @@ export class CategoriesService {
 
   /**
    * Category tree for storefront navigation. Counts include descendants;
-   * branches without published products are pruned.
+   * branches without published products are pruned. The parser fallback
+   * category is unlisted (still reachable by direct URL until curated).
    */
   async getTree(): Promise<CategoryTreeNode[]> {
     const { roots } = await this.buildCountedTree();
-    return this.pruneEmpty(roots);
+    return this.pruneEmpty(
+      roots.filter((node) => node.slug !== FALLBACK_CATEGORY_SLUG),
+    );
   }
 
   /** Category landing page payload: breadcrumb ancestors + children with counts. */

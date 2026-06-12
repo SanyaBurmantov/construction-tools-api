@@ -20,6 +20,9 @@ import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { AdminMergeBrandDto } from './dto/admin-merge-brand.dto';
+import { AdminMergeCategoryDto } from './dto/admin-merge-category.dto';
+import { DataQualityService } from './data-quality.service';
+import { CategoryMergeService } from './category-merge.service';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
 import { AdminMapSourceCategoryDto } from './dto/admin-map-source-category.dto';
 import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
@@ -36,11 +39,18 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly ordersService: OrdersService,
+    private readonly dataQualityService: DataQualityService,
+    private readonly categoryMergeService: CategoryMergeService,
   ) {}
 
   @Get('stats')
   getStats() {
     return this.adminService.getStats();
+  }
+
+  @Get('data-quality')
+  getDataQuality() {
+    return this.dataQualityService.getReport();
   }
 
   @Get('products')
@@ -253,6 +263,11 @@ export class AdminController {
   @Patch('categories/:id')
   updateCategory(@Param('id') id: string, @Body() dto: AdminUpdateCategoryDto) {
     return this.adminService.updateCategory(id, dto);
+  }
+
+  @Post('categories/:id/merge')
+  mergeCategory(@Param('id') id: string, @Body() dto: AdminMergeCategoryDto) {
+    return this.categoryMergeService.merge(id, dto.targetCategoryId);
   }
 
   @Delete('categories/:id')

@@ -19,6 +19,11 @@ export class ProductController {
     return this.service.getSitemapEntries();
   }
 
+  @Get('suggest')
+  suggest(@Query('q') q: string) {
+    return this.service.suggest(q ?? '');
+  }
+
   @Get(':slug')
   getOne(@Param('slug') slug: string) {
     return this.service.getProductBySlug(slug);
