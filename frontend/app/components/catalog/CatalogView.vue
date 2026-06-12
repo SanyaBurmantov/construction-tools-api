@@ -62,12 +62,15 @@ type ProductResponse = {
 const props = defineProps<{ categorySlug?: string }>()
 
 const PAGE_SIZE = 24
+// 'default' не шлёт sortBy: при активном поиске бэкенд сортирует по
+// релевантности, без поиска — по названию
 const SORT_OPTIONS = [
-  { value: 'name-asc', label: 'По названию (А-Я)' },
-  { value: 'name-desc', label: 'По названию (Я-А)' },
+  { value: 'default', label: 'По умолчанию' },
   { value: 'price-asc', label: 'Сначала дешевле' },
   { value: 'price-desc', label: 'Сначала дороже' },
-  { value: 'new', label: 'Сначала новые' }
+  { value: 'new', label: 'Сначала новые' },
+  { value: 'name-asc', label: 'По названию (А-Я)' },
+  { value: 'name-desc', label: 'По названию (Я-А)' }
 ]
 
 const route = useRoute()
@@ -98,7 +101,7 @@ const selectedSource = computed(
 const priceMin = computed(() => queryValue(route.query.priceMin) || '')
 const priceMax = computed(() => queryValue(route.query.priceMax) || '')
 const inStock = computed(() => queryValue(route.query.inStock) === '1')
-const sort = computed(() => queryValue(route.query.sort) || 'name-asc')
+const sort = computed(() => queryValue(route.query.sort) || 'default')
 const page = computed(() => Math.max(1, Number(queryValue(route.query.page)) || 1))
 const legacyCategoryId = computed(() => queryValue(route.query.categoryId))
 
@@ -110,6 +113,7 @@ watch([priceMin, priceMax], ([min, max]) => {
 })
 
 const sortParams = computed(() => {
+  if (sort.value === 'default') return { sortBy: undefined, sortOrder: undefined }
   if (sort.value === 'new') return { sortBy: 'createdAt', sortOrder: 'desc' }
   const [sortBy, sortOrder] = sort.value.split('-')
   return { sortBy, sortOrder }
@@ -242,7 +246,7 @@ function currentQuery(overrides: Record<string, string | undefined>) {
     priceMin: priceMin.value || undefined,
     priceMax: priceMax.value || undefined,
     inStock: inStock.value ? '1' : undefined,
-    sort: sort.value === 'name-asc' ? undefined : sort.value,
+    sort: sort.value === 'default' ? undefined : sort.value,
     ...overrides
   })
 }
@@ -279,7 +283,7 @@ function applyPrice() {
 }
 
 function setSort(value: string) {
-  pushQuery({ sort: value === 'name-asc' ? undefined : value, page: page.value > 1 ? String(page.value) : undefined })
+  pushQuery({ sort: value === 'default' ? undefined : value, page: page.value > 1 ? String(page.value) : undefined })
 }
 
 function setPage(next: number) {

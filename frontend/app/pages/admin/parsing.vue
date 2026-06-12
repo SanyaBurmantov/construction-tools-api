@@ -11,6 +11,13 @@ type SitemapResponse = { data: SitemapEntry[], pagination: { page: number, limit
 type DukonSitemapResponse = { data: DukonSitemapEntry[], pagination: { page: number, limit: number, total: number, pages: number } }
 type Supplier7745SitemapResponse = { data: Supplier7745SitemapEntry[], pagination: { page: number, limit: number, total: number, pages: number } }
 type BulkRetryResponse = { count: number }
+type ProductRef = { id: string, name: string, slug: string }
+type DuplicateGroup = { key: string, products: Array<ProductRef & { sources: string[] }> }
+type DataQualityReport = {
+  generatedAt: string
+  summary: { publishedProducts: number, totalProducts: number, withoutImages: number, withoutPrice: number, withoutSpecs: number, withoutBrand: number, inFallbackCategory: number, staleProducts: number, staleDays: number, duplicateGroups: number, allCapsNames: number }
+  samples: { withoutImages: ProductRef[], withoutPrice: ProductRef[], withoutSpecs: ProductRef[], inFallbackCategory: ProductRef[], stale: ProductRef[], allCapsNames: ProductRef[], duplicates: DuplicateGroup[] }
+}
 
 const { token, loadToken, adminFetch } = useAdminApi()
 const queueStats = ref<QueueStats | null>(null)
@@ -85,6 +92,27 @@ async function retry7745Sitemap(id: string) { try { await adminFetch(`/queue/774
 async function retryProblem7745Sitemaps() { try { const result = await adminFetch<BulkRetryResponse>('/queue/7745/sitemaps/retry-problems', { method: 'POST' }); message(`В очередь возвращено 7745 URL: ${result.count}`); await loadData() } catch (error) { message(error instanceof Error ? error.message : 'Не удалось вернуть проблемные 7745 URL в очередь', true) } }
 async function clearErrors() { try { await adminFetch('/queue/errors', { method: 'DELETE' }); message('Ошибки очищены'); await loadData() } catch (error) { message(error instanceof Error ? error.message : 'Не удалось очистить ошибки', true) } }
 async function importProduct() { if (!importForm.sourceId || !importForm.url) return; importing.value = true; try { const result = await adminFetch<{ product: { name: string } }>('/source-products/import', { method: 'POST', body: importForm }); message(`Товар добавлен: ${result.product.name}`); importForm.url = ''; await loadData() } catch (error) { message(error instanceof Error ? error.message : 'Не удалось добавить товар из источника', true) } finally { importing.value = false } }
+const dataQuality = ref<DataQualityReport | null>(null)
+const dataQualityLoading = ref(false)
+// отчёт тяжёлый (скан имён всего каталога) — грузим отдельно от loadData
+async function loadDataQuality() {
+  if (!token.value) return
+  dataQualityLoading.value = true
+  try { dataQuality.value = await adminFetch<DataQualityReport>('/data-quality') } catch (error) { message(error instanceof Error ? error.message : 'Не удалось загрузить отчёт качества', true) } finally { dataQualityLoading.value = false }
+}
+const qualityMetrics = computed(() => {
+  const summary = dataQuality.value?.summary
+  if (!summary) return []
+  return [
+    { key: 'withoutImages', label: 'Без фото', count: summary.withoutImages, items: dataQuality.value!.samples.withoutImages },
+    { key: 'withoutPrice', label: 'Без цены', count: summary.withoutPrice, items: dataQuality.value!.samples.withoutPrice },
+    { key: 'withoutSpecs', label: 'Без характеристик', count: summary.withoutSpecs, items: dataQuality.value!.samples.withoutSpecs },
+    { key: 'inFallbackCategory', label: 'Неразобранная категория', count: summary.inFallbackCategory, items: dataQuality.value!.samples.inFallbackCategory },
+    { key: 'stale', label: `Не обновлялись > ${summary.staleDays} дн.`, count: summary.staleProducts, items: dataQuality.value!.samples.stale },
+    { key: 'allCaps', label: 'Название КАПСОМ', count: summary.allCapsNames, items: dataQuality.value!.samples.allCapsNames }
+  ]
+})
+
 async function applyFilters() { pagination.page = 1; await loadData() }
 async function setPage(page: number) { pagination.page = page; await loadData() }
 async function applyDukonFilters() { dukonPagination.page = 1; await loadData() }
@@ -92,7 +120,7 @@ async function setDukonPage(page: number) { dukonPagination.page = page; await l
 async function apply7745Filters() { supplier7745Pagination.page = 1; await loadData() }
 async function set7745Page(page: number) { supplier7745Pagination.page = page; await loadData() }
 
-onMounted(() => { loadToken(); void loadData() })
+onMounted(() => { loadToken(); void loadData(); void loadDataQuality() })
 useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', content: 'noindex,nofollow' }] })
 </script>
 
@@ -119,6 +147,38 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
     <section class="admin-card">
       <div class="section-head"><div><h2>Cron status</h2><p class="muted">Последние runtime-запуски парсеров в текущем backend процессе.</p></div></div>
       <div class="list"><div v-for="item in runtimeStatuses" :key="item.key" class="dukon-row"><div><strong>{{ item.label }}</strong><small v-if="item.lastError">{{ item.lastError }}</small><small v-else>last success: {{ item.lastSuccessAt || 'еще не было' }}</small></div><span :class="{ done: !item.isRunning && !item.lastError }">{{ item.isRunning ? 'RUNNING' : item.lastError ? 'ERROR' : 'OK' }}</span><small>{{ item.successes }}/{{ item.runs }} успешных</small></div><p v-if="!runtimeStatuses.length" class="muted">Cron еще не запускался после старта backend.</p></div>
+    </section>
+
+    <section class="admin-card">
+      <div class="section-head">
+        <div><h2>Качество данных</h2><p class="muted">Опубликовано {{ dataQuality?.summary.publishedProducts ?? '—' }} из {{ dataQuality?.summary.totalProducts ?? '—' }} товаров. Отчёт: {{ dataQuality ? new Date(dataQuality.generatedAt).toLocaleString('ru') : '…' }}</p></div>
+        <button type="button" class="ghost" :disabled="dataQualityLoading" @click="loadDataQuality">{{ dataQualityLoading ? 'Считаем…' : 'Обновить отчёт' }}</button>
+      </div>
+      <div v-if="dataQuality" class="quality-grid">
+        <details v-for="metric in qualityMetrics" :key="metric.key" class="quality-item" :class="{ ok: metric.count === 0 }">
+          <summary><strong>{{ metric.count }}</strong><span>{{ metric.label }}</span></summary>
+          <ul v-if="metric.items.length">
+            <li v-for="item in metric.items" :key="item.id">
+              <a :href="`/product/${item.slug}`" target="_blank" rel="noreferrer">{{ item.name }}</a>
+            </li>
+            <li v-if="metric.count > metric.items.length" class="muted">… и ещё {{ metric.count - metric.items.length }}</li>
+          </ul>
+          <p v-else class="muted">Проблем нет.</p>
+        </details>
+        <details class="quality-item" :class="{ ok: !dataQuality.summary.duplicateGroups }">
+          <summary><strong>{{ dataQuality.summary.duplicateGroups }}</strong><span>Возможные дубли</span></summary>
+          <ul v-if="dataQuality.samples.duplicates.length">
+            <li v-for="group in dataQuality.samples.duplicates" :key="group.key" class="dup-group">
+              <strong>{{ group.key }}</strong>
+              <a v-for="item in group.products" :key="item.id" :href="`/product/${item.slug}`" target="_blank" rel="noreferrer">
+                {{ item.name }} <small v-if="item.sources.length">({{ item.sources.join(', ') }})</small>
+              </a>
+            </li>
+          </ul>
+          <p v-else class="muted">Дубликатов не найдено.</p>
+        </details>
+      </div>
+      <p v-else class="muted">{{ dataQualityLoading ? 'Считаем отчёт…' : 'Отчёт ещё не загружен.' }}</p>
     </section>
 
     <section class="admin-card">
@@ -166,4 +226,4 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
   </div>
 </template>
 
-<style scoped lang="scss">.admin-page{display:grid;gap:24px}.back-link{width:max-content;font-weight:900;text-decoration:none}h1{font-size:clamp(36px,6vw,68px)}.admin-card,.stats-grid>div,.notice{border:2px solid var(--color-ink);border-radius:28px;background:rgba(255,250,240,.94);box-shadow:7px 7px 0 var(--color-ink);padding:22px}.notice.error{color:var(--color-accent-strong)}.notice.success{color:var(--color-green)}.stats-grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));strong{font-family:var(--font-heading);font-size:34px}span{color:var(--color-muted);font-weight:900}}.actions,.section-head,.pagination{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}.filters{display:grid;gap:10px;width:min(100%,640px);@include media-breakpoint-up(md){grid-template-columns:1fr 150px auto}}.dukon-filters{margin-top:16px}.source-import{display:grid;gap:10px;margin-top:16px;@include media-breakpoint-up(md){grid-template-columns:240px minmax(0,1fr) auto}}input,select{width:100%;border:1px solid var(--color-line);border-radius:14px;background:white;padding:12px 14px}button{border:2px solid var(--color-ink);border-radius:999px;background:var(--color-accent);cursor:pointer;font-weight:900;padding:12px 16px}button:disabled{cursor:not-allowed;opacity:.45}.ghost{background:white}.list{display:grid;gap:10px;margin-top:16px}.row,.error-row,.dukon-row{display:grid;gap:8px;border:1px solid var(--color-line);border-radius:18px;background:white;padding:14px;word-break:break-all;@include media-breakpoint-up(md){grid-template-columns:minmax(0,1fr) auto}}.dukon-row{@include media-breakpoint-up(md){grid-template-columns:minmax(0,1fr) auto 70px auto}small{display:block;margin-top:6px;color:var(--color-accent-strong);font-weight:800}}.row span,.dukon-row span{border-radius:999px;background:rgba(222,77,47,.14);color:var(--color-accent-strong);font-weight:900;padding:6px 10px}.row span.done,.dukon-row span.done{background:rgba(45,125,70,.14);color:var(--color-green)}.dukon-row span.pending{background:rgba(243,182,31,.22);color:var(--color-ink)}.dukon-row span.skipped{background:rgba(120,120,120,.14);color:var(--color-muted)}.error-row{border-color:rgba(222,77,47,.35);strong{color:var(--color-accent-strong)}small{color:var(--color-muted)}}.muted{color:var(--color-muted);font-weight:800}</style>
+<style scoped lang="scss">.admin-page{display:grid;gap:24px}.back-link{width:max-content;font-weight:900;text-decoration:none}h1{font-size:clamp(36px,6vw,68px)}.admin-card,.stats-grid>div,.notice{border:2px solid var(--color-ink);border-radius:28px;background:rgba(255,250,240,.94);box-shadow:7px 7px 0 var(--color-ink);padding:22px}.notice.error{color:var(--color-accent-strong)}.notice.success{color:var(--color-green)}.stats-grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));strong{font-family:var(--font-heading);font-size:34px}span{color:var(--color-muted);font-weight:900}}.actions,.section-head,.pagination{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}.filters{display:grid;gap:10px;width:min(100%,640px);@include media-breakpoint-up(md){grid-template-columns:1fr 150px auto}}.dukon-filters{margin-top:16px}.source-import{display:grid;gap:10px;margin-top:16px;@include media-breakpoint-up(md){grid-template-columns:240px minmax(0,1fr) auto}}input,select{width:100%;border:1px solid var(--color-line);border-radius:14px;background:white;padding:12px 14px}button{border:2px solid var(--color-ink);border-radius:999px;background:var(--color-accent);cursor:pointer;font-weight:900;padding:12px 16px}button:disabled{cursor:not-allowed;opacity:.45}.ghost{background:white}.list{display:grid;gap:10px;margin-top:16px}.row,.error-row,.dukon-row{display:grid;gap:8px;border:1px solid var(--color-line);border-radius:18px;background:white;padding:14px;word-break:break-all;@include media-breakpoint-up(md){grid-template-columns:minmax(0,1fr) auto}}.dukon-row{@include media-breakpoint-up(md){grid-template-columns:minmax(0,1fr) auto 70px auto}small{display:block;margin-top:6px;color:var(--color-accent-strong);font-weight:800}}.row span,.dukon-row span{border-radius:999px;background:rgba(222,77,47,.14);color:var(--color-accent-strong);font-weight:900;padding:6px 10px}.row span.done,.dukon-row span.done{background:rgba(45,125,70,.14);color:var(--color-green)}.dukon-row span.pending{background:rgba(243,182,31,.22);color:var(--color-ink)}.dukon-row span.skipped{background:rgba(120,120,120,.14);color:var(--color-muted)}.error-row{border-color:rgba(222,77,47,.35);strong{color:var(--color-accent-strong)}small{color:var(--color-muted)}}.muted{color:var(--color-muted);font-weight:800}.quality-grid{display:grid;gap:10px;margin-top:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}.quality-item{border:1px solid var(--color-line);border-radius:18px;background:white;padding:12px 14px;summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;strong{font-family:var(--font-heading);font-size:26px;color:var(--color-accent-strong)}span{color:var(--color-muted);font-weight:800}}ul{display:grid;gap:6px;margin:10px 0 0;padding:0;list-style:none;max-height:240px;overflow-y:auto}a{font-weight:700;word-break:break-word}}.quality-item.ok summary strong{color:var(--color-green)}.dup-group{display:grid;gap:4px;border-top:1px dashed var(--color-line);padding-top:8px;a{display:block}small{color:var(--color-muted)}}</style>
