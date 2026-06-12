@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsOptional,
   IsIn,
+  IsBoolean,
   Min,
   Max,
 } from 'class-validator';
@@ -15,15 +16,35 @@ export class ProductFilterDto {
   @IsString()
   search?: string;
 
-  @ApiProperty({ required: false, description: 'ID категории' })
+  @ApiProperty({
+    required: false,
+    description: 'ID категории (включая подкатегории)',
+  })
   @IsOptional()
   @IsString()
   categoryId?: string;
 
-  @ApiProperty({ required: false, description: 'ID бренда' })
+  @ApiProperty({
+    required: false,
+    description: 'Slug категории (включая подкатегории)',
+  })
+  @IsOptional()
+  @IsString()
+  categorySlug?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'ID бренда (несколько — через запятую)',
+  })
   @IsOptional()
   @IsString()
   brandId?: string;
+
+  @ApiProperty({ required: false, description: 'Только товары в наличии' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === '1' || value === true)
+  @IsBoolean()
+  inStock?: boolean;
 
   @ApiProperty({ required: false, description: 'Код источника' })
   @IsOptional()

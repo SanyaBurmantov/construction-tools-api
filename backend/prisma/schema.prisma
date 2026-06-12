@@ -27,6 +27,8 @@ model Category {
   products               Product[]
   specifications         Specification[]
   mappedSourceCategories SourceCategory[] @relation("MappedSourceCategory")
+
+  @@index([parentId])
 }
 
 model Brand {
@@ -89,6 +91,12 @@ model Product {
   productSpecs     ProductSpecification[]
   sourceProducts   SourceProduct[]
   orderItems       OrderItem[]
+
+  @@index([status, categoryId])
+  @@index([status, brandId])
+  @@index([status, priceValue])
+  @@index([status, createdAt])
+  @@index([status, name])
 }
 
 model ProductSpecification {

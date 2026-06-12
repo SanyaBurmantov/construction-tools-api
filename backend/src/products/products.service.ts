@@ -82,20 +82,48 @@ export class ProductService {
     const limit = Math.min(filter.limit ?? 20, 100);
     const skip = (page - 1) * limit;
 
-    const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
-    if (filter.search) {
-      where.name = { contains: filter.search, mode: 'insensitive' };
-    }
-    if (filter.categoryId) where.categoryId = filter.categoryId;
-    if (filter.brandId) where.brandId = filter.brandId;
-    if (filter.sourceCode) {
-      where.sourceProducts = { some: { source: { code: filter.sourceCode } } };
-    }
-    if (filter.priceMin !== undefined || filter.priceMax !== undefined) {
-      where.priceValue = {};
-      if (filter.priceMin !== undefined) where.priceValue.gte = filter.priceMin;
-      if (filter.priceMax !== undefined) where.priceValue.lte = filter.priceMax;
-    }
+    const categoryIds = await this.resolveCategoryIds(filter);
+    const brandIds = filter.brandId
+      ? filter.brandId
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : undefined;
+
+    // Where is rebuilt per facet with that facet's own dimension excluded,
+    // so counts answer "what would I get if I picked this value instead".
+    const buildWhere = (
+      omit?: 'category' | 'brand' | 'source' | 'price',
+    ): Prisma.ProductWhereInput => {
+      const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
+      if (filter.search) {
+        where.name = { contains: filter.search, mode: 'insensitive' };
+      }
+      if (filter.inStock) where.stockStatus = 'in_stock';
+      if (omit !== 'category' && categoryIds) {
+        where.categoryId = { in: categoryIds };
+      }
+      if (omit !== 'brand' && brandIds?.length) {
+        where.brandId = { in: brandIds };
+      }
+      if (omit !== 'source' && filter.sourceCode) {
+        where.sourceProducts = {
+          some: { source: { code: filter.sourceCode } },
+        };
+      }
+      if (
+        omit !== 'price' &&
+        (filter.priceMin !== undefined || filter.priceMax !== undefined)
+      ) {
+        where.priceValue = {};
+        if (filter.priceMin !== undefined)
+          where.priceValue.gte = filter.priceMin;
+        if (filter.priceMax !== undefined)
+          where.priceValue.lte = filter.priceMax;
+      }
+      return where;
+    };
+    const where = buildWhere();
 
     const orderBy: Prisma.ProductOrderByWithRelationInput = {};
     if (filter.sortBy) {
@@ -105,10 +133,9 @@ export class ProductService {
       orderBy.name = 'asc';
     }
 
-    const total = await this.prisma.product.count({ where });
-
-    const [products, categoryCounts, brandCounts, sourceCounts] =
+    const [total, products, categoryCounts, brandCounts, sourceCounts, price] =
       await Promise.all([
+        this.prisma.product.count({ where }),
         this.prisma.product.findMany({
           where,
           skip,
@@ -117,8 +144,7 @@ export class ProductService {
           include: {
             brand: true,
             category: true,
-            images: true,
-            sourceProducts: true,
+            images: { orderBy: { order: 'asc' } },
             productSpecs: {
               include: { specification: true },
             },
@@ -126,18 +152,23 @@ export class ProductService {
         }),
         this.prisma.product.groupBy({
           by: ['categoryId'],
-          where: { status: 'PUBLISHED' },
+          where: buildWhere('category'),
           _count: { _all: true },
         }),
         this.prisma.product.groupBy({
           by: ['brandId'],
-          where: { status: 'PUBLISHED', brandId: { not: null } },
+          where: { ...buildWhere('brand'), brandId: { not: null } },
           _count: { _all: true },
         }),
         this.prisma.sourceProduct.groupBy({
           by: ['sourceId'],
-          where: { product: { status: 'PUBLISHED' } },
+          where: { product: buildWhere('source') },
           _count: { _all: true },
+        }),
+        this.prisma.product.aggregate({
+          where: { ...buildWhere('price'), priceValue: { gt: 0 } },
+          _min: { priceValue: true },
+          _max: { priceValue: true },
         }),
       ]);
 
@@ -153,6 +184,13 @@ export class ProductService {
       sources: Object.fromEntries(
         sourceCounts.map((item) => [item.sourceId, item._count._all]),
       ),
+      priceRange:
+        price._min.priceValue !== null
+          ? {
+              min: Math.floor(price._min.priceValue),
+              max: Math.ceil(price._max.priceValue ?? price._min.priceValue),
+            }
+          : null,
     };
 
     const data = products.map((product) => ({
@@ -173,5 +211,43 @@ export class ProductService {
       },
       facets,
     };
+  }
+
+  /**
+   * Category filter covers the whole subtree: products live on leaf
+   * categories, so picking a parent must include its descendants.
+   * Returns undefined when no category filter is set, [] for unknown ones.
+   */
+  private async resolveCategoryIds(
+    filter: ProductFilterDto,
+  ): Promise<string[] | undefined> {
+    if (!filter.categoryId && !filter.categorySlug) return undefined;
+
+    const categories = await this.prisma.category.findMany({
+      select: { id: true, parentId: true, slug: true },
+    });
+    const target = categories.find(
+      (category) =>
+        (filter.categoryId && category.id === filter.categoryId) ||
+        (filter.categorySlug && category.slug === filter.categorySlug),
+    );
+    if (!target) return [];
+
+    const childrenByParent = new Map<string, string[]>();
+    for (const category of categories) {
+      if (!category.parentId) continue;
+      const list = childrenByParent.get(category.parentId) ?? [];
+      list.push(category.id);
+      childrenByParent.set(category.parentId, list);
+    }
+
+    const ids: string[] = [];
+    const queue = [target.id];
+    while (queue.length) {
+      const id = queue.shift() as string;
+      ids.push(id);
+      queue.push(...(childrenByParent.get(id) ?? []));
+    }
+    return ids;
   }
 }
