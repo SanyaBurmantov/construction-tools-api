@@ -11,7 +11,10 @@ import {
 import { Transform, Type } from 'class-transformer';
 
 export class ProductFilterDto {
-  @ApiProperty({ required: false, description: 'Поиск по названию товара' })
+  @ApiProperty({
+    required: false,
+    description: 'Поиск по названию, артикулу, модели или бренду',
+  })
   @IsOptional()
   @IsString()
   search?: string;

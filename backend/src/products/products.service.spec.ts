@@ -85,6 +85,21 @@ describe('ProductService.findAllFiltered', () => {
     expect(result.facets.priceRange).toEqual({ min: 10, max: 100 });
   });
 
+  it('searches across name, sku, model and brand name', async () => {
+    const { service, productFindMany } = buildService();
+    await service.findAllFiltered({ search: ' DF333D ' });
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      where: { OR: Array<Record<string, unknown>> };
+    };
+    const fields = args.where.OR.map((clause) => Object.keys(clause)[0]);
+    expect(fields).toEqual(['name', 'sku', 'model', 'brand']);
+    // the term is trimmed before matching
+    expect(args.where.OR[0]).toEqual({
+      name: { contains: 'DF333D', mode: 'insensitive' },
+    });
+  });
+
   it('filters by stock status when inStock is set', async () => {
     const { service, productFindMany } = buildService();
     await service.findAllFiltered({ inStock: true });

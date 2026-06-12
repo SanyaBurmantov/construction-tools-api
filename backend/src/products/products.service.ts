@@ -97,7 +97,13 @@ export class ProductService {
     ): Prisma.ProductWhereInput => {
       const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
       if (filter.search) {
-        where.name = { contains: filter.search, mode: 'insensitive' };
+        const term = filter.search.trim();
+        where.OR = [
+          { name: { contains: term, mode: 'insensitive' } },
+          { sku: { contains: term, mode: 'insensitive' } },
+          { model: { contains: term, mode: 'insensitive' } },
+          { brand: { name: { contains: term, mode: 'insensitive' } } },
+        ];
       }
       if (filter.inStock) where.stockStatus = 'in_stock';
       if (omit !== 'category' && categoryIds) {
