@@ -608,6 +608,12 @@ export class AdminService {
       ...(dto.sku !== undefined ? { sku: dto.sku || null } : {}),
       ...(dto.model !== undefined ? { model: dto.model || null } : {}),
       ...(dto.oldPrice !== undefined ? { oldPrice: dto.oldPrice ?? null } : {}),
+      ...(dto.costPrice !== undefined
+        ? { costPrice: dto.costPrice ?? null }
+        : {}),
+      ...(dto.pricingMode !== undefined
+        ? { pricingMode: dto.pricingMode }
+        : {}),
       ...(dto.priceCurrency !== undefined
         ? { priceCurrency: dto.priceCurrency || 'BYN' }
         : {}),

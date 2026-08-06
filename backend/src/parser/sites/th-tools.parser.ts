@@ -5,6 +5,7 @@ import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ParserLogService } from '../parser-log.service';
+import { PricingService } from '../../pricing/pricing.service';
 
 type SavedCategoryRef = { id: string };
 type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
@@ -23,6 +24,7 @@ export class ThToolsParserService {
   constructor(
     private prisma: PrismaService,
     private parserLogService: ParserLogService,
+    private pricing: PricingService,
   ) {}
 
   async getUnvisitedSitemaps(limit = 10) {
@@ -242,7 +244,8 @@ export class ThToolsParserService {
       where: { slug },
       update: {
         ...statusUpdate,
-        priceValue,
+        // priceValue is deliberately absent: PricingService owns the storefront
+        // price so markup rules apply and MANUAL prices aren't clobbered.
         priceCurrency,
         descriptionFull: description,
         sku,
@@ -264,6 +267,12 @@ export class ThToolsParserService {
         },
       },
     });
+
+    // Records the supplier cost and derives the storefront price from the
+    // markup rules. No-ops for MANUAL products; flags implausible cost jumps.
+    if (priceValue != null) {
+      await this.pricing.applyCost(product.id, priceValue);
+    }
 
     // ---------- SPECS PARSE ----------
     // ---------- SAVE SPECS ----------

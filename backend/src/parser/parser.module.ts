@@ -12,6 +12,7 @@ import { ParserController } from './parser.controller';
 import { ParserLogService } from './parser-log.service';
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
 import { AdminGuard } from '../admin/admin.guard';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
   providers: [
@@ -27,7 +28,7 @@ import { AdminGuard } from '../admin/admin.guard';
     ParserRuntimeStatusService,
     AdminGuard,
   ],
-  imports: [SitemapsModule],
+  imports: [SitemapsModule, PricingModule],
   controllers: [ParserController],
 })
 export class ParserModule {}

@@ -8,6 +8,7 @@ import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ParserLogService } from '../parser-log.service';
+import { PricingService } from '../../pricing/pricing.service';
 import { parse7745 } from './7745.parser';
 
 type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
@@ -31,6 +32,7 @@ export class Supplier7745ParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
+    private readonly pricing: PricingService,
   ) {}
 
   async refreshSitemaps() {
@@ -245,7 +247,8 @@ export class Supplier7745ParserService {
         barcode,
         brandId,
         categoryId,
-        priceValue: parsed.price,
+        // priceValue is deliberately absent: PricingService owns the storefront
+        // price so markup rules apply and MANUAL prices aren't clobbered.
         priceCurrency: 'BYN',
         stockStatus: 'unknown',
         descriptionShort: seoDescription,
@@ -273,6 +276,13 @@ export class Supplier7745ParserService {
         images: { create: imageRows },
       },
     });
+
+    // Records the supplier cost and derives the storefront price from the
+    // markup rules. No-ops for MANUAL products; flags implausible cost jumps
+    // instead of publishing them.
+    if (parsed.price != null) {
+      await this.pricing.applyCost(product.id, parsed.price);
+    }
 
     await this.saveSpecifications(
       parsed.specifications,

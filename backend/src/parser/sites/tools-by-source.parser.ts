@@ -6,6 +6,7 @@ import { generateSlug } from '../../common/utils/generate-slug';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
+import { PricingService } from '../../pricing/pricing.service';
 import { parseTools } from './tools.parser';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
@@ -30,6 +31,7 @@ export class ToolsByParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
+    private readonly pricing: PricingService,
   ) {}
 
   async refreshSitemaps() {
@@ -248,7 +250,8 @@ export class ToolsByParserService {
         sku,
         brandId,
         categoryId,
-        priceValue: parsed.price,
+        // priceValue is deliberately absent: PricingService owns the storefront
+        // price so markup rules apply and MANUAL prices aren't clobbered.
         priceCurrency: 'BYN',
         stockStatus: 'unknown',
         descriptionShort: seoDescription,
@@ -274,6 +277,12 @@ export class ToolsByParserService {
         images: { create: images },
       },
     });
+
+    // Records the supplier cost and derives the storefront price from the
+    // markup rules. No-ops for MANUAL products; flags implausible cost jumps.
+    if (parsed.price != null) {
+      await this.pricing.applyCost(product.id, parsed.price);
+    }
 
     await this.saveSpecifications(
       parsed.specifications,
