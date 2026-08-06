@@ -14,7 +14,9 @@ RUN npm ci
 COPY . .
 RUN npx prisma generate
 EXPOSE 8000
-CMD ["npm", "run", "start:dev"]
+# Mirrors the production stage: apply migrations before starting, so a database
+# volume that outlived earlier code doesn't leave the schema behind.
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:dev"]
 
 FROM base AS build
 RUN npm ci
