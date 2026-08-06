@@ -50,6 +50,7 @@ import {
 import { OffersService } from '../offers/offers.service';
 import { ProductMergeService } from '../offers/product-merge.service';
 import { AdminMergeProductsDto } from '../offers/dto/merge-products.dto';
+import { SpecificationsAdminService } from './specifications-admin.service';
 import { BannersService } from '../banners/banners.service';
 import {
   AdminCreateBannerDto,
@@ -76,6 +77,7 @@ export class AdminController {
     private readonly offersService: OffersService,
     private readonly productMergeService: ProductMergeService,
     private readonly bannersService: BannersService,
+    private readonly specsAdminService: SpecificationsAdminService,
   ) {}
 
   @Get('stats')
@@ -454,6 +456,30 @@ export class AdminController {
   @HttpCode(200)
   mergeProducts(@Body() dto: AdminMergeProductsDto) {
     return this.offersService.mergeAndReprice(dto.targetId, dto.duplicateId);
+  }
+
+  @Get('specifications')
+  getSpecifications(@Query('categoryId') categoryId?: string) {
+    return this.specsAdminService.list(categoryId);
+  }
+
+  @Patch('specifications/:id/filterable')
+  setSpecificationFilterable(
+    @Param('id') id: string,
+    @Body('filterable') filterable: boolean,
+  ) {
+    return this.specsAdminService.setFilterable(id, Boolean(filterable));
+  }
+
+  /** Enables every specification matching the "useful filter" heuristic. */
+  @Post('specifications/auto-select')
+  autoSelectSpecifications(@Body('categoryId') categoryId?: string) {
+    return this.specsAdminService.autoSelect(categoryId);
+  }
+
+  @Post('specifications/disable-all')
+  disableAllSpecifications(@Body('categoryId') categoryId?: string) {
+    return this.specsAdminService.disableAll(categoryId);
   }
 
   @Get('banners')

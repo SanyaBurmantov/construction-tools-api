@@ -29,6 +29,14 @@ type CategoryPage = {
   children: Array<{ id: string, name: string, slug: string, productCount: number }>
 }
 
+type SpecFacet = {
+  id: string
+  name: string
+  unit?: string | null
+  group?: string | null
+  values: Array<{ value: string, count: number }>
+}
+
 type Product = {
   id: string
   slug: string
@@ -52,6 +60,7 @@ type ProductResponse = {
     pages: number
   }
   facets?: {
+    specs?: SpecFacet[]
     categories?: Record<string, number>
     brands?: Record<string, number>
     sources?: Record<string, number>
@@ -119,6 +128,48 @@ const priceMax = computed(() => queryValue(route.query.priceMax) || '')
 const inStock = computed(() => queryValue(route.query.inStock) === '1')
 const onSale = computed(() => queryValue(route.query.onSale) === '1')
 const sort = computed(() => queryValue(route.query.sort) || 'default')
+
+/**
+ * Specification filters live in one query parameter as
+ * `<specId>:<value>,<value>;<specId>:<value>` — one key keeps the URL readable
+ * however many specifications the category has.
+ */
+const specsRaw = computed(() => queryValue(route.query.specs) || '')
+const selectedSpecs = computed<Record<string, string[]>>(() => {
+  const result: Record<string, string[]> = {}
+  for (const chunk of specsRaw.value.split(';')) {
+    const separator = chunk.indexOf(':')
+    if (separator <= 0) continue
+    const id = chunk.slice(0, separator).trim()
+    const values = chunk.slice(separator + 1).split(',').map(v => v.trim()).filter(Boolean)
+    if (id && values.length) result[id] = values
+  }
+  return result
+})
+const specFacets = computed<SpecFacet[]>(() => products.value?.facets?.specs || [])
+
+function serializeSpecs(map: Record<string, string[]>) {
+  return Object.entries(map)
+    .filter(([, values]) => values.length)
+    .map(([id, values]) => `${id}:${values.join(',')}`)
+    .join(';')
+}
+
+function toggleSpecValue(specId: string, value: string) {
+  const next = { ...selectedSpecs.value }
+  const current = next[specId] || []
+  next[specId] = current.includes(value)
+    ? current.filter(v => v !== value)
+    : [...current, value]
+  pushQuery({ specs: serializeSpecs(next) || undefined })
+}
+
+function clearSpec(specId: string) {
+  const next = Object.fromEntries(
+    Object.entries(selectedSpecs.value).filter(([id]) => id !== specId)
+  )
+  pushQuery({ specs: serializeSpecs(next) || undefined })
+}
 const page = computed(() => Math.max(1, Number(queryValue(route.query.page)) || 1))
 const legacyCategoryId = computed(() => queryValue(route.query.categoryId))
 
@@ -146,6 +197,7 @@ const queryParams = computed(() => cleanParams({
   priceMax: priceMax.value || undefined,
   inStock: inStock.value ? '1' : undefined,
   onSale: onSale.value ? '1' : undefined,
+  specs: specsRaw.value || undefined,
   sortBy: sortParams.value.sortBy,
   sortOrder: sortParams.value.sortOrder,
   page: page.value,
@@ -265,6 +317,7 @@ function currentQuery(overrides: Record<string, string | undefined>) {
     priceMax: priceMax.value || undefined,
     inStock: inStock.value ? '1' : undefined,
     onSale: onSale.value ? '1' : undefined,
+    specs: specsRaw.value || undefined,
     sort: sort.value === 'default' ? undefined : sort.value,
     ...overrides
   })
@@ -321,6 +374,7 @@ const activeFiltersCount = computed(() =>
   + ((priceMin.value || priceMax.value) ? 1 : 0)
   + (inStock.value ? 1 : 0)
   + (onSale.value ? 1 : 0)
+  + Object.keys(selectedSpecs.value).length
 )
 
 type Chip = { key: string, label: string, remove: () => void }
@@ -351,6 +405,14 @@ const filterChips = computed<Chip[]>(() => {
   }
   if (onSale.value) {
     chips.push({ key: 'sale', label: 'Со скидкой', remove: () => pushQuery({ onSale: undefined }) })
+  }
+  for (const [specId, values] of Object.entries(selectedSpecs.value)) {
+    const facet = specFacets.value.find(item => item.id === specId)
+    chips.push({
+      key: `spec-${specId}`,
+      label: `${facet?.name || 'Характеристика'}: ${values.join(', ')}`,
+      remove: () => clearSpec(specId)
+    })
   }
   return chips
 })
@@ -474,10 +536,14 @@ useHead(() => ({
           :source-counts="sourceCounts"
           :selected-source="selectedSource"
           :active-filters-count="activeFiltersCount"
+          :spec-facets="specFacets"
+          :selected-specs="selectedSpecs"
           :category-to="categoryTo"
           @push-query="pushQuery"
           @toggle-brand="toggleBrand"
           @toggle-source="toggleSource"
+          @toggle-spec="toggleSpecValue"
+          @clear-spec="clearSpec"
           @apply-price="applyPrice"
           @clear="clearFilters"
         />
@@ -507,10 +573,14 @@ useHead(() => ({
           :source-counts="sourceCounts"
           :selected-source="selectedSource"
           :active-filters-count="activeFiltersCount"
+          :spec-facets="specFacets"
+          :selected-specs="selectedSpecs"
           :category-to="categoryTo"
           @push-query="pushQuery"
           @toggle-brand="toggleBrand"
           @toggle-source="toggleSource"
+          @toggle-spec="toggleSpecValue"
+          @clear-spec="clearSpec"
           @apply-price="applyPrice"
           @clear="clearFilters"
         />

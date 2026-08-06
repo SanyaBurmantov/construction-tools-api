@@ -34,6 +34,12 @@ function buildService() {
     sourceProduct: {
       groupBy: jest.fn(() => Promise.resolve([])),
     },
+    specification: {
+      findMany: jest.fn(() => Promise.resolve([])),
+    },
+    productSpecification: {
+      groupBy: jest.fn(() => Promise.resolve([])),
+    },
     $queryRaw: queryRaw,
   } as unknown as PrismaService;
   return {
@@ -163,6 +169,38 @@ describe('ProductService.findAllFiltered', () => {
       where: { oldPrice?: unknown };
     };
     expect(args.where.oldPrice).toBeDefined();
+  });
+
+  it('applies one AND clause per selected specification', async () => {
+    const { service, productFindMany } = buildService();
+
+    await service.findAllFiltered({ specs: 'sp1:750 Вт,900 Вт;sp2:220 В' });
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      where: {
+        AND?: Array<{ productSpecs: { some: Record<string, unknown> } }>;
+      };
+    };
+    expect(args.where.AND).toHaveLength(2);
+    expect(args.where.AND![0].productSpecs.some).toEqual({
+      specificationId: 'sp1',
+      value: { in: ['750 Вт', '900 Вт'] },
+    });
+    expect(args.where.AND![1].productSpecs.some).toEqual({
+      specificationId: 'sp2',
+      value: { in: ['220 В'] },
+    });
+  });
+
+  it('adds no spec clause when nothing is selected', async () => {
+    const { service, productFindMany } = buildService();
+
+    await service.findAllFiltered({});
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      where: { AND?: unknown };
+    };
+    expect(args.where.AND).toBeUndefined();
   });
 
   it('filters by stock status when inStock is set', async () => {
