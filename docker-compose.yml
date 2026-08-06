@@ -36,10 +36,14 @@ services:
       # opened at all in the dev stack without it.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - app-network
-    command: npm run start:dev
+    # Migrations run here for the same reason they do in the production image:
+    # the postgres volume outlives the container, so without this the schema
+    # silently lags behind the code and every query hits a missing column.
+    command: sh -c "npx prisma migrate deploy && npm run start:dev"
 
   front:
     build:
