@@ -62,6 +62,11 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+      // Must mirror the backend's DELIVERY_COST_* — the API is the authority
+      // and recomputes them on every order; these only drive what we promise
+      // on the storefront, so a mismatch would show the customer a wrong total.
+      deliveryCourier: Number(process.env.DELIVERY_COST_COURIER ?? 15),
+      deliveryPost: Number(process.env.DELIVERY_COST_POST ?? 10),
     },
   }
 })

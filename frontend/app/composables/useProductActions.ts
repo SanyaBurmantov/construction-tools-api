@@ -18,6 +18,9 @@ export interface CatalogProduct {
   category?: { id?: string, name: string, slug?: string } | null
   images?: Array<{ url: string, alt?: string | null }>
   productSpecs?: Array<{ name: string, value: string }>
+  stockQuantity?: number | null
+  /** Number of supplier offers behind this card. */
+  offerCount?: number
 }
 
 /**
@@ -50,11 +53,29 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
       : 0
   )
   const inStock = computed(() => item.value.stockStatus === 'in_stock')
+
+  /**
+   * Availability with a number when we know one — "В наличии 7 шт." answers the
+   * question a bare "В наличии" leaves open, which is what buyers actually
+   * check before adding to cart.
+   */
   const availabilityLabel = computed(() => {
-    if (item.value.stockStatus === 'in_stock') return 'В наличии'
+    const quantity = item.value.stockQuantity
+    if (item.value.stockStatus === 'in_stock') {
+      if (quantity != null && quantity > 0) {
+        return quantity > 10 ? 'В наличии' : `В наличии ${quantity} шт.`
+      }
+      return 'В наличии'
+    }
     if (item.value.stockStatus === 'out_of_stock') return 'Под заказ'
-    return 'Уточняйте'
+    return 'Уточняйте наличие'
   })
+
+  /**
+   * Several suppliers carry this item, so the shown price is the best of them —
+   * rendered as "от X", the convention Belarusian catalogues use.
+   */
+  const hasMultipleOffers = computed(() => (item.value.offerCount ?? 0) > 1)
 
   const isFavourite = computed(() => wishlist.has(item.value.id))
   const isComparing = computed(() => compare.has(item.value.id))
@@ -121,6 +142,7 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
     canBuy,
     inStock,
     availabilityLabel,
+    hasMultipleOffers,
     hasDiscount,
     discountPercent,
     isFavourite,
