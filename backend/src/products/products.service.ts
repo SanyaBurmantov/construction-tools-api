@@ -52,7 +52,9 @@ export class ProductService {
         brand: true,
         category: true,
         images: true,
-        sourceProducts: true,
+        // Supplier rows are counted, never returned: they carry the purchase
+        // URL and our cost, which must not leave the admin surface.
+        sourceProducts: { select: { stock: true, price: true } },
         productSpecs: {
           include: { specification: true },
         },
@@ -60,15 +62,40 @@ export class ProductService {
     });
 
     if (!product) {
+      // The slug may belong to a product that was merged into another; tell the
+      // caller where it went so the storefront can 301 instead of 404.
+      const redirect = await this.prisma.productRedirect.findUnique({
+        where: { slug },
+        include: { product: { select: { slug: true, status: true } } },
+      });
+      if (redirect?.product && redirect.product.status === 'PUBLISHED') {
+        throw new NotFoundException({
+          message: 'Product moved',
+          code: 'PRODUCT_MERGED',
+          redirectTo: redirect.product.slug,
+        });
+      }
       throw new NotFoundException('Product not found');
     }
 
+    const priced = product.sourceProducts.filter(
+      (offer) => offer.price != null && offer.price > 0,
+    );
+
+    const { sourceProducts, ...rest } = product;
+    void sourceProducts;
+
     return {
-      ...product,
+      ...rest,
       productSpecs: product.productSpecs.map((productSpec) => ({
         name: productSpec.specification.name,
         value: productSpec.value,
       })),
+      /** How many suppliers carry this item — no prices, no links. */
+      offers: {
+        count: priced.length,
+        inStockCount: priced.filter((offer) => offer.stock).length,
+      },
     };
   }
 

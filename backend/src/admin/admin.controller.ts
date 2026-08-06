@@ -47,6 +47,9 @@ import {
   PricingRecalculateDto,
   PricingReviewDto,
 } from '../pricing/dto/pricing.dto';
+import { OffersService } from '../offers/offers.service';
+import { ProductMergeService } from '../offers/product-merge.service';
+import { AdminMergeProductsDto } from '../offers/dto/merge-products.dto';
 import { PromoService } from '../promo/promo.service';
 import {
   AdminCreatePromoCodeDto,
@@ -65,6 +68,8 @@ export class AdminController {
     private readonly promoService: PromoService,
     private readonly pricingService: PricingService,
     private readonly pricingRulesService: PricingRulesService,
+    private readonly offersService: OffersService,
+    private readonly productMergeService: ProductMergeService,
   ) {}
 
   @Get('stats')
@@ -411,6 +416,38 @@ export class AdminController {
     @Body() dto: PricingReviewDto,
   ) {
     return this.pricingService.confirmReviewed(productId, dto.accept);
+  }
+
+  @Get('offers/duplicates')
+  getDuplicateGroups() {
+    return this.offersService.findDuplicates();
+  }
+
+  /** Merges only barcode / brand+sku groups; weaker matches stay manual. */
+  @Post('offers/auto-merge')
+  autoMergeDuplicates() {
+    return this.offersService.autoMerge();
+  }
+
+  @Post('offers/rebuild-keys')
+  rebuildMatchKeys() {
+    return this.productMergeService.rebuildAllMatchKeys();
+  }
+
+  @Get('offers/product/:productId')
+  getProductOffers(@Param('productId') productId: string) {
+    return this.offersService.adminOffers(productId);
+  }
+
+  @Get('offers/suggestions/:productId')
+  getMergeSuggestions(@Param('productId') productId: string) {
+    return this.offersService.suggestionsFor(productId);
+  }
+
+  @Post('offers/merge')
+  @HttpCode(200)
+  mergeProducts(@Body() dto: AdminMergeProductsDto) {
+    return this.offersService.mergeAndReprice(dto.targetId, dto.duplicateId);
   }
 
   @Get('pricing/history/:productId')

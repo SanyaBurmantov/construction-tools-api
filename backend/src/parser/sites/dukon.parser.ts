@@ -8,7 +8,7 @@ import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
-import { PricingService } from '../../pricing/pricing.service';
+import { OffersService } from '../../offers/offers.service';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 type DukonStockStatus = 'in_stock' | 'out_of_stock' | 'preorder' | 'unknown';
@@ -57,7 +57,7 @@ export class DukonParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
-    private readonly pricing: PricingService,
+    private readonly offers: OffersService,
   ) {}
 
   async refreshSitemaps() {
@@ -419,14 +419,6 @@ export class DukonParserService {
       },
     });
 
-    // Records the supplier cost and derives the storefront price (and the
-    // marked-up "was" price) from the markup rules.
-    if (priceValue != null) {
-      await this.pricing.applyCost(product.id, priceValue, {
-        oldCost: oldPrice,
-      });
-    }
-
     await this.saveSpecifications(specs, product.id, categoryId);
     await this.saveSourceProduct(url, product.id, source.id, sourceCategoryId, {
       name,
@@ -448,6 +440,11 @@ export class DukonParserService {
       specs,
       jsonLd,
     });
+
+    // Offers are saved by now, so the price comes from the cheapest available
+    // supplier rather than whichever parser happened to run last. Also refreshes
+    // the dedup keys so a newly learned barcode makes the product matchable.
+    await this.offers.onProductParsed(product.id);
 
     return product;
   }
