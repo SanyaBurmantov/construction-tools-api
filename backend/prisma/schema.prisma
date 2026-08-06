@@ -362,6 +362,9 @@ model Review {
   title       String?
   text        String
   status      ReviewStatus @default(PENDING)
+  /// Salted hash of the submitter's IP — pseudonymous, used only for
+  /// rate-limiting and duplicate detection. The raw address is never stored.
+  ipHash      String?
   /// Set when an admin approves or rejects the review.
   moderatedAt DateTime?
   createdAt   DateTime     @default(now())
@@ -369,6 +372,7 @@ model Review {
 
   @@index([productId, status, createdAt])
   @@index([status, createdAt])
+  @@index([ipHash, createdAt])
 }
 
 enum PromoCodeType {
