@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
+import { SpecSelection, parseSpecFilter } from './spec-filter';
 import { searchVariants } from '../common/utils/transliterate';
 
 const SEARCH_CANDIDATE_LIMIT = 1000;
@@ -102,6 +103,78 @@ export class ProductService {
     };
   }
 
+  /**
+   * Value facets for the specifications marked `filterable` in the categories
+   * currently in scope.
+   *
+   * Each specification's counts are computed with its *own* selection removed,
+   * so ticking "750 Вт" doesn't collapse the power filter to a single option —
+   * the same rule the brand and price facets already follow. Specifications the
+   * user hasn't touched share one query; each selected one costs an extra query,
+   * and there are rarely more than a few of those.
+   */
+  private async buildSpecFacets(
+    categoryIds: string[] | undefined,
+    selections: SpecSelection[],
+    buildWhere: (
+      omit?: 'category' | 'brand' | 'source' | 'price' | 'specs',
+      omitSpecId?: string,
+    ) => Prisma.ProductWhereInput,
+  ) {
+    const filterable = await this.prisma.specification.findMany({
+      where: {
+        filterable: true,
+        ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
+      },
+      select: { id: true, name: true, unit: true, group: true },
+      orderBy: { name: 'asc' },
+      take: 40,
+    });
+    if (!filterable.length) return [];
+
+    const ids = filterable.map((spec) => spec.id);
+    const selectedIds = new Set(selections.map((s) => s.specificationId));
+
+    const groupFor = (omitSpecId?: string, only?: string[]) =>
+      this.prisma.productSpecification.groupBy({
+        by: ['specificationId', 'value'],
+        where: {
+          specificationId: { in: only ?? ids },
+          product: buildWhere(undefined, omitSpecId),
+        },
+        _count: { _all: true },
+        orderBy: [{ specificationId: 'asc' }, { value: 'asc' }],
+      });
+
+    const unselected = ids.filter((id) => !selectedIds.has(id));
+    const rows = (
+      await Promise.all([
+        ...(unselected.length ? [groupFor(undefined, unselected)] : []),
+        ...[...selectedIds].map((id) => groupFor(id, [id])),
+      ])
+    ).flat();
+
+    const byId = new Map<string, Array<{ value: string; count: number }>>();
+    for (const row of rows) {
+      const bucket = byId.get(row.specificationId) ?? [];
+      bucket.push({ value: row.value, count: row._count._all });
+      byId.set(row.specificationId, bucket);
+    }
+
+    return filterable
+      .map((spec) => ({
+        ...spec,
+        // Most-common values first: the long tail of one-off values from
+        // supplier feeds shouldn't push the useful options out of sight.
+        values: (byId.get(spec.id) ?? [])
+          .sort(
+            (a, b) => b.count - a.count || a.value.localeCompare(b.value, 'ru'),
+          )
+          .slice(0, 30),
+      }))
+      .filter((spec) => spec.values.length > 1);
+  }
+
   /** Slim list of published products for sitemap generation. */
   getSitemapEntries() {
     return this.prisma.product.findMany({
@@ -147,10 +220,14 @@ export class ProductService {
       ? await this.searchProductIds(searchTerm)
       : undefined;
 
+    const specSelections = parseSpecFilter(filter.specs);
+
     // Where is rebuilt per facet with that facet's own dimension excluded,
     // so counts answer "what would I get if I picked this value instead".
+    // `omitSpecId` does the same for one specification's own values.
     const buildWhere = (
-      omit?: 'category' | 'brand' | 'source' | 'price',
+      omit?: 'category' | 'brand' | 'source' | 'price' | 'specs',
+      omitSpecId?: string,
     ): Prisma.ProductWhereInput => {
       const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
       if (searchIds) {
@@ -183,6 +260,25 @@ export class ProductService {
         if (filter.priceMax !== undefined)
           where.priceValue.lte = filter.priceMax;
       }
+
+      // One AND clause per selected specification: values inside a
+      // specification are alternatives, different specifications must all hold.
+      if (omit !== 'specs') {
+        const applicable = specSelections.filter(
+          (selection) => selection.specificationId !== omitSpecId,
+        );
+        if (applicable.length) {
+          where.AND = applicable.map((selection) => ({
+            productSpecs: {
+              some: {
+                specificationId: selection.specificationId,
+                value: { in: selection.values },
+              },
+            },
+          }));
+        }
+      }
+
       return where;
     };
     const where = buildWhere();
@@ -214,6 +310,12 @@ export class ProductService {
     })();
     // no explicit sort + active search → keep the relevance ranking
     const useRelevance = !filter.sortBy && searchIds !== undefined;
+
+    const specFacets = await this.buildSpecFacets(
+      categoryIds,
+      specSelections,
+      buildWhere,
+    );
 
     const [total, products, categoryCounts, brandCounts, sourceCounts, price] =
       await Promise.all([
@@ -268,6 +370,7 @@ export class ProductService {
               max: Math.ceil(price._max.priceValue ?? price._min.priceValue),
             }
           : null,
+      specs: specFacets,
     };
 
     const data = products.map((product) => {

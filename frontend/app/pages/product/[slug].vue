@@ -850,7 +850,8 @@ useHead(() => {
   background: var(--surface-card);
   box-shadow: var(--shadow-lg);
   gap: var(--space-3);
-  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  /* Sits above the bottom navigation, not under it. */
+  bottom: calc(62px + env(safe-area-inset-bottom));
 }
 
 .mobile-buy-price {
@@ -897,7 +898,7 @@ useHead(() => {
 
   /* Room for the fixed bar so it never covers the last block. */
   .product-page {
-    padding-bottom: 84px;
+    padding-bottom: 96px;
   }
 }
 

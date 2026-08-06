@@ -5,6 +5,7 @@
       <slot />
     </main>
     <LayoutCompareBar />
+    <LayoutMobileNav />
     <LayoutFooter />
     <UiToaster />
   </div>
@@ -20,6 +21,13 @@
 .main-content {
   flex: 1;
   padding: var(--space-6) 0 var(--space-16);
+}
+
+/* Room for the fixed bottom navigation on phones. */
+@media (max-width: 860px) {
+  .app-layout {
+    padding-bottom: 62px;
+  }
 }
 
 @media (min-width: 960px) {

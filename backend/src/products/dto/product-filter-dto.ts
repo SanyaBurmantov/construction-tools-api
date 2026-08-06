@@ -55,6 +55,18 @@ export class ProductFilterDto {
   @IsBoolean()
   onSale?: boolean;
 
+  @ApiProperty({
+    required: false,
+    description:
+      'Фильтр по характеристикам: "<specId>:<значение>", несколько через ";". ' +
+      'Значения одной характеристики перечисляются через запятую и работают ' +
+      'как ИЛИ, разные характеристики — как И. ' +
+      'Пример: "abc:750 Вт,900 Вт;def:220 В"',
+  })
+  @IsOptional()
+  @IsString()
+  specs?: string;
+
   @ApiProperty({ required: false, description: 'Код источника' })
   @IsOptional()
   @IsString()

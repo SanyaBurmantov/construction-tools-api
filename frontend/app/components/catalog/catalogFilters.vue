@@ -5,6 +5,12 @@ type FacetItem = { id: string, name: string, slug?: string, code?: string }
 type CategoryLink = { id: string, name: string, slug: string, count: number }
 // eslint-disable-next-line no-unused-vars -- parameter name documents the signature
 type CategoryTo = (categorySlug: string) => RouteLocationRaw
+type SpecFacet = {
+  id: string
+  name: string
+  unit?: string | null
+  values: Array<{ value: string, count: number }>
+}
 
 /**
  * The filter panel, rendered twice: as a sticky sidebar on desktop and inside
@@ -29,6 +35,8 @@ defineProps<{
   sourceCounts: Record<string, number>
   selectedSource: string
   activeFiltersCount: number
+  specFacets: SpecFacet[]
+  selectedSpecs: Record<string, string[]>
 }>()
 
 const emit = defineEmits<{
@@ -36,8 +44,29 @@ const emit = defineEmits<{
   toggleBrand: [string]
   toggleSource: [string | undefined]
   applyPrice: []
+  toggleSpec: [string, string]
+  clearSpec: [string]
   clear: []
 }>()
+
+/**
+ * Long value lists are collapsed to the first few options. Supplier feeds
+ * produce dozens of near-duplicate values, and an unbounded list would push
+ * every other filter off the screen.
+ */
+const VALUES_COLLAPSED = 6
+const expanded = ref<Set<string>>(new Set())
+
+function toggleExpanded(specId: string) {
+  const next = new Set(expanded.value)
+  if (next.has(specId)) next.delete(specId)
+  else next.add(specId)
+  expanded.value = next
+}
+
+function visibleValues(spec: SpecFacet) {
+  return expanded.value.has(spec.id) ? spec.values : spec.values.slice(0, VALUES_COLLAPSED)
+}
 
 const brandQuery = defineModel<string>('brandQuery', { default: '' })
 // Two-way: the draft price inputs are edited here and applied by the parent
@@ -132,6 +161,38 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
         />
         <p v-if="!visibleBrands.length" class="empty">Нет брендов по запросу.</p>
       </div>
+    </section>
+
+    <section v-for="spec in specFacets" :key="spec.id" class="group">
+      <h3>
+        {{ spec.name }}<template v-if="spec.unit">, {{ spec.unit }}</template>
+        <button
+          v-if="selectedSpecs[spec.id]?.length"
+          type="button"
+          class="reset"
+          @click="emit('clearSpec', spec.id)"
+        >
+          сбросить
+        </button>
+      </h3>
+      <div class="checks">
+        <UiCheckbox
+          v-for="item in visibleValues(spec)"
+          :key="item.value"
+          :model-value="selectedSpecs[spec.id]?.includes(item.value) ?? false"
+          :label="item.value"
+          :count="item.count"
+          @update:model-value="emit('toggleSpec', spec.id, item.value)"
+        />
+      </div>
+      <button
+        v-if="spec.values.length > VALUES_COLLAPSED"
+        type="button"
+        class="more"
+        @click="toggleExpanded(spec.id)"
+      >
+        {{ expanded.has(spec.id) ? 'Свернуть' : `Ещё ${spec.values.length - VALUES_COLLAPSED}` }}
+      </button>
     </section>
 
     <section v-if="sources.length > 1" class="group">
@@ -257,5 +318,26 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
 .empty {
   color: var(--text-subtle);
   font-size: var(--text-xs);
+}
+
+.reset {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.reset:hover {
+  color: var(--danger);
+}
+
+.more {
+  align-self: flex-start;
+  color: var(--text-link);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.more:hover {
+  text-decoration: underline;
 }
 </style>

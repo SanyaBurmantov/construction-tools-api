@@ -17,6 +17,7 @@ import { OffersModule } from '../offers/offers.module';
 import { BannersModule } from '../banners/banners.module';
 import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
+import { SpecificationsAdminService } from './specifications-admin.service';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { CategoryMergeService } from './category-merge.service';
     ParserRuntimeStatusService,
     DataQualityService,
     CategoryMergeService,
+    SpecificationsAdminService,
   ],
 })
 export class AdminModule {}
