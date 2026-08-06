@@ -112,7 +112,7 @@ useHead({
     <div v-else-if="!authorized" class="gate">
       <form class="login" @submit.prevent="signIn">
         <div class="login-brand">
-          <span class="logo-mark" aria-hidden="true">М</span>
+          <BrandLogo size="sm" />
           <div>
             <h1>Панель управления</h1>
             <p>Введите ADMIN_TOKEN для доступа</p>
@@ -142,8 +142,7 @@ useHead({
       <aside class="sidebar" :class="{ 'is-open': sidebarOpen }">
         <div class="sidebar-head">
           <NuxtLink to="/admin" class="brand">
-            <span class="logo-mark" aria-hidden="true">М</span>
-            <span>Мультитул</span>
+            <BrandLogo size="sm" />
           </NuxtLink>
           <button type="button" class="sidebar-close" aria-label="Закрыть меню" @click="sidebarOpen = false">
             <svg viewBox="0 0 20 20" aria-hidden="true">

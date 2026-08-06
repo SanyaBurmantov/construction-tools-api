@@ -12,6 +12,7 @@ type Stats = {
   newOrders: number
   pendingReviews: number
   activePromoCodes: number
+  productsWithoutImages: number
   revenueTotal: number
   averageOrder: number
   ordersByStatus: Record<string, number>
@@ -92,6 +93,8 @@ const formatDateTime = (iso: string) => dateTimeFormatter.format(new Date(iso))
       </UiButton>
     </header>
 
+    <AdminSetupWarnings />
+
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
     <div v-if="loading && !stats" class="tiles">
@@ -129,6 +132,15 @@ const formatDateTime = (iso: string) => dateTimeFormatter.format(new Date(iso))
           label="Товары"
           :value="stats.products"
           :hint="`${stats.publishedProducts} опубликовано`"
+          to="/admin/products"
+        />
+        <UiStat
+          label="Товары без фото"
+          :value="stats.productsWithoutImages"
+          :tone="stats.productsWithoutImages ? 'danger' : 'success'"
+          :hint="stats.publishedProducts
+            ? `${Math.round((stats.productsWithoutImages / stats.publishedProducts) * 100)}% каталога`
+            : 'каталог пуст'"
           to="/admin/products"
         />
         <UiStat

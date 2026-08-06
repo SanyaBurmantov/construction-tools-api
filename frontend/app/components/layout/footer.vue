@@ -10,11 +10,8 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
     <div class="footer-shell">
       <div class="footer-brand">
         <NuxtLink to="/" class="brand-link">
-          <span class="brand-mark">М</span>
-          <span>
-            <strong>Мультитул</strong>
-            <small>каталог инструмента и оборудования</small>
-          </span>
+          <BrandLogo />
+          <small>каталог инструмента и оборудования</small>
         </NuxtLink>
         <p>
           Инструмент, оборудование, крепеж и расходные материалы от поставщиков в одном каталоге.

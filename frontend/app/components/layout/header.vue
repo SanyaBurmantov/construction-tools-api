@@ -216,8 +216,7 @@ watch(() => route.fullPath, () => {
         </button>
 
         <NuxtLink to="/" class="logo" aria-label="Мультитул — на главную">
-          <span class="logo-mark" aria-hidden="true">М</span>
-          <span class="logo-text">Мультитул</span>
+          <BrandLogo />
         </NuxtLink>
 
         <UiButton
@@ -540,24 +539,6 @@ watch(() => route.fullPath, () => {
   gap: var(--space-2);
 }
 
-.logo-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  background: var(--brand);
-  color: #fff;
-  font-weight: 800;
-  place-items: center;
-}
-
-.logo-text {
-  color: var(--text-strong);
-  font-family: var(--font-heading);
-  font-size: var(--text-lg);
-  font-weight: 800;
-  letter-spacing: var(--tracking-tight);
-}
 
 .catalog-trigger {
   flex-shrink: 0;
