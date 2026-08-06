@@ -12,11 +12,12 @@ import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.serv
 import { OrdersModule } from '../orders/orders.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { PromoModule } from '../promo/promo.module';
+import { PricingModule } from '../pricing/pricing.module';
 import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
 
 @Module({
-  imports: [OrdersModule, ReviewsModule, PromoModule],
+  imports: [OrdersModule, ReviewsModule, PromoModule, PricingModule],
   controllers: [AdminController],
   providers: [
     AdminGuard,

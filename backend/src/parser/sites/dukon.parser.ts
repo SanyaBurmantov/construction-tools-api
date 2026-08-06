@@ -8,6 +8,7 @@ import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
+import { PricingService } from '../../pricing/pricing.service';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 type DukonStockStatus = 'in_stock' | 'out_of_stock' | 'preorder' | 'unknown';
@@ -56,6 +57,7 @@ export class DukonParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
+    private readonly pricing: PricingService,
   ) {}
 
   async refreshSitemaps() {
@@ -381,9 +383,9 @@ export class DukonParserService {
       where: { slug },
       update: {
         ...statusUpdate,
-        priceValue,
+        // priceValue/oldPrice are deliberately absent: PricingService owns both
+        // so markup rules apply and MANUAL prices aren't clobbered.
         priceCurrency,
-        oldPrice,
         sku,
         model,
         barcode,
@@ -416,6 +418,14 @@ export class DukonParserService {
         images: { create: images },
       },
     });
+
+    // Records the supplier cost and derives the storefront price (and the
+    // marked-up "was" price) from the markup rules.
+    if (priceValue != null) {
+      await this.pricing.applyCost(product.id, priceValue, {
+        oldCost: oldPrice,
+      });
+    }
 
     await this.saveSpecifications(specs, product.id, categoryId);
     await this.saveSourceProduct(url, product.id, source.id, sourceCategoryId, {

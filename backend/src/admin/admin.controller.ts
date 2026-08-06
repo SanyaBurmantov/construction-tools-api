@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -37,6 +38,15 @@ import {
   AdminReviewQueryDto,
   AdminUpdateReviewStatusDto,
 } from '../reviews/dto/review-query.dto';
+import { PricingService } from '../pricing/pricing.service';
+import { PricingRulesService } from '../pricing/pricing-rules.service';
+import {
+  AdminCreatePricingRuleDto,
+  AdminUpdatePricingRuleDto,
+  PricingPreviewDto,
+  PricingRecalculateDto,
+  PricingReviewDto,
+} from '../pricing/dto/pricing.dto';
 import { PromoService } from '../promo/promo.service';
 import {
   AdminCreatePromoCodeDto,
@@ -53,6 +63,8 @@ export class AdminController {
     private readonly categoryMergeService: CategoryMergeService,
     private readonly reviewsService: ReviewsService,
     private readonly promoService: PromoService,
+    private readonly pricingService: PricingService,
+    private readonly pricingRulesService: PricingRulesService,
   ) {}
 
   @Get('stats')
@@ -344,5 +356,65 @@ export class AdminController {
   @Delete('promo-codes/:id')
   deletePromoCode(@Param('id') id: string) {
     return this.promoService.remove(id);
+  }
+
+  @Get('pricing/rules')
+  getPricingRules() {
+    return this.pricingRulesService.list();
+  }
+
+  @Post('pricing/rules')
+  createPricingRule(@Body() dto: AdminCreatePricingRuleDto) {
+    return this.pricingRulesService.create(dto);
+  }
+
+  @Patch('pricing/rules/:id')
+  updatePricingRule(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdatePricingRuleDto,
+  ) {
+    return this.pricingRulesService.update(id, dto);
+  }
+
+  @Delete('pricing/rules/:id')
+  deletePricingRule(@Param('id') id: string) {
+    return this.pricingRulesService.remove(id);
+  }
+
+  /** Simulator: what would this cost be priced at, and by which rule. */
+  @Post('pricing/preview')
+  @HttpCode(200)
+  previewPricing(@Body() dto: PricingPreviewDto) {
+    return this.pricingService.preview(dto);
+  }
+
+  @Post('pricing/recalculate')
+  recalculatePricing(@Body() dto: PricingRecalculateDto) {
+    return this.pricingService.recalculateAll(dto);
+  }
+
+  /** One-off adoption step: treat existing storefront prices as supplier cost. */
+  @Post('pricing/backfill-cost')
+  backfillPricingCost() {
+    return this.pricingService.backfillCostFromPrice();
+  }
+
+  @Get('pricing/review-queue')
+  getPricingReviewQueue() {
+    return this.pricingService.reviewQueue();
+  }
+
+  @Post('pricing/review/:productId')
+  @HttpCode(200)
+  resolvePricingReview(
+    @Param('productId') productId: string,
+    @Body() dto: PricingReviewDto,
+  ) {
+    return this.pricingService.confirmReviewed(productId, dto.accept);
+  }
+
+  @Get('pricing/history/:productId')
+  getPriceHistory(@Param('productId') productId: string) {
+    return this.pricingService.getHistory(productId);
   }
 }

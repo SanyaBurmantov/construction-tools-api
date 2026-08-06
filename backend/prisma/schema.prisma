@@ -29,6 +29,7 @@ model Category {
   products               Product[]
   specifications         Specification[]
   mappedSourceCategories SourceCategory[] @relation("MappedSourceCategory")
+  pricingRules           PricingRule[]
 
   @@index([parentId])
 }
@@ -43,6 +44,7 @@ model Brand {
   seoTitle       String
   seoDescription String
   products       Product[]
+  pricingRules   PricingRule[]
 }
 
 model Specification {
@@ -81,6 +83,17 @@ model Product {
   priceValue       Float?
   priceCurrency    String?
   oldPrice         Float?
+  /// Supplier cost the storefront price is derived from.
+  costPrice        Float?
+  /// AUTO — recomputed from PricingRule on every parse. MANUAL — an admin set
+  /// the price by hand and parsing must not overwrite it.
+  pricingMode      PricingMode            @default(AUTO)
+  appliedRule      PricingRule?           @relation(fields: [appliedRuleId], references: [id])
+  appliedRuleId    String?
+  /// Set when a cost jump looked like a supplier error; the old price is kept
+  /// until an admin confirms.
+  priceReviewNeeded Boolean               @default(false)
+  priceHistory     PriceHistory[]
   stockStatus      String?
   stockQuantity    Int?
   status           ProductStatus          @default(PUBLISHED)
@@ -104,6 +117,7 @@ model Product {
   @@index([status, createdAt])
   @@index([status, name])
   @@index([status, ratingAvg])
+  @@index([priceReviewNeeded])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin)
 }
@@ -135,6 +149,7 @@ model Source {
   url              String
   sourceProducts   SourceProduct[]
   sourceCategories SourceCategory[]
+  pricingRules     PricingRule[]
 }
 
 model SourceCategory {
@@ -402,4 +417,73 @@ model PromoCode {
   orders        Order[]
 
   @@index([isActive, endsAt])
+}
+
+enum PricingScope {
+  GLOBAL
+  CATEGORY
+  BRAND
+  SOURCE
+}
+
+enum RoundingMode {
+  NONE
+  INTEGER
+  CHARM_90
+  CHARM_99
+  TENS
+}
+
+/// Markup rule turning a supplier cost into the storefront price.
+/// The most specific active rule wins: SOURCE > BRAND > CATEGORY > GLOBAL,
+/// ties broken by `priority` (higher first).
+model PricingRule {
+  id            String       @id @default(uuid())
+  name          String
+  scope         PricingScope @default(GLOBAL)
+  category      Category?    @relation(fields: [categoryId], references: [id])
+  categoryId    String?
+  brand         Brand?       @relation(fields: [brandId], references: [id])
+  brandId       String?
+  source        Source?      @relation(fields: [sourceId], references: [id])
+  sourceId      String?
+  /// Cost band the rule applies to; null means unbounded on that side.
+  minCost       Float?
+  maxCost       Float?
+  markupPercent Float        @default(0)
+  /// Flat amount added on top of the percentage markup.
+  markupFixed   Float        @default(0)
+  /// Floor on absolute margin, applied after markup and before rounding.
+  minMargin     Float?
+  rounding      RoundingMode @default(CHARM_90)
+  priority      Int          @default(0)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  products      Product[]
+
+  @@index([isActive, scope])
+}
+
+enum PricingMode {
+  AUTO
+  MANUAL
+}
+
+/// Audit trail of storefront price changes, used to spot supplier drift and
+/// to explain "why is this product priced like that".
+model PriceHistory {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  costPrice Float?
+  oldPrice  Float?
+  newPrice  Float?
+  /// Short machine-readable cause: 'rule', 'manual', 'cost_changed', 'blocked_spike'.
+  reason    String
+  ruleId    String?
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([createdAt])
 }
