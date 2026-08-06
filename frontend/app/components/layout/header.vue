@@ -28,6 +28,8 @@ type SuggestResponse = {
   brands: SuggestLink[]
 }
 
+const NAV_CATEGORY_LIMIT = 7
+
 const route = useRoute()
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
@@ -43,58 +45,7 @@ const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
   { default: () => [] }
 )
 
-const sortedCategories = computed(() => [...(tree.value || [])].sort(
-  (a, b) => b.productCount - a.productCount || a.name.localeCompare(b.name, 'ru')
-))
-const visibleCategoryCount = ref(0)
-const visibleCategories = computed(() => sortedCategories.value.slice(0, visibleCategoryCount.value))
-const hiddenCategories = computed(() => sortedCategories.value.slice(visibleCategoryCount.value))
-const navbarInner = ref<HTMLElement | null>(null)
-const navMeasure = ref<HTMLElement | null>(null)
-const navMore = ref<HTMLElement | null>(null)
-const moreOpen = ref(false)
-let navResizeObserver: ResizeObserver | undefined
-
-function updateNavLayout() {
-  if (!navbarInner.value || !navMeasure.value) return
-
-  const categoryCount = sortedCategories.value.length
-  const widths = Array.from(navMeasure.value.children, element => element.getBoundingClientRect().width)
-  const gap = parseFloat(getComputedStyle(navMeasure.value).columnGap) || 0
-  const available = navbarInner.value.clientWidth
-  const saleWidth = widths[categoryCount] || 0
-  const moreWidth = widths[categoryCount + 1] || 0
-
-  let used = saleWidth
-  let count = 0
-  for (let index = 0; index < categoryCount; index++) {
-    if (used + gap + widths[index] > available) break
-    used += gap + widths[index]
-    count++
-  }
-
-  if (count < categoryCount) {
-    used = saleWidth + gap + moreWidth
-    count = 0
-    for (let index = 0; index < categoryCount; index++) {
-      if (used + gap + widths[index] > available) break
-      used += gap + widths[index]
-      count++
-    }
-  }
-
-  visibleCategoryCount.value = count
-  if (count === categoryCount) moreOpen.value = false
-}
-
-watch(sortedCategories, async () => {
-  await nextTick()
-  updateNavLayout()
-})
-
-function onMoreFocusOut(event: FocusEvent) {
-  if (!navMore.value?.contains(event.relatedTarget as Node | null)) moreOpen.value = false
-}
+const topCategories = computed(() => (tree.value || []).slice(0, NAV_CATEGORY_LIMIT))
 
 const navLinks = computed(() => [
   { label: 'Каталог', to: '/catalog/' },
@@ -159,19 +110,11 @@ function onDocumentClick(event: MouseEvent) {
   if (searchForm.value && !searchForm.value.contains(event.target as Node)) {
     closeSuggest()
   }
-  if (navMore.value && !navMore.value.contains(event.target as Node)) moreOpen.value = false
 }
 
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  navResizeObserver = new ResizeObserver(updateNavLayout)
-  if (navbarInner.value) navResizeObserver.observe(navbarInner.value)
-  updateNavLayout()
-  document.fonts.ready.then(updateNavLayout)
-})
+onMounted(() => document.addEventListener('click', onDocumentClick))
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
-  navResizeObserver?.disconnect()
   if (suggestTimer) clearTimeout(suggestTimer)
 })
 
@@ -183,7 +126,6 @@ const catalogOpen = ref(false)
 watch(() => route.fullPath, () => {
   mobileNavOpen.value = false
   catalogOpen.value = false
-  moreOpen.value = false
   closeSuggest()
 })
 </script>
@@ -352,15 +294,29 @@ watch(() => route.fullPath, () => {
       </div>
     </div>
 
+    <nav class="navbar" aria-label="Основная навигация">
+      <UiScroller class="container navbar-inner" label="Категории каталога">
+        <NuxtLink
+          v-for="category in topCategories"
+          :key="category.id"
+          :to="`/catalog/${category.slug}`"
+          class="nav-link"
+        >
+          {{ category.name }}
+        </NuxtLink>
+        <NuxtLink to="/sales" class="nav-link is-sale">Акции</NuxtLink>
+      </UiScroller>
+    </nav>
+
     <!-- Catalog mega menu -->
     <Transition name="fade">
       <div v-if="catalogOpen" class="mega" @click.self="catalogOpen = false">
         <div class="container mega-inner">
-          <div v-if="!sortedCategories.length" class="mega-empty">
+          <div v-if="!topCategories.length" class="mega-empty">
             Каталог пока пуст.
           </div>
           <div v-else class="mega-grid">
-            <div v-for="category in sortedCategories" :key="category.id" class="mega-column">
+            <div v-for="category in tree" :key="category.id" class="mega-column">
               <NuxtLink :to="`/catalog/${category.slug}`" class="mega-title">
                 {{ category.name }}
                 <span>{{ category.productCount }}</span>
@@ -388,7 +344,7 @@ watch(() => route.fullPath, () => {
 
         <p class="mobile-heading">Категории</p>
         <NuxtLink
-          v-for="category in sortedCategories"
+          v-for="category in tree"
           :key="category.id"
           :to="`/catalog/${category.slug}`"
           class="mobile-link is-sub"
@@ -401,70 +357,6 @@ watch(() => route.fullPath, () => {
       </div>
     </UiDrawer>
   </header>
-
-  <nav class="navbar" aria-label="Основная навигация">
-    <div ref="navbarInner" class="container navbar-inner">
-      <NuxtLink
-        v-for="category in visibleCategories"
-        :key="category.id"
-        :to="`/catalog/${category.slug}`"
-        class="nav-link"
-      >
-        {{ category.name }}
-        <span class="nav-count">{{ category.productCount }}</span>
-      </NuxtLink>
-      <NuxtLink to="/sales" class="nav-link is-sale">Акции</NuxtLink>
-      <div
-        v-if="hiddenCategories.length"
-        ref="navMore"
-        class="nav-more"
-        @mouseenter="moreOpen = true"
-        @mouseleave="moreOpen = false"
-        @focusin="moreOpen = true"
-        @focusout="onMoreFocusOut"
-        @keydown.esc="moreOpen = false"
-      >
-        <button
-          type="button"
-          class="nav-more-trigger"
-          aria-label="Показать остальные категории"
-          aria-controls="nav-more-menu"
-          :aria-expanded="moreOpen"
-          @click="moreOpen = true"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-          <span>Ещё</span>
-        </button>
-        <div v-show="moreOpen" id="nav-more-menu" class="nav-more-menu">
-          <NuxtLink
-            v-for="category in hiddenCategories"
-            :key="category.id"
-            :to="`/catalog/${category.slug}`"
-            class="nav-more-link"
-            @click="moreOpen = false"
-          >
-            <span>{{ category.name }}</span>
-            <span class="nav-count">{{ category.productCount }}</span>
-          </NuxtLink>
-        </div>
-      </div>
-      <div ref="navMeasure" class="nav-measure" aria-hidden="true">
-        <span v-for="category in sortedCategories" :key="category.id" class="nav-link">
-          {{ category.name }}
-          <span class="nav-count">{{ category.productCount }}</span>
-        </span>
-        <span class="nav-link is-sale">Акции</span>
-        <span class="nav-more-trigger">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-          <span>Ещё</span>
-        </span>
-      </div>
-    </div>
-  </nav>
 </template>
 
 <style scoped>
@@ -733,23 +625,14 @@ watch(() => route.fullPath, () => {
 
 /* ---- Nav bar ---- */
 .navbar {
-  position: relative;
-  z-index: var(--z-sticky);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-card);
+  border-top: 1px solid var(--border-subtle);
 }
 
-.navbar-inner {
-  position: relative;
-  display: flex;
-  align-items: stretch;
+.navbar-inner :deep(.viewport) {
   gap: var(--space-1);
 }
 
 .nav-link {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
   padding: var(--space-3) var(--space-3);
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
@@ -759,13 +642,6 @@ watch(() => route.fullPath, () => {
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.nav-count {
-  margin-left: var(--space-2);
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-
 .nav-link:hover,
 .nav-link.router-link-active {
   border-bottom-color: var(--brand);
@@ -773,84 +649,8 @@ watch(() => route.fullPath, () => {
 }
 
 .nav-link.is-sale {
-  margin-left: auto;
   color: var(--sale);
   font-weight: 700;
-}
-
-.nav-more {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.nav-more-trigger {
-  display: inline-flex;
-  height: 100%;
-  align-items: center;
-  padding: var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  gap: var(--space-2);
-  white-space: nowrap;
-}
-
-.nav-more-trigger:hover,
-.nav-more-trigger[aria-expanded='true'] {
-  color: var(--text-strong);
-}
-
-.nav-more-trigger svg {
-  width: 17px;
-  height: 17px;
-}
-
-.nav-more-menu {
-  position: absolute;
-  z-index: var(--z-dropdown);
-  top: 100%;
-  right: 0;
-  width: min(360px, calc(100vw - var(--space-8)));
-  max-height: min(65vh, 480px);
-  overflow-y: auto;
-  padding: var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-lg);
-}
-
-.nav-more-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3);
-  border-radius: var(--radius-sm);
-  color: var(--text-default);
-  font-size: var(--text-sm);
-  gap: var(--space-2);
-}
-
-.nav-more-link:hover,
-.nav-more-link:focus-visible {
-  background: var(--surface-hover);
-  color: var(--text-strong);
-}
-
-.nav-measure {
-  position: absolute;
-  top: 0;
-  left: 0;
-  display: flex;
-  width: max-content;
-  align-items: stretch;
-  gap: var(--space-1);
-  pointer-events: none;
-  visibility: hidden;
-}
-
-.nav-measure .nav-link.is-sale {
-  margin-left: 0;
 }
 
 /* ---- Mega menu ---- */
