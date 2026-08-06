@@ -32,8 +32,9 @@ services:
       - /backend/node_modules
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/construction_tools?schema=public
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
-      JWT_EXPIRATION: 7d
+      # AdminGuard refuses every request when this is unset, so /admin can't be
+      # opened at all in the dev stack without it.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
     depends_on:
       - db
     networks:
@@ -44,6 +45,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # Without this Docker builds the last stage (production), which ships only
+      # .output and no node_modules — and `npm run dev` below then fails with
+      # "sh: 1: nuxt: not found".
+      target: development
     container_name: construction-tools-front
     restart: unless-stopped
     volumes:
@@ -57,6 +62,10 @@ services:
       NODE_ENV: development
       API_BASE_SERVER: http://back:8000
       NUXT_PUBLIC_API_BASE: /api
+      # `nuxt dev` binds to localhost by default; inside a container that makes
+      # the published port unreachable from the host.
+      HOST: 0.0.0.0
+      PORT: 3000
     command: npm run dev
 
 volumes:
