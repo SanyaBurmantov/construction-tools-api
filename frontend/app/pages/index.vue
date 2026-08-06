@@ -17,6 +17,17 @@ type CategoryTreeNode = {
 
 type Brand = { id: string, name: string, slug: string, logo?: string | null }
 
+type Banner = {
+  id: string
+  title: string
+  subtitle: string | null
+  imageUrl: string
+  mobileUrl: string | null
+  linkUrl: string | null
+  buttonText: string | null
+  bgColor: string | null
+}
+
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
 const { formatPrice } = useFormatPrice()
@@ -51,6 +62,12 @@ const { data: newest } = await useAsyncData<ProductsResponse>(
       params: { limit: 8, sortBy: 'createdAt', sortOrder: 'desc' },
     }).catch(() => emptyPage),
   { default: () => emptyPage }
+)
+
+const { data: banners } = await useAsyncData<{ data: Banner[] }>(
+  'home-banners',
+  () => $fetch<{ data: Banner[] }>(`${apiBase}/banners`).catch(() => ({ data: [] })),
+  { default: () => ({ data: [] }) }
 )
 
 const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
@@ -142,6 +159,8 @@ useHead({
 
 <template>
   <div class="home">
+    <HomeHeroBanners v-if="banners.data.length" :banners="banners.data" />
+
     <!-- Hero: search and categories, not a slogan -->
     <section class="hero">
       <div class="hero-main">

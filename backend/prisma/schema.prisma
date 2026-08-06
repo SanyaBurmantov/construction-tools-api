@@ -510,3 +510,28 @@ model ProductRedirect {
 
   @@index([productId])
 }
+
+/// Promo banner for the home page slider.
+/// Images are referenced by URL — there is no upload endpoint, so the admin
+/// pastes a link (supplier CDN, own hosting, or an existing product image).
+model Banner {
+  id         String    @id @default(uuid())
+  title      String
+  subtitle   String?
+  /// Desktop/base image.
+  imageUrl   String
+  /// Optional narrower crop; falls back to imageUrl when empty.
+  mobileUrl  String?
+  linkUrl    String?
+  buttonText String?
+  /// Background behind the image, so letterboxing doesn't look broken.
+  bgColor    String?
+  order      Int       @default(0)
+  isActive   Boolean   @default(true)
+  startsAt   DateTime?
+  endsAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([isActive, order])
+}

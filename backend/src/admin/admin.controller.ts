@@ -50,6 +50,11 @@ import {
 import { OffersService } from '../offers/offers.service';
 import { ProductMergeService } from '../offers/product-merge.service';
 import { AdminMergeProductsDto } from '../offers/dto/merge-products.dto';
+import { BannersService } from '../banners/banners.service';
+import {
+  AdminCreateBannerDto,
+  AdminUpdateBannerDto,
+} from '../banners/dto/banner.dto';
 import { PromoService } from '../promo/promo.service';
 import {
   AdminCreatePromoCodeDto,
@@ -70,6 +75,7 @@ export class AdminController {
     private readonly pricingRulesService: PricingRulesService,
     private readonly offersService: OffersService,
     private readonly productMergeService: ProductMergeService,
+    private readonly bannersService: BannersService,
   ) {}
 
   @Get('stats')
@@ -448,6 +454,26 @@ export class AdminController {
   @HttpCode(200)
   mergeProducts(@Body() dto: AdminMergeProductsDto) {
     return this.offersService.mergeAndReprice(dto.targetId, dto.duplicateId);
+  }
+
+  @Get('banners')
+  getBanners() {
+    return this.bannersService.adminList();
+  }
+
+  @Post('banners')
+  createBanner(@Body() dto: AdminCreateBannerDto) {
+    return this.bannersService.create(dto);
+  }
+
+  @Patch('banners/:id')
+  updateBanner(@Param('id') id: string, @Body() dto: AdminUpdateBannerDto) {
+    return this.bannersService.update(id, dto);
+  }
+
+  @Delete('banners/:id')
+  deleteBanner(@Param('id') id: string) {
+    return this.bannersService.remove(id);
   }
 
   @Get('pricing/history/:productId')

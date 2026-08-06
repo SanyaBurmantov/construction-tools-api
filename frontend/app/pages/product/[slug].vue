@@ -433,6 +433,23 @@ useHead(() => {
         </div>
       </section>
 
+      <!-- Sticky buy bar: on a phone the buy box scrolls away long before the
+           customer has finished reading, so price and action follow them. -->
+      <div v-if="canBuy" class="mobile-buy">
+        <div class="mobile-buy-price">
+          <UiPrice
+            :value="product.priceValue"
+            :old-price="product.oldPrice"
+            :currency="currency"
+            :from="hasMultipleOffers"
+            size="sm"
+            :show-badge="false"
+          />
+          <span :class="{ 'is-in-stock': inStock }">{{ availabilityLabel }}</span>
+        </div>
+        <UiButton size="lg" @click="addToCart(quantity)">В корзину</UiButton>
+      </div>
+
       <!-- Zoom -->
       <UiModal v-model:open="zoomOpen" size="xl" :title="product.name">
         <img
@@ -818,6 +835,40 @@ useHead(() => {
   gap: var(--space-4);
 }
 
+/* ---- Sticky mobile buy bar ---- */
+.mobile-buy {
+  position: fixed;
+  z-index: var(--z-sticky);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  gap: var(--space-3);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+
+.mobile-buy-price {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.mobile-buy-price span {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.mobile-buy-price span.is-in-stock {
+  color: var(--success);
+  font-weight: 600;
+}
+
 .zoom-image {
   width: 100%;
   max-height: 70vh;
@@ -836,6 +887,17 @@ useHead(() => {
 
   .loading {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .mobile-buy {
+    display: flex;
+  }
+
+  /* Room for the fixed bar so it never covers the last block. */
+  .product-page {
+    padding-bottom: 84px;
   }
 }
 

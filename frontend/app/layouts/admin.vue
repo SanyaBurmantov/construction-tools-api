@@ -30,6 +30,7 @@ const nav = computed(() => [
     badge: badges.value?.priceReviewNeeded,
   },
   { label: 'Дубли', to: '/admin/duplicates', icon: 'copy' },
+  { label: 'Баннеры', to: '/admin/banners', icon: 'image' },
   { label: 'Категории', to: '/admin/categories', icon: 'tree' },
   { label: 'Бренды', to: '/admin/brands', icon: 'tag' },
   {
@@ -52,6 +53,7 @@ const ICONS: Record<string, string> = {
   ticket: 'M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z',
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6',
   copy: 'M9 9h10v10H9zM5 15V5h10',
+  image: 'M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4',
 }
 
 /** Validates whatever token we have by hitting a cheap admin endpoint. */
