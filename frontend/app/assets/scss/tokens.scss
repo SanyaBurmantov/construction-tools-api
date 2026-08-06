@@ -2,8 +2,8 @@
  * Design tokens. Every component reads from these — no raw hex values in
  * component styles, so a palette change lands everywhere at once.
  *
- * Dark mode: the semantic layer is redefined under `.theme-dark` and under
- * `prefers-color-scheme: dark`, so the primitive scales below stay fixed.
+ * Dark mode: the semantic layer is redefined under `.theme-dark`, so the
+ * primitive scales below stay fixed. Opt-in only — see the bottom of the file.
  */
 
 :root {
@@ -166,6 +166,13 @@
   --container-narrow: 880px;
   --header-height: 68px;
 
+  /**
+   * Makes the browser render native controls — scrollbars, selects, date
+   * pickers — in their light variant. Without it a visitor whose OS is in dark
+   * mode gets dark widgets on our light surfaces.
+   */
+  color-scheme: light;
+
   /* ---- Z-index ladder --------------------------------------------------- */
   --z-sticky: 100;
   --z-header: 200;
@@ -177,6 +184,7 @@
 
 /* Dark theme: only the semantic layer is reassigned. */
 @mixin dark-tokens {
+  color-scheme: dark;
   --surface-page: var(--gray-950);
   --surface-card: var(--gray-900);
   --surface-raised: var(--gray-800);
@@ -219,13 +227,13 @@
   --shadow-xl: 0 20px 24px -4px rgb(0 0 0 / 60%);
 }
 
-/* Explicit choice always wins over the OS preference. */
+/**
+ * The storefront is light. Dark tokens stay defined and opt-in via
+ * `.theme-dark` on <html>, ready for a future toggle, but the OS preference is
+ * deliberately NOT followed: a shop that flips to dark because the visitor's
+ * laptop is in night mode shows product photos on backgrounds they were never
+ * shot for.
+ */
 :root.theme-dark {
   @include dark-tokens;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.theme-light) {
-    @include dark-tokens;
-  }
 }

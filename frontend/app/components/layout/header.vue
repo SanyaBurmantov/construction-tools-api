@@ -295,7 +295,7 @@ watch(() => route.fullPath, () => {
     </div>
 
     <nav class="navbar" aria-label="Основная навигация">
-      <div class="container navbar-inner scroll-x">
+      <UiScroller class="container navbar-inner" label="Категории каталога">
         <NuxtLink
           v-for="category in topCategories"
           :key="category.id"
@@ -305,7 +305,7 @@ watch(() => route.fullPath, () => {
           {{ category.name }}
         </NuxtLink>
         <NuxtLink to="/sales" class="nav-link is-sale">Акции</NuxtLink>
-      </div>
+      </UiScroller>
     </nav>
 
     <!-- Catalog mega menu -->
@@ -628,8 +628,7 @@ watch(() => route.fullPath, () => {
   border-top: 1px solid var(--border-subtle);
 }
 
-.navbar-inner {
-  display: flex;
+.navbar-inner :deep(.viewport) {
   gap: var(--space-1);
 }
 
