@@ -1,0 +1,231 @@
+/**
+ * Design tokens. Every component reads from these — no raw hex values in
+ * component styles, so a palette change lands everywhere at once.
+ *
+ * Dark mode: the semantic layer is redefined under `.theme-dark` and under
+ * `prefers-color-scheme: dark`, so the primitive scales below stay fixed.
+ */
+
+:root {
+  /* ---- Primitive scales ---------------------------------------------- */
+  --gray-25: #fcfcfd;
+  --gray-50: #f9fafb;
+  --gray-100: #f2f4f7;
+  --gray-200: #e4e7ec;
+  --gray-300: #d0d5dd;
+  --gray-400: #98a2b3;
+  --gray-500: #667085;
+  --gray-600: #475467;
+  --gray-700: #344054;
+  --gray-800: #1d2939;
+  --gray-900: #101828;
+  --gray-950: #0c111d;
+
+  --blue-50: #eff6ff;
+  --blue-100: #dbeafe;
+  --blue-200: #bfdbfe;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-800: #1e40af;
+
+  --green-50: #ecfdf3;
+  --green-100: #d1fadf;
+  --green-500: #12b76a;
+  --green-600: #039855;
+  --green-700: #027a48;
+
+  --amber-50: #fffaeb;
+  --amber-100: #fef0c7;
+  --amber-400: #fdb022;
+  --amber-500: #f79009;
+  --amber-600: #dc6803;
+
+  --red-50: #fef3f2;
+  --red-100: #fee4e2;
+  --red-500: #f04438;
+  --red-600: #d92d20;
+  --red-700: #b42318;
+
+  --violet-50: #f5f3ff;
+  --violet-500: #7c3aed;
+  --violet-600: #6d28d9;
+
+  /* ---- Semantic surfaces --------------------------------------------- */
+  --surface-page: var(--gray-50);
+  --surface-card: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: var(--gray-100);
+  --surface-inverse: var(--gray-900);
+  --surface-hover: var(--gray-50);
+  --surface-active: var(--gray-100);
+
+  /* ---- Semantic text -------------------------------------------------- */
+  --text-strong: var(--gray-900);
+  --text-default: var(--gray-800);
+  --text-muted: var(--gray-500);
+  --text-subtle: var(--gray-400);
+  --text-inverse: #ffffff;
+  --text-link: var(--blue-700);
+
+  /* ---- Borders -------------------------------------------------------- */
+  --border-subtle: var(--gray-200);
+  --border-default: var(--gray-300);
+  --border-strong: var(--gray-400);
+
+  /* ---- Brand & intents ------------------------------------------------ */
+  --brand: var(--blue-700);
+  --brand-hover: var(--blue-800);
+  --brand-soft: var(--blue-50);
+  --brand-soft-text: var(--blue-800);
+  --brand-ring: rgb(29 78 216 / 35%);
+
+  --success: var(--green-600);
+  --success-soft: var(--green-50);
+  --success-soft-text: var(--green-700);
+
+  --warning: var(--amber-500);
+  --warning-soft: var(--amber-50);
+  --warning-soft-text: var(--amber-600);
+
+  --danger: var(--red-600);
+  --danger-hover: var(--red-700);
+  --danger-soft: var(--red-50);
+  --danger-soft-text: var(--red-700);
+
+  --info: var(--violet-600);
+  --info-soft: var(--violet-50);
+  --info-soft-text: var(--violet-600);
+
+  /* Sale/discount accent — deliberately distinct from `danger`, which means
+     "something went wrong", not "cheap". */
+  --sale: var(--red-600);
+  --sale-soft: var(--red-50);
+
+  /* ---- Spacing (4px base) --------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* ---- Radii ----------------------------------------------------------- */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-full: 999px;
+
+  /* ---- Elevation ------------------------------------------------------- */
+  --shadow-xs: 0 1px 2px rgb(16 24 40 / 5%);
+  --shadow-sm: 0 1px 3px rgb(16 24 40 / 10%), 0 1px 2px rgb(16 24 40 / 6%);
+  --shadow-md: 0 4px 8px -2px rgb(16 24 40 / 10%), 0 2px 4px -2px rgb(16 24 40 / 6%);
+  --shadow-lg: 0 12px 16px -4px rgb(16 24 40 / 8%), 0 4px 6px -2px rgb(16 24 40 / 3%);
+  --shadow-xl: 0 20px 24px -4px rgb(16 24 40 / 8%), 0 8px 8px -4px rgb(16 24 40 / 3%);
+  --shadow-focus: 0 0 0 4px var(--brand-ring);
+
+  /* ---- Typography ------------------------------------------------------ */
+  --font-body: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-heading: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 34px;
+  --text-4xl: 44px;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+
+  --tracking-tight: -0.02em;
+  --tracking-wide: 0.08em;
+
+  /* ---- Motion ---------------------------------------------------------- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
+  /* ---- Layout ---------------------------------------------------------- */
+  --container: 1280px;
+  --container-narrow: 880px;
+  --header-height: 68px;
+
+  /* ---- Z-index ladder --------------------------------------------------- */
+  --z-sticky: 100;
+  --z-header: 200;
+  --z-dropdown: 300;
+  --z-overlay: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+}
+
+/* Dark theme: only the semantic layer is reassigned. */
+@mixin dark-tokens {
+  --surface-page: var(--gray-950);
+  --surface-card: var(--gray-900);
+  --surface-raised: var(--gray-800);
+  --surface-sunken: #0a0e16;
+  --surface-inverse: var(--gray-100);
+  --surface-hover: rgb(255 255 255 / 4%);
+  --surface-active: rgb(255 255 255 / 8%);
+
+  --text-strong: #f7f9fc;
+  --text-default: var(--gray-200);
+  --text-muted: var(--gray-400);
+  --text-subtle: var(--gray-500);
+  --text-inverse: var(--gray-900);
+  --text-link: #7aa5ff;
+
+  --border-subtle: rgb(255 255 255 / 8%);
+  --border-default: rgb(255 255 255 / 14%);
+  --border-strong: rgb(255 255 255 / 24%);
+
+  --brand: var(--blue-500);
+  --brand-hover: var(--blue-600);
+  --brand-soft: rgb(59 130 246 / 14%);
+  --brand-soft-text: #9dc0ff;
+  --brand-ring: rgb(59 130 246 / 40%);
+
+  --success-soft: rgb(18 183 106 / 14%);
+  --success-soft-text: #6ce9a6;
+  --warning-soft: rgb(247 144 9 / 14%);
+  --warning-soft-text: #fdb022;
+  --danger-soft: rgb(240 68 56 / 14%);
+  --danger-soft-text: #fda29b;
+  --info-soft: rgb(124 58 237 / 18%);
+  --info-soft-text: #c4b5fd;
+  --sale-soft: rgb(240 68 56 / 14%);
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 50%);
+  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 50%);
+  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 55%);
+  --shadow-xl: 0 20px 24px -4px rgb(0 0 0 / 60%);
+}
+
+/* Explicit choice always wins over the OS preference. */
+:root.theme-dark {
+  @include dark-tokens;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.theme-light) {
+    @include dark-tokens;
+  }
+}
