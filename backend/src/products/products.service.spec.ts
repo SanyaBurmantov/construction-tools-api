@@ -98,8 +98,8 @@ describe('ProductService.findAllFiltered', () => {
       .mockResolvedValueOnce([{ id: 'p1' }, { id: 'p2' }] as never)
       // page rows fetched by id
       .mockResolvedValueOnce([
-        { id: 'p1', productSpecs: [] },
-        { id: 'p2', productSpecs: [] },
+        { id: 'p1', productSpecs: [], _count: { sourceProducts: 2 } },
+        { id: 'p2', productSpecs: [], _count: { sourceProducts: 0 } },
       ] as never);
 
     const result = await service.findAllFiltered({ search: ' DF333D ' });

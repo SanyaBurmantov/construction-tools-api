@@ -18,6 +18,9 @@ const LIST_INCLUDE = {
   productSpecs: {
     include: { specification: true },
   },
+  // Count only — the storefront shows "цена от X, N предложений"; supplier
+  // links and our costs stay on the admin side.
+  _count: { select: { sourceProducts: true } },
 } satisfies Prisma.ProductInclude;
 
 type ListProduct = Prisma.ProductGetPayload<{
@@ -267,13 +270,18 @@ export class ProductService {
           : null,
     };
 
-    const data = products.map((product) => ({
-      ...product,
-      productSpecs: product.productSpecs.map((productSpec) => ({
-        name: productSpec.specification.name,
-        value: productSpec.value,
-      })),
-    }));
+    const data = products.map((product) => {
+      const { _count, ...rest } = product;
+      return {
+        ...rest,
+        productSpecs: product.productSpecs.map((productSpec) => ({
+          name: productSpec.specification.name,
+          value: productSpec.value,
+        })),
+        /** Drives the "от X · N предложений" treatment on the card. */
+        offerCount: _count?.sourceProducts ?? 0,
+      };
+    });
 
     return {
       data,

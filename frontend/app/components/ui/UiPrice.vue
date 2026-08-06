@@ -10,6 +10,8 @@ const props = withDefaults(
     currency?: string | null
     size?: 'sm' | 'md' | 'lg'
     showBadge?: boolean
+    /** Renders "от X" — the price is the best of several supplier offers. */
+    from?: boolean
   }>(),
   { size: 'md', showBadge: true }
 )
@@ -28,6 +30,7 @@ const discountPercent = computed(() => {
 
 <template>
   <div class="ui-price" :class="[`size-${size}`, { 'has-discount': hasDiscount }]">
+    <span v-if="from && value != null" class="from">от</span>
     <span class="current">{{ formatPrice(value, currency) }}</span>
     <span v-if="hasDiscount" class="old">{{ formatPrice(oldPrice, currency) }}</span>
     <UiBadge v-if="hasDiscount && showBadge" tone="sale" size="sm">
@@ -42,6 +45,12 @@ const discountPercent = computed(() => {
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
+}
+
+.from {
+  color: var(--text-muted);
+  font-size: 0.75em;
+  font-weight: 600;
 }
 
 .current {

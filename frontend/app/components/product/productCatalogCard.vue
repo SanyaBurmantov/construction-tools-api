@@ -15,6 +15,7 @@ const {
   canBuy,
   inStock,
   availabilityLabel,
+  hasMultipleOffers,
   hasDiscount,
   discountPercent,
   isFavourite,
@@ -51,7 +52,6 @@ const link = computed(() => `/product/${props.product.slug}`)
 
       <div class="flags">
         <UiBadge v-if="hasDiscount" tone="sale" size="sm">−{{ discountPercent }}%</UiBadge>
-        <UiBadge v-if="inStock" tone="success" size="sm">В наличии</UiBadge>
       </div>
 
       <div class="quick-actions">
@@ -111,11 +111,16 @@ const link = computed(() => `/product/${props.product.slug}`)
             :value="product.priceValue"
             :old-price="product.oldPrice"
             :currency="product.priceCurrency"
+            :from="hasMultipleOffers"
             size="sm"
             :show-badge="false"
           />
           <span class="availability" :class="{ 'is-in-stock': inStock }">
+            <span class="dot" aria-hidden="true" />
             {{ availabilityLabel }}
+          </span>
+          <span v-if="hasMultipleOffers" class="offers">
+            {{ product.offerCount }} предложения поставщиков
           </span>
         </div>
 
@@ -340,13 +345,28 @@ const link = computed(() => `/product/${props.product.slug}`)
 }
 
 .availability {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   color: var(--text-subtle);
   font-size: var(--text-xs);
+}
+
+.availability .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
 }
 
 .availability.is-in-stock {
   color: var(--success);
   font-weight: 600;
+}
+
+.offers {
+  color: var(--text-link);
+  font-size: 11px;
 }
 
 .is-compact .image-link {

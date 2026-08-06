@@ -47,6 +47,19 @@ const {
   toggleCompare,
 } = useProductActions(() => product.value ?? fallbackProduct)
 
+// Feeds the "Вы смотрели" rail on the home page.
+const recentlyViewed = useRecentlyViewed()
+onMounted(() => {
+  if (!product.value) return
+  recentlyViewed.track({
+    slug: product.value.slug,
+    name: product.value.name,
+    image: product.value.images?.[0]?.url ?? null,
+    price: product.value.priceValue ?? null,
+    currency: product.value.priceCurrency || 'BYN',
+  })
+})
+
 /* ---- Gallery ----------------------------------------------------------- */
 const images = computed(() => product.value?.images ?? [])
 const activeImage = ref(0)
