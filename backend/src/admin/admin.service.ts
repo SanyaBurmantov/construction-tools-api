@@ -55,6 +55,7 @@ export class AdminService {
       newOrders,
       pendingReviews,
       activePromoCodes,
+      priceReviewNeeded,
       revenue,
       ordersByStatus,
       recentOrders,
@@ -71,6 +72,7 @@ export class AdminService {
       this.prisma.order.count({ where: { status: 'NEW' } }),
       this.prisma.review.count({ where: { status: 'PENDING' } }),
       this.prisma.promoCode.count({ where: { isActive: true } }),
+      this.prisma.product.count({ where: { priceReviewNeeded: true } }),
       this.prisma.order.aggregate({
         where: revenueWhere,
         _sum: { total: true },
@@ -134,6 +136,7 @@ export class AdminService {
       newOrders,
       pendingReviews,
       activePromoCodes,
+      priceReviewNeeded,
       revenueTotal: Math.round((revenue._sum.total ?? 0) * 100) / 100,
       averageOrder: Math.round((revenue._avg.total ?? 0) * 100) / 100,
       ordersByStatus: Object.fromEntries(

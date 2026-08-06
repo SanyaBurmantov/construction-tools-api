@@ -6,7 +6,12 @@
 const { token, authorized, loadToken, saveToken, logout, adminFetch, errorMessage }
   = useAdminApi()
 
-type Stats = { newOrders: number, pendingReviews: number, queuedSitemaps: number }
+type Stats = {
+  newOrders: number
+  pendingReviews: number
+  queuedSitemaps: number
+  priceReviewNeeded: number
+}
 
 const checking = ref(true)
 const signingIn = ref(false)
@@ -18,6 +23,12 @@ const nav = computed(() => [
   { label: 'Дашборд', to: '/admin', icon: 'grid', exact: true },
   { label: 'Заказы', to: '/admin/orders', icon: 'cart', badge: badges.value?.newOrders },
   { label: 'Товары', to: '/admin/products', icon: 'box' },
+  {
+    label: 'Цены',
+    to: '/admin/pricing',
+    icon: 'tag',
+    badge: badges.value?.priceReviewNeeded,
+  },
   { label: 'Категории', to: '/admin/categories', icon: 'tree' },
   { label: 'Бренды', to: '/admin/brands', icon: 'tag' },
   {
