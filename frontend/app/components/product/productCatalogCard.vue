@@ -16,6 +16,7 @@ const {
   inStock,
   availabilityLabel,
   hasMultipleOffers,
+  offerCount,
   hasDiscount,
   discountPercent,
   isFavourite,
@@ -120,7 +121,7 @@ const link = computed(() => `/product/${props.product.slug}`)
             {{ availabilityLabel }}
           </span>
           <span v-if="hasMultipleOffers" class="offers">
-            {{ product.offerCount }} предложения поставщиков
+            {{ offerCount }} предложения поставщиков
           </span>
         </div>
 

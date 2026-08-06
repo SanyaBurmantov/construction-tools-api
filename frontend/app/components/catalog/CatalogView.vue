@@ -74,6 +74,21 @@ const SORT_OPTIONS = [
   { value: 'name-desc', label: 'По названию (Я-А)' }
 ]
 
+/**
+ * Grid or dense list. Kept in localStorage rather than the URL: it's a personal
+ * viewing preference, not part of what the page shows, so it shouldn't end up
+ * in shared links or split the ISR cache.
+ */
+const viewMode = useState<'grid' | 'list'>('catalog-view', () => 'grid')
+onMounted(() => {
+  const saved = localStorage.getItem('catalog-view')
+  if (saved === 'grid' || saved === 'list') viewMode.value = saved
+})
+function setViewMode(mode: 'grid' | 'list') {
+  viewMode.value = mode
+  if (import.meta.client) localStorage.setItem('catalog-view', mode)
+}
+
 const route = useRoute()
 const router = useRouter()
 const config = useRuntimeConfig()
@@ -340,23 +355,18 @@ const filterChips = computed<Chip[]>(() => {
   return chips
 })
 
-// --- pagination ---
-const pageNumbers = computed(() => {
-  const total = products.value?.pagination.pages || 0
-  if (total <= 1) return []
-  const current = page.value
-  const numbers = new Set<number>([1, total])
-  for (let i = current - 2; i <= current + 2; i++) {
-    if (i >= 1 && i <= total) numbers.add(i)
+const breadcrumbItems = computed(() => {
+  const items: Array<{ label: string, to?: string }> = [{ label: 'Главная', to: '/' }]
+  if (!category.value) {
+    items.push({ label: 'Каталог' })
+    return items
   }
-  const sorted = [...numbers].sort((a, b) => a - b)
-  const result: Array<number | '...'> = []
-  for (let i = 0; i < sorted.length; i++) {
-    const value = sorted[i]!
-    if (i > 0 && value - (sorted[i - 1] as number) > 1) result.push('...')
-    result.push(value)
+  items.push({ label: 'Каталог', to: '/catalog/' })
+  for (const ancestor of category.value.ancestors) {
+    items.push({ label: ancestor.name, to: `/catalog/${ancestor.slug}` })
   }
-  return result
+  items.push({ label: category.value.name })
+  return items
 })
 
 // --- mobile filters drawer ---
@@ -422,197 +432,142 @@ useHead(() => ({
 </script>
 
 <template>
-  <div>
-    <nav class="breadcrumbs" aria-label="Хлебные крошки">
-      <NuxtLink to="/">Главная</NuxtLink>
-      <span aria-hidden="true">/</span>
-      <NuxtLink v-if="category" to="/catalog/">Каталог</NuxtLink>
-      <strong v-else>Каталог</strong>
-      <template v-for="ancestor in category?.ancestors || []" :key="ancestor.id">
-        <span aria-hidden="true">/</span>
-        <NuxtLink :to="`/catalog/${ancestor.slug}`">{{ ancestor.name }}</NuxtLink>
-      </template>
-      <template v-if="category">
-        <span aria-hidden="true">/</span>
-        <strong>{{ category.name }}</strong>
-      </template>
-    </nav>
+  <div class="catalog-page">
+    <UiBreadcrumbs :items="breadcrumbItems" />
 
     <header class="catalog-head">
       <h1>{{ category?.name || 'Каталог товаров' }}</h1>
       <p v-if="category?.description">{{ category.description }}</p>
     </header>
 
-    <div v-if="categoryLinks.length" class="subcategories" aria-label="Подкатегории">
+    <!-- Subcategory shortcuts: the fastest way to narrow down, so they sit
+         above the fold rather than only inside the filter panel. -->
+    <nav v-if="categoryLinks.length" class="subcategories" aria-label="Подкатегории">
       <NuxtLink
         v-for="item in categoryLinks"
         :key="item.id"
         :to="categoryTo(item.slug)"
-        class="subcategory-chip"
+        class="subcategory"
       >
         {{ item.name }}
         <small>{{ item.count }}</small>
       </NuxtLink>
-    </div>
+    </nav>
 
-    <section class="catalog-layout">
-      <div
-        v-if="filtersOpen"
-        class="filters-backdrop"
-        aria-hidden="true"
-        @click="filtersOpen = false"
-      />
+    <div class="layout">
+      <UiDrawer v-model:open="filtersOpen" title="Фильтры">
+        <CatalogFilters
+          v-model:brand-query="brandQuery"
+          v-model:price-min="priceDraft.min"
+          v-model:price-max="priceDraft.max"
+          :category="category"
+          :category-links="categoryLinks"
+          :parent-link="parentLink"
+          :in-stock="inStock"
+          :on-sale="onSale"
+          :price-range="priceRange"
+          :brands="brands"
+          :visible-brands="visibleBrands"
+          :brand-counts="brandCounts"
+          :selected-brand-ids="selectedBrandIds"
+          :sources="sources"
+          :source-counts="sourceCounts"
+          :selected-source="selectedSource"
+          :active-filters-count="activeFiltersCount"
+          :category-to="categoryTo"
+          @push-query="pushQuery"
+          @toggle-brand="toggleBrand"
+          @toggle-source="toggleSource"
+          @apply-price="applyPrice"
+          @clear="clearFilters"
+        />
+        <template #footer>
+          <UiButton block @click="filtersOpen = false">
+            Показать {{ products?.pagination.total || 0 }}
+          </UiButton>
+        </template>
+      </UiDrawer>
 
-      <aside class="filters-panel" :class="{ open: filtersOpen }" aria-label="Фильтры каталога">
-        <div class="filters-head">
-          <h2>Фильтры</h2>
-          <button
-            v-if="activeFiltersCount"
-            class="ghost-button"
-            type="button"
-            @click="clearFilters"
-          >
-            Сбросить ({{ activeFiltersCount }})
-          </button>
-          <button class="close-filters" type="button" aria-label="Закрыть фильтры" @click="filtersOpen = false">
-            ✕
-          </button>
-        </div>
-
-        <div class="filter-section">
-          <div class="filter-title">Категории</div>
-          <NuxtLink v-if="parentLink" :to="parentLink.to" class="parent-link">
-            ← {{ parentLink.label }}
-          </NuxtLink>
-          <div v-if="categoryLinks.length" class="facet-list">
-            <NuxtLink
-              v-for="item in categoryLinks"
-              :key="item.id"
-              :to="categoryTo(item.slug)"
-              class="facet-link"
-            >
-              <span>{{ item.name }}</span>
-              <small class="facet-count">{{ item.count }}</small>
-            </NuxtLink>
-          </div>
-          <p v-else-if="category" class="facet-empty">Это конечная категория.</p>
-        </div>
-
-        <div class="filter-section">
-          <label class="check-row">
-            <input
-              type="checkbox"
-              :checked="inStock"
-              @change="pushQuery({ inStock: inStock ? undefined : '1' })"
-            >
-            <span>Только в наличии</span>
-          </label>
-          <label class="check-row">
-            <input
-              type="checkbox"
-              :checked="onSale"
-              @change="pushQuery({ onSale: onSale ? undefined : '1' })"
-            >
-            <span>Только со скидкой</span>
-          </label>
-        </div>
-
-        <div class="filter-section">
-          <div class="filter-title">Цена, BYN</div>
-          <form class="price-grid" @submit.prevent="applyPrice">
-            <input
-              v-model.trim="priceDraft.min"
-              type="number"
-              min="0"
-              inputmode="numeric"
-              :placeholder="priceRange ? `от ${priceRange.min}` : 'от'"
-              aria-label="Цена от"
-            >
-            <input
-              v-model.trim="priceDraft.max"
-              type="number"
-              min="0"
-              inputmode="numeric"
-              :placeholder="priceRange ? `до ${priceRange.max}` : 'до'"
-              aria-label="Цена до"
-            >
-            <button type="submit">OK</button>
-          </form>
-        </div>
-
-        <div class="filter-section">
-          <div class="filter-title">
-            Бренды
-            <small v-if="selectedBrandIds.length">{{ selectedBrandIds.length }}</small>
-          </div>
-          <input
-            v-if="(brands?.length || 0) > 8"
-            v-model.trim="brandQuery"
-            type="search"
-            class="facet-search"
-            placeholder="Найти бренд"
-          >
-          <div class="facet-list">
-            <label v-for="brand in visibleBrands" :key="brand.id" class="check-row">
-              <input
-                type="checkbox"
-                :checked="selectedBrandIds.includes(brand.id)"
-                @change="toggleBrand(brand.id)"
-              >
-              <span>{{ brand.name }}</span>
-              <small class="facet-count">{{ brandCounts[brand.id] || 0 }}</small>
-            </label>
-            <p v-if="!visibleBrands.length" class="facet-empty">Нет брендов по запросу.</p>
-          </div>
-        </div>
-
-        <div v-if="(sources?.length || 0) > 1" class="filter-section">
-          <div class="filter-title">Поставщики</div>
-          <div class="facet-list">
-            <button
-              v-for="source in sources || []"
-              :key="source.id"
-              type="button"
-              class="facet-link"
-              :class="{ active: selectedSource === source.code }"
-              :aria-pressed="selectedSource === source.code"
-              :disabled="!source.code"
-              @click="toggleSource(source.code)"
-            >
-              <span>{{ source.name }}</span>
-              <small class="facet-count">{{ sourceCounts[source.id] || 0 }}</small>
-            </button>
-          </div>
-        </div>
-
-        <button class="apply-button" type="button" @click="filtersOpen = false">
-          Показать {{ products?.pagination.total || 0 }} товаров
-        </button>
+      <aside class="filters-desktop" aria-label="Фильтры каталога">
+        <CatalogFilters
+          v-model:brand-query="brandQuery"
+          v-model:price-min="priceDraft.min"
+          v-model:price-max="priceDraft.max"
+          :category="category"
+          :category-links="categoryLinks"
+          :parent-link="parentLink"
+          :in-stock="inStock"
+          :on-sale="onSale"
+          :price-range="priceRange"
+          :brands="brands"
+          :visible-brands="visibleBrands"
+          :brand-counts="brandCounts"
+          :selected-brand-ids="selectedBrandIds"
+          :sources="sources"
+          :source-counts="sourceCounts"
+          :selected-source="selectedSource"
+          :active-filters-count="activeFiltersCount"
+          :category-to="categoryTo"
+          @push-query="pushQuery"
+          @toggle-brand="toggleBrand"
+          @toggle-source="toggleSource"
+          @apply-price="applyPrice"
+          @clear="clearFilters"
+        />
       </aside>
 
-      <div class="catalog-content">
-        <div class="catalog-toolbar">
+      <div class="content">
+        <div class="toolbar">
           <span class="total" aria-live="polite">
-            Найдено: <strong>{{ products?.pagination.total || 0 }}</strong>
+            Найдено <strong>{{ products?.pagination.total || 0 }}</strong>
           </span>
 
           <div class="toolbar-actions">
-            <button class="filters-toggle" type="button" @click="filtersOpen = true">
-              Фильтры
-              <small v-if="activeFiltersCount">{{ activeFiltersCount }}</small>
-            </button>
-            <label class="sort-field">
-              <span>Сортировка</span>
-              <select :value="sort" @change="setSort(($event.target as HTMLSelectElement).value)">
-                <option v-for="option in SORT_OPTIONS" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-            </label>
+            <UiButton
+              class="filters-toggle"
+              variant="secondary"
+              size="sm"
+              @click="filtersOpen = true"
+            >
+              Фильтры<template v-if="activeFiltersCount"> · {{ activeFiltersCount }}</template>
+            </UiButton>
+
+            <UiSelect
+              :model-value="sort"
+              size="sm"
+              class="sort"
+              :options="SORT_OPTIONS"
+              @update:model-value="setSort(String($event))"
+            />
+
+            <div class="view-switch" role="group" aria-label="Вид списка">
+              <button
+                type="button"
+                :class="{ 'is-active': viewMode === 'grid' }"
+                :aria-pressed="viewMode === 'grid'"
+                aria-label="Плиткой"
+                @click="setViewMode('grid')"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="currentColor" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                :class="{ 'is-active': viewMode === 'list' }"
+                :aria-pressed="viewMode === 'list'"
+                aria-label="Списком"
+                @click="setViewMode('list')"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 5h16M4 12h16M4 19h16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div v-if="filterChips.length" class="filter-chips">
+        <div v-if="filterChips.length" class="chips">
           <button
             v-for="chip in filterChips"
             :key="chip.key"
@@ -620,582 +575,282 @@ useHead(() => ({
             class="chip"
             @click="chip.remove()"
           >
-            {{ chip.label }} <span aria-hidden="true">✕</span>
+            {{ chip.label }}
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
           </button>
-          <button type="button" class="chip clear" @click="clearFilters">Сбросить всё</button>
+          <button type="button" class="chip is-clear" @click="clearFilters">Сбросить всё</button>
         </div>
 
-        <div v-if="pending" class="state-card">Загружаем каталог...</div>
-        <div v-else-if="error" class="state-card error">
-          Не удалось получить товары. Обновите страницу или попробуйте позже.
-        </div>
-        <div v-else-if="!products?.data.length" class="state-card">
-          По выбранным фильтрам ничего не найдено. Попробуйте изменить запрос или
-          <button type="button" class="inline-link" @click="clearFilters">сбросить фильтры</button>.
-        </div>
-        <div v-else class="products-listing">
-          <ProductCatalogCard
-            v-for="product in products.data"
-            :key="product.id"
-            :product="product"
+        <div v-if="pending" :class="viewMode === 'grid' ? 'grid' : 'list'">
+          <UiSkeleton
+            v-for="i in 8"
+            :key="i"
+            :height="viewMode === 'grid' ? '330px' : '180px'"
+            radius="var(--radius-md)"
           />
         </div>
 
-        <nav
-          v-if="pageNumbers.length"
-          class="pagination"
-          aria-label="Страницы каталога"
+        <UiAlert v-else-if="error" tone="danger">
+          Не удалось получить товары. Обновите страницу или попробуйте позже.
+        </UiAlert>
+
+        <UiEmpty
+          v-else-if="!products?.data.length"
+          icon="search"
+          title="По выбранным фильтрам ничего не найдено"
+          description="Попробуйте изменить запрос, расширить диапазон цены или снять часть фильтров."
         >
-          <button
-            type="button"
-            :disabled="page <= 1"
-            aria-label="Предыдущая страница"
-            @click="setPage(page - 1)"
-          >
-            ←
-          </button>
-          <template v-for="(item, index) in pageNumbers" :key="`${item}-${index}`">
-            <span v-if="item === '...'" class="dots">…</span>
-            <button
-              v-else
-              type="button"
-              :class="{ current: item === page }"
-              :aria-current="item === page ? 'page' : undefined"
-              @click="setPage(item as number)"
-            >
-              {{ item }}
-            </button>
-          </template>
-          <button
-            type="button"
-            :disabled="page >= (products?.pagination.pages || 1)"
-            aria-label="Следующая страница"
-            @click="setPage(page + 1)"
-          >
-            →
-          </button>
-        </nav>
+          <UiButton variant="secondary" @click="clearFilters">Сбросить фильтры</UiButton>
+        </UiEmpty>
+
+        <template v-else>
+          <div v-if="viewMode === 'grid'" class="grid">
+            <ProductCatalogCard
+              v-for="product in products.data"
+              :key="product.id"
+              :product="product"
+            />
+          </div>
+          <div v-else class="list">
+            <ProductCatalogRow
+              v-for="product in products.data"
+              :key="product.id"
+              :product="product"
+            />
+          </div>
+        </template>
+
+        <UiPagination
+          :page="page"
+          :pages="products?.pagination.pages || 0"
+          :total="products?.pagination.total"
+          @change="setPage"
+        />
       </div>
-    </section>
+    </div>
   </div>
 </template>
 
-<style scoped lang="scss">
-.breadcrumbs {
+<style scoped>
+.catalog-page {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
-  color: var(--color-muted);
-  font-size: 13px;
-  font-weight: 600;
-
-  a {
-    color: inherit;
-    text-decoration: none;
-
-    &:hover {
-      color: var(--color-primary);
-    }
-  }
-
-  strong {
-    color: #101828;
-  }
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
-.catalog-head {
-  margin-bottom: 16px;
-
-  h1 {
-    font-size: clamp(26px, 4vw, 38px);
-    line-height: 1.1;
-  }
-
-  p {
-    max-width: 760px;
-    margin-top: 8px;
-    color: var(--color-muted);
-    line-height: 1.6;
-  }
+.catalog-head h1 {
+  font-size: var(--text-2xl);
 }
 
+.catalog-head p {
+  max-width: 80ch;
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---- Subcategories ---- */
 .subcategories {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: var(--space-2);
 }
 
-.subcategory-chip {
+.subcategory {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--color-line);
-  border-radius: 999px;
-  background: white;
-  color: #344054;
-  font-size: 14px;
-  font-weight: 700;
-  padding: 8px 14px;
-  text-decoration: none;
-  transition: border-color 0.16s ease, color 0.16s ease;
-
-  small {
-    border-radius: 999px;
-    background: #f2f4f7;
-    color: var(--color-muted);
-    font-size: 12px;
-    padding: 2px 7px;
-  }
-
-  &:hover {
-    border-color: #c7d7fe;
-    color: var(--color-primary);
-  }
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-default);
+  font-size: var(--text-sm);
+  gap: var(--space-2);
 }
 
-.catalog-layout {
+.subcategory:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.subcategory small {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+/* ---- Layout ---- */
+.layout {
   display: grid;
-  gap: 20px;
-
-  @include media-breakpoint-up(lg) {
-    grid-template-columns: 280px minmax(0, 1fr);
-    align-items: start;
-  }
+  align-items: start;
+  gap: var(--space-5);
+  grid-template-columns: 260px minmax(0, 1fr);
 }
 
-.filters-backdrop {
-  position: fixed;
-  z-index: 39;
-  inset: 0;
-  background: rgba(16, 24, 40, 0.45);
-
-  @include media-breakpoint-up(lg) {
-    display: none;
-  }
-}
-
-.filters-panel {
-  position: fixed;
-  z-index: 40;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  display: none;
+.filters-desktop {
+  position: sticky;
+  top: calc(var(--header-height) + var(--space-4));
+  max-height: calc(100vh - var(--header-height) - var(--space-8));
   overflow-y: auto;
-  width: min(340px, 92vw);
-  background: white;
-  padding: 12px 18px 18px;
-
-  &.open {
-    display: block;
-  }
-
-  @include media-breakpoint-up(lg) {
-    position: static;
-    display: block;
-    overflow: visible;
-    width: auto;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-lg);
-  }
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
 }
 
-.filters-head {
+.content {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid var(--color-line);
-  margin-bottom: 4px;
-  padding-bottom: 12px;
-
-  h2 {
-    font-size: 20px;
-  }
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
-.close-filters {
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  background: white;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 6px 10px;
-
-  @include media-breakpoint-up(lg) {
-    display: none;
-  }
-}
-
-.ghost-button {
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  background: white;
-  color: #344054;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 6px 10px;
-}
-
-.filter-section {
-  border-bottom: 1px solid var(--color-line);
-  padding: 14px 0;
-
-  &:last-of-type {
-    border-bottom: 0;
-  }
-}
-
-.filter-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  color: #101828;
-  font-size: 13px;
-  font-weight: 800;
-
-  small {
-    border-radius: 999px;
-    background: #eef4ff;
-    color: var(--color-primary);
-    font-size: 11px;
-    font-weight: 800;
-    padding: 2px 8px;
-  }
-}
-
-.parent-link {
-  display: inline-block;
-  margin-bottom: 8px;
-  color: var(--color-primary);
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.facet-list {
-  display: grid;
-  gap: 2px;
-}
-
-.facet-link,
-.check-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  width: 100%;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: #344054;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 10px;
-  text-align: left;
-  text-decoration: none;
-
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &:hover {
-    background: #f8fafc;
-    color: #101828;
-  }
-
-  &.active {
-    background: #eef4ff;
-    color: var(--color-primary);
-  }
-}
-
-.check-row {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-
-  input {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--color-primary);
-  }
-}
-
-.facet-count {
-  min-width: 28px;
-  border-radius: 999px;
-  background: #eef2f6;
-  color: #667085;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 2px 7px;
-  text-align: center;
-}
-
-.facet-search {
-  width: 100%;
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  margin-bottom: 8px;
-  outline: 0;
-  padding: 9px 11px;
-
-  &:focus {
-    border-color: var(--color-primary);
-  }
-}
-
-.facet-empty {
-  color: var(--color-muted);
-  font-size: 13px;
-}
-
-.price-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-
-  input {
-    min-width: 0;
-    border: 1px solid var(--color-line);
-    border-radius: 10px;
-    outline: 0;
-    padding: 9px 11px;
-
-    &:focus {
-      border-color: var(--color-primary);
-    }
-  }
-
-  button {
-    border: 0;
-    border-radius: 10px;
-    background: var(--color-primary);
-    color: white;
-    cursor: pointer;
-    font-weight: 800;
-    padding: 0 14px;
-  }
-}
-
-.apply-button {
-  width: 100%;
-  border: 0;
-  border-radius: 12px;
-  background: var(--color-primary);
-  color: white;
-  cursor: pointer;
-  font-weight: 800;
-  margin-top: 14px;
-  padding: 13px 14px;
-
-  @include media-breakpoint-up(lg) {
-    display: none;
-  }
-}
-
-.catalog-content {
-  display: grid;
-  gap: 14px;
-}
-
-.catalog-toolbar {
+/* ---- Toolbar ---- */
+.toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  background: white;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  gap: var(--space-3);
 }
 
 .total {
-  color: var(--color-muted);
-  font-size: 14px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
 
-  strong {
-    color: #101828;
-  }
+.total strong {
+  color: var(--text-strong);
 }
 
 .toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
+}
+
+.sort {
+  width: 210px;
 }
 
 .filters-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--color-line);
-  border-radius: 10px;
-  background: white;
-  color: #344054;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 700;
-  padding: 9px 12px;
-
-  small {
-    border-radius: 999px;
-    background: var(--color-primary);
-    color: white;
-    font-size: 11px;
-    font-weight: 800;
-    min-width: 18px;
-    padding: 1px 5px;
-  }
-
-  @include media-breakpoint-up(lg) {
-    display: none;
-  }
+  display: none;
 }
 
-.sort-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-
-  span {
-    display: none;
-    color: var(--color-muted);
-    font-size: 13px;
-    font-weight: 700;
-
-    @include media-breakpoint-up(md) {
-      display: inline;
-    }
-  }
-
-  select {
-    border: 1px solid var(--color-line);
-    border-radius: 10px;
-    background: white;
-    color: #101828;
-    font-size: 14px;
-    font-weight: 600;
-    outline: 0;
-    padding: 9px 10px;
-
-    &:focus {
-      border-color: var(--color-primary);
-    }
-  }
+.view-switch {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
 }
 
-.filter-chips {
+.view-switch button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  color: var(--text-muted);
+  place-items: center;
+}
+
+.view-switch button:hover {
+  background: var(--surface-hover);
+}
+
+.view-switch button.is-active {
+  background: var(--brand);
+  color: var(--text-inverse);
+}
+
+.view-switch svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ---- Chips ---- */
+.chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  border: 1px solid #c7d7fe;
-  border-radius: 999px;
-  background: #eef4ff;
-  color: var(--color-primary);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 7px 12px;
-
-  span {
-    font-size: 11px;
-  }
-
-  &.clear {
-    border-color: var(--color-line);
-    background: white;
-    color: var(--color-muted);
-  }
-}
-
-.state-card {
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
-  background: white;
-  color: var(--color-muted);
-  font-size: 16px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--brand-soft);
+  color: var(--brand-soft-text);
+  font-size: var(--text-xs);
   font-weight: 600;
-  padding: 32px;
+  gap: var(--space-2);
 }
 
-.state-card.error {
-  color: #b42318;
+.chip svg {
+  width: 12px;
+  height: 12px;
 }
 
-.inline-link {
-  border: 0;
+.chip:hover {
+  background: var(--brand);
+  color: var(--text-inverse);
+}
+
+.chip.is-clear {
   background: none;
-  color: var(--color-primary);
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  text-decoration: underline;
+  color: var(--text-muted);
 }
 
-.products-listing {
+.chip.is-clear:hover {
+  background: var(--surface-active);
+  color: var(--text-strong);
+}
+
+/* ---- Results ---- */
+.grid {
   display: grid;
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  gap: var(--space-4);
+}
 
-  @include media-breakpoint-up(sm) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1024px) {
+  .layout {
+    grid-template-columns: 1fr;
   }
 
-  @include media-breakpoint-up(lg) {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .filters-desktop {
+    display: none;
   }
 
-  @include media-breakpoint-up(xl) {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .filters-toggle {
+    display: inline-flex;
   }
 }
 
-.pagination {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 8px;
-
-  button {
-    min-width: 40px;
-    border: 1px solid var(--color-line);
-    border-radius: 10px;
-    background: white;
-    color: #344054;
-    cursor: pointer;
-    font-weight: 700;
-    padding: 9px 10px;
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.4;
-    }
-
-    &.current {
-      border-color: var(--color-primary);
-      background: var(--color-primary);
-      color: white;
-    }
+@media (max-width: 560px) {
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  .dots {
-    color: var(--color-muted);
-    padding: 0 4px;
+  .toolbar-actions {
+    justify-content: space-between;
+  }
+
+  .sort {
+    flex: 1;
   }
 }
 </style>

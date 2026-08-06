@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
+import { company } from '~/data/company'
 
 type Product = CatalogProduct & {
   model?: string | null
@@ -37,6 +38,7 @@ const {
   canBuy,
   inStock,
   availabilityLabel,
+  hasMultipleOffers,
   hasDiscount,
   discountPercent,
   isFavourite,
@@ -79,6 +81,18 @@ const savings = computed(() => {
   if (!hasDiscount.value || !product.value) return 0
   return (product.value.oldPrice as number) - (product.value.priceValue as number)
 })
+
+/**
+ * Key specs surfaced next to the buy button. Burying every characteristic in a
+ * tab means the buyer has to scroll and click before they can tell whether the
+ * item fits — the references all show a short list up front instead.
+ */
+const KEY_SPEC_COUNT = 5
+const keySpecs = computed(() => product.value?.productSpecs?.slice(0, KEY_SPEC_COUNT) ?? [])
+
+const courierCost = computed(() => Number(config.public.deliveryCourier))
+const postCost = computed(() => Number(config.public.deliveryPost))
+const { formatPrice } = useFormatPrice()
 
 /* ---- Description tabs -------------------------------------------------- */
 const tab = ref<'description' | 'specs'>('description')
@@ -277,16 +291,34 @@ useHead(() => {
             {{ product.descriptionShort }}
           </p>
 
+          <!-- Key specs before the buy box, so the fit question is answered
+               without scrolling into a tab. -->
+          <dl v-if="keySpecs.length" class="key-specs">
+            <div v-for="spec in keySpecs" :key="spec.name">
+              <dt>{{ spec.name }}</dt>
+              <dd>{{ spec.value }}</dd>
+            </div>
+            <button
+              v-if="(product.productSpecs?.length ?? 0) > KEY_SPEC_COUNT"
+              type="button"
+              class="all-specs"
+              @click="tab = 'specs'"
+            >
+              Все характеристики ({{ product.productSpecs!.length }}) →
+            </button>
+          </dl>
+
           <div class="buy-box">
             <div class="price-row">
               <UiPrice
                 :value="product.priceValue"
                 :old-price="product.oldPrice"
                 :currency="currency"
+                :from="hasMultipleOffers"
                 size="lg"
               />
               <p v-if="savings > 0" class="savings">
-                Экономия {{ new Intl.NumberFormat('ru-BY', { style: 'currency', currency: currency || 'BYN', maximumFractionDigits: 2 }).format(savings) }}
+                Экономия {{ formatPrice(savings, currency) }}
               </p>
             </div>
 
@@ -340,11 +372,25 @@ useHead(() => {
               Лучшая цена из {{ product.offers!.count }} предложений поставщиков
             </p>
 
-            <ul class="assurances">
-              <li>Доставка по Беларуси — курьером, почтой или самовывозом</li>
-              <li>Оплата наличными, картой или по счёту для юрлиц</li>
-              <li>Возврат в течение 14 дней по закону о защите прав потребителей</li>
-            </ul>
+            <!-- Concrete terms, not adjectives: what it costs and where to collect. -->
+            <dl class="terms">
+              <div>
+                <dt>Доставка</dt>
+                <dd>
+                  курьер {{ formatPrice(courierCost, 'BYN') }} ·
+                  почта {{ formatPrice(postCost, 'BYN') }} ·
+                  самовывоз бесплатно
+                </dd>
+              </div>
+              <div>
+                <dt>Оплата</dt>
+                <dd>наличными, картой или по счёту для организаций</dd>
+              </div>
+              <div>
+                <dt>Самовывоз</dt>
+                <dd>{{ company.storeAddress }}</dd>
+              </div>
+            </dl>
           </div>
         </section>
       </div>
@@ -644,33 +690,74 @@ useHead(() => {
   flex-shrink: 0;
 }
 
-.assurances {
+.terms {
   display: flex;
   flex-direction: column;
   padding: var(--space-4) 0 0;
   margin: 0;
   border-top: 1px solid var(--border-subtle);
   gap: var(--space-2);
-  list-style: none;
 }
 
-.assurances li {
-  padding-left: var(--space-5);
-  color: var(--text-muted);
+.terms > div {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 92px 1fr;
   font-size: var(--text-sm);
-  position: relative;
 }
 
-.assurances li::before {
-  content: '';
-  position: absolute;
-  top: 7px;
-  left: 0;
-  width: 12px;
-  height: 7px;
-  border-bottom: 2px solid var(--success);
-  border-left: 2px solid var(--success);
-  transform: rotate(-45deg);
+.terms dt {
+  color: var(--text-muted);
+}
+
+.terms dd {
+  margin: 0;
+  color: var(--text-default);
+}
+
+/* ---- Key specs ---- */
+.key-specs {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  margin: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  gap: var(--space-2);
+}
+
+.key-specs > div {
+  display: grid;
+  align-items: baseline;
+  gap: var(--space-3);
+  grid-template-columns: minmax(120px, 42%) 1fr;
+  font-size: var(--text-sm);
+}
+
+.key-specs dt {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-specs dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.all-specs {
+  margin-top: var(--space-1);
+  color: var(--text-link);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: left;
+}
+
+.all-specs:hover {
+  text-decoration: underline;
 }
 
 /* ---- Details ---- */
