@@ -5,7 +5,7 @@ import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ParserLogService } from '../parser-log.service';
-import { PricingService } from '../../pricing/pricing.service';
+import { OffersService } from '../../offers/offers.service';
 
 type SavedCategoryRef = { id: string };
 type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
@@ -24,7 +24,7 @@ export class ThToolsParserService {
   constructor(
     private prisma: PrismaService,
     private parserLogService: ParserLogService,
-    private pricing: PricingService,
+    private offers: OffersService,
   ) {}
 
   async getUnvisitedSitemaps(limit = 10) {
@@ -268,12 +268,6 @@ export class ThToolsParserService {
       },
     });
 
-    // Records the supplier cost and derives the storefront price from the
-    // markup rules. No-ops for MANUAL products; flags implausible cost jumps.
-    if (priceValue != null) {
-      await this.pricing.applyCost(product.id, priceValue);
-    }
-
     // ---------- SPECS PARSE ----------
     // ---------- SAVE SPECS ----------
     await this.saveSpecifications(specs, product.id, categoryId);
@@ -286,6 +280,11 @@ export class ThToolsParserService {
       images: images.map((image) => image.url),
       specs,
     });
+
+    // Offers are saved by now, so the price comes from the cheapest available
+    // supplier rather than whichever parser happened to run last. Also refreshes
+    // the dedup keys so a newly learned barcode makes the product matchable.
+    await this.offers.onProductParsed(product.id);
 
     return product;
   }

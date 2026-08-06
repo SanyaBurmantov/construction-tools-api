@@ -6,7 +6,7 @@ import { generateSlug } from '../../common/utils/generate-slug';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { ParserLogService } from '../parser-log.service';
-import { PricingService } from '../../pricing/pricing.service';
+import { OffersService } from '../../offers/offers.service';
 import { parseTools } from './tools.parser';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
@@ -31,7 +31,7 @@ export class ToolsByParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
-    private readonly pricing: PricingService,
+    private readonly offers: OffersService,
   ) {}
 
   async refreshSitemaps() {
@@ -278,12 +278,6 @@ export class ToolsByParserService {
       },
     });
 
-    // Records the supplier cost and derives the storefront price from the
-    // markup rules. No-ops for MANUAL products; flags implausible cost jumps.
-    if (parsed.price != null) {
-      await this.pricing.applyCost(product.id, parsed.price);
-    }
-
     await this.saveSpecifications(
       parsed.specifications,
       product.id,
@@ -302,6 +296,11 @@ export class ToolsByParserService {
       seoTitle,
       seoDescription,
     });
+
+    // Offers are saved by now, so the price comes from the cheapest available
+    // supplier rather than whichever parser happened to run last. Also refreshes
+    // the dedup keys so a newly learned barcode makes the product matchable.
+    await this.offers.onProductParsed(product.id);
 
     return product;
   }
