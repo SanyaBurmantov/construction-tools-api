@@ -41,4 +41,18 @@ export class CreateReviewDto {
   @IsString()
   @Length(10, 4000)
   text!: string;
+
+  /**
+   * Honeypot. Hidden from real users by CSS, so anything non-empty here came
+   * from a bot filling every field it found. Not validated as a URL on
+   * purpose — we only care whether it was touched.
+   */
+  @ApiProperty({
+    required: false,
+    description: 'Служебное поле, оставьте пустым',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  website?: string;
 }

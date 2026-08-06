@@ -65,7 +65,16 @@ const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
 /* ---- Submission -------------------------------------------------------- */
 const formOpen = ref(false)
 const submitting = ref(false)
-const form = reactive({ authorName: '', authorEmail: '', rating: 5, title: '', text: '' })
+// `website` is the honeypot — hidden from real users, so anything in it came
+// from a bot. Never shown, never validated, just forwarded to the API.
+const form = reactive({
+  authorName: '',
+  authorEmail: '',
+  rating: 5,
+  title: '',
+  text: '',
+  website: '',
+})
 const errors = ref<Record<string, string>>({})
 
 function validate() {
@@ -91,10 +100,18 @@ async function submit() {
         rating: form.rating,
         title: form.title.trim() || undefined,
         text: form.text.trim(),
+        website: form.website || undefined,
       },
     })
     formOpen.value = false
-    Object.assign(form, { authorName: '', authorEmail: '', rating: 5, title: '', text: '' })
+    Object.assign(form, {
+      authorName: '',
+      authorEmail: '',
+      rating: 5,
+      title: '',
+      text: '',
+      website: '',
+    })
     toast.success('Отзыв отправлен на модерацию — он появится после проверки.')
   } catch (error) {
     const message
@@ -212,6 +229,22 @@ async function submit() {
             placeholder="Что понравилось, что нет, для каких задач использовали"
           />
         </UiField>
+
+        <!--
+          Honeypot. Positioned off-screen rather than display:none, because
+          many bots skip hidden inputs but do fill offscreen ones. Hidden from
+          assistive tech and skipped by keyboard navigation.
+        -->
+        <div class="honeypot" aria-hidden="true">
+          <label for="review-website">Не заполняйте это поле</label>
+          <input
+            id="review-website"
+            v-model="form.website"
+            type="text"
+            tabindex="-1"
+            autocomplete="off"
+          >
+        </div>
 
         <p class="disclaimer">
           Отзыв публикуется после проверки модератором.
@@ -391,6 +424,15 @@ async function submit() {
 .disclaimer {
   color: var(--text-muted);
   font-size: var(--text-xs);
+}
+
+/* Off-screen rather than hidden — see the comment on the field itself. */
+.honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
 }
 
 @media (max-width: 640px) {

@@ -1,8 +1,27 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { Prisma, ReviewStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { AdminReviewQueryDto, ReviewQueryDto } from './dto/review-query.dto';
+
+const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_REVIEWS_PER_IP_PER_DAY = 5;
+
+/**
+ * The single response for every accepted submission. Rejected-but-silent cases
+ * (honeypot, duplicate text) return this too, so a bot can't tell them apart
+ * from success.
+ */
+const SUBMIT_RESPONSE = {
+  ok: true,
+  message: 'Спасибо! Отзыв отправлен на модерацию.',
+} as const;
 
 /** Fields safe to expose publicly — author email is never returned. */
 const PUBLIC_SELECT = {
@@ -16,6 +35,8 @@ const PUBLIC_SELECT = {
 
 @Injectable()
 export class ReviewsService {
+  private readonly logger = new Logger(ReviewsService.name);
+
   constructor(private prisma: PrismaService) {}
 
   private async getPublishedProduct(slug: string) {
@@ -28,11 +49,72 @@ export class ReviewsService {
   }
 
   /**
+   * Pseudonymizes an IP for rate-limiting. The raw address is never stored —
+   * only a salted hash, which is enough to spot repeats but not to recover the
+   * address. Salt falls back to ADMIN_TOKEN so there's no new required secret.
+   */
+  private hashIp(ip: string | undefined): string | null {
+    if (!ip) return null;
+    const salt = process.env.REVIEW_IP_SALT || process.env.ADMIN_TOKEN || '';
+    return createHash('sha256').update(`${salt}:${ip}`).digest('hex');
+  }
+
+  /**
    * Guest submission. Always lands in PENDING — nothing a visitor writes shows
    * up on the storefront or moves the rating until an admin approves it.
+   *
+   * Spam defence, in order of cost: honeypot (free), then per-IP and duplicate
+   * checks (one indexed query each). The route also carries a strict throttle.
    */
-  async create(slug: string, dto: CreateReviewDto) {
+  async create(slug: string, dto: CreateReviewDto, ip?: string) {
     const product = await this.getPublishedProduct(slug);
+
+    // Honeypot tripped. Answer exactly as if it worked — telling a bot it was
+    // detected just teaches it which field to leave alone next time.
+    if (dto.website?.trim()) {
+      this.logger.warn(`Honeypot tripped on review for ${slug}`);
+      return SUBMIT_RESPONSE;
+    }
+
+    const ipHash = this.hashIp(ip);
+    const since = new Date(Date.now() - DUPLICATE_WINDOW_MS);
+
+    if (ipHash) {
+      // One review per product per IP per day.
+      const alreadyReviewed = await this.prisma.review.findFirst({
+        where: { productId: product.id, ipHash, createdAt: { gte: since } },
+        select: { id: true },
+      });
+      if (alreadyReviewed) {
+        throw new BadRequestException(
+          'Вы уже оставили отзыв на этот товар. Он появится после проверки модератором.',
+        );
+      }
+
+      // A burst across different products is the other common spam shape.
+      const recentCount = await this.prisma.review.count({
+        where: { ipHash, createdAt: { gte: since } },
+      });
+      if (recentCount >= MAX_REVIEWS_PER_IP_PER_DAY) {
+        throw new BadRequestException(
+          'Слишком много отзывов за сутки. Попробуйте завтра.',
+        );
+      }
+    }
+
+    const text = dto.text.trim();
+
+    // Identical text on the same product — catches distributed spam that
+    // rotates IPs but reuses the payload.
+    const duplicateText = await this.prisma.review.findFirst({
+      where: { productId: product.id, text, createdAt: { gte: since } },
+      select: { id: true },
+    });
+    if (duplicateText) {
+      // Silently accept: a rotating-IP bot learns nothing from a success.
+      this.logger.warn(`Duplicate review text dropped for ${slug}`);
+      return SUBMIT_RESPONSE;
+    }
 
     await this.prisma.review.create({
       data: {
@@ -41,15 +123,13 @@ export class ReviewsService {
         authorEmail: dto.authorEmail?.trim() || null,
         rating: dto.rating,
         title: dto.title?.trim() || null,
-        text: dto.text.trim(),
+        text,
         status: ReviewStatus.PENDING,
+        ipHash,
       },
     });
 
-    return {
-      ok: true,
-      message: 'Спасибо! Отзыв отправлен на модерацию.',
-    };
+    return SUBMIT_RESPONSE;
   }
 
   async listForProduct(slug: string, query: ReviewQueryDto) {

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Param, Post, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import { ReviewsService } from './reviews.service';
 import { CreateReviewDto } from './dto/create-review.dto';
@@ -14,8 +15,18 @@ export class ReviewsController {
     return this.service.listForProduct(slug, query);
   }
 
+  /**
+   * Far stricter than the global throttle (120/min): writing a review is a
+   * human action, so a handful per hour per IP is generous. `@Ip()` resolves to
+   * the real client address because main.ts sets `trust proxy` for Caddy.
+   */
+  @Throttle({ default: { limit: 5, ttl: 60 * 60 * 1000 } })
   @Post()
-  create(@Param('slug') slug: string, @Body() dto: CreateReviewDto) {
-    return this.service.create(slug, dto);
+  create(
+    @Param('slug') slug: string,
+    @Body() dto: CreateReviewDto,
+    @Ip() ip: string,
+  ) {
+    return this.service.create(slug, dto, ip);
   }
 }

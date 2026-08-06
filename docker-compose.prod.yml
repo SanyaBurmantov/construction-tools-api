@@ -42,6 +42,8 @@ services:
       # Both must be set for new-order Telegram notifications; empty = disabled.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
+      REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
       PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
       DUKON_CRON_BATCH_LIMIT: ${DUKON_CRON_BATCH_LIMIT:-30}
       TH_TOOLS_CRON_BATCH_LIMIT: ${TH_TOOLS_CRON_BATCH_LIMIT:-30}

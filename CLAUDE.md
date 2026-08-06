@@ -99,6 +99,20 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   returned by `GET /products/:slug/reviews` and counted into the denormalized
   `Product.ratingAvg` / `ratingCount`, which is recomputed on every moderation
   action. Moderation: `/admin/reviews`.
+- **Review spam defence**, cheapest check first:
+  1. a `website` honeypot field (off-screen in the form, never shown);
+  2. `@Throttle` on the POST route — 5/hour per IP, far stricter than the
+     global 120/min;
+  3. one review per product per IP per 24h, and 5 per IP per 24h overall;
+  4. identical text on the same product within 24h.
+  Honeypot and duplicate-text hits return the **normal success response** on
+  purpose — telling a bot it was caught only teaches it what to change. Only
+  the per-IP limits answer with an error, since a real person can hit those.
+  IPs are stored as a salted SHA-256 (`Review.ipHash`, salt from
+  `REVIEW_IP_SALT`, falling back to `ADMIN_TOKEN`) — never in the clear.
+  Trade-off to keep in mind: behind carrier-grade NAT several customers share
+  one address, so the per-IP-per-product rule can reject a genuine second
+  review. Loosen the constants in `reviews.service.ts` if that shows up.
 - **Frontend design system**: tokens in `app/assets/scss/tokens.scss` (semantic
   layer + dark mode); primitives in `app/components/ui/*` (`UiButton`, `UiInput`,
   `UiModal`, `UiTable`, `UiPrice`, `UiRating`, …). Components read tokens, never
