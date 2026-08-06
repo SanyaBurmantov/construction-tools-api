@@ -19,8 +19,13 @@ export default defineNuxtConfig({
     '/catalog': { isr: 300, swr: 300 },
     '/catalog/**': { isr: 300, swr: 300 },
     '/product/**': { isr: 900, swr: 900 },
-    '/cart/**': { ssr: false },
+    '/cart': { ssr: false },
     '/checkout/**': { ssr: false },
+    // Wishlist and comparison live in localStorage — nothing to render on the
+    // server. Both carry noindex meta of their own.
+    '/favorites': { ssr: false },
+    '/compare': { ssr: false },
+    '/admin': { ssr: false },
     '/admin/**': { ssr: false },
     '/sitemap.xml': { swr: 3600 }
   },

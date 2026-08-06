@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminCreateBrandDto } from './dto/admin-create-brand.dto';
 import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
@@ -37,32 +38,119 @@ export class AdminService {
   ) {}
 
   async getStats() {
+    // Revenue counts only orders that weren't cancelled.
+    const revenueWhere = { status: { not: OrderStatus.CANCELLED } } as const;
+    const since = new Date();
+    since.setDate(since.getDate() - 13);
+    since.setHours(0, 0, 0, 0);
+
     const [
       products,
+      publishedProducts,
       categories,
       brands,
       sources,
       queuedSitemaps,
       orders,
       newOrders,
+      pendingReviews,
+      activePromoCodes,
+      revenue,
+      ordersByStatus,
+      recentOrders,
+      dailyOrders,
+      topProducts,
     ] = await Promise.all([
       this.prisma.product.count(),
+      this.prisma.product.count({ where: { status: 'PUBLISHED' } }),
       this.prisma.category.count(),
       this.prisma.brand.count(),
       this.prisma.source.count(),
       this.prisma.sitemapsThTools.count({ where: { isVisited: false } }),
       this.prisma.order.count(),
       this.prisma.order.count({ where: { status: 'NEW' } }),
+      this.prisma.review.count({ where: { status: 'PENDING' } }),
+      this.prisma.promoCode.count({ where: { isActive: true } }),
+      this.prisma.order.aggregate({
+        where: revenueWhere,
+        _sum: { total: true },
+        _avg: { total: true },
+      }),
+      this.prisma.order.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      this.prisma.order.findMany({
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          customerName: true,
+          total: true,
+          currency: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.order.findMany({
+        where: { ...revenueWhere, createdAt: { gte: since } },
+        select: { createdAt: true, total: true },
+      }),
+      this.prisma.orderItem.groupBy({
+        by: ['productId', 'productName', 'productSlug'],
+        where: { productId: { not: null } },
+        _sum: { quantity: true, lineTotal: true },
+        orderBy: { _sum: { quantity: 'desc' } },
+        take: 8,
+      }),
     ]);
+
+    // Bucket the last 14 days client-side; the row count here is small and it
+    // keeps empty days in the series so the chart doesn't skip gaps.
+    const buckets = new Map<string, { orders: number; revenue: number }>();
+    for (let i = 0; i < 14; i += 1) {
+      const day = new Date(since);
+      day.setDate(since.getDate() + i);
+      buckets.set(day.toISOString().slice(0, 10), { orders: 0, revenue: 0 });
+    }
+    for (const order of dailyOrders) {
+      const key = order.createdAt.toISOString().slice(0, 10);
+      const bucket = buckets.get(key);
+      if (bucket) {
+        bucket.orders += 1;
+        bucket.revenue = Math.round((bucket.revenue + order.total) * 100) / 100;
+      }
+    }
 
     return {
       products,
+      publishedProducts,
       categories,
       brands,
       sources,
       queuedSitemaps,
       orders,
       newOrders,
+      pendingReviews,
+      activePromoCodes,
+      revenueTotal: Math.round((revenue._sum.total ?? 0) * 100) / 100,
+      averageOrder: Math.round((revenue._avg.total ?? 0) * 100) / 100,
+      ordersByStatus: Object.fromEntries(
+        ordersByStatus.map((row) => [row.status, row._count._all]),
+      ),
+      recentOrders,
+      salesSeries: [...buckets.entries()].map(([date, value]) => ({
+        date,
+        ...value,
+      })),
+      topProducts: topProducts.map((row) => ({
+        productId: row.productId,
+        name: row.productName,
+        slug: row.productSlug,
+        quantity: row._sum.quantity ?? 0,
+        revenue: Math.round((row._sum.lineTotal ?? 0) * 100) / 100,
+      })),
     };
   }
 
@@ -119,15 +207,17 @@ export class AdminService {
         categoryId: dto.categoryId,
         brandId: dto.brandId || null,
         priceValue: dto.priceValue,
+        oldPrice: dto.oldPrice ?? null,
         stockStatus: dto.stockStatus || 'in_stock',
+        stockQuantity: dto.stockQuantity ?? null,
         status: dto.status || 'PUBLISHED',
         descriptionShort: dto.descriptionShort || null,
         descriptionFull: dto.descriptionFull || null,
         sku: dto.sku || null,
         model: dto.model || null,
-        priceCurrency: 'BYN',
-        seoTitle: dto.name,
-        seoDescription: dto.descriptionShort || dto.name,
+        priceCurrency: dto.priceCurrency || 'BYN',
+        seoTitle: dto.seoTitle || dto.name,
+        seoDescription: dto.seoDescription || dto.descriptionShort || dto.name,
       },
     });
   }
@@ -517,6 +607,17 @@ export class AdminService {
         : {}),
       ...(dto.sku !== undefined ? { sku: dto.sku || null } : {}),
       ...(dto.model !== undefined ? { model: dto.model || null } : {}),
+      ...(dto.oldPrice !== undefined ? { oldPrice: dto.oldPrice ?? null } : {}),
+      ...(dto.priceCurrency !== undefined
+        ? { priceCurrency: dto.priceCurrency || 'BYN' }
+        : {}),
+      ...(dto.stockQuantity !== undefined
+        ? { stockQuantity: dto.stockQuantity ?? null }
+        : {}),
+      ...(dto.seoTitle !== undefined ? { seoTitle: dto.seoTitle } : {}),
+      ...(dto.seoDescription !== undefined
+        ? { seoDescription: dto.seoDescription }
+        : {}),
     };
   }
 

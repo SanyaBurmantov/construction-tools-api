@@ -49,6 +49,12 @@ export class ProductFilterDto {
   @IsBoolean()
   inStock?: boolean;
 
+  @ApiProperty({ required: false, description: 'Только товары со скидкой' })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === '1' || value === true)
+  @IsBoolean()
+  onSale?: boolean;
+
   @ApiProperty({ required: false, description: 'Код источника' })
   @IsOptional()
   @IsString()
@@ -73,12 +79,12 @@ export class ProductFilterDto {
   @ApiProperty({
     required: false,
     description: 'Сортировка',
-    enum: ['name', 'price', 'createdAt', 'updatedAt'],
+    enum: ['name', 'price', 'rating', 'createdAt', 'updatedAt'],
   })
   @IsOptional()
-  @IsIn(['name', 'price', 'createdAt', 'updatedAt'])
+  @IsIn(['name', 'price', 'rating', 'createdAt', 'updatedAt'])
   @IsString()
-  sortBy?: 'name' | 'price' | 'createdAt' | 'updatedAt';
+  sortBy?: 'name' | 'price' | 'rating' | 'createdAt' | 'updatedAt';
 
   @ApiProperty({
     required: false,

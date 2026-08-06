@@ -1,4 +1,5 @@
-import { IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class AdminCreateProductDto {
   @IsString()
@@ -15,8 +16,21 @@ export class AdminCreateProductDto {
   brandId?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
+  @Min(0)
   priceValue?: number;
+
+  /** Pre-discount price. Only shown on the storefront when above priceValue. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  oldPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  priceCurrency?: string;
 
   @IsOptional()
   @IsString()
@@ -37,6 +51,20 @@ export class AdminCreateProductDto {
   @IsOptional()
   @IsString()
   stockStatus?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  stockQuantity?: number;
+
+  @IsOptional()
+  @IsString()
+  seoTitle?: string;
+
+  @IsOptional()
+  @IsString()
+  seoDescription?: string;
 
   @IsOptional()
   @IsIn(['DRAFT', 'PUBLISHED', 'HIDDEN', 'ARCHIVED'])

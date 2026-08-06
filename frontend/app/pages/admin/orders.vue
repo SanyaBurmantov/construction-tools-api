@@ -1,15 +1,21 @@
 <script setup lang="ts">
-interface OrderItem {
+definePageMeta({ layout: 'admin' })
+
+type OrderStatus = 'NEW' | 'CONFIRMED' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED'
+
+type OrderItem = {
   id: string
   productName: string
   productSlug: string
   productSku: string | null
+  productImage: string | null
   unitPrice: number
+  unitOldPrice: number | null
   quantity: number
   lineTotal: number
 }
 
-interface Order {
+type Order = {
   id: string
   number: number
   status: OrderStatus
@@ -17,219 +23,669 @@ interface Order {
   customerPhone: string
   customerEmail: string | null
   comment: string | null
-  deliveryMethod: string
+  deliveryMethod: 'PICKUP' | 'COURIER' | 'POST'
   deliveryAddress: string | null
   paymentMethod: string
   currency: string
   itemsTotal: number
   deliveryCost: number
+  discountTotal: number
+  promoCodeLabel: string | null
   total: number
-  createdAt: string
   items: OrderItem[]
+  createdAt: string
+  updatedAt: string
 }
 
-type OrderStatus = 'NEW' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED'
-
-interface OrdersResponse {
+type ListResponse = {
   data: Order[]
   pagination: { page: number, limit: number, total: number, pages: number }
 }
 
-const { token, loadToken, saveToken, adminFetch } = useAdminApi()
+const route = useRoute()
+const router = useRouter()
+const { adminFetch, errorMessage } = useAdminApi()
+const toast = useToast()
 const { formatPrice } = useFormatPrice()
 
 const orders = ref<Order[]>([])
-const pagination = ref<OrdersResponse['pagination'] | null>(null)
+const pagination = ref({ page: 1, limit: 20, total: 0, pages: 0 })
 const loading = ref(false)
-const errorMessage = ref('')
-const statusFilter = ref<OrderStatus | ''>('')
+const loadError = ref('')
+
+const tab = ref<OrderStatus | ''>('')
 const search = ref('')
 const page = ref(1)
-const expanded = ref<string | null>(null)
 
-const statusOptions: { value: OrderStatus, label: string }[] = [
-  { value: 'NEW', label: 'Новый' },
-  { value: 'CONFIRMED', label: 'Подтверждён' },
-  { value: 'PROCESSING', label: 'В работе' },
-  { value: 'SHIPPED', label: 'Отправлен' },
-  { value: 'DELIVERED', label: 'Доставлен' },
-  { value: 'CANCELLED', label: 'Отменён' },
-]
-
-const deliveryLabels: Record<string, string> = {
-  PICKUP: 'Самовывоз',
-  COURIER: 'Курьер',
-  POST: 'Почта',
-}
-const paymentLabels: Record<string, string> = {
-  CASH: 'Наличные',
-  CARD: 'Карта',
-  INVOICE: 'Счёт',
-}
-
-async function loadOrders() {
-  if (!token.value) return
+async function load() {
   loading.value = true
-  errorMessage.value = ''
+  loadError.value = ''
   try {
-    const params = new URLSearchParams()
-    if (statusFilter.value) params.set('status', statusFilter.value)
-    if (search.value.trim()) params.set('search', search.value.trim())
-    params.set('page', String(page.value))
-    const response = await adminFetch<OrdersResponse>(`/orders?${params.toString()}`)
+    const response = await adminFetch<ListResponse>('/orders', {
+      params: {
+        page: page.value,
+        limit: 20,
+        ...(tab.value ? { status: tab.value } : {}),
+        ...(search.value.trim() ? { search: search.value.trim() } : {}),
+      },
+    })
     orders.value = response.data
     pagination.value = response.pagination
-    saveToken()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось загрузить заказы'
+    loadError.value = errorMessage(error, 'Не удалось загрузить заказы')
   } finally {
     loading.value = false
   }
 }
 
-async function updateStatus(order: Order, status: OrderStatus) {
+/* ---- Detail ------------------------------------------------------------ */
+const detail = ref<Order | null>(null)
+const detailLoading = ref(false)
+const statusBusy = ref(false)
+
+async function openDetail(id: string) {
+  detailLoading.value = true
   try {
-    await adminFetch(`/orders/${order.id}/status`, { method: 'PATCH', body: { status } })
-    order.status = status
+    detail.value = await adminFetch<Order>(`/orders/${id}`)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Не удалось изменить статус'
+    toast.error(errorMessage(error, 'Не удалось загрузить заказ'))
+  } finally {
+    detailLoading.value = false
   }
 }
 
-function applyFilters() {
-  page.value = 1
-  void loadOrders()
+function closeDetail() {
+  detail.value = null
+  // Drop the deep-link param so a refresh doesn't reopen the modal.
+  if (route.query.order) router.replace({ query: {} })
 }
 
-function changePage(next: number) {
-  page.value = next
-  void loadOrders()
+async function setStatus(status: OrderStatus) {
+  if (!detail.value) return
+  statusBusy.value = true
+  try {
+    detail.value = await adminFetch<Order>(`/orders/${detail.value.id}/status`, {
+      method: 'PATCH',
+      body: { status },
+    })
+    toast.success('Статус обновлён')
+    await load()
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось изменить статус'))
+  } finally {
+    statusBusy.value = false
+  }
 }
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString('ru-BY', { dateStyle: 'short', timeStyle: 'short' })
-}
-
-onMounted(() => {
-  loadToken()
-  if (token.value) void loadOrders()
+onMounted(async () => {
+  await load()
+  // Deep link from the dashboard: /admin/orders?order=<id>
+  const orderId = route.query.order
+  if (typeof orderId === 'string') await openDetail(orderId)
 })
 
-useHead({ title: 'Заказы | Админка', meta: [{ name: 'robots', content: 'noindex,nofollow' }] })
+watch(tab, () => {
+  page.value = 1
+  void load()
+})
+watch(page, () => void load())
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    page.value = 1
+    void load()
+  }, 350)
+})
+
+/* ---- Display ----------------------------------------------------------- */
+const STATUS_LABELS: Record<OrderStatus, string> = {
+  NEW: 'Новый',
+  CONFIRMED: 'Подтверждён',
+  SHIPPED: 'Отправлен',
+  COMPLETED: 'Завершён',
+  CANCELLED: 'Отменён',
+}
+const STATUS_TONES: Record<OrderStatus, 'brand' | 'info' | 'warning' | 'success' | 'danger'> = {
+  NEW: 'brand',
+  CONFIRMED: 'info',
+  SHIPPED: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'danger',
+}
+const DELIVERY_LABELS: Record<string, string> = {
+  PICKUP: 'Самовывоз',
+  COURIER: 'Курьер',
+  POST: 'Почта',
+}
+const PAYMENT_LABELS: Record<string, string> = {
+  CASH: 'Наличными',
+  CARD: 'Картой',
+  INVOICE: 'По счёту',
+}
+
+const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
+
+/** Next steps offered for the current status — cancelling is always allowed. */
+function nextStatuses(status: OrderStatus): OrderStatus[] {
+  switch (status) {
+    case 'NEW':
+      return ['CONFIRMED', 'CANCELLED']
+    case 'CONFIRMED':
+      return ['SHIPPED', 'CANCELLED']
+    case 'SHIPPED':
+      return ['COMPLETED', 'CANCELLED']
+    default:
+      return []
+  }
+}
 </script>
 
 <template>
-  <div class="admin-page">
-    <header class="page-head">
+  <div class="admin-orders">
+    <header class="head">
       <div>
-        <NuxtLink to="/admin" class="back">← В админку</NuxtLink>
         <h1>Заказы</h1>
+        <p>{{ pagination.total }} заказов всего</p>
       </div>
-      <form v-if="!token" class="token-form" @submit.prevent="loadOrders">
-        <input v-model="token" type="password" placeholder="ADMIN_TOKEN">
-        <button type="submit">Войти</button>
-      </form>
+      <UiInput v-model="search" placeholder="Номер, имя, телефон или email" size="sm" class="search" />
     </header>
 
-    <div v-if="errorMessage" class="notice error">{{ errorMessage }}</div>
+    <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
-    <section v-if="token" class="filters">
-      <select v-model="statusFilter" @change="applyFilters">
-        <option value="">Все статусы</option>
-        <option v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-      </select>
-      <input v-model="search" type="search" placeholder="Имя, телефон, email или № заказа" @keyup.enter="applyFilters">
-      <button type="button" @click="applyFilters">Найти</button>
-    </section>
+    <UiTabs
+      v-model="tab"
+      :tabs="[
+        { value: '', label: 'Все' },
+        { value: 'NEW', label: 'Новые' },
+        { value: 'CONFIRMED', label: 'Подтверждённые' },
+        { value: 'SHIPPED', label: 'Отправленные' },
+        { value: 'COMPLETED', label: 'Завершённые' },
+        { value: 'CANCELLED', label: 'Отменённые' }
+      ]"
+    />
 
-    <p v-if="loading" class="muted">Загрузка…</p>
-    <p v-else-if="token && !orders.length" class="muted">Заказов не найдено.</p>
-
-    <section v-if="orders.length" class="orders">
-      <article v-for="order in orders" :key="order.id" class="order">
-        <div class="order-head" @click="expanded = expanded === order.id ? null : order.id">
-          <div class="col">
-            <strong>№{{ order.number }}</strong>
-            <span class="muted">{{ formatDate(order.createdAt) }}</span>
-          </div>
-          <div class="col">
-            <strong>{{ order.customerName }}</strong>
-            <span class="muted">{{ order.customerPhone }}</span>
-          </div>
-          <div class="col">
-            <span class="muted">{{ deliveryLabels[order.deliveryMethod] || order.deliveryMethod }} · {{ paymentLabels[order.paymentMethod] || order.paymentMethod }}</span>
-            <strong>{{ formatPrice(order.total, order.currency) }}</strong>
-          </div>
-          <select
-            class="status-select"
-            :class="`status-${order.status.toLowerCase()}`"
-            :value="order.status"
-            @click.stop
-            @change="updateStatus(order, ($event.target as HTMLSelectElement).value as OrderStatus)"
+    <div class="table-wrap scroll-x">
+      <table class="orders-table">
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Покупатель</th>
+            <th>Доставка</th>
+            <th>Дата</th>
+            <th class="num">Сумма</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="loading">
+            <td colspan="6"><UiSkeleton :lines="5" height="18px" /></td>
+          </tr>
+          <tr v-else-if="!orders.length">
+            <td colspan="6">
+              <UiEmpty
+                icon="cart"
+                title="Заказов не найдено"
+                description="Здесь появятся заказы, оформленные через корзину на сайте."
+              />
+            </td>
+          </tr>
+          <tr
+            v-for="order in orders"
+            v-else
+            :key="order.id"
+            class="order-row"
+            @click="openDetail(order.id)"
           >
-            <option v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-          </select>
+            <td class="num-cell">#{{ order.number }}</td>
+            <td>
+              <div class="customer">
+                <strong>{{ order.customerName }}</strong>
+                <span>{{ order.customerPhone }}</span>
+              </div>
+            </td>
+            <td class="muted">{{ DELIVERY_LABELS[order.deliveryMethod] }}</td>
+            <td class="muted nowrap">{{ formatDate(order.createdAt) }}</td>
+            <td class="num">
+              <div class="total-cell">
+                <strong>{{ formatPrice(order.total, order.currency) }}</strong>
+                <span v-if="order.discountTotal" class="discount">
+                  −{{ formatPrice(order.discountTotal, order.currency) }}
+                </span>
+              </div>
+            </td>
+            <td>
+              <UiBadge :tone="STATUS_TONES[order.status]" size="sm">
+                {{ STATUS_LABELS[order.status] }}
+              </UiBadge>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <UiPagination
+      :page="pagination.page"
+      :pages="pagination.pages"
+      :total="pagination.total"
+      @change="page = $event"
+    />
+
+    <!-- Detail -->
+    <UiModal
+      :open="Boolean(detail) || detailLoading"
+      :title="detail ? `Заказ #${detail.number}` : 'Загрузка…'"
+      size="lg"
+      @update:open="closeDetail"
+    >
+      <UiSkeleton v-if="detailLoading" :lines="8" height="18px" />
+
+      <div v-else-if="detail" class="detail">
+        <div class="detail-head">
+          <UiBadge :tone="STATUS_TONES[detail.status]">{{ STATUS_LABELS[detail.status] }}</UiBadge>
+          <time :datetime="detail.createdAt">{{ formatDate(detail.createdAt) }}</time>
         </div>
 
-        <div v-if="expanded === order.id" class="order-body">
+        <div class="detail-grid">
+          <UiCard title="Покупатель" flat>
+            <dl class="facts">
+              <div>
+                <dt>Имя</dt>
+                <dd>{{ detail.customerName }}</dd>
+              </div>
+              <div>
+                <dt>Телефон</dt>
+                <dd><a :href="`tel:${detail.customerPhone}`">{{ detail.customerPhone }}</a></dd>
+              </div>
+              <div v-if="detail.customerEmail">
+                <dt>Email</dt>
+                <dd><a :href="`mailto:${detail.customerEmail}`">{{ detail.customerEmail }}</a></dd>
+              </div>
+              <div v-if="detail.comment">
+                <dt>Комментарий</dt>
+                <dd>{{ detail.comment }}</dd>
+              </div>
+            </dl>
+          </UiCard>
+
+          <UiCard title="Доставка и оплата" flat>
+            <dl class="facts">
+              <div>
+                <dt>Способ</dt>
+                <dd>{{ DELIVERY_LABELS[detail.deliveryMethod] }}</dd>
+              </div>
+              <div v-if="detail.deliveryAddress">
+                <dt>Адрес</dt>
+                <dd>{{ detail.deliveryAddress }}</dd>
+              </div>
+              <div>
+                <dt>Оплата</dt>
+                <dd>{{ PAYMENT_LABELS[detail.paymentMethod] || detail.paymentMethod }}</dd>
+              </div>
+              <div v-if="detail.promoCodeLabel">
+                <dt>Промокод</dt>
+                <dd><code>{{ detail.promoCodeLabel }}</code></dd>
+              </div>
+            </dl>
+          </UiCard>
+        </div>
+
+        <UiCard title="Состав заказа" flat :padded="false">
           <ul class="items">
-            <li v-for="item in order.items" :key="item.id">
-              <span class="item-name">
-                <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">{{ item.productName }}</NuxtLink>
-                <small v-if="item.productSku">Арт. {{ item.productSku }}</small>
+            <li v-for="item in detail.items" :key="item.id">
+              <img v-if="item.productImage" :src="item.productImage" :alt="item.productName" loading="lazy">
+              <span v-else class="item-thumb" aria-hidden="true" />
+              <div class="item-body">
+                <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">
+                  {{ item.productName }}
+                </NuxtLink>
+                <span v-if="item.productSku" class="item-sku">Арт. {{ item.productSku }}</span>
+              </div>
+              <span class="item-qty">{{ item.quantity }} ×</span>
+              <span class="item-price">
+                {{ formatPrice(item.unitPrice, detail.currency) }}
+                <s v-if="item.unitOldPrice">{{ formatPrice(item.unitOldPrice, detail.currency) }}</s>
               </span>
-              <span>{{ item.quantity }} × {{ formatPrice(item.unitPrice, order.currency) }}</span>
-              <strong>{{ formatPrice(item.lineTotal, order.currency) }}</strong>
+              <strong class="item-total">{{ formatPrice(item.lineTotal, detail.currency) }}</strong>
             </li>
           </ul>
-          <dl class="details">
-            <div v-if="order.customerEmail"><dt>Email</dt><dd>{{ order.customerEmail }}</dd></div>
-            <div v-if="order.deliveryAddress"><dt>Адрес</dt><dd>{{ order.deliveryAddress }}</dd></div>
-            <div v-if="order.comment"><dt>Комментарий</dt><dd>{{ order.comment }}</dd></div>
-            <div><dt>Товары</dt><dd>{{ formatPrice(order.itemsTotal, order.currency) }}</dd></div>
-            <div><dt>Доставка</dt><dd>{{ formatPrice(order.deliveryCost, order.currency) }}</dd></div>
-            <div><dt>Итого</dt><dd>{{ formatPrice(order.total, order.currency) }}</dd></div>
-          </dl>
-        </div>
-      </article>
-    </section>
 
-    <nav v-if="pagination && pagination.pages > 1" class="pager">
-      <button type="button" :disabled="page <= 1" @click="changePage(page - 1)">Назад</button>
-      <span>{{ pagination.page }} / {{ pagination.pages }}</span>
-      <button type="button" :disabled="page >= pagination.pages" @click="changePage(page + 1)">Вперёд</button>
-    </nav>
+          <dl class="totals">
+            <div>
+              <dt>Товары</dt>
+              <dd>{{ formatPrice(detail.itemsTotal, detail.currency) }}</dd>
+            </div>
+            <div v-if="detail.discountTotal" class="is-discount">
+              <dt>Скидка{{ detail.promoCodeLabel ? ` (${detail.promoCodeLabel})` : '' }}</dt>
+              <dd>−{{ formatPrice(detail.discountTotal, detail.currency) }}</dd>
+            </div>
+            <div>
+              <dt>Доставка</dt>
+              <dd>
+                {{ detail.deliveryCost ? formatPrice(detail.deliveryCost, detail.currency) : 'бесплатно' }}
+              </dd>
+            </div>
+            <div class="is-total">
+              <dt>Итого</dt>
+              <dd>{{ formatPrice(detail.total, detail.currency) }}</dd>
+            </div>
+          </dl>
+        </UiCard>
+      </div>
+
+      <template #footer>
+        <template v-if="detail">
+          <UiButton
+            v-for="status in nextStatuses(detail.status)"
+            :key="status"
+            :variant="status === 'CANCELLED' ? 'ghost' : 'primary'"
+            :loading="statusBusy"
+            @click="setStatus(status)"
+          >
+            {{ STATUS_LABELS[status] }}
+          </UiButton>
+        </template>
+        <UiButton variant="secondary" @click="closeDetail">Закрыть</UiButton>
+      </template>
+    </UiModal>
   </div>
 </template>
 
-<style scoped lang="scss">
-.admin-page { display: grid; gap: 20px; }
-.page-head { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: end; }
-.back { color: var(--color-muted); font-weight: 800; text-decoration: none; }
-h1 { margin-top: 6px; font-size: clamp(28px, 5vw, 48px); }
-.token-form { display: flex; gap: 10px; }
-.token-form input { border: 1px solid var(--color-line); border-radius: 12px; padding: 10px 14px; }
-.token-form button, .filters button { border: 2px solid var(--color-ink); border-radius: 999px; background: var(--color-accent, #ffcf26); cursor: pointer; font-weight: 900; padding: 10px 16px; }
-.notice.error { border: 1px solid #fecaca; border-radius: 14px; background: #fef2f2; color: #b42318; font-weight: 800; padding: 14px 16px; }
-.muted { color: var(--color-muted); }
-.filters { display: flex; flex-wrap: wrap; gap: 10px; }
-.filters select, .filters input { border: 1px solid var(--color-line); border-radius: 12px; background: white; padding: 10px 14px; }
-.filters input { flex: 1; min-width: 220px; }
-.orders { display: grid; gap: 12px; }
-.order { border: 1px solid var(--color-line); border-radius: 16px; background: white; box-shadow: var(--shadow-card); overflow: hidden; }
-.order-head { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: center; padding: 16px; cursor: pointer; @include media-breakpoint-up(md) { grid-template-columns: 160px minmax(0, 1fr) auto 150px; } }
-.col { display: grid; gap: 3px; min-width: 0; strong { font-size: 15px; } span { font-size: 13px; } }
-.status-select { border: 1px solid var(--color-line); border-radius: 999px; padding: 8px 12px; font-weight: 800; cursor: pointer; }
-.status-new { background: #eef4ff; color: var(--color-primary); }
-.status-confirmed { background: #ecfeff; color: #0e7490; }
-.status-processing { background: #fffbeb; color: #b45309; }
-.status-shipped { background: #f5f3ff; color: #6d28d9; }
-.status-delivered { background: #dcfce7; color: #15803d; }
-.status-cancelled { background: #fef2f2; color: #b42318; }
-.order-body { display: grid; gap: 16px; border-top: 1px solid var(--color-line); padding: 16px; background: #fafafa; @include media-breakpoint-up(lg) { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
-.items { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.items li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; font-size: 14px; a { color: var(--color-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
-.item-name { display: grid; gap: 2px; min-width: 0; small { color: var(--color-muted); font-size: 12px; font-weight: 700; } }
-.details { display: grid; gap: 6px; margin: 0; > div { display: flex; justify-content: space-between; gap: 12px; } dt { color: var(--color-muted); } dd { margin: 0; font-weight: 700; text-align: right; } }
-.pager { display: flex; gap: 14px; align-items: center; justify-content: center; button { border: 1px solid var(--color-line); border-radius: 10px; background: white; cursor: pointer; padding: 8px 14px; &:disabled { opacity: 0.5; cursor: not-allowed; } } }
+<style scoped>
+.admin-orders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.head h1 {
+  font-size: var(--text-2xl);
+}
+
+.head p {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.search {
+  width: min(320px, 100%);
+}
+
+.table-wrap {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.orders-table th {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.orders-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.orders-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.order-row {
+  cursor: pointer;
+}
+
+.order-row:hover td {
+  background: var(--surface-hover);
+}
+
+.num,
+.num-cell {
+  text-align: right;
+}
+
+.num-cell {
+  color: var(--text-muted);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.customer {
+  display: flex;
+  flex-direction: column;
+}
+
+.customer strong {
+  color: var(--text-strong);
+}
+
+.customer span {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.total-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.total-cell strong {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.discount {
+  color: var(--sale);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+/* ---- Detail ---- */
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detail-head time {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  gap: var(--space-2);
+}
+
+.facts > div {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: 110px 1fr;
+  font-size: var(--text-sm);
+}
+
+.facts dt {
+  color: var(--text-muted);
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.facts a:hover {
+  color: var(--text-link);
+  text-decoration: underline;
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.items li {
+  display: grid;
+  align-items: center;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--space-3);
+  grid-template-columns: 40px 1fr auto auto auto;
+  font-size: var(--text-sm);
+}
+
+.items img,
+.item-thumb {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  object-fit: contain;
+}
+
+.item-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.item-body a {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.item-body a:hover {
+  color: var(--text-link);
+}
+
+.item-sku {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.item-qty,
+.item-price {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.item-price s {
+  display: block;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.item-total {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.totals {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) var(--space-5);
+  margin: 0;
+  gap: var(--space-2);
+}
+
+.totals > div {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.totals dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.totals .is-discount,
+.totals .is-discount dd {
+  color: var(--sale);
+}
+
+.totals .is-total {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .items li {
+    grid-template-columns: 40px 1fr auto;
+  }
+
+  .item-qty,
+  .item-price {
+    display: none;
+  }
+}
 </style>

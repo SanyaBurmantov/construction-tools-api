@@ -69,6 +69,7 @@ const SORT_OPTIONS = [
   { value: 'price-asc', label: 'Сначала дешевле' },
   { value: 'price-desc', label: 'Сначала дороже' },
   { value: 'new', label: 'Сначала новые' },
+  { value: 'rating-desc', label: 'По рейтингу' },
   { value: 'name-asc', label: 'По названию (А-Я)' },
   { value: 'name-desc', label: 'По названию (Я-А)' }
 ]
@@ -101,6 +102,7 @@ const selectedSource = computed(
 const priceMin = computed(() => queryValue(route.query.priceMin) || '')
 const priceMax = computed(() => queryValue(route.query.priceMax) || '')
 const inStock = computed(() => queryValue(route.query.inStock) === '1')
+const onSale = computed(() => queryValue(route.query.onSale) === '1')
 const sort = computed(() => queryValue(route.query.sort) || 'default')
 const page = computed(() => Math.max(1, Number(queryValue(route.query.page)) || 1))
 const legacyCategoryId = computed(() => queryValue(route.query.categoryId))
@@ -128,6 +130,7 @@ const queryParams = computed(() => cleanParams({
   priceMin: priceMin.value || undefined,
   priceMax: priceMax.value || undefined,
   inStock: inStock.value ? '1' : undefined,
+  onSale: onSale.value ? '1' : undefined,
   sortBy: sortParams.value.sortBy,
   sortOrder: sortParams.value.sortOrder,
   page: page.value,
@@ -246,6 +249,7 @@ function currentQuery(overrides: Record<string, string | undefined>) {
     priceMin: priceMin.value || undefined,
     priceMax: priceMax.value || undefined,
     inStock: inStock.value ? '1' : undefined,
+    onSale: onSale.value ? '1' : undefined,
     sort: sort.value === 'default' ? undefined : sort.value,
     ...overrides
   })
@@ -301,6 +305,7 @@ const activeFiltersCount = computed(() =>
   + (selectedSource.value ? 1 : 0)
   + ((priceMin.value || priceMax.value) ? 1 : 0)
   + (inStock.value ? 1 : 0)
+  + (onSale.value ? 1 : 0)
 )
 
 type Chip = { key: string, label: string, remove: () => void }
@@ -328,6 +333,9 @@ const filterChips = computed<Chip[]>(() => {
   }
   if (inStock.value) {
     chips.push({ key: 'stock', label: 'В наличии', remove: () => pushQuery({ inStock: undefined }) })
+  }
+  if (onSale.value) {
+    chips.push({ key: 'sale', label: 'Со скидкой', remove: () => pushQuery({ onSale: undefined }) })
   }
   return chips
 })
@@ -498,6 +506,14 @@ useHead(() => ({
               @change="pushQuery({ inStock: inStock ? undefined : '1' })"
             >
             <span>Только в наличии</span>
+          </label>
+          <label class="check-row">
+            <input
+              type="checkbox"
+              :checked="onSale"
+              @change="pushQuery({ onSale: onSale ? undefined : '1' })"
+            >
+            <span>Только со скидкой</span>
           </label>
         </div>
 

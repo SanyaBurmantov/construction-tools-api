@@ -7,6 +7,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Length,
@@ -72,4 +73,22 @@ export class CreateOrderDto {
   @ApiProperty({ enum: PaymentMethod, description: 'Способ оплаты' })
   @IsEnum(PaymentMethod)
   paymentMethod!: PaymentMethod;
+
+  @ApiProperty({ required: false, description: 'Промокод' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  promoCode?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Сумма товаров, которую видел покупатель. Если она разошлась с ' +
+      'актуальной, заказ отклоняется — чтобы цена не менялась молча.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  expectedItemsTotal?: number;
 }

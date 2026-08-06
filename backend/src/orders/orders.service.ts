@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { DeliveryMethod, Prisma } from '@prisma/client';
@@ -10,12 +12,20 @@ import {
   AdminOrderQueryDto,
   AdminUpdateOrderStatusDto,
 } from './dto/admin-order-query.dto';
+import { PromoService } from '../promo/promo.service';
+import { TelegramService } from '../notifications/telegram.service';
 
 const DEFAULT_CURRENCY = 'BYN';
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(OrdersService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private promo: PromoService,
+    private telegram: TelegramService,
+  ) {}
 
   private deliveryCost(method: DeliveryMethod): number {
     switch (method) {
@@ -77,6 +87,11 @@ export class OrdersService {
         productSku: product.sku ?? null,
         productImage: product.images[0]?.url ?? null,
         unitPrice,
+        // Only a genuine markdown counts, not a stale oldPrice below the price.
+        unitOldPrice:
+          product.oldPrice != null && product.oldPrice > unitPrice
+            ? product.oldPrice
+            : null,
         quantity,
         lineTotal,
       });
@@ -92,26 +107,84 @@ export class OrdersService {
     }
 
     itemsTotal = Math.round(itemsTotal * 100) / 100;
-    const deliveryCost = this.deliveryCost(dto.deliveryMethod);
-    const total = Math.round((itemsTotal + deliveryCost) * 100) / 100;
 
-    return this.prisma.order.create({
-      data: {
-        customerName: dto.customerName.trim(),
-        customerPhone: dto.customerPhone.trim(),
-        customerEmail: dto.customerEmail?.trim() || null,
-        comment: dto.comment?.trim() || null,
-        deliveryMethod: dto.deliveryMethod,
-        deliveryAddress: dto.deliveryAddress?.trim() || null,
-        paymentMethod: dto.paymentMethod,
-        currency,
-        itemsTotal,
-        deliveryCost,
-        total,
-        items: { create: orderItems },
-      },
-      include: { items: true },
+    // Prices are re-parsed from suppliers daily, so a cart restored from
+    // localStorage can be stale. When the client tells us what the customer
+    // saw, refuse to quietly charge a different amount — the storefront
+    // re-validates and asks them to confirm the new total.
+    if (
+      dto.expectedItemsTotal !== undefined &&
+      Math.abs(dto.expectedItemsTotal - itemsTotal) > 0.005
+    ) {
+      throw new ConflictException({
+        message:
+          'Цены в корзине изменились. Проверьте заказ и подтвердите ещё раз.',
+        code: 'CART_PRICE_CHANGED',
+        expectedItemsTotal: dto.expectedItemsTotal,
+        actualItemsTotal: itemsTotal,
+      });
+    }
+
+    let deliveryCost = this.deliveryCost(dto.deliveryMethod);
+
+    // Re-evaluate the promo code against server-side totals; the client's
+    // preview is never trusted, same as the line prices above.
+    let discountTotal = 0;
+    let promoCodeId: string | null = null;
+    let promoCodeLabel: string | null = null;
+    if (dto.promoCode?.trim()) {
+      const promo = await this.promo.evaluate(dto.promoCode, itemsTotal);
+      discountTotal = promo.discount;
+      promoCodeId = promo.code.id;
+      promoCodeLabel = promo.code.code;
+      if (promo.freeDelivery) deliveryCost = 0;
+    }
+
+    const total =
+      Math.round((itemsTotal - discountTotal + deliveryCost) * 100) / 100;
+
+    const order = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          customerName: dto.customerName.trim(),
+          customerPhone: dto.customerPhone.trim(),
+          customerEmail: dto.customerEmail?.trim() || null,
+          comment: dto.comment?.trim() || null,
+          deliveryMethod: dto.deliveryMethod,
+          deliveryAddress: dto.deliveryAddress?.trim() || null,
+          paymentMethod: dto.paymentMethod,
+          currency,
+          itemsTotal,
+          deliveryCost,
+          discountTotal,
+          total,
+          promoCodeId,
+          promoCodeLabel,
+          items: { create: orderItems },
+        },
+        include: { items: true },
+      });
+
+      if (promoCodeId) {
+        await tx.promoCode.update({
+          where: { id: promoCodeId },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
+
+      return created;
     });
+
+    // Fire-and-forget: the order is committed, so a failed or slow notification
+    // must not delay the response or fail the request. The catch is load-bearing
+    // — an unhandled rejection here would take the process down.
+    this.telegram.notifyNewOrder(order).catch((error) => {
+      this.logger.error(
+        `Order #${order.number} notification failed: ${String(error)}`,
+      );
+    });
+
+    return order;
   }
 
   /**
@@ -128,6 +201,8 @@ export class OrdersService {
         currency: true,
         itemsTotal: true,
         deliveryCost: true,
+        discountTotal: true,
+        promoCodeLabel: true,
         total: true,
         deliveryMethod: true,
         deliveryAddress: true,
@@ -142,6 +217,7 @@ export class OrdersService {
             productSku: true,
             productImage: true,
             unitPrice: true,
+            unitOldPrice: true,
             quantity: true,
             lineTotal: true,
           },

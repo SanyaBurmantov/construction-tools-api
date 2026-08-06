@@ -1,533 +1,452 @@
 <script setup lang="ts">
-const config = useRuntimeConfig()
-const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
-const { items, totalQuantity, totalAmount, updateQuantity, removeItem, clearCart } = useCart()
+import { useCartStore } from '~/stores/cart'
+import { useWishlistStore } from '~/stores/wishlist'
 
-const checkoutForm = reactive({
-  customerName: '',
-  phone: '',
-  email: '',
-  comment: ''
+const cart = useCartStore()
+const wishlist = useWishlistStore()
+const toast = useToast()
+const { formatPrice } = useFormatPrice()
+const promo = usePromoCode()
+const cartValidation = useCartValidation()
+
+const promoInput = ref('')
+
+onMounted(async () => {
+  cart.load()
+  wishlist.load()
+  // Re-price against the API before the customer looks at the total.
+  await cartValidation.validate()
+  await promo.restore()
+  promoInput.value = promo.code.value
 })
-const checkoutPending = ref(false)
-const checkoutSuccess = ref('')
-const checkoutError = ref('')
 
-function resetCheckoutForm() {
-  checkoutForm.customerName = ''
-  checkoutForm.phone = ''
-  checkoutForm.email = ''
-  checkoutForm.comment = ''
+// A changed subtotal can invalidate a min-order code, so re-check on edits.
+watch(
+  () => cart.totalPrice,
+  async () => {
+    if (promo.preview.value) await promo.validate(promo.code.value)
+  }
+)
+
+async function applyPromo() {
+  const ok = await promo.validate(promoInput.value)
+  if (ok) toast.success(`Промокод ${promo.code.value} применён`)
 }
 
-const currency = computed(() => normalizeCurrencyCode(items.value[0]?.product.priceCurrency))
-const formattedTotal = computed(() => new Intl.NumberFormat('ru-BY', {
-  style: 'currency',
-  currency: currency.value,
-  maximumFractionDigits: 2
-}).format(totalAmount.value))
-
-async function submitOrder() {
-  checkoutError.value = ''
-  checkoutSuccess.value = ''
-
-  if (!checkoutForm.customerName.trim() || !checkoutForm.phone.trim()) {
-    checkoutError.value = 'Заполните имя и телефон.'
-    return
-  }
-
-  if (!items.value.length) {
-    checkoutError.value = 'Корзина пуста.'
-    return
-  }
-
-  checkoutPending.value = true
-
-  const payload = {
-    customerName: checkoutForm.customerName.trim(),
-    phone: checkoutForm.phone.trim(),
-    email: checkoutForm.email.trim() || undefined,
-    comment: checkoutForm.comment.trim() || undefined,
-    totalQuantity: totalQuantity.value,
-    totalAmount: totalAmount.value || undefined,
-    items: items.value.map(item => ({
-      productId: item.product.id,
-      productName: item.product.name,
-      productSlug: item.product.slug,
-      priceValue: item.product.priceValue,
-      priceCurrency: item.product.priceCurrency,
-      quantity: item.quantity,
-    }))
-  }
-
-  try {
-    await $fetch(`${apiBase}/orders`, {
-      method: 'POST',
-      body: payload
-    })
-
-    checkoutSuccess.value = 'Заказ отправлен. Мы свяжемся с вами в ближайшее время.'
-    clearCart()
-    resetCheckoutForm()
-  } catch (error: any) {
-    const isNetworkError = !error?.response
-
-    if (import.meta.client && isNetworkError) {
-      const drafts = JSON.parse(localStorage.getItem('multitool-order-drafts') || '[]')
-      drafts.unshift({ ...payload, createdAt: new Date().toISOString() })
-      localStorage.setItem('multitool-order-drafts', JSON.stringify(drafts))
-
-      checkoutSuccess.value = 'Заявка сохранена локально. Если сервер недоступен, мы отправим ее при восстановлении связи.'
-      clearCart()
-      resetCheckoutForm()
-      return
-    }
-
-    checkoutError.value = error?.data?.message || 'Не удалось оформить заказ. Проверьте данные и попробуйте снова.'
-  } finally {
-    checkoutPending.value = false
-  }
+function removePromo() {
+  promo.clear()
+  promoInput.value = ''
 }
+
+function moveToWishlist(productId: string) {
+  const item = cart.items.find((i) => i.productId === productId)
+  if (!item) return
+  wishlist.add({
+    productId: item.productId,
+    slug: item.slug,
+    name: item.name,
+    image: item.image,
+    price: item.price,
+    oldPrice: null,
+    currency: item.currency,
+  })
+  cart.remove(productId)
+  toast.info('Перенесено в избранное')
+}
+
+const total = computed(() =>
+  Math.max(0, Math.round((cart.totalPrice - promo.discount.value) * 100) / 100)
+)
 
 useHead({
   title: 'Корзина | Мультитул',
-  meta: [
-    {
-      name: 'description',
-      content: 'Корзина интернет-магазина Мультитул с просмотром добавленных товаров.'
-    }
-  ]
+  meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>
 
 <template>
-  <section class="cart-page">
-    <div class="cart-hero">
-      <span class="eyebrow">Корзина</span>
-      <h1>Ваши товары под рукой</h1>
-      <p>
-        Проверяйте выбранные позиции, меняйте количество и возвращайтесь в каталог за новыми товарами.
-      </p>
-    </div>
+  <div class="cart-page">
+    <UiBreadcrumbs :items="[{ label: 'Главная', to: '/' }, { label: 'Корзина' }]" />
 
-    <div class="cart-grid">
-      <article class="cart-card accent">
-        <strong>{{ totalQuantity }} товаров</strong>
-        <span>сейчас в корзине</span>
-      </article>
+    <h1>Корзина</h1>
 
-      <article class="cart-card">
-        <strong>{{ formattedTotal }}</strong>
-        <p>Итоговая стоимость по товарам, у которых уже указана цена.</p>
-      </article>
-    </div>
+    <ClientOnly>
+      <template #fallback>
+        <UiSkeleton height="300px" radius="var(--radius-md)" />
+      </template>
 
-    <div v-if="!items.length" class="cart-empty">
-      Корзина пока пуста. Добавьте товары из каталога или со страницы товара.
-    </div>
+      <UiEmpty
+        v-if="cart.isEmpty"
+        icon="cart"
+        title="Корзина пуста"
+        description="Добавьте товары из каталога — сохранённое здесь не пропадёт при перезагрузке."
+      >
+        <UiButton to="/catalog/">Перейти в каталог</UiButton>
+        <UiButton variant="secondary" to="/favorites">Открыть избранное</UiButton>
+      </UiEmpty>
 
-    <section v-else class="cart-list">
-      <article v-for="item in items" :key="item.product.id" class="cart-item">
-        <NuxtLink :to="`/product/${item.product.slug}`" class="item-image">
-          <img
-            v-if="item.product.images?.[0]?.url"
-            :src="item.product.images[0].url"
-            :alt="item.product.images[0].alt || item.product.name"
-          >
-          <div v-else class="image-placeholder">нет фото</div>
-        </NuxtLink>
+      <div v-else class="layout">
+        <CartIssues class="issues" />
 
-        <div class="item-main">
-          <div class="item-meta">
-            <span>{{ item.product.brand?.name || 'Без бренда' }}</span>
-            <span>{{ item.product.category?.name || 'Каталог' }}</span>
+        <section class="items">
+          <header class="items-head">
+            <span>{{ cart.distinctCount }} позиций · {{ cart.count }} шт.</span>
+            <UiButton variant="ghost" size="sm" @click="cart.clear()">Очистить корзину</UiButton>
+          </header>
+
+          <ul class="item-list">
+            <li v-for="item in cart.items" :key="item.productId" class="item">
+              <NuxtLink :to="`/product/${item.slug}`" class="item-image">
+                <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+                <span v-else class="image-empty" aria-hidden="true" />
+              </NuxtLink>
+
+              <div class="item-body">
+                <NuxtLink :to="`/product/${item.slug}`" class="item-name">{{ item.name }}</NuxtLink>
+                <span v-if="item.sku" class="item-sku">Арт. {{ item.sku }}</span>
+                <span class="item-unit">{{ formatPrice(item.price, item.currency) }} / шт.</span>
+              </div>
+
+              <UiQuantity
+                :model-value="item.quantity"
+                size="sm"
+                @update:model-value="cart.setQuantity(item.productId, $event)"
+              />
+
+              <strong class="item-total">
+                {{ formatPrice(item.price * item.quantity, item.currency) }}
+              </strong>
+
+              <div class="item-actions">
+                <button type="button" @click="moveToWishlist(item.productId)">В избранное</button>
+                <button type="button" class="is-danger" @click="cart.remove(item.productId)">
+                  Удалить
+                </button>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <aside class="summary">
+          <div class="summary-card">
+            <h2>Итого</h2>
+
+            <div class="promo">
+              <UiField label="Промокод" :error="promo.error.value">
+                <div v-if="!promo.preview.value" class="promo-input">
+                  <UiInput
+                    v-model="promoInput"
+                    placeholder="Введите код"
+                    :invalid="Boolean(promo.error.value)"
+                    @keydown.enter.prevent="applyPromo"
+                  />
+                  <UiButton
+                    variant="secondary"
+                    :loading="promo.validating.value"
+                    @click="applyPromo"
+                  >
+                    Применить
+                  </UiButton>
+                </div>
+                <div v-else class="promo-applied">
+                  <div>
+                    <code>{{ promo.preview.value.code }}</code>
+                    <span v-if="promo.preview.value.freeDelivery">+ бесплатная доставка</span>
+                  </div>
+                  <button type="button" aria-label="Убрать промокод" @click="removePromo">✕</button>
+                </div>
+              </UiField>
+            </div>
+
+            <dl class="totals">
+              <div>
+                <dt>Товары ({{ cart.count }})</dt>
+                <dd>{{ formatPrice(cart.totalPrice, cart.currency) }}</dd>
+              </div>
+              <div v-if="promo.discount.value" class="is-discount">
+                <dt>Скидка</dt>
+                <dd>−{{ formatPrice(promo.discount.value, cart.currency) }}</dd>
+              </div>
+              <div class="is-total">
+                <dt>К оплате</dt>
+                <dd>{{ formatPrice(total, cart.currency) }}</dd>
+              </div>
+            </dl>
+
+            <p class="note">Стоимость доставки рассчитывается на следующем шаге.</p>
+
+            <UiButton size="lg" block to="/checkout">Оформить заказ</UiButton>
+            <UiButton variant="ghost" block to="/catalog/">Продолжить покупки</UiButton>
           </div>
-
-          <NuxtLink :to="`/product/${item.product.slug}`" class="item-title">
-            {{ item.product.name }}
-          </NuxtLink>
-
-          <strong class="item-price">
-            {{ item.product.priceValue == null ? 'Цена по запросу' : `${item.product.priceValue} ${item.product.priceCurrency || 'BYN'}` }}
-          </strong>
-        </div>
-
-        <div class="item-controls">
-          <div class="qty-box">
-            <button type="button" @click="updateQuantity(item.product.id, item.quantity - 1)">-</button>
-            <strong>{{ item.quantity }}</strong>
-            <button type="button" @click="updateQuantity(item.product.id, item.quantity + 1)">+</button>
-          </div>
-
-          <button type="button" class="remove-button" @click="removeItem(item.product.id)">
-            Удалить
-          </button>
-        </div>
-      </article>
-
-      <div class="cart-actions">
-        <button type="button" class="checkout-button" @click="submitOrder()">Оформить заказ</button>
-        <button type="button" class="clear-button" @click="clearCart()">Очистить корзину</button>
-        <NuxtLink class="catalog-button" to="/catalog/">Вернуться в каталог</NuxtLink>
+        </aside>
       </div>
-
-      <section class="checkout-card">
-        <div>
-          <span class="eyebrow">Оформление</span>
-          <h2>Оставьте заявку</h2>
-          <p>Укажите контакты, и мы подтвердим заказ, наличие и детали доставки.</p>
-        </div>
-
-        <form class="checkout-form" @submit.prevent="submitOrder()">
-          <label>
-            <span>Имя</span>
-            <input v-model.trim="checkoutForm.customerName" type="text" placeholder="Как к вам обращаться">
-          </label>
-
-          <label>
-            <span>Телефон</span>
-            <input v-model.trim="checkoutForm.phone" type="tel" placeholder="+375 ...">
-          </label>
-
-          <label>
-            <span>Email</span>
-            <input v-model.trim="checkoutForm.email" type="email" placeholder="mail@example.com">
-          </label>
-
-          <label class="full-width">
-            <span>Комментарий</span>
-            <textarea v-model.trim="checkoutForm.comment" rows="4" placeholder="Уточнения по доставке, времени звонка, составу заказа"></textarea>
-          </label>
-
-          <div v-if="checkoutError" class="checkout-state error">{{ checkoutError }}</div>
-          <div v-if="checkoutSuccess" class="checkout-state success">{{ checkoutSuccess }}</div>
-
-          <button type="submit" class="submit-order" :disabled="checkoutPending">
-            {{ checkoutPending ? 'Отправляем...' : 'Подтвердить заказ' }}
-          </button>
-        </form>
-      </section>
-    </section>
-  </section>
+    </ClientOnly>
+  </div>
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .cart-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.layout {
   display: grid;
-  gap: 20px;
+  align-items: start;
+  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr) 360px;
 }
 
-.cart-hero,
-.cart-card,
-.cart-empty,
-.cart-item {
-  border: 2px solid var(--color-ink);
-  border-radius: 26px;
-  background: rgba(255, 250, 240, 0.96);
-  box-shadow: 8px 8px 0 var(--color-ink);
+/* Warnings span both columns, above the items and the summary. */
+.issues {
+  grid-column: 1 / -1;
 }
 
-.cart-hero {
-  padding: clamp(18px, 3vw, 28px);
-
-  h1 {
-    margin: 8px 0 10px;
-    font-size: clamp(28px, 4vw, 44px);
-    line-height: 0.98;
-  }
-
-  p {
-    max-width: 720px;
-    color: var(--color-muted);
-    line-height: 1.6;
-  }
+/* ---- Items ---- */
+.items {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
 }
 
-.eyebrow {
-  color: var(--color-accent-strong);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+.items-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
-.cart-grid {
+.item-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.item {
   display: grid;
-  gap: 16px;
-
-  @include media-breakpoint-up(md) {
-    grid-template-columns: 280px minmax(0, 1fr);
-  }
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--space-4);
+  grid-template-columns: 72px minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'image body qty total'
+    'image actions actions actions';
 }
 
-.cart-card {
-  display: grid;
-  gap: 8px;
-  padding: 18px 20px;
-
-  strong {
-    font-size: 26px;
-    line-height: 1.05;
-  }
-
-  span,
-  p {
-    color: var(--color-muted);
-  }
-
-  span {
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  p {
-    margin: 0;
-    line-height: 1.6;
-  }
-}
-
-.cart-card.accent {
-  background: linear-gradient(135deg, rgba(243, 182, 31, 0.24), rgba(255, 250, 240, 0.96));
-}
-
-.cart-empty {
-  padding: 20px;
-  color: var(--color-muted);
-  font-weight: 800;
-}
-
-.cart-list {
-  display: grid;
-  gap: 16px;
-}
-
-.cart-item {
-  display: grid;
-  gap: 16px;
-  padding: 16px;
-
-  @include media-breakpoint-up(md) {
-    grid-template-columns: 120px minmax(0, 1fr) auto;
-    align-items: center;
-  }
+.item:last-child {
+  border-bottom: 0;
 }
 
 .item-image {
-  display: grid;
-  min-height: 120px;
-  place-items: center;
-  overflow: hidden;
-  border: 2px solid var(--color-ink);
-  border-radius: 18px;
-  background: white;
-
-  img {
-    width: 100%;
-    height: 120px;
-    object-fit: contain;
-    padding: 10px;
-  }
+  display: block;
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  grid-area: image;
 }
 
-.image-placeholder {
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 900;
-  text-transform: uppercase;
+.item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-.item-main {
-  display: grid;
-  gap: 10px;
+.image-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
 }
 
-.item-meta {
+.item-body {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-
-  span {
-    padding: 6px 10px;
-    border: 1px solid var(--color-line);
-    border-radius: 999px;
-    color: var(--color-muted);
-    font-size: 12px;
-    font-weight: 800;
-  }
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  grid-area: body;
 }
 
-.item-title {
-  color: var(--color-ink);
-  font-family: var(--font-heading);
-  font-size: 22px;
-  line-height: 1.1;
-  text-decoration: none;
+.item-name {
+  color: var(--text-strong);
+  font-weight: 600;
 }
 
-.item-price {
-  font-size: 18px;
+.item-name:hover {
+  color: var(--text-link);
 }
 
-.item-controls {
-  display: grid;
-  gap: 10px;
+.item-sku,
+.item-unit {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
 }
 
-.qty-box {
-  display: inline-grid;
-  grid-template-columns: 42px auto 42px;
-  align-items: center;
-  border: 2px solid var(--color-ink);
-  border-radius: 999px;
-  overflow: hidden;
-
-  button {
-    border: 0;
-    background: white;
-    cursor: pointer;
-    font-size: 18px;
-    font-weight: 900;
-    height: 42px;
-  }
-
-  strong {
-    min-width: 44px;
-    text-align: center;
-  }
+.item :deep(.ui-quantity) {
+  grid-area: qty;
 }
 
-.remove-button,
-.checkout-button,
-.clear-button,
-.catalog-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 42px;
-  padding: 0 16px;
-  border: 2px solid var(--color-ink);
-  border-radius: 999px;
-  background: white;
-  color: var(--color-ink);
-  cursor: pointer;
-  font-weight: 900;
-  text-decoration: none;
+.item-total {
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+  grid-area: total;
+  white-space: nowrap;
 }
 
-.checkout-button {
-  background: var(--color-ink);
-  color: white;
-}
-
-.clear-button {
-  background: rgba(222, 77, 47, 0.12);
-}
-
-.catalog-button {
-  background: var(--color-accent);
-}
-
-.cart-actions {
+.item-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-4);
+  grid-area: actions;
 }
 
-.checkout-card {
-  display: grid;
-  gap: 18px;
-  padding: 20px;
-  border: 2px solid var(--color-ink);
-  border-radius: 26px;
-  background: rgba(255, 250, 240, 0.96);
-  box-shadow: 8px 8px 0 var(--color-ink);
-
-  h2 {
-    margin: 8px 0 10px;
-    font-size: clamp(24px, 3vw, 34px);
-  }
-
-  p {
-    color: var(--color-muted);
-    line-height: 1.6;
-  }
+.item-actions button {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
-.checkout-form {
-  display: grid;
-  gap: 14px;
-
-  @include media-breakpoint-up(md) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  label {
-    display: grid;
-    gap: 8px;
-  }
-
-  span {
-    color: var(--color-muted);
-    font-size: 12px;
-    font-weight: 900;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-
-  input,
-  textarea {
-    width: 100%;
-    border: 2px solid var(--color-ink);
-    border-radius: 18px;
-    background: white;
-    font: inherit;
-    padding: 14px 16px;
-  }
+.item-actions button:hover {
+  color: var(--text-link);
 }
 
-.full-width {
-  @include media-breakpoint-up(md) {
-    grid-column: 1 / -1;
-  }
+.item-actions .is-danger:hover {
+  color: var(--danger);
 }
 
-.checkout-state {
-  padding: 14px 16px;
-  border-radius: 18px;
+/* ---- Summary ---- */
+.summary {
+  position: sticky;
+  top: calc(var(--header-height) + var(--space-4));
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+  gap: var(--space-4);
+}
+
+.summary-card h2 {
+  font-size: var(--text-lg);
+}
+
+.promo-input {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.promo-applied {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--success-soft);
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  gap: var(--space-2);
+}
+
+.promo-applied > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.promo-applied code {
+  color: var(--success-soft-text);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.promo-applied span {
+  color: var(--success-soft-text);
+  font-size: var(--text-xs);
+}
+
+.promo-applied button {
+  color: var(--success-soft-text);
+}
+
+.totals {
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--space-4);
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-2);
+}
+
+.totals > div {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.totals dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.totals .is-discount,
+.totals .is-discount dd {
+  color: var(--sale);
+  font-weight: 600;
+}
+
+.totals .is-total {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-strong);
+  font-size: var(--text-lg);
   font-weight: 800;
+}
 
-  @include media-breakpoint-up(md) {
-    grid-column: 1 / -1;
+.note {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .summary {
+    position: static;
   }
 }
 
-.checkout-state.error {
-  background: rgba(222, 77, 47, 0.12);
-  color: var(--color-accent-strong);
-}
+@media (max-width: 640px) {
+  .item {
+    grid-template-columns: 60px minmax(0, 1fr);
+    grid-template-areas:
+      'image body'
+      'image qty'
+      'total total'
+      'actions actions';
+  }
 
-.checkout-state.success {
-  background: rgba(56, 161, 105, 0.14);
-  color: #226b47;
-}
+  .item-image {
+    width: 60px;
+    height: 60px;
+  }
 
-.submit-order {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 48px;
-  border: 2px solid var(--color-ink);
-  border-radius: 999px;
-  background: var(--color-ink);
-  color: white;
-  cursor: pointer;
-  font-weight: 900;
-  padding: 0 20px;
-
-  @include media-breakpoint-up(md) {
-    width: max-content;
+  .item-total {
+    text-align: right;
   }
 }
 </style>

@@ -68,6 +68,26 @@ export const useCartStore = defineStore('cart', {
       this.items = this.items.filter((i) => i.productId !== productId)
       this.persist()
     },
+    /**
+     * Overwrites stored prices with the ones the server just confirmed.
+     * Cart lines are snapshots taken when the item was added, and supplier
+     * prices are re-parsed daily, so they drift.
+     */
+    applyPrices(prices: Array<{ productId: string, price: number, currency?: string }>) {
+      const byId = new Map(prices.map((p) => [p.productId, p]))
+      for (const item of this.items) {
+        const update = byId.get(item.productId)
+        if (!update) continue
+        item.price = update.price
+        if (update.currency) item.currency = update.currency
+      }
+      this.persist()
+    },
+    removeMany(productIds: string[]) {
+      const drop = new Set(productIds)
+      this.items = this.items.filter((i) => !drop.has(i.productId))
+      this.persist()
+    },
     clear() {
       this.items = []
       this.persist()

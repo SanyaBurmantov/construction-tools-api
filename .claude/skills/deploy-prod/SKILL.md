@@ -17,6 +17,9 @@ sh deploy-prod.sh                   # docker compose --env-file .env.prod -f doc
 ```
 Required secrets (compose fails fast without them): `DB_PASSWORD`, `ADMIN_TOKEN`.
 For real HTTPS set `DOMAIN` (DNS must point at the server) and `PUBLIC_ORIGIN=https://<DOMAIN>`.
+Optional: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` turn on new-order
+notifications (both required; unset = silently disabled). Confirm with
+`docker compose logs backend | grep Telegram` — it logs enabled/disabled on boot.
 Keep `*_CRON_ENABLED=false` on the first deploy; enable parsers after a preview dry-run.
 
 ## What happens on start

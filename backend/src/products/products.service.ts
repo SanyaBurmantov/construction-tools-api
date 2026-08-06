@@ -127,6 +127,11 @@ export class ProductService {
         where.id = { in: searchIds };
       }
       if (filter.inStock) where.stockStatus = 'in_stock';
+      // A product counts as discounted only when oldPrice really exceeds the
+      // current price — parsers sometimes leave a stale oldPrice behind.
+      if (filter.onSale) {
+        where.oldPrice = { gt: this.prisma.product.fields.priceValue };
+      }
       if (omit !== 'category' && categoryIds) {
         where.categoryId = { in: categoryIds };
       }
@@ -152,13 +157,31 @@ export class ProductService {
     };
     const where = buildWhere();
 
-    const orderBy: Prisma.ProductOrderByWithRelationInput = {};
-    if (filter.sortBy) {
-      const field = filter.sortBy === 'price' ? 'priceValue' : filter.sortBy;
-      orderBy[field] = filter.sortOrder ?? 'asc';
-    } else {
-      orderBy.name = 'asc';
-    }
+    const SORT_FIELDS = {
+      price: 'priceValue',
+      rating: 'ratingAvg',
+      name: 'name',
+      createdAt: 'createdAt',
+      updatedAt: 'updatedAt',
+    } as const;
+
+    // `nulls` is only accepted on nullable columns, so it's opt-in per field.
+    // For those, unpriced / unrated products sort last in either direction
+    // instead of leading the list as NULLs.
+    const NULLABLE_SORT_FIELDS = new Set<string>(['priceValue', 'ratingAvg']);
+
+    const orderBy: Prisma.ProductOrderByWithRelationInput = (() => {
+      if (!filter.sortBy) return { name: 'asc' };
+
+      const field = SORT_FIELDS[filter.sortBy];
+      const direction = filter.sortOrder ?? 'asc';
+
+      return {
+        [field]: NULLABLE_SORT_FIELDS.has(field)
+          ? { sort: direction, nulls: 'last' }
+          : direction,
+      } as Prisma.ProductOrderByWithRelationInput;
+    })();
     // no explicit sort + active search → keep the relevance ranking
     const useRelevance = !filter.sortBy && searchIds !== undefined;
 

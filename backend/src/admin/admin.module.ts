@@ -10,11 +10,13 @@ import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
 import { ParserLogService } from '../parser/parser-log.service';
 import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
 import { OrdersModule } from '../orders/orders.module';
+import { ReviewsModule } from '../reviews/reviews.module';
+import { PromoModule } from '../promo/promo.module';
 import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
 
 @Module({
-  imports: [OrdersModule],
+  imports: [OrdersModule, ReviewsModule, PromoModule],
   controllers: [AdminController],
   providers: [
     AdminGuard,

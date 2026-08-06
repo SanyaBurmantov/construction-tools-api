@@ -1,5 +1,7 @@
 <script setup lang="ts">
-type QueueStats = { queued: number, visited: number, failed?: number, skipped?: number, total: number }
+definePageMeta({ layout: 'admin' })
+
+type QueueStats ={ queued: number, visited: number, failed?: number, skipped?: number, total: number }
 type SitemapEntry = { id: string, url: string, isVisited: boolean }
 type DukonSitemapEntry = { id: string, url: string, status: 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED', attempts: number, lastError?: string | null, lastTriedAt?: string | null }
 type Supplier7745SitemapEntry = DukonSitemapEntry

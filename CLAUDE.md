@@ -51,18 +51,66 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (aggregated counts, empty branches pruned), `GET /categories/:slug`
   (ancestors + children for a category page), `GET /brands/:slug/categories`.
   `GET /products` filters by `categorySlug`/`categoryId` **including the whole
-  subtree**, supports comma-separated `brandId`, `inStock`, and returns
+  subtree**, supports comma-separated `brandId`, `inStock`, `onSale`, and returns
   filter-aware facets (each dimension excluded from its own counts) plus
-  `facets.priceRange`. Frontend: `/catalog` + `/catalog/<category-slug>` pages
-  share `components/catalog/CatalogView.vue`; filters live in query params
-  (`brands`, `source`, `priceMin/Max`, `inStock`, `sort`, `page`).
+  `facets.priceRange`. `sortBy` accepts `name|price|rating|createdAt|updatedAt`
+  — note that Prisma only allows the `nulls: 'last'` option on **nullable**
+  columns, so it is applied to `priceValue`/`ratingAvg` only. Frontend:
+  `/catalog` + `/catalog/<category-slug>` pages share
+  `components/catalog/CatalogView.vue`; filters live in query params
+  (`brands`, `source`, `priceMin/Max`, `inStock`, `onSale`, `sort`, `page`).
 - **Storefront orders**: guest checkout (no accounts). The cart lives client-side
   (Pinia `stores/cart.ts`, persisted to `localStorage`); `POST /orders`
   (`orders/` module) re-prices every line from the DB (never trusts the client),
-  validates published/priced products, computes delivery cost, and snapshots
-  product name/slug/image/price into `OrderItem`. Admin manages orders via
-  `GET /admin/orders`, `GET /admin/orders/:id`, `PATCH /admin/orders/:id/status`.
+  validates published/priced products, computes delivery cost, applies any promo
+  code **server-side**, and snapshots product name/slug/image/price into
+  `OrderItem`. Admin manages orders via `GET /admin/orders`,
+  `GET /admin/orders/:id`, `PATCH /admin/orders/:id/status`.
   Delivery costs are env-tunable (`DELIVERY_COST_COURIER`, `DELIVERY_COST_POST`).
+- **Cart is client-side, prices are not.** The cart lives in `localStorage` and
+  stores the price captured when an item was added, but supplier prices are
+  re-parsed daily — so a restored cart drifts. `POST /cart/validate` (`cart/`
+  module) re-prices a cart against the DB and flags each line
+  (`price_changed` / `unavailable` / `price_missing` / `out_of_stock`); the cart
+  and checkout screens call it on mount and render `components/cart/cartIssues.vue`.
+  As a backstop, `POST /orders` accepts `expectedItemsTotal` and answers **409**
+  when it no longer matches, so an order can never quietly cost more than the
+  cart the customer saw. The frontend keys off the 409 status — the shared
+  exception filter strips extra fields from the error body.
+  Note: a server-side cart was considered and rejected — without accounts it
+  buys no cross-device continuity, only a cookie, extra tables and a TTL cron.
+  Revisit it if/when accounts land.
+- **Order notifications**: `POST /orders` posts a summary to Telegram
+  (`notifications/telegram.service.ts`). Enabled only when **both**
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set; otherwise it logs a
+  warning at startup and no-ops. The send is fire-and-forget **with an explicit
+  `.catch()`** — the order is already committed at that point, so a Telegram
+  outage must never fail the request or crash the process on an unhandled
+  rejection. Customer-supplied text is HTML-escaped (the message uses
+  `parse_mode: HTML`). `PUBLIC_ORIGIN` adds a deep link to the order in admin.
+- **Discounts**: `Product.oldPrice` above `priceValue` marks a product as
+  discounted — that's what `onSale` and the `/sales` page filter on.
+  `PromoCode` (`promo/` module) is validated at `POST /promo-codes/validate` for
+  the checkout preview and **re-evaluated** inside `POST /orders`, so an
+  exhausted or expired code is still rejected at order time. Admin CRUD lives
+  under `/admin/promo-codes`.
+- **Reviews**: guest reviews (`reviews/` module) via
+  `POST /products/:slug/reviews` always land in `PENDING`; only approved ones are
+  returned by `GET /products/:slug/reviews` and counted into the denormalized
+  `Product.ratingAvg` / `ratingCount`, which is recomputed on every moderation
+  action. Moderation: `/admin/reviews`.
+- **Frontend design system**: tokens in `app/assets/scss/tokens.scss` (semantic
+  layer + dark mode); primitives in `app/components/ui/*` (`UiButton`, `UiInput`,
+  `UiModal`, `UiTable`, `UiPrice`, `UiRating`, …). Components read tokens, never
+  raw hex. `app/assets/scss/main.scss` keeps aliases for the pre-token variable
+  names. Toasts: `useToast()` + the single `<UiToaster>` in the layout.
+- **Guest lists**: cart, wishlist (`stores/wishlist.ts`) and comparison
+  (`stores/compare.ts`, max 4 items) are all localStorage-backed and rehydrated
+  by `plugins/cart.client.ts`. Pages `/favorites` and `/compare` are `ssr: false`.
+- **Admin UI**: one shell in `app/layouts/admin.vue` — a single auth gate
+  (validates `ADMIN_TOKEN` against `GET /admin/stats`) plus the sidebar. Admin
+  pages just set `definePageMeta({ layout: 'admin' })` and can assume the token
+  is valid; do **not** re-add per-page token forms.
 
 ## Database / migrations
 

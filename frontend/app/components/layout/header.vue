@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
+import { useWishlistStore } from '~/stores/wishlist'
+import { useCompareStore } from '~/stores/compare'
+import { company } from '~/data/company'
 
 type CategoryTreeNode = {
   id: string
@@ -9,13 +12,32 @@ type CategoryTreeNode = {
   children: CategoryTreeNode[]
 }
 
-const NAV_CATEGORY_LIMIT = 8
+type SuggestProduct = {
+  id: string
+  name: string
+  slug: string
+  sku?: string | null
+  priceValue?: number | null
+  priceCurrency?: string | null
+  image?: string | null
+}
+type SuggestLink = { id: string, name: string, slug: string }
+type SuggestResponse = {
+  products: SuggestProduct[]
+  categories: SuggestLink[]
+  brands: SuggestLink[]
+}
+
+const NAV_CATEGORY_LIMIT = 7
 
 const route = useRoute()
-const search = ref('')
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+
 const cart = useCartStore()
+const wishlist = useWishlistStore()
+const compare = useCompareStore()
+const { formatPrice } = useFormatPrice()
 
 const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
   'catalog-tree',
@@ -23,19 +45,35 @@ const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
   { default: () => [] }
 )
 
-const links = computed(() => [
-  {
-    label: 'Каталог',
-    to: '/catalog/',
-    active: route.path === '/catalog' || route.path === '/catalog/'
-  },
-  ...(tree.value || []).slice(0, NAV_CATEGORY_LIMIT).map(category => ({
-    label: category.name,
-    to: `/catalog/${category.slug}`,
-    active: route.path.startsWith(`/catalog/${category.slug}`)
-  })),
-  { label: 'Бренды', to: '/brand/', active: route.path.startsWith('/brand') }
+const topCategories = computed(() => (tree.value || []).slice(0, NAV_CATEGORY_LIMIT))
+
+const navLinks = computed(() => [
+  { label: 'Каталог', to: '/catalog/' },
+  { label: 'Акции', to: '/sales' },
+  { label: 'Бренды', to: '/brand/' },
+  { label: 'Доставка', to: '/delivery' },
+  { label: 'Контакты', to: '/contacts' },
 ])
+
+/* ---- Search + live suggestions ---------------------------------------- */
+const search = ref('')
+const suggest = ref<SuggestResponse | null>(null)
+const suggestOpen = ref(false)
+const searchForm = ref<HTMLElement | null>(null)
+let suggestTimer: ReturnType<typeof setTimeout> | undefined
+
+const hasSuggestions = computed(() =>
+  Boolean(
+    suggest.value
+    && (suggest.value.products.length
+      || suggest.value.categories.length
+      || suggest.value.brands.length)
+  )
+)
+
+function closeSuggest() {
+  suggestOpen.value = false
+}
 
 function submitSearch() {
   const query = search.value.trim()
@@ -43,26 +81,7 @@ function submitSearch() {
   navigateTo({ path: '/catalog/', query: query ? { search: query } : undefined })
 }
 
-// --- живые подсказки ---
-type SuggestProduct = { id: string, name: string, slug: string, sku?: string | null, priceValue?: number | null, priceCurrency?: string | null, image?: string | null }
-type SuggestLink = { id: string, name: string, slug: string }
-type SuggestResponse = { products: SuggestProduct[], categories: SuggestLink[], brands: SuggestLink[] }
-
-const { formatPrice } = useFormatPrice()
-const suggest = ref<SuggestResponse | null>(null)
-const suggestOpen = ref(false)
-const searchForm = ref<HTMLElement | null>(null)
-let suggestTimer: ReturnType<typeof setTimeout> | undefined
-
-const hasSuggestions = computed(() =>
-  Boolean(suggest.value && (suggest.value.products.length || suggest.value.categories.length || suggest.value.brands.length))
-)
-
-function closeSuggest() {
-  suggestOpen.value = false
-}
-
-watch(search, value => {
+watch(search, (value) => {
   if (suggestTimer) clearTimeout(suggestTimer)
   const query = value.trim()
   if (query.length < 2) {
@@ -72,8 +91,11 @@ watch(search, value => {
   }
   suggestTimer = setTimeout(async () => {
     try {
-      const result = await $fetch<SuggestResponse>(`${config.public.apiBase}/products/suggest`, { params: { q: query } })
-      // ответ мог устареть, пока пользователь печатал дальше
+      const result = await $fetch<SuggestResponse>(
+        `${config.public.apiBase}/products/suggest`,
+        { params: { q: query } }
+      )
+      // The response may be stale if the user kept typing.
       if (search.value.trim() === query) {
         suggest.value = result
         suggestOpen.value = true
@@ -85,392 +107,725 @@ watch(search, value => {
 })
 
 function onDocumentClick(event: MouseEvent) {
-  if (searchForm.value && !searchForm.value.contains(event.target as Node)) closeSuggest()
+  if (searchForm.value && !searchForm.value.contains(event.target as Node)) {
+    closeSuggest()
+  }
 }
 
 onMounted(() => document.addEventListener('click', onDocumentClick))
-onUnmounted(() => {
+onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   if (suggestTimer) clearTimeout(suggestTimer)
+})
+
+/* ---- Menus ------------------------------------------------------------- */
+const mobileNavOpen = ref(false)
+const catalogOpen = ref(false)
+
+// Any navigation closes whatever is open.
+watch(() => route.fullPath, () => {
+  mobileNavOpen.value = false
+  catalogOpen.value = false
+  closeSuggest()
 })
 </script>
 
 <template>
   <header class="site-header">
     <div class="topbar">
-      <span>Витебск</span>
-      <a href="tel:+375298135797">+375 29 813-57-97</a>
-      <a href="mailto:dm.krep@mail.ru">dm.krep@mail.ru</a>
-    </div>
-
-    <div class="header-shell">
-      <NuxtLink to="/" class="brand" aria-label="Мультитул">
-        <span class="brand-mark">М</span>
-        <span>
-          <strong>Мультитул</strong>
-          <small>инструменты и крепеж</small>
-        </span>
-      </NuxtLink>
-
-      <form
-        ref="searchForm"
-        class="header-search"
-        role="search"
-        @submit.prevent="submitSearch"
-        @keydown.esc="closeSuggest"
-      >
-        <input
-          v-model="search"
-          type="search"
-          placeholder="Искать инструмент, артикул, бренд"
-          aria-label="Поиск по каталогу"
-          @focus="hasSuggestions && (suggestOpen = true)"
-        >
-        <button type="submit">Найти</button>
-
-        <div v-if="suggestOpen && hasSuggestions" class="suggest-panel">
-          <div v-if="suggest?.products.length" class="suggest-group">
-            <span class="suggest-title">Товары</span>
-            <NuxtLink
-              v-for="item in suggest.products"
-              :key="item.id"
-              :to="`/product/${item.slug}`"
-              class="suggest-product"
-              @click="closeSuggest"
-            >
-              <img v-if="item.image" :src="item.image" alt="" loading="lazy">
-              <span v-else class="no-image" aria-hidden="true" />
-              <span class="suggest-name">{{ item.name }}</span>
-              <strong v-if="item.priceValue">{{ formatPrice(item.priceValue, item.priceCurrency) }}</strong>
-            </NuxtLink>
-          </div>
-
-          <div v-if="suggest?.categories.length" class="suggest-group">
-            <span class="suggest-title">Категории</span>
-            <NuxtLink
-              v-for="item in suggest.categories"
-              :key="item.id"
-              :to="`/catalog/${item.slug}`"
-              class="suggest-link"
-              @click="closeSuggest"
-            >
-              {{ item.name }}
-            </NuxtLink>
-          </div>
-
-          <div v-if="suggest?.brands.length" class="suggest-group">
-            <span class="suggest-title">Бренды</span>
-            <NuxtLink
-              v-for="item in suggest.brands"
-              :key="item.id"
-              :to="`/brand/${item.slug}/`"
-              class="suggest-link"
-              @click="closeSuggest"
-            >
-              {{ item.name }}
-            </NuxtLink>
-          </div>
-
-          <button type="submit" class="suggest-all">Показать все результаты</button>
+      <div class="container topbar-inner">
+        <span class="topbar-note">Каталог инструмента от поставщиков — обновляется ежедневно</span>
+        <div class="topbar-links">
+          <a :href="company.phoneHref" class="phone">{{ company.phone }}</a>
+          <NuxtLink to="/delivery">Доставка и оплата</NuxtLink>
+          <NuxtLink to="/contacts">Контакты</NuxtLink>
         </div>
-      </form>
-
-      <NuxtLink class="cart-button" to="/cart/" aria-label="Корзина">
-        <span class="cart-icon" aria-hidden="true">🛒</span>
-        <span class="cart-label">Корзина</span>
-        <ClientOnly>
-          <span v-if="cart.count" class="cart-badge">{{ cart.count }}</span>
-        </ClientOnly>
-      </NuxtLink>
+      </div>
     </div>
 
-    <nav class="nav-row" aria-label="Основная навигация">
-      <NuxtLink
-        v-for="link in links"
-        :key="link.to"
-        :to="link.to"
-        class="nav-link"
-        :class="{ active: link.active }"
-      >
-        {{ link.label }}
-      </NuxtLink>
+    <div class="mainbar">
+      <div class="container mainbar-inner">
+        <button
+          type="button"
+          class="burger"
+          aria-label="Меню"
+          :aria-expanded="mobileNavOpen"
+          @click="mobileNavOpen = true"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <NuxtLink to="/" class="logo" aria-label="Мультитул — на главную">
+          <span class="logo-mark" aria-hidden="true">М</span>
+          <span class="logo-text">Мультитул</span>
+        </NuxtLink>
+
+        <UiButton
+          class="catalog-trigger"
+          variant="primary"
+          :aria-expanded="catalogOpen"
+          @click="catalogOpen = !catalogOpen"
+        >
+          <template #leading>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </template>
+          Каталог
+        </UiButton>
+
+        <div ref="searchForm" class="search">
+          <form role="search" @submit.prevent="submitSearch">
+            <UiInput
+              v-model="search"
+              type="search"
+              placeholder="Поиск по названию, бренду или артикулу"
+              size="lg"
+              aria-label="Поиск по каталогу"
+              @focus="suggestOpen = hasSuggestions"
+            >
+              <template #leading>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm7.5 14.5L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </template>
+              <template #trailing>
+                <button type="submit" class="search-submit">Найти</button>
+              </template>
+            </UiInput>
+          </form>
+
+          <Transition name="fade">
+            <div v-if="suggestOpen && hasSuggestions" class="suggest">
+              <div v-if="suggest?.products.length" class="suggest-group">
+                <p class="suggest-title">Товары</p>
+                <NuxtLink
+                  v-for="item in suggest.products"
+                  :key="item.id"
+                  :to="`/product/${item.slug}`"
+                  class="suggest-product"
+                  @click="closeSuggest"
+                >
+                  <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+                  <span v-else class="suggest-thumb" aria-hidden="true" />
+                  <span class="suggest-body">
+                    <span class="suggest-name">{{ item.name }}</span>
+                    <span v-if="item.sku" class="suggest-sku">Арт. {{ item.sku }}</span>
+                  </span>
+                  <span class="suggest-price">
+                    {{ formatPrice(item.priceValue, item.priceCurrency) }}
+                  </span>
+                </NuxtLink>
+              </div>
+
+              <div v-if="suggest?.categories.length" class="suggest-group">
+                <p class="suggest-title">Категории</p>
+                <div class="suggest-chips">
+                  <NuxtLink
+                    v-for="item in suggest.categories"
+                    :key="item.id"
+                    :to="`/catalog/${item.slug}`"
+                    @click="closeSuggest"
+                  >
+                    {{ item.name }}
+                  </NuxtLink>
+                </div>
+              </div>
+
+              <div v-if="suggest?.brands.length" class="suggest-group">
+                <p class="suggest-title">Бренды</p>
+                <div class="suggest-chips">
+                  <NuxtLink
+                    v-for="item in suggest.brands"
+                    :key="item.id"
+                    :to="`/brand/${item.slug}`"
+                    @click="closeSuggest"
+                  >
+                    {{ item.name }}
+                  </NuxtLink>
+                </div>
+              </div>
+
+              <button type="button" class="suggest-all" @click="submitSearch">
+                Показать все результаты
+              </button>
+            </div>
+          </Transition>
+        </div>
+
+        <nav class="actions" aria-label="Избранное, сравнение и корзина">
+          <NuxtLink to="/compare" class="action" :class="{ 'is-active': compare.count }">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 20V9m6 11V4m6 16v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            <span class="action-label">Сравнение</span>
+            <ClientOnly>
+              <span v-if="compare.count" class="counter">{{ compare.count }}</span>
+            </ClientOnly>
+          </NuxtLink>
+
+          <NuxtLink to="/favorites" class="action" :class="{ 'is-active': wishlist.count }">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            </svg>
+            <span class="action-label">Избранное</span>
+            <ClientOnly>
+              <span v-if="wishlist.count" class="counter">{{ wishlist.count }}</span>
+            </ClientOnly>
+          </NuxtLink>
+
+          <NuxtLink to="/cart" class="action" :class="{ 'is-active': cart.count }">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.35 16H17a2 2 0 0 0 1.95-1.55L20.5 8H6M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm8 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="action-label">Корзина</span>
+            <ClientOnly>
+              <span v-if="cart.count" class="counter">{{ cart.count }}</span>
+            </ClientOnly>
+          </NuxtLink>
+        </nav>
+      </div>
+    </div>
+
+    <nav class="navbar" aria-label="Основная навигация">
+      <div class="container navbar-inner scroll-x">
+        <NuxtLink
+          v-for="category in topCategories"
+          :key="category.id"
+          :to="`/catalog/${category.slug}`"
+          class="nav-link"
+        >
+          {{ category.name }}
+        </NuxtLink>
+        <NuxtLink to="/sales" class="nav-link is-sale">Акции</NuxtLink>
+      </div>
     </nav>
+
+    <!-- Catalog mega menu -->
+    <Transition name="fade">
+      <div v-if="catalogOpen" class="mega" @click.self="catalogOpen = false">
+        <div class="container mega-inner">
+          <div v-if="!topCategories.length" class="mega-empty">
+            Каталог пока пуст.
+          </div>
+          <div v-else class="mega-grid">
+            <div v-for="category in tree" :key="category.id" class="mega-column">
+              <NuxtLink :to="`/catalog/${category.slug}`" class="mega-title">
+                {{ category.name }}
+                <span>{{ category.productCount }}</span>
+              </NuxtLink>
+              <NuxtLink
+                v-for="child in category.children.slice(0, 6)"
+                :key="child.id"
+                :to="`/catalog/${child.slug}`"
+                class="mega-link"
+              >
+                {{ child.name }}
+              </NuxtLink>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Mobile navigation -->
+    <UiDrawer v-model:open="mobileNavOpen" title="Меню">
+      <div class="mobile-nav">
+        <NuxtLink v-for="link in navLinks" :key="link.to" :to="link.to" class="mobile-link">
+          {{ link.label }}
+        </NuxtLink>
+
+        <p class="mobile-heading">Категории</p>
+        <NuxtLink
+          v-for="category in tree"
+          :key="category.id"
+          :to="`/catalog/${category.slug}`"
+          class="mobile-link is-sub"
+        >
+          {{ category.name }}
+          <span>{{ category.productCount }}</span>
+        </NuxtLink>
+
+        <a :href="company.phoneHref" class="mobile-phone">{{ company.phone }}</a>
+      </div>
+    </UiDrawer>
   </header>
 </template>
 
-<style scoped lang="scss">
+<style scoped>
 .site-header {
   position: sticky;
+  z-index: var(--z-header);
   top: 0;
-  z-index: 30;
-  border-bottom: 1px solid var(--color-line);
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(16px);
+  background: var(--surface-card);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
+.icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* ---- Top bar ---- */
 .topbar {
-  display: none;
-  width: min(1280px, calc(100% - 32px));
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  font-size: var(--text-xs);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   min-height: 34px;
+  gap: var(--space-4);
+}
+
+.topbar-note {
+  color: var(--text-muted);
+}
+
+.topbar-links {
+  display: flex;
   align-items: center;
-  gap: 18px;
-  margin: 0 auto;
-  color: var(--color-muted);
-  font-size: 13px;
-
-  a {
-    text-decoration: none;
-  }
-
-  @include media-breakpoint-up(md) {
-    display: flex;
-  }
+  gap: var(--space-4);
+  color: var(--text-muted);
 }
 
-.header-shell {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  width: min(1280px, calc(100% - 32px));
-  min-height: 68px;
+.topbar-links a:hover {
+  color: var(--text-link);
+}
+
+.phone {
+  color: var(--text-strong);
+  font-weight: 700;
+}
+
+/* ---- Main bar ---- */
+.mainbar-inner {
+  display: flex;
   align-items: center;
-  margin: 0 auto;
-
-  @include media-breakpoint-up(md) {
-    grid-template-columns: 260px minmax(0, 1fr) auto;
-  }
+  min-height: var(--header-height);
+  gap: var(--space-4);
 }
 
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-
-  strong,
-  small {
-    display: block;
-  }
-
-  strong {
-    color: #101828;
-    font-size: 20px;
-    font-weight: 900;
-    letter-spacing: -0.04em;
-  }
-
-  small {
-    color: var(--color-muted);
-    font-size: 12px;
-  }
-}
-
-.brand-mark {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--color-primary);
-  color: white;
-  font-weight: 900;
-}
-
-.header-search {
-  position: relative;
+.burger {
   display: none;
-  height: 44px;
-  border: 2px solid var(--color-primary);
-  border-radius: 12px;
-  background: white;
-
-  @include media-breakpoint-up(md) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 96px;
-  }
-
-  input {
-    min-width: 0;
-    border: 0;
-    border-radius: 9px 0 0 9px;
-    outline: 0;
-    padding: 0 14px;
-  }
-
-  > button {
-    border: 0;
-    border-radius: 0 9px 9px 0;
-    background: var(--color-primary);
-    color: white;
-    cursor: pointer;
-    font-weight: 800;
-  }
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  color: var(--text-strong);
+  place-items: center;
 }
 
-.suggest-panel {
+.burger svg {
+  width: 22px;
+  height: 22px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+.logo-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--brand);
+  color: #fff;
+  font-weight: 800;
+  place-items: center;
+}
+
+.logo-text {
+  color: var(--text-strong);
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  font-weight: 800;
+  letter-spacing: var(--tracking-tight);
+}
+
+.catalog-trigger {
+  flex-shrink: 0;
+}
+
+/* ---- Search ---- */
+.search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-submit {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.search-submit:hover {
+  background: var(--brand-soft);
+  color: var(--brand-soft-text);
+}
+
+.suggest {
   position: absolute;
-  z-index: 40;
-  top: calc(100% + 8px);
+  z-index: var(--z-dropdown);
+  top: calc(100% + var(--space-2));
   right: 0;
   left: 0;
-  display: grid;
-  gap: 12px;
-  border: 1px solid var(--color-line);
-  border-radius: 14px;
-  background: white;
-  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.16);
-  max-height: 70vh;
+  max-height: min(70vh, 560px);
   overflow-y: auto;
-  padding: 12px;
-  text-align: left;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
 }
 
-.suggest-group {
-  display: grid;
-  gap: 2px;
+.suggest-group + .suggest-group {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .suggest-title {
-  color: var(--color-muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  padding: 0 8px 4px;
+  margin-bottom: var(--space-2);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .suggest-product {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  gap: 10px;
+  display: flex;
   align-items: center;
-  border-radius: 10px;
-  color: #101828;
-  padding: 6px 8px;
-  text-decoration: none;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  gap: var(--space-3);
+}
 
-  img,
-  .no-image {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    background: #f2f4f7;
-    object-fit: contain;
-  }
+.suggest-product:hover {
+  background: var(--surface-hover);
+}
 
-  strong {
-    font-size: 13px;
-    white-space: nowrap;
-  }
+.suggest-product img,
+.suggest-thumb {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  object-fit: contain;
+}
 
-  &:hover {
-    background: #f8fafc;
-  }
+.suggest-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
 }
 
 .suggest-name {
   overflow: hidden;
-  font-size: 14px;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.suggest-link {
-  border-radius: 10px;
-  color: #344054;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 7px 8px;
-  text-decoration: none;
+.suggest-sku {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
 
-  &:hover {
-    background: #f8fafc;
-    color: var(--color-primary);
-  }
+.suggest-price {
+  flex-shrink: 0;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.suggest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.suggest-chips a {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-default);
+  font-size: var(--text-sm);
+}
+
+.suggest-chips a:hover {
+  background: var(--brand-soft);
+  color: var(--brand-soft-text);
 }
 
 .suggest-all {
-  border: 0;
-  border-radius: 10px;
-  background: #eef4ff;
-  color: var(--color-primary);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 800;
-  padding: 9px;
-  text-align: center;
+  width: 100%;
+  padding: var(--space-3);
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-link);
+  font-size: var(--text-sm);
+  font-weight: 700;
 }
 
-.cart-button {
-  position: relative;
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
-  gap: 8px;
-  border-radius: 12px;
-  background: #ffcf26;
-  color: #101828;
-  font-weight: 900;
-  padding: 0 16px;
-  text-decoration: none;
-}
-
-.cart-icon {
-  font-size: 18px;
-}
-
-.cart-label {
-  display: none;
-
-  @include media-breakpoint-up(md) {
-    display: inline;
-  }
-}
-
-.cart-badge {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  display: inline-flex;
-  min-width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: white;
-  font-size: 12px;
-  font-weight: 900;
-  padding: 0 6px;
-}
-
-.nav-row {
+/* ---- Actions ---- */
+.actions {
   display: flex;
-  gap: 4px;
-  width: min(1280px, calc(100% - 32px));
-  margin: 0 auto;
-  overflow-x: auto;
-  padding: 0 0 10px;
+  flex-shrink: 0;
+  gap: var(--space-1);
+}
+
+.action {
+  position: relative;
+  display: flex;
+  min-width: 62px;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  gap: 2px;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.action:hover,
+.action.is-active {
+  color: var(--brand);
+}
+
+.action svg {
+  width: 22px;
+  height: 22px;
+}
+
+.action-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.counter {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--sale);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  place-items: center;
+}
+
+/* ---- Nav bar ---- */
+.navbar {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.navbar-inner {
+  display: flex;
+  gap: var(--space-1);
 }
 
 .nav-link {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  color: var(--color-muted);
-  font-weight: 700;
-  padding: 8px 12px;
-  text-decoration: none;
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out);
+}
 
-  &.active,
-  &:hover {
-    background: #eef4ff;
-    color: var(--color-primary);
+.nav-link:hover,
+.nav-link.router-link-active {
+  border-bottom-color: var(--brand);
+  color: var(--text-strong);
+}
+
+.nav-link.is-sale {
+  color: var(--sale);
+  font-weight: 700;
+}
+
+/* ---- Mega menu ---- */
+.mega {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: 100%;
+  right: 0;
+  left: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.mega-inner {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--space-6) 0;
+}
+
+.mega-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-6);
+}
+
+.mega-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+  color: var(--text-strong);
+  font-weight: 700;
+  gap: var(--space-2);
+}
+
+.mega-title span {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.mega-title:hover {
+  color: var(--text-link);
+}
+
+.mega-link {
+  display: block;
+  padding: 3px 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.mega-link:hover {
+  color: var(--text-link);
+}
+
+.mega-empty {
+  padding: var(--space-8);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---- Mobile drawer ---- */
+.mobile-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.mobile-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.mobile-link:hover {
+  background: var(--surface-hover);
+}
+
+.mobile-link.is-sub {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.mobile-link span {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+.mobile-heading {
+  padding: var(--space-4) var(--space-3) var(--space-2);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mobile-phone {
+  padding: var(--space-4) var(--space-3);
+  color: var(--brand);
+  font-size: var(--text-lg);
+  font-weight: 800;
+}
+
+/* ---- Transitions ---- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1080px) {
+  .action-label {
+    display: none;
+  }
+
+  .action {
+    min-width: 44px;
   }
 }
 
-@media (max-width: 520px) {
-  .brand small {
+@media (max-width: 960px) {
+  .topbar,
+  .navbar,
+  .catalog-trigger {
+    display: none;
+  }
+
+  .burger {
+    display: grid;
+  }
+
+  .mainbar-inner {
+    flex-wrap: wrap;
+    padding: var(--space-3) 0;
+    gap: var(--space-3);
+  }
+
+  .search {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .logo {
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .search-submit {
     display: none;
   }
 }

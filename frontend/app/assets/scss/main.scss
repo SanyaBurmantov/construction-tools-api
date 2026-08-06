@@ -1,71 +1,118 @@
+@use 'tokens';
+
+/* Self-hosting would be better for LCP, but the project already pulls this
+   from Google Fonts; `display=swap` keeps text visible during the fetch. */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+/* ---------------------------------------------------------------------------
+   Legacy aliases. Pages written before the token layer still reference these;
+   they now resolve to semantic tokens so both spellings stay in sync during
+   the migration. Prefer the token names in new code.
+--------------------------------------------------------------------------- */
 :root {
-  --font-body: Inter, Manrope, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-heading: Inter, Manrope, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --color-ink: #1f2937;
-  --color-muted: #667085;
-  --color-subtle: #98a2b3;
-  --color-cream: #f7f8fa;
-  --color-card: #ffffff;
-  --color-line: #e4e7ec;
-  --color-accent: #1d4ed8;
-  --color-accent-strong: #0b65c2;
-  --color-green: #16803c;
-  --color-bg-light: #f3f5f7;
-  --color-bg-dark: #111827;
-  --color-text: var(--color-ink);
-  --color-text-light: #ffffff;
-  --color-primary: #1d4ed8;
-  --color-primary-hover: #173fa8;
-  --color-accent-hover: #1747b3;
-  --color-gray-dark: #344054;
-  --color-gray-medium: #667085;
-  --color-gray-light: #98a2b3;
-  --color-gray-extra-light: #f2f4f7;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px rgba(16, 24, 40, 0.06);
-  --radius-lg: 20px;
-  --radius-md: 14px;
-  --ui-primary: var(--color-primary);
-  --ui-background: var(--color-bg-light);
-  --ui-text: var(--color-ink);
+  --color-ink: var(--text-strong);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-cream: var(--surface-sunken);
+  --color-card: var(--surface-card);
+  --color-line: var(--border-subtle);
+  --color-accent: var(--brand);
+  --color-accent-strong: var(--brand-hover);
+  --color-accent-hover: var(--brand-hover);
+  --color-green: var(--success);
+  --color-bg-light: var(--surface-page);
+  --color-bg-dark: var(--surface-inverse);
+  --color-text: var(--text-default);
+  --color-text-light: var(--text-inverse);
+  --color-primary: var(--brand);
+  --color-primary-hover: var(--brand-hover);
+  --color-gray-dark: var(--gray-700);
+  --color-gray-medium: var(--gray-500);
+  --color-gray-light: var(--gray-400);
+  --color-gray-extra-light: var(--gray-100);
+  --shadow-card: var(--shadow-sm);
+  --ui-primary: var(--brand);
+  --ui-background: var(--surface-page);
+  --ui-text: var(--text-default);
 }
 
-* {
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html {
   min-width: 320px;
-  background: var(--color-bg-light);
+  background: var(--surface-page);
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 body {
   min-width: 320px;
   margin: 0;
-  background: var(--color-bg-light);
-  color: var(--color-text);
+  background: var(--surface-page);
+  color: var(--text-default);
   font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 h1,
 h2,
 h3,
 h4,
-h5 {
+h5,
+h6 {
   margin: 0;
-  color: #101828;
+  color: var(--text-strong);
   font-family: var(--font-heading);
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--text-3xl);
+}
+
+h2 {
+  font-size: var(--text-2xl);
+}
+
+h3 {
+  font-size: var(--text-xl);
 }
 
 p {
   margin: 0;
+  text-wrap: pretty;
 }
 
 a {
   color: inherit;
+  text-decoration: none;
 }
 
 button,
@@ -73,20 +120,73 @@ input,
 select,
 textarea {
   font: inherit;
+  color: inherit;
 }
 
 button {
   border: 0;
+  background: none;
+  cursor: pointer;
 }
 
-img {
+img,
+svg,
+video {
+  display: block;
   max-width: 100%;
 }
 
+hr {
+  height: 1px;
+  border: 0;
+  margin: 0;
+  background: var(--border-subtle);
+}
+
+/* A single visible focus treatment for the whole app. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--brand-soft-text);
+}
+
+/* ---------------------------------------------------------------------------
+   Shared primitives
+--------------------------------------------------------------------------- */
 .eyebrow {
-  color: var(--color-primary);
-  font-size: 12px;
+  color: var(--brand);
+  font-size: var(--text-xs);
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
+}
+
+/* Visible to screen readers only. */
+.sr-only {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.container {
+  width: min(var(--container), calc(100% - var(--space-8)));
+  margin-inline: auto;
+}
+
+/* Long content (tables, spec matrices) scrolls inside its own box so the page
+   body never scrolls sideways on mobile. */
+.scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
 }

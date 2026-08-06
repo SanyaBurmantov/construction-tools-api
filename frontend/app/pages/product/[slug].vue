@@ -1,91 +1,115 @@
 <script setup lang="ts">
-import { useCartStore } from '~/stores/cart'
+import type { CatalogProduct } from '~/composables/useProductActions'
 
-type Product = {
-  id: string
-  slug: string
-  name: string
-  sku?: string | null
+type Product = CatalogProduct & {
   model?: string | null
-  priceValue?: number | null
-  priceCurrency?: string | null
-  oldPrice?: number | null
-  stockStatus?: string | null
   descriptionShort?: string | null
   descriptionFull?: string | null
-  brand?: { id: string, name: string, slug?: string } | null
-  category?: { id: string, name: string, slug?: string } | null
-  images?: Array<{ id: string, url: string, alt?: string | null }>
-  sourceProducts?: Array<{ id: string, url: string, name: string, price?: number | null, currency?: string | null }>
-  productSpecs?: Array<{ name: string, value: string }>
+  images?: Array<{ id?: string, url: string, alt?: string | null }>
+  sourceProducts?: Array<{
+    id: string
+    url: string
+    name: string
+    price?: number | null
+    currency?: string | null
+  }>
 }
 
 const route = useRoute()
 const config = useRuntimeConfig()
-const cart = useCartStore()
 const slug = computed(() => String(route.params.slug))
-const productDataKey = computed(() => `product:${slug.value}`)
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
 
-const { data: product, pending, error } = await useAsyncData<Product>(
-  productDataKey,
+const { data: product, status, error } = await useAsyncData<Product>(
+  () => `product:${slug.value}`,
   () => $fetch(`${apiBase}/products/${slug.value}`),
   { watch: [slug] }
 )
 
-const activeImage = ref(0)
-const images = computed(() => product.value?.images || [])
-const selectedImage = computed(() => images.value[activeImage.value])
-const currency = computed(() => {
-  const value = product.value?.priceCurrency?.trim().toUpperCase()
-  return value && /^[A-Z]{3}$/.test(value) ? value : 'BYN'
-})
-const price = computed(() => {
-  if (!product.value || product.value.priceValue === null || product.value.priceValue === undefined) {
-    return 'Цена по запросу'
-  }
-
-  return new Intl.NumberFormat('ru-BY', {
-    style: 'currency',
-    currency: currency.value,
-    maximumFractionDigits: 2
-  }).format(product.value.priceValue)
-})
-
-const availability = computed(() => {
-  if (product.value?.stockStatus === 'in_stock') return 'В наличии'
-  if (product.value?.stockStatus === 'out_of_stock') return 'Под заказ'
-  return product.value?.stockStatus || 'Наличие уточняйте'
-})
-
-const canBuy = computed(
-  () => !!product.value && product.value.priceValue != null && product.value.priceValue > 0
-)
-const quantity = ref(1)
-const justAdded = ref(false)
-
-function addToCart() {
-  if (!product.value || !canBuy.value) return
-  cart.add(
-    {
-      productId: product.value.id,
-      slug: product.value.slug,
-      name: product.value.name,
-      sku: product.value.sku ?? null,
-      image: images.value[0]?.url || null,
-      price: product.value.priceValue as number,
-      currency: currency.value
-    },
-    quantity.value
-  )
-  justAdded.value = true
-  setTimeout(() => (justAdded.value = false), 2000)
+if (error.value) {
+  throw createError({ statusCode: 404, statusMessage: 'Товар не найден', fatal: true })
 }
+
+const fallbackProduct: CatalogProduct = { id: '', slug: '', name: '' }
+const {
+  canBuy,
+  inStock,
+  availabilityLabel,
+  hasDiscount,
+  discountPercent,
+  isFavourite,
+  isComparing,
+  inCart,
+  addToCart,
+  toggleWishlist,
+  toggleCompare,
+} = useProductActions(() => product.value ?? fallbackProduct)
+
+/* ---- Gallery ----------------------------------------------------------- */
+const images = computed(() => product.value?.images ?? [])
+const activeImage = ref(0)
+const zoomOpen = ref(false)
 
 watch(images, () => {
   activeImage.value = 0
 })
 
+const selectedImage = computed(() => images.value[activeImage.value])
+
+/* ---- Buy box ----------------------------------------------------------- */
+const quantity = ref(1)
+const currency = computed(() => product.value?.priceCurrency)
+
+const savings = computed(() => {
+  if (!hasDiscount.value || !product.value) return 0
+  return (product.value.oldPrice as number) - (product.value.priceValue as number)
+})
+
+/* ---- Description tabs -------------------------------------------------- */
+const tab = ref<'description' | 'specs'>('description')
+const hasDescription = computed(
+  () => Boolean(product.value?.descriptionFull || product.value?.descriptionShort)
+)
+const specs = computed(() => product.value?.productSpecs ?? [])
+
+watch(product, (value) => {
+  // Land on whichever tab actually has content.
+  if (!value?.descriptionFull && !value?.descriptionShort && value?.productSpecs?.length) {
+    tab.value = 'specs'
+  }
+}, { immediate: true })
+
+/* ---- Related ----------------------------------------------------------- */
+const { data: related } = await useAsyncData(
+  () => `related:${slug.value}`,
+  async () => {
+    const categorySlug = product.value?.category?.slug
+    if (!categorySlug) return []
+    const response = await $fetch<{ data: CatalogProduct[] }>(`${apiBase}/products`, {
+      params: { categorySlug, limit: 5 },
+    }).catch(() => ({ data: [] }))
+    return response.data.filter((item) => item.id !== product.value?.id).slice(0, 4)
+  },
+  { watch: [product], default: () => [] as CatalogProduct[] }
+)
+
+/* ---- Breadcrumbs ------------------------------------------------------- */
+const breadcrumbs = computed(() => {
+  const crumbs: Array<{ label: string, to?: string }> = [
+    { label: 'Главная', to: '/' },
+    { label: 'Каталог', to: '/catalog/' },
+  ]
+  if (product.value?.category?.name) {
+    crumbs.push({
+      label: product.value.category.name,
+      to: product.value.category.slug ? `/catalog/${product.value.category.slug}` : undefined,
+    })
+  }
+  crumbs.push({ label: product.value?.name ?? 'Товар' })
+  return crumbs
+})
+
+/* ---- SEO --------------------------------------------------------------- */
 const siteBase = computed(() => String(config.public.siteUrl).replace(/\/$/, ''))
 const canonicalUrl = computed(() => `${siteBase.value}/product/${slug.value}`)
 const ogImage = computed(() => images.value[0]?.url || undefined)
@@ -104,662 +128,598 @@ useSeoMeta({
   twitterCard: 'summary_large_image',
   twitterTitle: () => product.value?.name || 'Товар | Мультитул',
   twitterDescription: () => metaDescription.value,
-  twitterImage: () => ogImage.value
+  twitterImage: () => ogImage.value,
 })
 
 useHead(() => {
   const p = product.value
-  const ld: Record<string, unknown>[] = []
+  if (!p) return { link: [{ rel: 'canonical', href: canonicalUrl.value }] }
 
-  if (p) {
-    const productLd: Record<string, unknown> = {
-      '@context': 'https://schema.org',
-      '@type': 'Product',
-      name: p.name,
-      url: canonicalUrl.value
+  const productLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: p.name,
+    url: canonicalUrl.value,
+  }
+  if (p.sku) productLd.sku = p.sku
+  if (p.descriptionShort || p.descriptionFull) {
+    productLd.description = p.descriptionShort || p.descriptionFull
+  }
+  if (images.value.length) productLd.image = images.value.map((image) => image.url)
+  if (p.brand?.name) productLd.brand = { '@type': 'Brand', name: p.brand.name }
+  if (p.priceValue != null && p.priceValue > 0) {
+    productLd.offers = {
+      '@type': 'Offer',
+      price: p.priceValue,
+      priceCurrency: p.priceCurrency || 'BYN',
+      availability:
+        p.stockStatus === 'out_of_stock'
+          ? 'https://schema.org/BackOrder'
+          : 'https://schema.org/InStock',
+      url: canonicalUrl.value,
     }
-    if (p.sku) productLd.sku = p.sku
-    if (p.descriptionShort || p.descriptionFull) {
-      productLd.description = p.descriptionShort || p.descriptionFull
+  }
+  // Only emit aggregateRating when there really are reviews — Google rejects
+  // the markup otherwise.
+  if (p.ratingCount && p.ratingAvg) {
+    productLd.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: p.ratingAvg,
+      reviewCount: p.ratingCount,
     }
-    if (images.value.length) productLd.image = images.value.map((image) => image.url)
-    if (p.brand?.name) productLd.brand = { '@type': 'Brand', name: p.brand.name }
-    if (p.priceValue != null && p.priceValue > 0) {
-      productLd.offers = {
-        '@type': 'Offer',
-        price: p.priceValue,
-        priceCurrency: currency.value,
-        availability:
-          p.stockStatus === 'out_of_stock'
-            ? 'https://schema.org/BackOrder'
-            : 'https://schema.org/InStock',
-        url: canonicalUrl.value
-      }
-    }
-    ld.push(productLd)
-
-    const crumbs: Array<{ name: string, url: string }> = [
-      { name: 'Главная', url: `${siteBase.value}/` },
-      { name: 'Каталог', url: `${siteBase.value}/catalog` }
-    ]
-    if (p.category?.name) {
-      crumbs.push({
-        name: p.category.name,
-        url: p.category.slug
-          ? `${siteBase.value}/catalog/${p.category.slug}`
-          : `${siteBase.value}/catalog?categoryId=${p.category.id}`
-      })
-    }
-    crumbs.push({ name: p.name, url: canonicalUrl.value })
-    ld.push({
-      '@context': 'https://schema.org',
-      '@type': 'BreadcrumbList',
-      itemListElement: crumbs.map((crumb, index) => ({
-        '@type': 'ListItem',
-        position: index + 1,
-        name: crumb.name,
-        item: crumb.url
-      }))
-    })
   }
 
   return {
     link: [{ rel: 'canonical', href: canonicalUrl.value }],
-    script: ld.map((node) => ({
-      type: 'application/ld+json',
-      innerHTML: JSON.stringify(node)
-    }))
+    script: [{ type: 'application/ld+json', innerHTML: JSON.stringify(productLd) }],
   }
 })
 </script>
 
 <template>
-  <div v-if="pending" class="state-card">Загрузка товара...</div>
-  <div v-else-if="error" class="state-card error">Ошибка: {{ error.message }}</div>
-  <article v-else-if="product" class="product-page">
-    <nav class="breadcrumbs" aria-label="Хлебные крошки">
-      <NuxtLink to="/">Главная</NuxtLink>
-      <span aria-hidden="true">/</span>
-      <NuxtLink to="/catalog/">Каталог</NuxtLink>
-      <template v-if="product.category">
-        <span aria-hidden="true">/</span>
-        <NuxtLink
-          :to="product.category.slug ? `/catalog/${product.category.slug}` : `/catalog/?categoryId=${product.category.id}`"
+  <div class="product-page">
+    <div v-if="status === 'pending'" class="loading">
+      <UiSkeleton height="420px" radius="var(--radius-lg)" />
+      <div class="loading-side">
+        <UiSkeleton :lines="6" height="18px" />
+      </div>
+    </div>
+
+    <template v-else-if="product">
+      <UiBreadcrumbs :items="breadcrumbs" />
+
+      <div class="layout">
+        <!-- Gallery -->
+        <section class="gallery">
+          <div class="gallery-main">
+            <div class="flags">
+              <UiBadge v-if="hasDiscount" tone="sale">−{{ discountPercent }}%</UiBadge>
+            </div>
+            <button
+              v-if="selectedImage"
+              type="button"
+              class="main-image"
+              aria-label="Увеличить изображение"
+              @click="zoomOpen = true"
+            >
+              <img
+                :src="selectedImage.url"
+                :alt="selectedImage.alt || product.name"
+                fetchpriority="high"
+              >
+            </button>
+            <div v-else class="main-image is-empty" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" fill="none" stroke="currentColor" stroke-width="1" stroke-linejoin="round" />
+              </svg>
+            </div>
+          </div>
+
+          <div v-if="images.length > 1" class="thumbs scroll-x">
+            <button
+              v-for="(image, index) in images"
+              :key="image.id || image.url"
+              type="button"
+              class="thumb"
+              :class="{ 'is-active': index === activeImage }"
+              :aria-label="`Фото ${index + 1}`"
+              :aria-current="index === activeImage"
+              @click="activeImage = index"
+            >
+              <img :src="image.url" :alt="image.alt || product.name" loading="lazy">
+            </button>
+          </div>
+        </section>
+
+        <!-- Summary + buy box -->
+        <section class="summary">
+          <div class="summary-head">
+            <NuxtLink
+              v-if="product.brand?.name"
+              :to="product.brand.slug ? `/brand/${product.brand.slug}` : '/brand/'"
+              class="brand"
+            >
+              {{ product.brand.name }}
+            </NuxtLink>
+
+            <h1>{{ product.name }}</h1>
+
+            <div class="meta">
+              <UiRating
+                v-if="product.ratingCount"
+                :value="product.ratingAvg"
+                :count="product.ratingCount"
+                size="sm"
+                show-value
+              />
+              <a v-if="product.ratingCount" href="#reviews" class="meta-link">К отзывам</a>
+              <span v-if="product.sku" class="meta-item">Арт. {{ product.sku }}</span>
+              <span v-if="product.model" class="meta-item">Модель: {{ product.model }}</span>
+            </div>
+          </div>
+
+          <p v-if="product.descriptionShort" class="short-description">
+            {{ product.descriptionShort }}
+          </p>
+
+          <div class="buy-box">
+            <div class="price-row">
+              <UiPrice
+                :value="product.priceValue"
+                :old-price="product.oldPrice"
+                :currency="currency"
+                size="lg"
+              />
+              <p v-if="savings > 0" class="savings">
+                Экономия {{ new Intl.NumberFormat('ru-BY', { style: 'currency', currency: currency || 'BYN', maximumFractionDigits: 2 }).format(savings) }}
+              </p>
+            </div>
+
+            <p class="availability" :class="{ 'is-in-stock': inStock }">
+              <span class="dot" aria-hidden="true" />
+              {{ availabilityLabel }}
+            </p>
+
+            <div v-if="canBuy" class="buy-actions">
+              <UiQuantity v-model="quantity" :max="999" />
+              <UiButton size="lg" class="buy-button" @click="addToCart(quantity)">
+                {{ inCart ? 'Добавить ещё' : 'В корзину' }}
+              </UiButton>
+            </div>
+            <UiAlert v-else tone="warning">
+              Цена уточняется — свяжитесь с нами, чтобы оформить заказ.
+            </UiAlert>
+
+            <div class="secondary-actions">
+              <button
+                type="button"
+                class="text-action"
+                :class="{ 'is-on': isFavourite }"
+                :aria-pressed="isFavourite"
+                @click="toggleWishlist"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20z" :fill="isFavourite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+                </svg>
+                {{ isFavourite ? 'В избранном' : 'В избранное' }}
+              </button>
+
+              <button
+                type="button"
+                class="text-action"
+                :class="{ 'is-on': isComparing }"
+                :aria-pressed="isComparing"
+                @click="toggleCompare"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 20V9m6 11V4m6 16v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+                {{ isComparing ? 'В сравнении' : 'Сравнить' }}
+              </button>
+            </div>
+
+            <ul class="assurances">
+              <li>Доставка по Беларуси — курьером, почтой или самовывозом</li>
+              <li>Оплата наличными, картой или по счёту для юрлиц</li>
+              <li>Возврат в течение 14 дней по закону о защите прав потребителей</li>
+            </ul>
+          </div>
+        </section>
+      </div>
+
+      <!-- Details -->
+      <section v-if="hasDescription || specs.length" class="details">
+        <UiTabs
+          v-model="tab"
+          :tabs="[
+            ...(hasDescription ? [{ value: 'description', label: 'Описание' }] : []),
+            ...(specs.length ? [{ value: 'specs', label: 'Характеристики', count: specs.length }] : [])
+          ]"
+        />
+
+        <div v-if="tab === 'description' && hasDescription" class="description">
+          <p>{{ product.descriptionFull || product.descriptionShort }}</p>
+        </div>
+
+        <div v-else-if="tab === 'specs' && specs.length" class="specs-table">
+          <dl>
+            <div v-for="spec in specs" :key="spec.name">
+              <dt>{{ spec.name }}</dt>
+              <dd>{{ spec.value }}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <ProductReviews :slug="product.slug" :product-name="product.name" />
+
+      <section v-if="related.length" class="related">
+        <h2>Похожие товары</h2>
+        <div class="related-grid">
+          <ProductCatalogCard
+            v-for="item in related"
+            :key="item.id"
+            :product="item"
+            compact
+          />
+        </div>
+      </section>
+
+      <!-- Zoom -->
+      <UiModal v-model:open="zoomOpen" size="xl" :title="product.name">
+        <img
+          v-if="selectedImage"
+          :src="selectedImage.url"
+          :alt="selectedImage.alt || product.name"
+          class="zoom-image"
         >
-          {{ product.category.name }}
-        </NuxtLink>
-      </template>
-      <span aria-hidden="true">/</span>
-      <strong>{{ product.name }}</strong>
-    </nav>
-
-    <section class="product-hero">
-      <div class="gallery">
-        <div class="main-image">
-          <img
-            v-if="selectedImage?.url"
-            :src="selectedImage.url"
-            :alt="selectedImage.alt || product.name"
-            fetchpriority="high"
-            decoding="async"
-          >
-          <div v-else class="image-placeholder">нет фото</div>
-        </div>
-
-        <div v-if="images.length > 1" class="thumbs">
-          <button
-            v-for="(image, index) in images"
-            :key="image.id"
-            type="button"
-            :class="{ active: activeImage === index }"
-            @click="activeImage = index"
-          >
-            <img :src="image.url" :alt="image.alt || product.name" loading="lazy" decoding="async">
-          </button>
-        </div>
-      </div>
-
-      <div class="summary">
-        <div class="chips">
-          <NuxtLink
-            v-if="product.category"
-            :to="product.category.slug ? `/catalog/${product.category.slug}` : `/catalog/?categoryId=${product.category.id}`"
-          >
-            {{ product.category.name }}
-          </NuxtLink>
-          <NuxtLink v-if="product.brand" :to="`/catalog/?brands=${product.brand.id}`">
-            {{ product.brand.name }}
-          </NuxtLink>
-        </div>
-
-        <h1>{{ product.name }}</h1>
-        <p v-if="product.descriptionShort" class="lead">{{ product.descriptionShort }}</p>
-
-        <div class="buy-box">
-          <div>
-            <span class="label">Цена</span>
-            <strong>{{ price }}</strong>
-          </div>
-          <div>
-            <span class="label">Статус</span>
-            <strong>{{ availability }}</strong>
-          </div>
-        </div>
-
-        <div class="meta-grid">
-          <div v-if="product.sku">
-            <span>Артикул</span>
-            <strong>{{ product.sku }}</strong>
-          </div>
-          <div v-if="product.model">
-            <span>Модель</span>
-            <strong>{{ product.model }}</strong>
-          </div>
-        </div>
-
-        <div v-if="canBuy" class="cart-row">
-          <div class="qty-control">
-            <button type="button" aria-label="Меньше" @click="quantity = Math.max(1, quantity - 1)">−</button>
-            <input v-model.number="quantity" type="number" min="1" max="999">
-            <button type="button" aria-label="Больше" @click="quantity = Math.min(999, quantity + 1)">+</button>
-          </div>
-          <button class="primary-action" type="button" @click="addToCart">
-            {{ justAdded ? 'Добавлено ✓' : 'В корзину' }}
-          </button>
-        </div>
-        <button v-else class="primary-action" type="button">
-          Запросить наличие
-        </button>
-      </div>
-    </section>
-
-    <section class="details-grid">
-      <div v-if="product.productSpecs?.length" class="details-card">
-        <span class="eyebrow">Характеристики</span>
-        <h2>Что важно знать</h2>
-        <dl>
-          <template v-for="spec in product.productSpecs" :key="spec.name">
-            <dt>{{ spec.name }}</dt>
-            <dd>{{ spec.value }}</dd>
-          </template>
-        </dl>
-      </div>
-
-      <div class="details-card">
-        <span class="eyebrow">Описание</span>
-        <h2>О товаре</h2>
-        <p>
-          {{ product.descriptionFull || product.descriptionShort || 'Описание пока не заполнено.' }}
-        </p>
-      </div>
-    </section>
-  </article>
+      </UiModal>
+    </template>
+  </div>
 </template>
 
-<style scoped lang="scss">
-.state-card {
-  border: 2px solid var(--color-ink);
-  border-radius: 30px;
-  background: var(--color-card);
-  box-shadow: 7px 7px 0 var(--color-ink);
-  color: var(--color-muted);
-  font-weight: 900;
-  padding: 42px;
-}
-
-.state-card.error {
-  color: var(--color-accent-strong);
-}
-
+<style scoped>
 .product-page {
-  display: grid;
-  gap: 28px;
-}
-
-.breadcrumbs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--color-muted);
-  font-size: 13px;
-  font-weight: 600;
-
-  a {
-    color: inherit;
-    text-decoration: none;
-
-    &:hover {
-      color: var(--color-primary);
-    }
-  }
-
-  strong {
-    overflow: hidden;
-    max-width: 360px;
-    color: #101828;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  flex-direction: column;
+  gap: var(--space-10);
 }
 
-.product-hero,
-.details-card {
-  border: 2px solid var(--color-ink);
-  border-radius: 38px;
-  background: rgba(255, 250, 240, 0.94);
-  box-shadow: 10px 10px 0 var(--color-ink);
-}
-
-.product-hero {
+.loading {
   display: grid;
-  gap: 28px;
-  padding: clamp(20px, 4vw, 44px);
-
-  @include media-breakpoint-up(lg) {
-    grid-template-columns: minmax(0, 1fr) 0.85fr;
-    align-items: start;
-  }
+  gap: var(--space-8);
+  grid-template-columns: 1fr 1fr;
 }
 
+.layout {
+  display: grid;
+  align-items: start;
+  gap: var(--space-8);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+}
+
+/* ---- Gallery ---- */
 .gallery {
-  display: grid;
-  gap: 16px;
-}
-
-.main-image {
-  display: grid;
-  min-height: 360px;
-  place-items: center;
-  overflow: hidden;
-  border: 2px solid var(--color-ink);
-  border-radius: 30px;
-  background:
-    radial-gradient(circle at 50% 40%, rgba(243, 182, 31, 0.3), transparent 18rem),
-    white;
-
-  img {
-    width: 100%;
-    max-height: 520px;
-    object-fit: contain;
-    padding: 28px;
-  }
-}
-
-.image-placeholder {
-  color: var(--color-subtle);
-  font-family: var(--font-heading);
-  text-transform: uppercase;
-}
-
-.thumbs {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-  gap: 12px;
-
-  button {
-    overflow: hidden;
-    height: 78px;
-    border: 2px solid transparent;
-    border-radius: 18px;
-    background: white;
-    cursor: pointer;
-
-    &.active {
-      border-color: var(--color-ink);
-    }
-  }
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    padding: 8px;
-  }
-}
-
-.summary {
-  display: grid;
-  gap: 24px;
-
-  h1 {
-    font-size: clamp(32px, 5vw, 58px);
-    line-height: 1.04;
-  }
-}
-
-.chips {
+  position: sticky;
+  top: calc(var(--header-height) + var(--space-4));
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-
-  a {
-    border: 1px solid var(--color-line);
-    border-radius: 999px;
-    background: white;
-    color: var(--color-muted);
-    font-weight: 900;
-    padding: 8px 12px;
-    text-decoration: none;
-  }
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.lead {
-  color: var(--color-muted);
-  font-size: 18px;
-  line-height: 1.7;
-}
-
-.buy-box,
-.meta-grid {
-  display: grid;
-  gap: 12px;
-
-  @include media-breakpoint-up(md) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.buy-box > div,
-.meta-grid > div {
-  border: 1px solid var(--color-line);
-  border-radius: 24px;
-  background: white;
-  padding: 18px;
-}
-
-.label,
-.meta-grid span {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--color-muted);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.buy-box strong {
-  display: block;
-  color: var(--color-ink);
-  font-size: 24px;
-}
-
-.cart-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-.qty-control {
-  display: inline-flex;
-  align-items: center;
-  border: 2px solid var(--color-ink);
-  border-radius: 999px;
-  overflow: hidden;
-
-  button {
-    width: 44px;
-    height: 48px;
-    border: 0;
-    background: white;
-    cursor: pointer;
-    font-size: 22px;
-    font-weight: 900;
-  }
-
-  input {
-    width: 56px;
-    height: 48px;
-    border: 0;
-    border-left: 2px solid var(--color-ink);
-    border-right: 2px solid var(--color-ink);
-    text-align: center;
-    font-weight: 900;
-    font-size: 16px;
-    outline: 0;
-    -moz-appearance: textfield;
-    appearance: textfield;
-  }
-
-  input::-webkit-outer-spin-button,
-  input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-}
-
-.primary-action {
-  display: inline-flex;
-  justify-content: center;
-  width: max-content;
-  max-width: 100%;
-  border: 2px solid var(--color-ink);
-  border-radius: 999px;
-  background: var(--color-accent);
-  color: var(--color-ink);
-  cursor: pointer;
-  font-weight: 900;
-  padding: 15px 22px;
-  text-decoration: none;
-  box-shadow: 5px 5px 0 var(--color-ink);
-}
-
-.details-grid {
-  display: grid;
-  gap: 28px;
-
-  @include media-breakpoint-up(lg) {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.details-card {
-  padding: clamp(24px, 4vw, 38px);
-
-  h2 {
-    margin: 8px 0 22px;
-    font-size: clamp(24px, 3vw, 36px);
-  }
-
-  p {
-    color: var(--color-muted);
-    font-size: 17px;
-    line-height: 1.8;
-  }
-}
-
-.eyebrow {
-  color: var(--color-accent-strong);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-dl {
-  display: grid;
-  gap: 0;
-  margin: 0;
-}
-
-dt,
-dd {
-  margin: 0;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--color-line);
-}
-
-dt {
-  color: var(--color-muted);
-  font-weight: 800;
-}
-
-dd {
-  color: var(--color-ink);
-  font-weight: 900;
-}
-
-@include media-breakpoint-up(md) {
-  dl {
-    grid-template-columns: minmax(160px, 0.7fr) 1fr;
-  }
-}
-</style>
-
-<style scoped lang="scss">
-.state-card {
-  border: 1px solid var(--color-line);
+.gallery-main {
+  position: relative;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  background: white;
-  box-shadow: var(--shadow-card);
-  color: var(--color-muted);
-  padding: 32px;
+  background: var(--surface-card);
 }
 
-.state-card.error {
-  color: #b42318;
-}
-
-.product-page {
-  gap: 18px;
-}
-
-.product-hero,
-.details-card {
-  border: 1px solid var(--color-line);
-  border-radius: 24px;
-  background: white;
-  box-shadow: var(--shadow-card);
-}
-
-.product-hero {
-  gap: 28px;
-  padding: clamp(18px, 3vw, 32px);
-
-  @include media-breakpoint-up(lg) {
-    grid-template-columns: minmax(0, 1fr) 430px;
-  }
+.flags {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  z-index: 1;
 }
 
 .main-image {
-  min-height: 420px;
-  border: 1px solid var(--color-line);
-  border-radius: 20px;
-  background: #f8fafc;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: var(--space-8);
+  cursor: zoom-in;
+  place-items: center;
+}
 
-  img {
-    padding: 22px;
-  }
+.main-image img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.main-image.is-empty {
+  color: var(--text-subtle);
+  cursor: default;
+}
+
+.main-image.is-empty svg {
+  width: 96px;
+  height: 96px;
 }
 
 .thumbs {
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 10px;
-
-  button {
-    height: 72px;
-    border: 1px solid var(--color-line);
-    border-radius: 12px;
-
-    &.active {
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.12);
-    }
-  }
+  display: flex;
+  padding-bottom: var(--space-1);
+  gap: var(--space-2);
 }
 
-.summary {
-  align-content: start;
-  gap: 18px;
-
-  h1 {
-    font-size: clamp(28px, 4vw, 42px);
-    line-height: 1.12;
-  }
+.thumb {
+  width: 74px;
+  height: 74px;
+  flex-shrink: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.chips a {
-  border-color: #d0d5dd;
-  border-radius: 999px;
-  background: #f8fafc;
-  color: #344054;
-  padding: 7px 10px;
+.thumb:hover {
+  border-color: var(--border-strong);
 }
 
-.lead {
-  color: var(--color-muted);
-  font-size: 16px;
+.thumb.is-active {
+  border-color: var(--brand);
 }
 
-.buy-box,
-.meta-grid {
-  gap: 10px;
-}
-
-.buy-box > div,
-.meta-grid > div {
-  border-radius: 16px;
-  background: #f8fafc;
-  padding: 16px;
-}
-
-.label,
-.meta-grid span {
-  margin-bottom: 5px;
-  color: var(--color-muted);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
-
-.buy-box strong {
-  font-size: 26px;
-}
-
-.primary-action {
+.thumb img {
   width: 100%;
-  border: 0;
-  border-radius: 12px;
-  background: var(--color-primary);
-  color: white;
-  box-shadow: none;
-  padding: 14px 18px;
+  height: 100%;
+  object-fit: contain;
 }
 
-.details-grid {
-  gap: 18px;
+/* ---- Summary ---- */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
 }
 
-.details-card {
-  padding: clamp(20px, 3vw, 30px);
+.summary-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
 
-  h2 {
-    margin: 5px 0 16px;
-    font-size: clamp(22px, 3vw, 30px);
+.brand {
+  color: var(--brand);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.summary h1 {
+  font-size: var(--text-2xl);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.meta-link {
+  color: var(--text-link);
+}
+
+.meta-link:hover {
+  text-decoration: underline;
+}
+
+.short-description {
+  color: var(--text-muted);
+}
+
+.buy-box {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+  gap: var(--space-4);
+}
+
+.price-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.savings {
+  color: var(--success);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.availability {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.availability .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-subtle);
+}
+
+.availability.is-in-stock {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.availability.is-in-stock .dot {
+  background: var(--success);
+}
+
+.buy-actions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.buy-button {
+  flex: 1;
+}
+
+.secondary-actions {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.text-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.text-action:hover,
+.text-action.is-on {
+  color: var(--brand);
+}
+
+.text-action svg {
+  width: 18px;
+  height: 18px;
+}
+
+.assurances {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4) 0 0;
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.assurances li {
+  padding-left: var(--space-5);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  position: relative;
+}
+
+.assurances li::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 0;
+  width: 12px;
+  height: 7px;
+  border-bottom: 2px solid var(--success);
+  border-left: 2px solid var(--success);
+  transform: rotate(-45deg);
+}
+
+/* ---- Details ---- */
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.description {
+  max-width: 80ch;
+  color: var(--text-default);
+  line-height: var(--leading-normal);
+  white-space: pre-line;
+}
+
+.specs-table dl {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  gap: 0;
+}
+
+.specs-table dl > div {
+  display: grid;
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-4);
+  grid-template-columns: minmax(180px, 320px) 1fr;
+}
+
+.specs-table dl > div:nth-child(odd) {
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+}
+
+.specs-table dt {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.specs-table dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* ---- Related ---- */
+.related {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.related-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.zoom-image {
+  width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1024px) {
+  .layout {
+    grid-template-columns: 1fr;
   }
 
-  p {
-    color: #475467;
-    font-size: 16px;
-    line-height: 1.7;
+  .gallery {
+    position: static;
+  }
+
+  .loading {
+    grid-template-columns: 1fr;
   }
 }
 
-dl {
-  border-top: 1px solid var(--color-line);
-}
+@media (max-width: 640px) {
+  .specs-table dl > div {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
 
-dt,
-dd {
-  border-bottom: 1px solid var(--color-line);
-  padding: 12px 0;
-}
-
-dt {
-  color: var(--color-muted);
-}
-
-dd {
-  color: #101828;
+  .buy-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

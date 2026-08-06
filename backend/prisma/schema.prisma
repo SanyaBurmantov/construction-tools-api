@@ -93,12 +93,17 @@ model Product {
   productSpecs     ProductSpecification[]
   sourceProducts   SourceProduct[]
   orderItems       OrderItem[]
+  reviews          Review[]
+  /// Denormalized aggregate over APPROVED reviews, recomputed on moderation.
+  ratingAvg        Float?
+  ratingCount      Int                    @default(0)
 
   @@index([status, categoryId])
   @@index([status, brandId])
   @@index([status, priceValue])
   @@index([status, createdAt])
   @@index([status, name])
+  @@index([status, ratingAvg])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin)
 }
@@ -254,7 +259,12 @@ model Order {
   currency       String         @default("BYN")
   itemsTotal     Float          @default(0)
   deliveryCost   Float          @default(0)
+  discountTotal  Float          @default(0)
   total          Float          @default(0)
+  promoCode      PromoCode?     @relation(fields: [promoCodeId], references: [id])
+  promoCodeId    String?
+  /// Snapshot of the code as typed, kept readable if the PromoCode is deleted.
+  promoCodeLabel String?
   items          OrderItem[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -274,6 +284,8 @@ model OrderItem {
   productSku  String?
   productImage String?
   unitPrice   Float
+  /// Pre-discount price at order time, when the product was on sale.
+  unitOldPrice Float?
   quantity    Int
   lineTotal   Float
 
@@ -330,4 +342,60 @@ model ParserRuntimeStatus {
   successes     Int      @default(0)
   failures      Int      @default(0)
   updatedAt     DateTime @updatedAt
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Guest product review. Every review lands in PENDING and only counts towards
+/// the product's rating aggregate once an admin approves it.
+model Review {
+  id          String       @id @default(uuid())
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId   String
+  authorName  String
+  authorEmail String?
+  rating      Int
+  title       String?
+  text        String
+  status      ReviewStatus @default(PENDING)
+  /// Set when an admin approves or rejects the review.
+  moderatedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([productId, status, createdAt])
+  @@index([status, createdAt])
+}
+
+enum PromoCodeType {
+  PERCENT
+  FIXED
+}
+
+/// Checkout discount code. Always re-validated server-side in POST /orders —
+/// the client only ever gets a preview of the discount.
+model PromoCode {
+  id            String        @id @default(uuid())
+  code          String        @unique
+  description   String?
+  type          PromoCodeType @default(PERCENT)
+  /// Percent (0..100) when type is PERCENT, absolute currency amount when FIXED.
+  value         Float
+  minOrderTotal Float?
+  /// Null means unlimited.
+  maxUses       Int?
+  usedCount     Int           @default(0)
+  startsAt      DateTime?
+  endsAt        DateTime?
+  isActive      Boolean       @default(true)
+  freeDelivery  Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  orders        Order[]
+
+  @@index([isActive, endsAt])
 }

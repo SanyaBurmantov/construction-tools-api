@@ -1,10 +1,12 @@
 <template>
   <div class="app-layout">
     <LayoutHeader />
-    <main class="main-content">
+    <main class="main-content container">
       <slot />
     </main>
+    <LayoutCompareBar />
     <LayoutFooter />
+    <UiToaster />
   </div>
 </template>
 
@@ -16,15 +18,13 @@
 }
 
 .main-content {
-  width: min(1280px, calc(100% - 24px));
   flex: 1;
-  margin: 0 auto;
-  padding: 24px 0 56px;
+  padding: var(--space-6) 0 var(--space-16);
 }
 
 @media (min-width: 960px) {
   .main-content {
-    padding: 28px 0 72px;
+    padding: var(--space-8) 0 var(--space-20);
   }
 }
 </style>

@@ -32,6 +32,16 @@ import {
   AdminOrderQueryDto,
   AdminUpdateOrderStatusDto,
 } from '../orders/dto/admin-order-query.dto';
+import { ReviewsService } from '../reviews/reviews.service';
+import {
+  AdminReviewQueryDto,
+  AdminUpdateReviewStatusDto,
+} from '../reviews/dto/review-query.dto';
+import { PromoService } from '../promo/promo.service';
+import {
+  AdminCreatePromoCodeDto,
+  AdminUpdatePromoCodeDto,
+} from '../promo/dto/promo-code.dto';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
@@ -41,6 +51,8 @@ export class AdminController {
     private readonly ordersService: OrdersService,
     private readonly dataQualityService: DataQualityService,
     private readonly categoryMergeService: CategoryMergeService,
+    private readonly reviewsService: ReviewsService,
+    private readonly promoService: PromoService,
   ) {}
 
   @Get('stats')
@@ -291,5 +303,46 @@ export class AdminController {
     @Body() dto: AdminUpdateOrderStatusDto,
   ) {
     return this.ordersService.updateStatus(id, dto);
+  }
+
+  @Get('reviews')
+  getReviews(@Query() query: AdminReviewQueryDto) {
+    return this.reviewsService.adminList(query);
+  }
+
+  @Patch('reviews/:id/status')
+  updateReviewStatus(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdateReviewStatusDto,
+  ) {
+    return this.reviewsService.setStatus(id, dto.status);
+  }
+
+  @Delete('reviews/:id')
+  deleteReview(@Param('id') id: string) {
+    return this.reviewsService.remove(id);
+  }
+
+  @Get('promo-codes')
+  getPromoCodes() {
+    return this.promoService.adminList();
+  }
+
+  @Post('promo-codes')
+  createPromoCode(@Body() dto: AdminCreatePromoCodeDto) {
+    return this.promoService.create(dto);
+  }
+
+  @Patch('promo-codes/:id')
+  updatePromoCode(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdatePromoCodeDto,
+  ) {
+    return this.promoService.update(id, dto);
+  }
+
+  @Delete('promo-codes/:id')
+  deletePromoCode(@Param('id') id: string) {
+    return this.promoService.remove(id);
   }
 }

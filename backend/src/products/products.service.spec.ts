@@ -28,6 +28,8 @@ function buildService() {
       count: productCount,
       groupBy: productGroupBy,
       aggregate: productAggregate,
+      // Field references (used by the onSale column-to-column comparison).
+      fields: { priceValue: { name: 'priceValue' } },
     },
     sourceProduct: {
       groupBy: jest.fn(() => Promise.resolve([])),
@@ -120,8 +122,47 @@ describe('ProductService.findAllFiltered', () => {
       orderBy: Record<string, string>;
       where: { id: { in: string[] } };
     };
-    expect(args.orderBy).toEqual({ priceValue: 'asc' });
+    expect(args.orderBy).toEqual({
+      priceValue: { sort: 'asc', nulls: 'last' },
+    });
     expect(args.where.id.in).toEqual(['p1']);
+  });
+
+  // Prisma rejects `nulls` on non-nullable columns, so only priceValue and
+  // ratingAvg may carry it.
+  it('omits the nulls option when sorting by a non-nullable column', async () => {
+    const { service, productFindMany } = buildService();
+
+    await service.findAllFiltered({ sortBy: 'createdAt', sortOrder: 'desc' });
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      orderBy: Record<string, unknown>;
+    };
+    expect(args.orderBy).toEqual({ createdAt: 'desc' });
+  });
+
+  it('keeps the nulls option when sorting by rating', async () => {
+    const { service, productFindMany } = buildService();
+
+    await service.findAllFiltered({ sortBy: 'rating', sortOrder: 'desc' });
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      orderBy: Record<string, unknown>;
+    };
+    expect(args.orderBy).toEqual({
+      ratingAvg: { sort: 'desc', nulls: 'last' },
+    });
+  });
+
+  it('filters to discounted products when onSale is set', async () => {
+    const { service, productFindMany } = buildService();
+
+    await service.findAllFiltered({ onSale: true });
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      where: { oldPrice?: unknown };
+    };
+    expect(args.where.oldPrice).toBeDefined();
   });
 
   it('filters by stock status when inStock is set', async () => {

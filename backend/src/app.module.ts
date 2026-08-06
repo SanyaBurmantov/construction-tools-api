@@ -14,6 +14,9 @@ import { ParserModule } from './parser/parser.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AdminModule } from './admin/admin.module';
 import { OrdersModule } from './orders/orders.module';
+import { CartModule } from './cart/cart.module';
+import { ReviewsModule } from './reviews/reviews.module';
+import { PromoModule } from './promo/promo.module';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
 
 @Module({
@@ -37,6 +40,9 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     SourcesModule,
     ParserModule,
     OrdersModule,
+    CartModule,
+    ReviewsModule,
+    PromoModule,
     AdminModule,
   ],
   controllers: [AppController],
