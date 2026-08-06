@@ -279,7 +279,13 @@ watch(() => route.fullPath, () => {
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.35 16H17a2 2 0 0 0 1.95-1.55L20.5 8H6M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm8 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <span class="action-label">Корзина</span>
+            <span class="action-label">
+              <ClientOnly>
+                <template #fallback>Корзина</template>
+                <template v-if="cart.count">{{ formatPrice(cart.totalPrice, cart.currency) }}</template>
+                <template v-else>Корзина</template>
+              </ClientOnly>
+            </span>
             <ClientOnly>
               <span v-if="cart.count" class="counter">{{ cart.count }}</span>
             </ClientOnly>
