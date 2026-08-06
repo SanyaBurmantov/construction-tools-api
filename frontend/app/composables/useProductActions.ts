@@ -19,8 +19,10 @@ export interface CatalogProduct {
   images?: Array<{ url: string, alt?: string | null }>
   productSpecs?: Array<{ name: string, value: string }>
   stockQuantity?: number | null
-  /** Number of supplier offers behind this card. */
+  /** Offer count as the product *list* returns it. */
   offerCount?: number
+  /** Offer summary as the product *detail* endpoint returns it. */
+  offers?: { count: number, inStockCount: number }
 }
 
 /**
@@ -75,7 +77,12 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
    * Several suppliers carry this item, so the shown price is the best of them —
    * rendered as "от X", the convention Belarusian catalogues use.
    */
-  const hasMultipleOffers = computed(() => (item.value.offerCount ?? 0) > 1)
+  // The list and detail endpoints report this differently; accept both so the
+  // card and the product page agree.
+  const offerCount = computed(
+    () => item.value.offerCount ?? item.value.offers?.count ?? 0
+  )
+  const hasMultipleOffers = computed(() => offerCount.value > 1)
 
   const isFavourite = computed(() => wishlist.has(item.value.id))
   const isComparing = computed(() => compare.has(item.value.id))
@@ -142,6 +149,7 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
     canBuy,
     inStock,
     availabilityLabel,
+    offerCount,
     hasMultipleOffers,
     hasDiscount,
     discountPercent,
