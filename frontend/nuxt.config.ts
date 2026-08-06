@@ -5,6 +5,31 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@pinia/nuxt', '@nuxt/eslint', '@nuxt/image'],
   css: ['@/assets/scss/main.scss'],
   ssr: true,
+  app: {
+    head: {
+      htmlAttrs: { lang: 'ru' },
+      link: [
+        // SVG first for crisp tabs on modern browsers, PNG/ICO as fallback.
+        { rel: 'icon', type: 'image/svg+xml', href: '/logo-mark.svg' },
+        { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
+        { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png' },
+        { rel: 'shortcut icon', href: '/favicon.ico' },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+        { rel: 'manifest', href: '/site.webmanifest' },
+      ],
+      meta: [
+        { name: 'theme-color', content: '#1d4ed8' },
+        { name: 'apple-mobile-web-app-title', content: 'Мультитул' },
+        // Default social preview; pages with their own image override it.
+        { property: 'og:image', content: '/og-image.png' },
+        { property: 'og:image:width', content: '1200' },
+        { property: 'og:image:height', content: '630' },
+        { property: 'og:site_name', content: 'Мультитул' },
+        { property: 'og:locale', content: 'ru_RU' },
+        { name: 'twitter:image', content: '/og-image.png' },
+      ],
+    },
+  },
   vite: {
     css: {
       preprocessorOptions: {

@@ -56,6 +56,7 @@ export class AdminService {
       pendingReviews,
       activePromoCodes,
       priceReviewNeeded,
+      productsWithoutImages,
       revenue,
       ordersByStatus,
       recentOrders,
@@ -73,6 +74,11 @@ export class AdminService {
       this.prisma.review.count({ where: { status: 'PENDING' } }),
       this.prisma.promoCode.count({ where: { isActive: true } }),
       this.prisma.product.count({ where: { priceReviewNeeded: true } }),
+      // The single biggest driver of "this shop looks cheap": a grid of grey
+      // boxes where product photos should be.
+      this.prisma.product.count({
+        where: { status: 'PUBLISHED', images: { none: {} } },
+      }),
       this.prisma.order.aggregate({
         where: revenueWhere,
         _sum: { total: true },
@@ -137,6 +143,7 @@ export class AdminService {
       pendingReviews,
       activePromoCodes,
       priceReviewNeeded,
+      productsWithoutImages,
       revenueTotal: Math.round((revenue._sum.total ?? 0) * 100) / 100,
       averageOrder: Math.round((revenue._avg.total ?? 0) * 100) / 100,
       ordersByStatus: Object.fromEntries(
