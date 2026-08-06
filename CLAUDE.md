@@ -88,6 +88,25 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   outage must never fail the request or crash the process on an unhandled
   rejection. Customer-supplied text is HTML-escaped (the message uses
   `parse_mode: HTML`). `PUBLIC_ORIGIN` adds a deep link to the order in admin.
+- **One product, many supplier offers** (`offers/`). `Product` is the canonical
+  card; `SourceProduct` rows hanging off it are competing supplier offers.
+  Matching (`product-matching.ts`, pure and unit-tested) ranks signals
+  barcode > brand+sku > brand+model > similar name. An article number only
+  identifies together with its brand, and a name match across *different*
+  brands is always rejected. **Only barcode and brand+sku auto-merge** — weaker
+  signals go to `/admin/duplicates` for a human, because an incorrect merge is
+  expensive to unpick.
+  `ProductMergeService.merge()` moves offers, images, specs, reviews, price
+  history and order lines onto the survivor inside one transaction. Moving
+  `Review` and `PriceHistory` is **mandatory, not tidiness**: both cascade on
+  delete, so skipping them would silently destroy customer reviews. The merged
+  slug becomes a `ProductRedirect`, and the product page turns that into a 301.
+  **`Product.costPrice` comes from the cheapest offer**, not from whichever
+  parser ran last — in-stock offers outrank a cheaper unavailable one. Parsers
+  call `offers.onProductParsed(productId)` *after* saving their SourceProduct.
+  Public API exposes only `offers: { count, inStockCount }`. Supplier URLs and
+  our costs must never reach the storefront — they are admin-only
+  (`GET /admin/offers/product/:id`).
 - **Pricing / margin engine** (`pricing/`). Supplier cost lives in
   `Product.costPrice`; the storefront price is derived from it by `PricingRule`
   (percent and/or flat markup, minimum absolute margin, cost bands, rounding

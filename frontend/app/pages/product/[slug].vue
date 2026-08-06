@@ -6,13 +6,8 @@ type Product = CatalogProduct & {
   descriptionShort?: string | null
   descriptionFull?: string | null
   images?: Array<{ id?: string, url: string, alt?: string | null }>
-  sourceProducts?: Array<{
-    id: string
-    url: string
-    name: string
-    price?: number | null
-    currency?: string | null
-  }>
+  /** Aggregate only — supplier links and costs never leave the admin API. */
+  offers?: { count: number, inStockCount: number }
 }
 
 const route = useRoute()
@@ -27,7 +22,14 @@ const { data: product, status, error } = await useAsyncData<Product>(
 )
 
 if (error.value) {
-  throw createError({ statusCode: 404, statusMessage: 'Товар не найден', fatal: true })
+  // A product merged into another answers 404 with the survivor's slug, so the
+  // old URL keeps its links and search ranking instead of dying.
+  const redirectTo = (error.value as { data?: { redirectTo?: string } }).data?.redirectTo
+  if (redirectTo) {
+    await navigateTo(`/product/${redirectTo}`, { redirectCode: 301, replace: true })
+  } else {
+    throw createError({ statusCode: 404, statusMessage: 'Товар не найден', fatal: true })
+  }
 }
 
 const fallbackProduct: CatalogProduct = { id: '', slug: '', name: '' }
@@ -318,6 +320,13 @@ useHead(() => {
               </button>
             </div>
 
+            <p v-if="(product.offers?.count ?? 0) > 1" class="offers-note">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              Лучшая цена из {{ product.offers!.count }} предложений поставщиков
+            </p>
+
             <ul class="assurances">
               <li>Доставка по Беларуси — курьером, почтой или самовывозом</li>
               <li>Оплата наличными, картой или по счёту для юрлиц</li>
@@ -602,6 +611,24 @@ useHead(() => {
 .text-action svg {
   width: 18px;
   height: 18px;
+}
+
+.offers-note {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--success-soft);
+  color: var(--success-soft-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  gap: var(--space-2);
+}
+
+.offers-note svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .assurances {
