@@ -78,6 +78,13 @@ export class ParserJobsService {
                 2,
               ),
           },
+          {
+            name: 'revalidate',
+            label: 'Перечитать всё',
+            description:
+              'Возвращает всю очередь в PENDING. Нужно после правок парсера — например, чтобы вернуть товары, потерянные из-за старой ошибки со слагами. Разбор займёт столько же, сколько первый залив.',
+            run: () => this.thTools.revalidateAllSitemaps(),
+          },
         ];
       case 'tools-by':
         return [
@@ -97,6 +104,13 @@ export class ParserJobsService {
                 await this.settings.getBatchLimit(code),
                 1,
               ),
+          },
+          {
+            name: 'revalidate',
+            label: 'Перечитать всё',
+            description:
+              'Возвращает всю очередь в PENDING. Нужно после правок парсера — например, чтобы вернуть товары, потерянные из-за старой ошибки со слагами. Разбор займёт столько же, сколько первый залив.',
+            run: () => this.toolsBy.revalidateAllSitemaps(),
           },
         ];
       case 'dukon':

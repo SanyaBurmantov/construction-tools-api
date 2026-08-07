@@ -117,6 +117,7 @@ describe('ParserJobsService', () => {
     expect(service.jobsFor('tools-by').map((job) => job.name)).toEqual([
       'refresh',
       'process',
+      'revalidate',
     ]);
   });
 });

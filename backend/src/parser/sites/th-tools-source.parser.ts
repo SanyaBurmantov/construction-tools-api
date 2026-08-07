@@ -162,6 +162,27 @@ export class ThToolsParserService {
     });
   }
 
+  /**
+   * Puts the whole queue back to PENDING so every product is read again.
+   *
+   * Needed after a parser fix that changed what gets saved — products lost to
+   * the old slug-collision bug, for instance, only reappear on a re-read.
+   * `attempts` is reset too: these rows get a clean slate, not the watchdog's
+   * three-strikes budget from a previous life.
+   */
+  async revalidateAllSitemaps() {
+    return this.prisma.sitemapsThTools.updateMany({
+      data: {
+        isVisited: false,
+        status: 'PENDING',
+        attempts: 0,
+        lastError: null,
+        lastTriedAt: null,
+        visitedAt: null,
+      },
+    });
+  }
+
   async processSitemapsBatch(limit = 30, concurrency = 1) {
     await this.publishDraftProducts();
 
@@ -584,6 +605,7 @@ export class ThToolsParserService {
         categoryId,
         spec.name,
         key,
+        spec.value,
       );
       if (!specification) continue;
 
