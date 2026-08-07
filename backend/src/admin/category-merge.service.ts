@@ -154,7 +154,15 @@ export class CategoryMergeService {
       const level = parentLevel + 1;
       await tx.category.update({
         where: { id: row.id },
-        data: { ...(parentId ? { parentId } : {}), path, level },
+        data: {
+          ...(parentId ? { parentId } : {}),
+          path,
+          level,
+          // pathKey is the parsers' identity for this category. Leaving it at
+          // the pre-merge chain would make the next parse create a fresh row
+          // at the old position — resurrecting the category an admin merged.
+          pathKey: path.join('/'),
+        },
       });
       for (const next of childrenByParent.get(row.id) ?? []) {
         await update(next, path, level);

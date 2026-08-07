@@ -1,17 +1,10 @@
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { Injectable, Logger } from '@nestjs/common';
 import { Supplier7745ParserService } from './7745-source.parser';
 import { ParserRuntimeStatusService } from '../parser-runtime-status.service';
+import { ParserSettingsService } from '../parser-settings.service';
 
-const SUPPLIER_7745_CRON_BATCH_LIMIT = getPositiveEnvNumber(
-  'SUPPLIER_7745_CRON_BATCH_LIMIT',
-  30,
-);
-
-function getPositiveEnvNumber(name: string, fallback: number) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
+const SOURCE_CODE = '7745';
 
 @Injectable()
 export class Supplier7745Cron {
@@ -22,17 +15,19 @@ export class Supplier7745Cron {
   constructor(
     private readonly supplier7745Service: Supplier7745ParserService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
+    private readonly settings: ParserSettingsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  /** Slot :25/:55. Disabled by default — 7745 is a sample site. */
+  @Cron('0 25,55 * * * *')
   async processPendingQueue() {
-    if (!this.isEnabled() || this.isProcessing) return;
+    if (!(await this.isEnabled()) || this.isProcessing) return;
 
     this.isProcessing = true;
     await this.runtimeStatus.start('7745-process', '7745 process queue');
     try {
       const result = await this.supplier7745Service.processSitemapsBatch(
-        SUPPLIER_7745_CRON_BATCH_LIMIT,
+        await this.settings.getBatchLimit(SOURCE_CODE),
         1,
       );
       await this.runtimeStatus.success('7745-process', result);
@@ -51,7 +46,7 @@ export class Supplier7745Cron {
 
   @Cron('0 20 6 * * *')
   async refreshSitemap() {
-    if (!this.isEnabled() || this.isRefreshing) return;
+    if (!(await this.isEnabled()) || this.isRefreshing) return;
 
     this.isRefreshing = true;
     await this.runtimeStatus.start('7745-refresh', '7745 refresh sitemap');
@@ -70,9 +65,6 @@ export class Supplier7745Cron {
   }
 
   private isEnabled() {
-    return (
-      process.env.PARSER_CRON_ENABLED === 'true' &&
-      process.env.SUPPLIER_7745_CRON_ENABLED === 'true'
-    );
+    return this.settings.isSourceCronEnabled(SOURCE_CODE);
   }
 }

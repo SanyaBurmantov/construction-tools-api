@@ -561,7 +561,7 @@ useHead({
   width: 100%;
   height: 100%;
   object-fit: contain;
-  mix-blend-mode: multiply;
+  mix-blend-mode: var(--image-blend);
 }
 
 .category-image-empty {

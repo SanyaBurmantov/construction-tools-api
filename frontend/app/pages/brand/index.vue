@@ -3,173 +3,192 @@ type Brand = {
   id: string
   name: string
   slug?: string
+  logo?: string | null
+  country?: string | null
   _count?: { products: number }
 }
 
 const route = useRoute()
+const router = useRouter()
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
 
-function routeSearch() {
-  const value = route.query.search
-  return String((Array.isArray(value) ? value[0] : value) || '')
-}
-
-const search = ref(routeSearch())
-watch(() => route.query.search, () => { search.value = routeSearch() })
-
-const { data: brands, pending, error } = await useAsyncData<Brand[]>(
+const { data: brands, status } = await useAsyncData<Brand[]>(
   'brand-list',
-  () => $fetch<Brand[]>(apiBase + '/brands'),
+  () => $fetch<Brand[]>(`${apiBase}/brands`),
   { default: () => [] }
 )
 
-const sortedBrands = computed(() => [...brands.value].sort((a, b) => a.name.localeCompare(b.name, 'ru')))
+/** The filter lives in the query so a filtered list stays shareable. */
+const search = computed(() => {
+  const raw = Array.isArray(route.query.search) ? route.query.search[0] : route.query.search
+  return String(raw || '')
+})
+const searchInput = ref(search.value)
+watch(search, value => { searchInput.value = value })
+
+function applySearch(value: string) {
+  const query = { ...route.query }
+  if (value.trim()) query.search = value.trim()
+  else delete query.search
+  router.replace({ query })
+}
+
+const sortedBrands = computed(() =>
+  [...brands.value].sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+)
+
 const filteredBrands = computed(() => {
-  const query = search.value.trim().toLocaleLowerCase('ru')
-  return query
-    ? sortedBrands.value.filter(brand => brand.name.toLocaleLowerCase('ru').includes(query))
-    : sortedBrands.value
+  const query = search.value.trim().toLowerCase()
+  if (!query) return sortedBrands.value
+  return sortedBrands.value.filter(brand => brand.name.toLowerCase().includes(query))
 })
 
-const groupedBrands = computed(() => filteredBrands.value.reduce<Array<{ letter: string, items: Brand[] }>>(
-  (groups, brand) => {
-    const letter = brand.name.trim().charAt(0).toLocaleUpperCase('ru') || '#'
-    const group = groups.at(-1)
-    if (group?.letter === letter) group.items.push(brand)
-    else groups.push({ letter, items: [brand] })
-    return groups
-  },
-  []
-))
+const totalProducts = computed(() =>
+  sortedBrands.value.reduce((sum, brand) => sum + (brand._count?.products || 0), 0)
+)
 
 function brandLink(brand: Brand) {
-  return '/brand/' + (brand.slug || brand.id) + '/'
+  return `/brand/${brand.slug || brand.id}/`
 }
 
-function productLabel(count: number) {
-  const lastTwo = count % 100
-  const last = count % 10
-  return lastTwo >= 11 && lastTwo <= 14 ? 'товаров' : last === 1 ? 'товар' : last >= 2 && last <= 4 ? 'товара' : 'товаров'
-}
+const description
+  = 'Все бренды инструмента и оборудования в каталоге Мультитул — категории и товары каждого производителя.'
+const canonical = computed(
+  () => `${String(config.public.siteUrl).replace(/\/$/, '')}/brand`
+)
 
-useHead({
+useSeoMeta({
   title: 'Бренды | Мультитул',
-  meta: [{
-    name: 'description',
-    content: 'Список всех брендов в каталоге Мультитул с переходом к категориям каждого бренда.'
-  }]
+  description,
+  ogTitle: 'Бренды | Мультитул',
+  ogDescription: description,
+  ogType: 'website',
+  ogUrl: () => canonical.value,
 })
+
+useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
 </script>
 
 <template>
   <div class="brands-page">
     <UiBreadcrumbs :items="[{ label: 'Главная', to: '/' }, { label: 'Бренды' }]" />
 
-    <header class="brands-hero">
+    <section class="hero">
       <div class="hero-copy">
-        <span class="eyebrow">Производители</span>
-        <h1>Бренды</h1>
-        <p>Выберите бренд и посмотрите его товары по категориям.</p>
+        <span class="eyebrow">Бренды</span>
+        <h1>Все бренды в каталоге</h1>
+        <p>{{ description }}</p>
       </div>
       <div class="hero-stat">
         <strong>{{ sortedBrands.length }}</strong>
-        <span>брендов в каталоге</span>
+        <span>брендов</span>
       </div>
-    </header>
+    </section>
 
-    <div class="brands-toolbar">
-      <div class="search-field">
-        <label for="brand-search" class="sr-only">Поиск бренда</label>
-        <UiInput id="brand-search" v-model="search" placeholder="Найти бренд">
-          <template #leading>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm7.5 14.5L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
-          </template>
-          <template v-if="search" #trailing>
-            <button type="button" class="clear-search" aria-label="Очистить поиск" @click="search = ''">✕</button>
-          </template>
-        </UiInput>
-      </div>
-      <span class="result-count" aria-live="polite">Найдено: {{ filteredBrands.length }}</span>
+    <div class="toolbar">
+      <label class="sr-only" for="brand-search">Поиск по названию бренда</label>
+      <UiInput
+        id="brand-search"
+        v-model="searchInput"
+        class="toolbar-search"
+        type="search"
+        size="sm"
+        placeholder="Поиск по названию бренда"
+        @update:model-value="applySearch(String($event ?? ''))"
+      />
+      <span class="toolbar-count">
+        {{ search ? `Найдено: ${filteredBrands.length}` : `${totalProducts} товаров` }}
+      </span>
     </div>
 
-    <div v-if="pending" class="brands-grid" aria-label="Загружаем бренды">
-      <UiSkeleton v-for="i in 8" :key="i" height="108px" radius="var(--radius-lg)" />
+    <div v-if="status === 'pending'" class="grid">
+      <UiSkeleton v-for="i in 12" :key="i" height="196px" radius="var(--radius-md)" />
     </div>
-    <UiAlert v-else-if="error" tone="danger" title="Не удалось загрузить бренды">
-      Обновите страницу или попробуйте позже.
-    </UiAlert>
-    <UiEmpty v-else-if="!sortedBrands.length" title="Брендов пока нет" description="Они появятся здесь, когда в каталоге будут товары производителей." />
-    <UiEmpty v-else-if="!filteredBrands.length" icon="search" title="Бренд не найден" description="Попробуйте другое название или очистите поиск.">
-      <UiButton variant="secondary" @click="search = ''">Очистить поиск</UiButton>
+
+    <UiEmpty
+      v-else-if="!sortedBrands.length"
+      icon="box"
+      title="Бренды пока не добавлены"
+      description="Как только товары появятся в каталоге, здесь будут их производители."
+    >
+      <UiButton to="/catalog/">Перейти в каталог</UiButton>
     </UiEmpty>
 
-    <template v-else>
-      <nav class="letter-nav" aria-label="Бренды по алфавиту">
-        <a v-for="group in groupedBrands" :key="group.letter" :href="'#brands-' + group.letter">{{ group.letter }}</a>
-      </nav>
+    <UiEmpty
+      v-else-if="!filteredBrands.length"
+      icon="search"
+      :title="`По запросу «${search}» ничего не нашлось`"
+      description="Проверьте написание или сбросьте поиск, чтобы увидеть весь список."
+    >
+      <UiButton variant="secondary" @click="applySearch('')">Сбросить поиск</UiButton>
+    </UiEmpty>
 
-      <div class="brand-groups">
-        <section v-for="group in groupedBrands" :id="'brands-' + group.letter" :key="group.letter" class="brand-group">
-          <div class="group-head">
-            <h2>{{ group.letter }}</h2>
-            <span>{{ group.items.length }} брендов</span>
-          </div>
+    <section v-else class="grid">
+      <NuxtLink
+        v-for="brand in filteredBrands"
+        :key="brand.id"
+        :to="brandLink(brand)"
+        class="brand-tile"
+      >
+        <span class="tile-media">
+          <img
+            v-if="brand.logo"
+            :src="brand.logo"
+            :alt="brand.name"
+            loading="lazy"
+            decoding="async"
+          >
+          <span v-else class="tile-initial" aria-hidden="true">{{ brand.name.charAt(0) }}</span>
+        </span>
 
-          <div class="brands-grid">
-            <NuxtLink v-for="brand in group.items" :key="brand.id" :to="brandLink(brand)" class="brand-card">
-              <span class="brand-avatar" aria-hidden="true">{{ brand.name.trim().charAt(0).toLocaleUpperCase('ru') }}</span>
-              <span class="brand-card-copy">
-                <strong>{{ brand.name }}</strong>
-                <small>{{ brand._count?.products || 0 }} {{ productLabel(brand._count?.products || 0) }}</small>
-              </span>
-              <svg class="card-arrow" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M5 12h14m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </NuxtLink>
-          </div>
-        </section>
-      </div>
-    </template>
+        <span class="tile-body">
+          <span class="tile-name">{{ brand.name }}</span>
+          <span class="tile-count">{{ brand._count?.products || 0 }} товаров</span>
+        </span>
+      </NuxtLink>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.brands-page,
-.brand-groups {
+.brands-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-5);
 }
 
-.brands-hero {
+.hero {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-6);
   padding: var(--space-8);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--brand-soft), var(--surface-card) 65%);
-  gap: var(--space-6);
+  background: linear-gradient(135deg, var(--brand-soft), var(--surface-card));
 }
 
 .hero-copy {
   display: flex;
+  max-width: 60ch;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.hero-copy p {
+.hero .eyebrow {
+  color: var(--brand);
+}
+
+.hero p {
   color: var(--text-muted);
 }
 
 .hero-stat {
   display: flex;
-  min-width: 160px;
   flex-direction: column;
+  align-items: center;
   padding: var(--space-4) var(--space-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -183,171 +202,113 @@ useHead({
   line-height: 1;
 }
 
-.hero-stat span,
-.result-count {
+.hero-stat span {
   color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.brands-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.search-field {
-  width: min(100%, 360px);
-}
-
-.search-field svg {
-  width: 18px;
-  height: 18px;
-}
-
-.clear-search {
-  padding: var(--space-1);
-  color: var(--text-subtle);
   font-size: var(--text-xs);
 }
 
-.clear-search:hover {
-  color: var(--text-strong);
-}
-
-.letter-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.letter-nav a {
-  display: grid;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  place-items: center;
-}
-
-.letter-nav a:hover {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
-.brand-group {
-  scroll-margin-top: 160px;
-}
-
-.group-head {
+.toolbar {
   display: flex;
   align-items: center;
-  margin-bottom: var(--space-3);
-  gap: var(--space-3);
-}
-
-.group-head h2 {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-sm);
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: var(--text-lg);
-  place-items: center;
-}
-
-.group-head span {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.brands-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  justify-content: space-between;
   gap: var(--space-4);
 }
 
-.brand-card {
-  display: flex;
-  min-width: 0;
-  min-height: 108px;
-  align-items: center;
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-sm);
-  gap: var(--space-3);
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+.toolbar-search {
+  width: 320px;
+  max-width: 100%;
 }
 
-.brand-card:hover,
-.brand-card:focus-visible {
+.toolbar-count {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--space-4);
+}
+
+.brand-tile {
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  text-decoration: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.brand-tile:hover {
   border-color: var(--brand);
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
 }
 
-.brand-avatar {
+/* Fixed ratio keeps the tiles on a rhythm whether a brand has a logo or not. */
+.tile-media {
   display: grid;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  border-radius: var(--radius-md);
-  background: var(--brand-soft);
-  color: var(--brand);
-  font-size: var(--text-xl);
-  font-weight: 800;
+  aspect-ratio: 3 / 2;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
   place-items: center;
 }
 
-.brand-card-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--space-1);
+.tile-media img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  mix-blend-mode: var(--image-blend);
 }
 
-.brand-card-copy strong {
+.tile-initial {
+  color: var(--text-subtle);
+  font-family: var(--font-heading);
+  font-size: var(--text-4xl);
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.tile-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.tile-name {
   overflow: hidden;
   color: var(--text-strong);
-  font-size: var(--text-md);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.brand-card-copy small {
+.tile-count {
   color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.card-arrow {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  color: var(--text-subtle);
-}
-
-.brand-card:hover .card-arrow {
-  color: var(--brand);
+  font-size: var(--text-xs);
 }
 
 @media (max-width: 640px) {
-  .brands-hero {
+  .hero {
     padding: var(--space-5);
   }
 
-  .search-field {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbar-search {
     width: 100%;
   }
 }

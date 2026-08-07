@@ -14,7 +14,13 @@ datasource db {
 model Category {
   id             String   @id @default(uuid())
   name           String
+  /// Public URL segment. Pretty and short where possible, so it is NOT a
+  /// reliable identity — two suppliers' branches can both end in "Прочее".
   slug           String   @unique
+  /// Identity: the full slug chain from the root ("aksessuary/avtolampy/narva").
+  /// Parsers upsert on this, which is what keeps same-named leaves under
+  /// different parents from collapsing into one category.
+  pathKey        String   @unique
   parentId       String?
   level          Int
   path           String[]
@@ -178,6 +184,9 @@ model SourceCategory {
   path             String[]
   mappedCategory   Category?        @relation("MappedSourceCategory", fields: [mappedCategoryId], references: [id])
   mappedCategoryId String?
+  /// Off means "do not import products from this branch" — checked against the
+  /// breadcrumb chain before a product is saved, so it also covers children.
+  isEnabled        Boolean          @default(true)
   sourceProducts   SourceProduct[]
 
   @@unique([sourceId, externalId])
@@ -534,4 +543,41 @@ model Banner {
   updatedAt  DateTime  @updatedAt
 
   @@index([isActive, order])
+}
+
+/// Runtime-tunable parser knobs, so an admin can stop or start parsing without
+/// a redeploy. A missing row means "fall back to the env variable" — env stays
+/// the deploy-time default, the DB row is the operator's override.
+model ParserSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// Supplier category pages, queued the same way product URLs are. Crawling a
+/// category yields product URLs that the sitemap may not list, and `isEnabled`
+/// lets an admin drop a whole branch without touching the regex env vars.
+model ParserCategoryQueue {
+  id             String    @id @default(uuid())
+  sourceCode     String
+  url            String
+  name           String
+  /// Slug chain from the supplier URL, so the UI can render a tree.
+  path           String[]
+  level          Int       @default(0)
+  isEnabled      Boolean   @default(true)
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  pagesCrawled   Int       @default(0)
+  productsFound  Int       @default(0)
+  productsQueued Int       @default(0)
+  lastError      String?
+  lastTriedAt    DateTime?
+  visitedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([sourceCode, url])
+  @@index([sourceCode, status])
+  @@index([sourceCode, level])
 }

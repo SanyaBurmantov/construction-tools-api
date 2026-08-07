@@ -50,6 +50,11 @@ export default defineNuxtConfig({
     '/catalog': { swr: 30 },
     '/catalog/**': { swr: 30 },
     '/product/**': { isr: 900, swr: 900 },
+    // Brand pages are aggregates over the catalogue — they only shift when a
+    // parser adds or removes products, so they tolerate a longer window than
+    // the catalogue itself.
+    '/brand': { isr: 900, swr: 900 },
+    '/brand/**': { isr: 900, swr: 900 },
     '/cart': { ssr: false },
     '/checkout/**': { ssr: false },
     // Wishlist and comparison live in localStorage — nothing to render on the
