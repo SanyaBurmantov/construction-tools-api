@@ -18,6 +18,7 @@ import {
 } from './parser-settings.service';
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
 import { CategoryQueueService } from './categories/category-queue.service';
+import { ParserJobsService } from './parser-jobs.service';
 import { ThToolsParserService } from './sites/th-tools-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
@@ -42,6 +43,7 @@ export class ParserAdminController {
     private readonly settings: ParserSettingsService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
     private readonly categoryQueue: CategoryQueueService,
+    private readonly jobs: ParserJobsService,
     private readonly thTools: ThToolsParserService,
     private readonly dukon: DukonParserService,
     private readonly toolsBy: ToolsByParserService,
@@ -120,6 +122,52 @@ export class ParserAdminController {
     }
 
     return this.getOverview();
+  }
+
+  /* ------------------------------------------------------------ jobs ---- */
+
+  /** What can be launched by hand for this source, and what it is doing now. */
+  @Get('sources/:code/jobs')
+  async listJobs(@Param('code') code: string) {
+    this.ensureKnownSource(code);
+    const health = await this.runtimeStatus.getHealth();
+
+    return this.jobs.jobsFor(code).map((job) => {
+      const key = `${code}-${job.name}`;
+      const status = health.jobs.find((item) => item.key === key) ?? null;
+
+      return {
+        name: job.name,
+        key,
+        label: job.label,
+        description: job.description,
+        isRunning: this.jobs.isRunning(key) || (status?.isRunning ?? false),
+        health: status?.health ?? null,
+        lastSuccessAt: status?.lastSuccessAt ?? null,
+        lastError: status?.lastError ?? null,
+        lastResult: status?.lastResult ?? null,
+      };
+    });
+  }
+
+  /**
+   * Starts a job in the background. Answers immediately — a tools.by catalog
+   * crawl runs for a quarter of an hour, so the caller polls the job list
+   * instead of holding a request open.
+   */
+  @Post('sources/:code/jobs/:job/run')
+  @HttpCode(202)
+  runJob(@Param('code') code: string, @Param('job') jobName: string) {
+    this.ensureKnownSource(code);
+    const result = this.jobs.start(code, jobName);
+
+    if (!result.started && result.reason === 'unknown-job') {
+      throw new BadRequestException(
+        `Unknown job "${jobName}" for source "${code}"`,
+      );
+    }
+
+    return result;
   }
 
   /* -------------------------------------------------- category queue ---- */

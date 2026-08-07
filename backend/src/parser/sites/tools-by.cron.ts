@@ -1,50 +1,27 @@
 import { Cron } from '@nestjs/schedule';
-import { Injectable, Logger } from '@nestjs/common';
-import { ToolsByParserService } from './tools-by-source.parser';
-import { ParserRuntimeStatusService } from '../parser-runtime-status.service';
+import { Injectable } from '@nestjs/common';
 import { ParserSettingsService } from '../parser-settings.service';
+import { ParserJobsService } from '../parser-jobs.service';
 
 const SOURCE_CODE = 'tools-by';
 
+/**
+ * Schedules only. The work, the runtime status and the "is it already running"
+ * guard all live in ParserJobsService, so a scheduled run and a button press in
+ * /admin/parsing can never process the same queue at once.
+ */
 @Injectable()
 export class ToolsByCron {
-  private readonly logger = new Logger(ToolsByCron.name);
-  private isProcessing = false;
-  private isRefreshing = false;
-
   constructor(
-    private readonly toolsByService: ToolsByParserService,
-    private readonly runtimeStatus: ParserRuntimeStatusService,
     private readonly settings: ParserSettingsService,
+    private readonly jobs: ParserJobsService,
   ) {}
 
   /** Slot :10/:40 — see the note in th-tools.cron.ts. */
   @Cron('0 10,40 * * * *')
   async processPendingQueue() {
-    if (!(await this.isEnabled()) || this.isProcessing) return;
-
-    this.isProcessing = true;
-    await this.runtimeStatus.start(
-      'tools-by-process',
-      'Tools.by process queue',
-    );
-    try {
-      const result = await this.toolsByService.processSitemapsBatch(
-        await this.settings.getBatchLimit(SOURCE_CODE),
-        1,
-      );
-      await this.runtimeStatus.success('tools-by-process', result);
-    } catch (error) {
-      // Failure is persisted to runtime status; do NOT rethrow — a thrown cron
-      // handler becomes an unhandled rejection that can crash the process.
-      await this.runtimeStatus.failure('tools-by-process', error);
-      this.logger.error(
-        'tools-by-process cron failed',
-        error instanceof Error ? error.stack : String(error),
-      );
-    } finally {
-      this.isProcessing = false;
-    }
+    if (!(await this.isEnabled())) return;
+    this.jobs.runFromCron(SOURCE_CODE, 'process');
   }
 
   /**
@@ -55,25 +32,8 @@ export class ToolsByCron {
    */
   @Cron('0 20 5 * * *')
   async refreshCatalog() {
-    if (!(await this.isEnabled()) || this.isRefreshing) return;
-
-    this.isRefreshing = true;
-    await this.runtimeStatus.start(
-      'tools-by-refresh',
-      'Tools.by crawl catalog',
-    );
-    try {
-      const result = await this.toolsByService.refreshSitemaps();
-      await this.runtimeStatus.success('tools-by-refresh', result);
-    } catch (error) {
-      await this.runtimeStatus.failure('tools-by-refresh', error);
-      this.logger.error(
-        'tools-by-refresh cron failed',
-        error instanceof Error ? error.stack : String(error),
-      );
-    } finally {
-      this.isRefreshing = false;
-    }
+    if (!(await this.isEnabled())) return;
+    this.jobs.runFromCron(SOURCE_CODE, 'refresh');
   }
 
   private isEnabled() {

@@ -138,7 +138,74 @@ type SourceDraft = {
   categoryExcludeRegex: string
 }
 
+type ParserJob = {
+  name: string
+  key: string
+  label: string
+  description: string
+  isRunning: boolean
+  health: 'OK' | 'RUNNING' | 'ERROR' | 'STALE' | null
+  lastSuccessAt: string | null
+  lastError: string | null
+}
+
 const control = ref<ParserOverview | null>(null)
+const jobs = ref<ParserJob[]>([])
+const jobsBusy = ref('')
+/** Polls while something is running, so a long crawl shows progress. */
+let jobsTimer: ReturnType<typeof setInterval> | null = null
+
+async function loadJobs() {
+  if (!token.value || !expandedSource.value) return
+  try {
+    jobs.value = await adminFetch<ParserJob[]>(`/parser/sources/${expandedSource.value}/jobs`)
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось загрузить задания'))
+  }
+}
+
+/**
+ * Fires the job and returns at once — a tools.by catalog crawl runs for about
+ * a quarter of an hour, so the button reports "запущено", not "готово".
+ */
+async function runJob(job: ParserJob) {
+  jobsBusy.value = job.name
+  try {
+    const result = await adminFetch<{ started: boolean, reason?: string }>(
+      `/parser/sources/${expandedSource.value}/jobs/${job.name}/run`,
+      { method: 'POST' },
+    )
+    if (result.started) {
+      toast.success(`${job.label}: запущено, следите за статусом`)
+    } else {
+      toast.error(`${job.label}: уже выполняется`)
+    }
+    await loadJobs()
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось запустить задание'))
+  } finally {
+    jobsBusy.value = ''
+  }
+}
+
+const anyJobRunning = computed(() => jobs.value.some(job => job.isRunning))
+
+watch(anyJobRunning, (running) => {
+  if (running && !jobsTimer) {
+    jobsTimer = setInterval(() => {
+      void loadJobs()
+      void loadControl()
+    }, 5000)
+  } else if (!running && jobsTimer) {
+    clearInterval(jobsTimer)
+    jobsTimer = null
+  }
+})
+
+onBeforeUnmount(() => {
+  if (jobsTimer) clearInterval(jobsTimer)
+})
+
 const controlBusy = ref('')
 /** Edited separately from `control` so typing doesn't fight a reload. */
 const drafts = reactive<Record<string, SourceDraft>>({})
@@ -587,6 +654,11 @@ function applyCategoryFilters() {
   return loadCategories()
 }
 
+watch(expandedSource, () => {
+  jobs.value = []
+  void loadJobs()
+})
+
 watch(categorySource, () => {
   categoryPagination.page = 1
   void loadCategories()
@@ -878,6 +950,48 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
             Ошибка в выражении не сохранится — сервер её отклонит.
           </small>
         </label>
+
+        <section class="jobs">
+          <h4>Запустить вручную</h4>
+          <p class="muted hint">
+            Задание стартует в фоне: кнопка сообщает «запущено», а не «готово».
+            Пока что-то выполняется, статус обновляется сам каждые 5 секунд.
+          </p>
+
+          <div v-for="job in jobs" :key="job.name" class="job">
+            <div class="job-info">
+              <strong>{{ job.label }}</strong>
+              <p class="muted hint">{{ job.description }}</p>
+              <p v-if="job.lastError" class="row-error" :title="job.lastError">
+                {{ job.lastError }}
+              </p>
+            </div>
+
+            <div class="job-state">
+              <UiBadge v-if="job.isRunning" tone="info" size="sm">Выполняется</UiBadge>
+              <UiBadge
+                v-else-if="job.health"
+                :tone="HEALTH_TONE[job.health] || 'neutral'"
+                size="sm"
+              >
+                {{ HEALTH_LABEL[job.health] || job.health }}
+              </UiBadge>
+              <span class="muted hint">{{ formatAgo(job.lastSuccessAt) }}</span>
+            </div>
+
+            <UiButton
+              size="sm"
+              variant="secondary"
+              :disabled="job.isRunning"
+              :loading="jobsBusy === job.name"
+              @click="runJob(job)"
+            >
+              {{ job.isRunning ? 'Идёт…' : 'Запустить' }}
+            </UiButton>
+          </div>
+
+          <p v-if="!jobs.length" class="muted">Заданий для этого источника нет.</p>
+        </section>
 
         <div class="advanced-actions">
           <UiButton
@@ -1523,6 +1637,56 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
   color: var(--text-muted);
   font-size: var(--text-xs);
   line-height: 1.4;
+}
+
+.jobs {
+  padding-top: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.jobs h4 {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.job {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.job:last-of-type {
+  border-bottom: 0;
+}
+
+.job-info strong {
+  color: var(--text-strong);
+}
+
+.job-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+@media (max-width: 720px) {
+  .job {
+    grid-template-columns: 1fr auto;
+  }
+
+  .job-state {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+  }
 }
 
 .advanced-actions {
