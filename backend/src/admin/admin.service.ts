@@ -11,7 +11,7 @@ import { AdminCreateProductDto } from './dto/admin-create-product.dto';
 import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { SitemapsService } from '../parser/sitemaps/sitemaps.service';
-import { ThToolsParserService } from '../parser/sites/th-tools.parser';
+import { ThToolsParserService } from '../parser/sites/th-tools-source.parser';
 import { DukonParserService } from '../parser/sites/dukon.parser';
 import { Supplier7745ParserService } from '../parser/sites/7745-source.parser';
 import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
@@ -307,6 +307,14 @@ export class AdminService {
     return this.supplier7745ParserService.getSitemaps(query);
   }
 
+  getToolsByQueueStats() {
+    return this.toolsByParserService.getQueueStats();
+  }
+
+  getToolsBySitemaps(query: AdminSitemapQueryDto) {
+    return this.toolsByParserService.getSitemaps(query);
+  }
+
   async getParserRuntimeStatus() {
     return this.runtimeStatus.getAll();
   }
@@ -423,6 +431,22 @@ export class AdminService {
     return this.supplier7745ParserService.retryProblemSitemaps();
   }
 
+  refreshToolsBySitemaps() {
+    return this.toolsByParserService.refreshSitemaps();
+  }
+
+  processToolsByQueuedProducts(limit = 25) {
+    return this.toolsByParserService.processSitemapsBatch(limit, 1);
+  }
+
+  retryToolsBySitemap(id: string) {
+    return this.toolsByParserService.retrySitemap(id);
+  }
+
+  retryProblemToolsBySitemaps() {
+    return this.toolsByParserService.retryProblemSitemaps();
+  }
+
   getBrands() {
     return this.prisma.brand.findMany({ orderBy: { name: 'asc' } });
   }
@@ -516,6 +540,9 @@ export class AdminService {
         description: dto.description,
         level: parent ? parent.level + 1 : 0,
         path: parent ? [...parent.path, dto.slug] : [dto.slug],
+        // Identity must match what the parsers build, or a hand-made category
+        // and a parsed one at the same place in the tree become two rows.
+        pathKey: parent ? `${parent.pathKey}/${dto.slug}` : dto.slug,
         seoTitle: dto.name,
         seoDescription: dto.description || dto.name,
       },

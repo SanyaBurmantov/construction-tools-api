@@ -83,6 +83,62 @@ export class OffersService {
     return this.recomputeFromOffers(productId);
   }
 
+  /**
+   * The supplier no longer serves this URL (404/410), so the offer is withdrawn.
+   *
+   * Leaving it in place is the expensive failure: the card keeps the dead
+   * supplier's price and in-stock flag, and a customer orders something nobody
+   * can ship. Clearing the price also takes the offer out of the cost
+   * calculation, so the product re-prices from whoever still carries it.
+   */
+  async delistOffer(sourceId: string, url: string) {
+    const offer = await this.prisma.sourceProduct.findUnique({
+      where: { sourceId_url: { sourceId, url } },
+      select: { id: true, productId: true },
+    });
+    if (!offer) return { delisted: false, productHidden: false };
+
+    await this.prisma.sourceProduct.update({
+      where: { id: offer.id },
+      data: { stock: false, price: null, lastSync: new Date() },
+    });
+
+    if (!offer.productId) return { delisted: true, productHidden: false };
+
+    const remaining = await this.prisma.sourceProduct.count({
+      where: { productId: offer.productId, price: { not: null, gt: 0 } },
+    });
+
+    if (remaining > 0) {
+      await this.recomputeFromOffers(offer.productId);
+      return { delisted: true, productHidden: false };
+    }
+
+    // Nobody carries it any more. Hide rather than delete: reviews, order
+    // history and the slug redirect all still point here. ARCHIVED and an
+    // admin's own HIDDEN are left alone — this must not resurrect or reclassify
+    // a decision a human already made.
+    const product = await this.prisma.product.findUnique({
+      where: { id: offer.productId },
+      select: { status: true },
+    });
+    const hideable =
+      product?.status === 'PUBLISHED' || product?.status === 'DRAFT';
+
+    await this.prisma.product.update({
+      where: { id: offer.productId },
+      data: {
+        stockStatus: 'out_of_stock',
+        ...(hideable ? { status: 'HIDDEN' as const } : {}),
+      },
+    });
+
+    this.logger.warn(
+      `Product ${offer.productId} has no live offers left — hidden from the storefront`,
+    );
+    return { delisted: true, productHidden: hideable };
+  }
+
   /** Public view: how many suppliers carry this, and is any of them in stock. */
   async publicOfferSummary(productId: string) {
     const offers = await this.prisma.sourceProduct.findMany({

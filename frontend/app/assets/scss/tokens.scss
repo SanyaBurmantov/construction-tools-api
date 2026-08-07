@@ -60,6 +60,15 @@
   --surface-hover: var(--gray-50);
   --surface-active: var(--gray-100);
 
+  /**
+   * Product and brand images arrive from suppliers as JPEG/PNG on a white
+   * background. `multiply` drops that white into our light surfaces so the
+   * cut-out looks native. On a dark surface the same blend would multiply the
+   * artwork into the background and erase it — dark mode falls back to
+   * `normal`, which keeps the white plate but keeps the image legible.
+   */
+  --image-blend: multiply;
+
   /* ---- Semantic text -------------------------------------------------- */
   --text-strong: var(--gray-900);
   --text-default: var(--gray-800);
@@ -192,6 +201,8 @@
   --surface-inverse: var(--gray-100);
   --surface-hover: rgb(255 255 255 / 4%);
   --surface-active: rgb(255 255 255 / 8%);
+
+  --image-blend: normal;
 
   --text-strong: #f7f9fc;
   --text-default: var(--gray-200);

@@ -38,10 +38,31 @@ services:
       REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
       # Скачок закупочной цены свыше N% уходит на ручную проверку, а не на витрину.
       PRICING_SPIKE_THRESHOLD_PERCENT: ${PRICING_SPIKE_THRESHOLD_PERCENT:-50}
+      # Дефолт на старте. Переключатели в /admin/parsing пишут override в БД,
+      # и после первого переключения решает уже он, а не эта переменная.
       PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
+      PARSER_FETCH_TIMEOUT_MS: ${PARSER_FETCH_TIMEOUT_MS:-20000}
+      # Сторож: доля ошибок для «сломан», задержка и потолок повторов.
+      PARSER_FAILURE_RATE_THRESHOLD: ${PARSER_FAILURE_RATE_THRESHOLD:-0.5}
+      PARSER_RETRY_AFTER_MINUTES: ${PARSER_RETRY_AFTER_MINUTES:-60}
+      PARSER_MAX_ATTEMPTS: ${PARSER_MAX_ATTEMPTS:-3}
+      TH_TOOLS_CRON_ENABLED: ${TH_TOOLS_CRON_ENABLED:-true}
+      DUKON_CRON_ENABLED: ${DUKON_CRON_ENABLED:-true}
       DUKON_CRON_BATCH_LIMIT: ${DUKON_CRON_BATCH_LIMIT:-30}
-      TH_TOOLS_CRON_BATCH_LIMIT: ${TH_TOOLS_CRON_BATCH_LIMIT:-30}
+      TH_TOOLS_CRON_BATCH_LIMIT: ${TH_TOOLS_CRON_BATCH_LIMIT:-300}
+      TH_TOOLS_REQUEST_DELAY_MS: ${TH_TOOLS_REQUEST_DELAY_MS:-1500}
+      TH_TOOLS_CATEGORY_MAX_PAGES: ${TH_TOOLS_CATEGORY_MAX_PAGES:-100}
+      # Пустой INCLUDE = берём всё, кроме EXCLUDE. Фильтр по цепочке хлебных крошек.
+      TH_TOOLS_CATEGORY_INCLUDE_REGEX: ${TH_TOOLS_CATEGORY_INCLUDE_REGEX:-}
+      TH_TOOLS_CATEGORY_EXCLUDE_REGEX: ${TH_TOOLS_CATEGORY_EXCLUDE_REGEX:-косметика|автохими|автоламп|антенн|ароматизатор|брелок|ковры напольные|кресла детские|очки для чтения|помощь водителю|щ[её]тки стеклоочистител|уход за авто|внешний тюнинг|внутрисалонн|велотехник|дача, отдых}
+      TOOLS_BY_CRON_ENABLED: ${TOOLS_BY_CRON_ENABLED:-true}
+      TOOLS_BY_CRON_BATCH_LIMIT: ${TOOLS_BY_CRON_BATCH_LIMIT:-300}
+      TOOLS_BY_REQUEST_DELAY_MS: ${TOOLS_BY_REQUEST_DELAY_MS:-2000}
+      TOOLS_BY_DISCOVERY_MAX_PAGES: ${TOOLS_BY_DISCOVERY_MAX_PAGES:-500}
+      TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
+      TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-товары для дома|товары для уборки|посуда|текстиль|игрушк|канцеляр|зоотовар|космет|бытовая химия|продукты питания}
       SUPPLIER_7745_CRON_BATCH_LIMIT: ${SUPPLIER_7745_CRON_BATCH_LIMIT:-30}
+      # 7745 — не поставщик, а пример от заказчика. Крон держим выключенным.
       SUPPLIER_7745_CRON_ENABLED: ${SUPPLIER_7745_CRON_ENABLED:-false}
       SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
       SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}

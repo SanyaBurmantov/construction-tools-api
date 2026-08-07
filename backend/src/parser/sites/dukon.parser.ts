@@ -7,8 +7,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
+import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
 import { ParserLogService } from '../parser-log.service';
+import { ParserHttpError } from '../parser-http.error';
 import { OffersService } from '../../offers/offers.service';
+import { CategoryTreeService } from '../categories/category-tree.service';
+import { ProductIdentityService } from '../product-identity.service';
+import { ParserSettingsService } from '../parser-settings.service';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 type DukonStockStatus = 'in_stock' | 'out_of_stock' | 'preorder' | 'unknown';
@@ -28,22 +33,13 @@ type ParsedJsonLdProduct = {
   raw?: JsonRecord;
 };
 
+const SOURCE_CODE = 'dukon';
 const DUKON_BASE_URL = 'https://dukon.by';
 const DUKON_SITEMAP_URL = `${DUKON_BASE_URL}/sitemap-iblock-7.xml`;
-const DUKON_REQUEST_DELAY_MS = 3000;
 const DUKON_DISCOVERY_DELAY_MS = 1000;
-const DUKON_DISCOVERY_MAX_PAGES = getPositiveEnvNumber(
-  'DUKON_DISCOVERY_MAX_PAGES',
-  5000,
-);
 const DUKON_PRIORITY_CATEGORY_URLS = [
   `${DUKON_BASE_URL}/catalog/nabory-instrumentov/`,
 ];
-
-function getPositiveEnvNumber(name: string, fallback: number) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
 
 class NonProductPageError extends Error {
   constructor(message: string) {
@@ -58,6 +54,9 @@ export class DukonParserService {
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
     private readonly offers: OffersService,
+    private readonly categoryTree: CategoryTreeService,
+    private readonly settings: ParserSettingsService,
+    private readonly identity: ProductIdentityService,
   ) {}
 
   async refreshSitemaps() {
@@ -82,16 +81,14 @@ export class DukonParserService {
   }
 
   async discoverCatalogBranch(rootUrl: string) {
+    const maxPages = await this.settings.getMaxPages(SOURCE_CODE);
     const root = this.absoluteUrl(rootUrl);
     const source = await this.upsertSource();
     const visitedPages = new Set<string>();
     const productUrls = new Set<string>();
     const categoryQueue = [root];
 
-    while (
-      categoryQueue.length &&
-      visitedPages.size < DUKON_DISCOVERY_MAX_PAGES
-    ) {
+    while (categoryQueue.length && visitedPages.size < maxPages) {
       const pageUrl = categoryQueue.shift();
       if (!pageUrl || visitedPages.has(pageUrl)) continue;
       visitedPages.add(pageUrl);
@@ -220,6 +217,7 @@ export class DukonParserService {
   }
 
   async processSitemapsBatch(limit = 25, concurrency = 2) {
+    const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
     await this.cleanupStoredProductImages();
     await this.publishDraftProducts();
 
@@ -229,7 +227,7 @@ export class DukonParserService {
     });
 
     await runWithConcurrency(urls, concurrency, async (entry) => {
-      await this.sleep(DUKON_REQUEST_DELAY_MS);
+      await this.sleep(delayMs);
       await this.processSitemapUrl(entry.url);
     });
 
@@ -307,7 +305,7 @@ export class DukonParserService {
     });
     if (res.status === 404)
       throw new NonProductPageError('Product page returned 404');
-    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+    if (!res.ok) throw new ParserHttpError(res.status, url);
 
     const html = await res.text();
     const $ = cheerio.load(html);
@@ -364,58 +362,72 @@ export class DukonParserService {
       $,
       source.id,
     );
-    const brandId = brandName ? await this.upsertBrand(brandName) : undefined;
+    const brandId = brandName
+      ? await this.identity.upsertBrand(brandName)
+      : undefined;
     const images = this.parseImages($, name, jsonLd?.images);
     // Keep existing images if a (possibly flaky) re-parse returned none, so a
     // partial fetch never wipes a product's gallery.
     const imagesUpdate =
       images.length > 0 ? { images: { deleteMany: {}, create: images } } : {};
-    const existingProduct = await this.prisma.product.findUnique({
-      where: { slug },
-      select: { status: true },
-    });
+    // Status of the product THIS offer belongs to. Looking it up by slug
+    // could republish an unrelated product that merely shares the name.
+    const existingProductId = await this.identity.findByOffer(source.id, url);
+    const existingProduct = existingProductId
+      ? await this.prisma.product.findUnique({
+          where: { id: existingProductId },
+          select: { status: true },
+        })
+      : null;
     const statusUpdate =
       existingProduct?.status === 'DRAFT'
         ? { status: 'PUBLISHED' as const }
         : {};
 
-    const product = await this.prisma.product.upsert({
-      where: { slug },
-      update: {
-        ...statusUpdate,
-        // priceValue/oldPrice are deliberately absent: PricingService owns both
-        // so markup rules apply and MANUAL prices aren't clobbered.
-        priceCurrency,
-        sku,
-        model,
-        barcode,
-        brandId,
-        categoryId,
-        stockStatus,
-        descriptionShort,
-        descriptionFull,
-        seoTitle,
-        seoDescription,
-        ...imagesUpdate,
-      },
-      create: {
-        name,
-        slug,
-        sku,
-        brandId,
-        categoryId,
-        priceValue,
-        priceCurrency,
-        oldPrice,
-        stockStatus,
-        status: 'PUBLISHED',
-        model,
-        barcode,
-        descriptionShort,
-        descriptionFull,
-        seoTitle,
-        seoDescription,
-        images: { create: images },
+    // Identity is the supplier offer, not the slug — see
+    // ProductIdentityService for why upserting on slug lost products.
+    const product = await this.identity.save({
+      sourceId: source.id,
+      // saveSourceProduct keys the offer on the same URL — keep them identical.
+      url,
+      baseSlug: slug,
+      data: {
+        update: {
+          ...statusUpdate,
+          // priceValue/oldPrice are deliberately absent: PricingService owns both
+          // so markup rules apply and MANUAL prices aren't clobbered.
+          priceCurrency,
+          sku,
+          model,
+          barcode,
+          brandId,
+          categoryId,
+          stockStatus,
+          descriptionShort,
+          descriptionFull,
+          seoTitle,
+          seoDescription,
+          ...imagesUpdate,
+        },
+        create: {
+          name,
+          slug,
+          sku,
+          brandId,
+          categoryId,
+          priceValue,
+          priceCurrency,
+          oldPrice,
+          stockStatus,
+          status: 'PUBLISHED',
+          model,
+          barcode,
+          descriptionShort,
+          descriptionFull,
+          seoTitle,
+          seoDescription,
+          images: { create: images },
+        },
       },
     });
 
@@ -455,7 +467,7 @@ export class DukonParserService {
     });
     if (res.status === 404)
       throw new NonProductPageError('Product page returned 404');
-    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+    if (!res.ok) throw new ParserHttpError(res.status, url);
 
     const html = await res.text();
     const $ = cheerio.load(html);
@@ -582,11 +594,13 @@ export class DukonParserService {
       lastSync: new Date(),
     };
 
-    await this.prisma.sourceProduct.upsert({
-      where: { sourceId_url: { sourceId, url } },
-      update: sourceProductData,
-      create: sourceProductData,
-    });
+    await upsertTolerantly(() =>
+      this.prisma.sourceProduct.upsert({
+        where: { sourceId_url: { sourceId, url } },
+        update: sourceProductData,
+        create: sourceProductData,
+      }),
+    );
   }
 
   private async parseAndSaveCategories(
@@ -598,13 +612,14 @@ export class DukonParserService {
       .get()
       .filter((name) => name && name !== 'Главная' && name !== 'Каталог');
 
+    // Canonical tree keyed on the full slug chain — see CategoryTreeService.
+    const leafCategory = await this.categoryTree.upsertBranch(names);
+
     let sourceParentId: string | null = null;
-    let categoryParentId: string | null = null;
     const sourcePath: string[] = [];
     const categoryPath: string[] = [];
     let sourceCategoryId = '';
     let mappedCategoryId: string | null = null;
-    let categoryId = '';
 
     for (const name of names) {
       const slug = generateSlug(name);
@@ -613,65 +628,54 @@ export class DukonParserService {
       sourcePath.push(slug);
       categoryPath.push(slug);
       const externalId = sourcePath.join('/');
-      const sourceCategory = (await this.prisma.sourceCategory.upsert({
-        where: { sourceId_externalId: { sourceId, externalId } },
-        update: {
-          name,
-          slug,
-          parentId: sourceParentId,
-          level: sourcePath.length - 1,
-          path: [...sourcePath],
-        },
-        create: {
-          sourceId,
-          externalId,
-          name,
-          slug,
-          parentId: sourceParentId,
-          level: sourcePath.length - 1,
-          path: [...sourcePath],
-        },
-      })) as SavedCategoryRef;
-      const category = (await this.prisma.category.upsert({
-        where: { slug },
-        update: {},
-        create: {
-          name,
-          slug,
-          parentId: categoryParentId,
-          level: categoryPath.length - 1,
-          path: [...categoryPath],
-          seoTitle: name,
-          seoDescription: name,
-        },
-      })) as SavedCategoryRef;
+      const sourceCategory = (await upsertTolerantly(() =>
+        this.prisma.sourceCategory.upsert({
+          where: { sourceId_externalId: { sourceId, externalId } },
+          update: {
+            name,
+            slug,
+            parentId: sourceParentId,
+            level: sourcePath.length - 1,
+            path: [...sourcePath],
+          },
+          create: {
+            sourceId,
+            externalId,
+            name,
+            slug,
+            parentId: sourceParentId,
+            level: sourcePath.length - 1,
+            path: [...sourcePath],
+          },
+        }),
+      )) as SavedCategoryRef;
 
       sourceParentId = sourceCategory.id;
-      categoryParentId = category.id;
       sourceCategoryId = sourceCategory.id;
       mappedCategoryId = sourceCategory.mappedCategoryId ?? null;
-      categoryId = category.id;
     }
 
-    if (sourceCategoryId) {
+    if (sourceCategoryId && leafCategory) {
       return {
         sourceCategoryId,
-        categoryId: mappedCategoryId || categoryId,
+        categoryId: mappedCategoryId || leafCategory.id,
       };
     }
 
-    const sourceCategory = await this.prisma.sourceCategory.upsert({
-      where: { sourceId_externalId: { sourceId, externalId: 'dukon' } },
-      update: {},
-      create: {
-        sourceId,
-        externalId: 'dukon',
-        name: 'Dukon',
-        slug: 'dukon',
-        level: 0,
-        path: ['dukon'],
-      },
-    });
+    const sourceCategory = await upsertTolerantly(() =>
+      this.prisma.sourceCategory.upsert({
+        where: { sourceId_externalId: { sourceId, externalId: 'dukon' } },
+        update: {},
+        create: {
+          sourceId,
+          externalId: 'dukon',
+          name: 'Dukon',
+          slug: 'dukon',
+          level: 0,
+          path: ['dukon'],
+        },
+      }),
+    );
 
     return {
       sourceCategoryId: sourceCategory.id,
@@ -681,18 +685,21 @@ export class DukonParserService {
   }
 
   private async getFallbackCategoryId() {
-    const category = await this.prisma.category.upsert({
-      where: { slug: FALLBACK_CATEGORY_SLUG },
-      update: {},
-      create: {
-        name: 'Неразобранные товары поставщиков',
-        slug: FALLBACK_CATEGORY_SLUG,
-        level: 0,
-        path: [FALLBACK_CATEGORY_SLUG],
-        seoTitle: 'Неразобранные товары поставщиков',
-        seoDescription: 'Неразобранные товары поставщиков',
-      },
-    });
+    const category = await upsertTolerantly(() =>
+      this.prisma.category.upsert({
+        where: { slug: FALLBACK_CATEGORY_SLUG },
+        update: {},
+        create: {
+          name: 'Неразобранные товары поставщиков',
+          slug: FALLBACK_CATEGORY_SLUG,
+          pathKey: FALLBACK_CATEGORY_SLUG,
+          level: 0,
+          path: [FALLBACK_CATEGORY_SLUG],
+          seoTitle: 'Неразобранные товары поставщиков',
+          seoDescription: 'Неразобранные товары поставщиков',
+        },
+      }),
+    );
     return category.id;
   }
 
@@ -745,8 +752,9 @@ export class DukonParserService {
     names: string[],
     url?: string,
   ) {
+    await this.categoryTree.upsertBranch(names);
+
     let sourceParentId: string | null = null;
-    let categoryParentId: string | null = null;
     const path: string[] = [];
 
     for (const [index, name] of names.entries()) {
@@ -757,43 +765,31 @@ export class DukonParserService {
       const externalId = path.join('/');
       const isLeaf = index === names.length - 1;
 
-      const sourceCategory = (await this.prisma.sourceCategory.upsert({
-        where: { sourceId_externalId: { sourceId, externalId } },
-        update: {
-          name,
-          slug,
-          parentId: sourceParentId,
-          level: path.length - 1,
-          path: [...path],
-          ...(isLeaf && url ? { url: this.canonicalUrl(url) } : {}),
-        },
-        create: {
-          sourceId,
-          externalId,
-          name,
-          slug,
-          parentId: sourceParentId,
-          level: path.length - 1,
-          path: [...path],
-          ...(isLeaf && url ? { url: this.canonicalUrl(url) } : {}),
-        },
-      })) as SavedCategoryRef;
-      const category = (await this.prisma.category.upsert({
-        where: { slug },
-        update: {},
-        create: {
-          name,
-          slug,
-          parentId: categoryParentId,
-          level: path.length - 1,
-          path: [...path],
-          seoTitle: name,
-          seoDescription: name,
-        },
-      })) as SavedCategoryRef;
+      const sourceCategory = (await upsertTolerantly(() =>
+        this.prisma.sourceCategory.upsert({
+          where: { sourceId_externalId: { sourceId, externalId } },
+          update: {
+            name,
+            slug,
+            parentId: sourceParentId,
+            level: path.length - 1,
+            path: [...path],
+            ...(isLeaf && url ? { url: this.canonicalUrl(url) } : {}),
+          },
+          create: {
+            sourceId,
+            externalId,
+            name,
+            slug,
+            parentId: sourceParentId,
+            level: path.length - 1,
+            path: [...path],
+            ...(isLeaf && url ? { url: this.canonicalUrl(url) } : {}),
+          },
+        }),
+      )) as SavedCategoryRef;
 
       sourceParentId = sourceCategory.id;
-      categoryParentId = category.id;
     }
   }
 
@@ -905,7 +901,7 @@ export class DukonParserService {
     const res = await fetchWithTimeout(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
-    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+    if (!res.ok) throw new ParserHttpError(res.status, url);
     return res.text();
   }
 
@@ -934,21 +930,6 @@ export class DukonParserService {
     const parsed = new URL(url);
     parsed.searchParams.set('PAGEN_1', String(page));
     return parsed.toString();
-  }
-
-  private async upsertBrand(name: string) {
-    const slug = generateSlug(name);
-    const brand = await this.prisma.brand.upsert({
-      where: { slug },
-      update: {},
-      create: {
-        name,
-        slug,
-        seoTitle: name,
-        seoDescription: name,
-      },
-    });
-    return brand.id;
   }
 
   private parseSpecs($: cheerio.CheerioAPI) {

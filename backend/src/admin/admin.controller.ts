@@ -193,6 +193,16 @@ export class AdminController {
     return this.adminService.get7745Sitemaps(query);
   }
 
+  @Get('queue/tools-by')
+  getToolsByQueueStats() {
+    return this.adminService.getToolsByQueueStats();
+  }
+
+  @Get('queue/tools-by/sitemaps')
+  getToolsBySitemaps(@Query() query: AdminSitemapQueryDto) {
+    return this.adminService.getToolsBySitemaps(query);
+  }
+
   @Get('queue/sitemaps')
   getSitemaps(@Query() query: AdminSitemapQueryDto) {
     return this.adminService.getSitemaps(query);
@@ -290,6 +300,26 @@ export class AdminController {
   @Post('queue/7745/sitemaps/:id/retry')
   retry7745Sitemap(@Param('id') id: string) {
     return this.adminService.retry7745Sitemap(id);
+  }
+
+  @Post('queue/tools-by/refresh-sitemaps')
+  refreshToolsBySitemaps() {
+    return this.adminService.refreshToolsBySitemaps();
+  }
+
+  @Post('queue/tools-by/process')
+  processToolsByQueuedProducts(@Body('limit') limit?: number) {
+    return this.adminService.processToolsByQueuedProducts(limit || 25);
+  }
+
+  @Post('queue/tools-by/sitemaps/retry-problems')
+  retryProblemToolsBySitemaps() {
+    return this.adminService.retryProblemToolsBySitemaps();
+  }
+
+  @Post('queue/tools-by/sitemaps/:id/retry')
+  retryToolsBySitemap(@Param('id') id: string) {
+    return this.adminService.retryToolsBySitemap(id);
   }
 
   @Post('categories')

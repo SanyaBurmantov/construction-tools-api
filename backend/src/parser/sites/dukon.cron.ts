@@ -2,16 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DukonParserService } from './dukon.parser';
 import { ParserRuntimeStatusService } from '../parser-runtime-status.service';
+import { ParserSettingsService } from '../parser-settings.service';
 
-const DUKON_CRON_BATCH_LIMIT = getPositiveEnvNumber(
-  'DUKON_CRON_BATCH_LIMIT',
-  30,
-);
-
-function getPositiveEnvNumber(name: string, fallback: number) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
+const SOURCE_CODE = 'dukon';
 
 @Injectable()
 export class DukonCron {
@@ -23,17 +16,19 @@ export class DukonCron {
   constructor(
     private readonly dukonParserService: DukonParserService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
+    private readonly settings: ParserSettingsService,
   ) {}
 
-  @Cron('0 */30 * * * *')
+  /** Slot :20/:50 — see the note in th-tools.cron.ts. */
+  @Cron('0 20,50 * * * *')
   async processPendingQueue() {
-    if (!this.isEnabled() || this.isProcessing) return;
+    if (!(await this.isEnabled()) || this.isProcessing) return;
 
     this.isProcessing = true;
     await this.runtimeStatus.start('dukon-process', 'Dukon process queue');
     try {
       const result = await this.dukonParserService.processSitemapsBatch(
-        DUKON_CRON_BATCH_LIMIT,
+        await this.settings.getBatchLimit(SOURCE_CODE),
         1,
       );
       await this.runtimeStatus.success('dukon-process', result);
@@ -52,7 +47,7 @@ export class DukonCron {
 
   @Cron('0 0 6 * * *')
   async refreshSitemap() {
-    if (!this.isEnabled() || this.isRefreshing) return;
+    if (!(await this.isEnabled()) || this.isRefreshing) return;
 
     this.isRefreshing = true;
     await this.runtimeStatus.start('dukon-refresh', 'Dukon refresh sitemap');
@@ -72,7 +67,7 @@ export class DukonCron {
 
   @Cron('0 0 12 1 * *')
   async revalidateMonthly() {
-    if (!this.isEnabled() || this.isRevalidating) return;
+    if (!(await this.isEnabled()) || this.isRevalidating) return;
 
     this.isRevalidating = true;
     await this.runtimeStatus.start(
@@ -95,6 +90,6 @@ export class DukonCron {
   }
 
   private isEnabled() {
-    return process.env.PARSER_CRON_ENABLED === 'true';
+    return this.settings.isSourceCronEnabled(SOURCE_CODE);
   }
 }
