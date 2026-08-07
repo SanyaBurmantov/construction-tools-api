@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug } from '../common/utils/generate-slug';
+import { shouldBeFilterable } from './spec-filterable';
 
 /** How many `-2`, `-3`… suffixes to try before giving up on a slug. */
 const MAX_SLUG_ATTEMPTS = 50;
@@ -126,13 +127,28 @@ export class ProductIdentityService {
     }
   }
 
-  /** Same race, same fix, for `Specification(categoryId, key)`. */
-  async upsertSpecification(categoryId: string, name: string, key: string) {
+  /**
+   * Same race, same fix, for `Specification(categoryId, key)`.
+   *
+   * `filterable` is decided once, when the spec first appears in a category —
+   * see `shouldBeFilterable`. Existing specs keep whatever an admin set.
+   */
+  async upsertSpecification(
+    categoryId: string,
+    name: string,
+    key: string,
+    value?: string,
+  ) {
     try {
       return await this.prisma.specification.upsert({
         where: { categoryId_key: { categoryId, key } },
         update: {},
-        create: { name, key, categoryId, filterable: true },
+        create: {
+          name,
+          key,
+          categoryId,
+          filterable: shouldBeFilterable(name, value),
+        },
       });
     } catch (error) {
       if (!this.isUniqueViolation(error)) throw error;

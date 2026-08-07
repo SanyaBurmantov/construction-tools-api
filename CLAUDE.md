@@ -64,6 +64,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `PARSER_RETRY_AFTER_MINUTES`, and alerts Telegram once per breakage — it
   remembers what it already reported so an unhealthy job does not re-alert every
   15 minutes.
+- **Not every characteristic becomes a filter.** `shouldBeFilterable()`
+  (`parser/spec-filterable.ts`) decides `Specification.filterable` when a spec
+  first appears in a category. Parsers used to set it to `true` unconditionally,
+  which turned "Штрихкод" (unique per product) and "Производитель" (a legal
+  address) into catalogue facets. Identity/paperwork names are blocked by list,
+  and any value over 60 characters is treated as prose. It is only the default:
+  admins flip specs in `/admin/specifications`, and `auto-select` still applies
+  the distinct-value heuristic over real data.
 - **Product identity is the supplier offer, not `Product.slug`.** Parsers must
   save through `ProductIdentityService.save()` (`parser/product-identity.service.ts`),
   which resolves the product via `SourceProduct(sourceId, url)` and only mints a
