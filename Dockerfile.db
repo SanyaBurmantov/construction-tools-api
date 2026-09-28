@@ -1,0 +1,6 @@
+FROM postgres:15-alpine
+
+# Создаём свой pg_hba.conf с md5 для всех подключений
+RUN echo "host all all 0.0.0.0/0 md5" > /docker-entrypoint-initdb.d/pg_hba.conf && \
+    echo "host all all ::/0 md5" >> /docker-entrypoint-initdb.d/pg_hba.conf && \
+    echo "local all all trust" >> /docker-entrypoint-initdb.d/pg_hba.conf

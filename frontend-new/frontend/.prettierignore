@@ -1,0 +1,10 @@
+.nuxt
+dist
+node_modules
+.output
+*.local
+.DS_Store
+*.config.*
+nuxt.config.*
+tsconfig.*
+.gitignore
