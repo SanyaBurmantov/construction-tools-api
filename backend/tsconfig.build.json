@@ -1,4 +1,17 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  "compilerOptions": {
+    "incremental": false
+  },
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*spec.ts",
+    "src/auth/**",
+    "src/facet-filters/**",
+    "src/source-websites/**",
+    "src/parser/parser-job.service.ts",
+    "src/parser/parser-job-queue.service.ts"
+  ]
 }

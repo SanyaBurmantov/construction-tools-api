@@ -1,200 +1,201 @@
-# Construction Tools
+# Backend Developer Notes
 
-<p align="center">
-  <a href="http://localhost:3000" target="_blank">
-    <img src="https://img.shields.io/badge/Frontend-Nuxt.js-green" alt="Frontend" />
-  </a>
-  <a href="http://localhost:3001/api" target="_blank">
-    <img src="https://img.shields.io/badge/Swagger-UI-blue" alt="Swagger" />
-  </a>
-  <img src="https://img.shields.io/badge/NestJS-11-blue" alt="NestJS" />
-  <img src="https://img.shields.io/badge/TypeScript-5-purple" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Prisma-5-orange" alt="Prisma" />
-</p>
+NestJS API for the construction tools catalog. This document is written for future developers and coding agents working inside `backend/`.
 
-Платформа для парсинга и управления товарами строительных инструментов с современным веб-интерфейсом.
+## Stack
 
-## 🚀 Быстрый старт
+- NestJS 11.
+- Prisma 5.
+- PostgreSQL.
+- Cheerio + native `fetch` for supplier parsers.
+- `@nestjs/schedule` for cron jobs.
+- Swagger is enabled outside production or when `SWAGGER_ENABLED=true`.
 
-### Frontend
+## Commands
+
+Run from `backend/`:
 
 ```bash
-cd frontend
-
-# Установка зависимостей
 npm install
-
-# Запуск в режиме разработки
-npm run dev
-```
-
-**Frontend:** http://localhost:3000
-
-### Backend (API)
-
-```bash
-# Установка зависимостей
-npm install
-
-# Запуск в режиме разработки
-npm run start:dev
-
-# Запуск в продакшене
-npm run start:prod
-
-# Сборка
 npm run build
-```
-
-**API:** http://localhost:3001  
-**Swagger UI:** http://localhost:3001/api
-
-## 🔧 Переменные окружения
-
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/construction_tools?schema=public"
-JWT_SECRET="your-super-secret-jwt-key-change-in-production"
-JWT_EXPIRATION="7d"
-```
-
-## 📦 Основные возможности
-
-- **Парсинг товаров** - извлечение данных с сайтов (tools.by, th-tool.by и др.)
-- **Фасетные фильтры** - настраиваемые фильтры для категорий
-- **Иерархия категорий** - древовидная структура
-- **REST API** - полный CRUD для всех сущностей
-- **Swagger** - интерактивная документация
-
-## 🗂️ Структура проекта
-
-```
-.
-├── frontend/          # Nuxt.js 3 приложение (Vue 3 + TypeScript)
-│   ├── app/
-│   │   ├── components/   # UI компоненты
-│   │   ├── layouts/      # Шаблоны страниц
-│   │   ├── pages/        # Страницы
-│   │   ├── types/        # TypeScript типы
-│   │   └── assets/       # CSS, изображения
-│   ├── Dockerfile        # Docker сборка
-│   └── nuxt.config.ts    # Конфигурация Nuxt
-│
-├── src/             # NestJS API
-│   ├── products/       # Товары (CRUD + фильтрация)
-│   ├── categories/     # Категории (иерархические)
-│   ├── facet-filters/  # Фасетные фильтры
-│   ├── source-websites/# Источники для парсинга
-│   ├── parser/         # Парсер (cheerio)
-│   ├── auth/           # Авторизация (JWT)
-│   └── prisma/         # Prisma сервис
-```
-
-## 📖 API Endpoints
-
-### Products (Товары)
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| POST | `/products` | Создать товар |
-| GET | `/products` | Список товаров (с фильтрами) |
-| GET | `/products/:id` | Товар по ID |
-| GET | `/products/slug/:slug` | Товар по slug |
-| GET | `/products/facets/:categoryId` | Фасеты для категории |
-| PATCH | `/products/:id` | Обновить товар |
-| DELETE | `/products/:id` | Удалить (soft delete) |
-
-**Фильтры для GET /products:**
-- `page`, `limit` - пагинация
-- `search` - поиск
-- `brand` - бренд (можно несколько)
-- `categoryId` - категория
-- `minPrice`, `maxPrice` - цена
-- `inStock` - в наличии
-
-### Categories (Категории)
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| POST | `/categories` | Создать категорию |
-| GET | `/categories` | Список категорий |
-| GET | `/categories/tree` | Дерево категорий |
-| GET | `/categories/:id` | Категория по ID |
-| PATCH | `/categories/:id` | Обновить |
-| DELETE | `/categories/:id` | Удалить |
-
-### Facet Filters (Фасетные фильтры)
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| POST | `/facet-filters` | Создать фильтр |
-| GET | `/facet-filters` | Список фильтров |
-| GET | `/facet-filters/category/:categoryId` | Для категории |
-| POST | `/facet-filters/:id/toggle` | Вкл/Выкл |
-| DELETE | `/facet-filters/:id` | Удалить |
-
-**Типы фильтров:** `RANGE`, `SELECT`, `MULTISELECT`, `BOOLEAN`
-
-### Source Websites (Источники)
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| POST | `/source-websites` | Добавить источник |
-| GET | `/source-websites` | Список источников |
-| GET | `/source-websites/:id` | По ID |
-| PATCH | `/source-websites/:id` | Обновить |
-| POST | `/source-websites/:id/toggle` | Вкл/Выкл |
-| GET | `/source-websites/:id/parser-config` | Конфиг парсера |
-
-### Parser (Парсинг)
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| POST | `/parser/parse-url` | Спарсить URL |
-| POST | `/parser/parse-batch` | Спарсить несколько URL |
-| GET | `/parser/preview` | Предпросмотр |
-| POST | `/parser/parse-category` | Парсинг категории |
-
-**Пример парсинга:**
-```bash
-curl -X POST http://localhost:3000/parser/parse-url \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://tools.by/product/1605300"}'
-```
-
-## 🐳 Docker
-
-```bash
-# Запуск всех сервисов (frontend + api + db)
-docker compose up --build -d
-
-# Логи
-docker compose logs -f
-
-# Остановить
-docker compose down
-```
-
-**Порты:**
-- **Frontend:** http://localhost:3000
-- **API:** http://localhost:3001
-- **База данных:** localhost:5432
-
-## 📄 База данных
-
-```bash
-# Миграции
-npx prisma migrate dev --name migration_name
-
-# Prisma Studio
-npx prisma studio
-
-# Deploy миграций
+npm run lint
+npm test
+npx prisma generate
 npx prisma migrate deploy
 ```
 
-## 🔐 Авторизация
+Local database is usually started from repository root:
 
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| POST | `/auth/signup` | Регистрация |
-| POST | `/auth/signin` | Логин |
-| GET | `/auth/profile` | Профиль (JWT) |
+```bash
+docker compose up -d db
+```
 
-## 📝 Лицензия
+Use Node `22.12.0+`. The repo has `.nvmrc` files and package engine constraints.
 
-UNLICENSED
+## Environment
+
+Important env vars:
+
+- `DATABASE_URL`: PostgreSQL connection string.
+- `PORT`: defaults to `8000`.
+- `ADMIN_TOKEN`: required for `/admin/*` through `x-admin-token`.
+- `PARSER_CRON_ENABLED`: set `true` to enable parser cron jobs.
+- `DUKON_CRON_BATCH_LIMIT`: default `30`.
+- `TH_TOOLS_CRON_BATCH_LIMIT`: default `30`.
+- `DUKON_DISCOVERY_MAX_PAGES`: default `5000`.
+- `SWAGGER_ENABLED`: enables Swagger in production when `true`.
+
+If supplier requests fail through a proxy, bypass supplier domains, for example `NO_PROXY=dukon.by,www.dukon.by`.
+
+## Main Modules
+
+- `ProductsModule`: public product list/detail API.
+- `CategoriesModule`: public category API.
+- `BrandsModule`: public brand API.
+- `SourcesModule`: public source list and source product API.
+- `ParserModule`: parser services, cron jobs, parser logs.
+- `AdminModule`: guarded admin API.
+- `PrismaModule`: global Prisma client.
+
+## Product Visibility Rule
+
+Supplier-parsed products are storefront-visible by default.
+
+- New Dukon and th-tools products are created as `PUBLISHED`.
+- Existing supplier products in `DRAFT` are promoted to `PUBLISHED` during parser batch runs.
+- `HIDDEN` and `ARCHIVED` are treated as manual admin decisions and must not be overwritten by parser code.
+
+Public `/products` returns only `PUBLISHED` products.
+
+## Supplier Data Model
+
+Important models in `prisma/schema.prisma`:
+
+- `Product`: normalized catalog product shown on the site.
+- `Source`: supplier identity, for example `dukon` or `th-tools`.
+- `SourceProduct`: supplier snapshot linked to a normalized `Product`.
+- `SourceCategory`: supplier category tree and optional mapping to internal `Category`.
+- `SitemapsDukon`: Dukon queue with `PENDING`, `DONE`, `FAILED`, `SKIPPED`.
+- `SitemapsThTools`: th-tools queue with `isVisited`.
+- `ParserError`: persisted parser errors for admin UI.
+- `ParserRuntimeStatus`: persisted cron runtime status for monitoring.
+
+Source snapshots should preserve supplier-specific data:
+
+- `sku` as a dedicated field.
+- `price` and `currency`.
+- `images`.
+- `description`.
+- `specifications` JSON.
+- `sourceCategoryId` when known.
+
+Do not store supplier SKU only inside free-form specifications.
+
+## Dukon Parser
+
+Main files:
+
+- `src/parser/sites/dukon.parser.ts`
+- `src/parser/sites/dukon.cron.ts`
+- `src/parser/sites/dukon.parser.spec.ts`
+- `src/parser/sites/fixtures/dukon-product.html`
+
+Current behavior:
+
+- Loads official sitemap and extends it with HTML discovery for priority catalog branches.
+- Priority branch is currently `/catalog/nabory-instrumentov/`.
+- Persists discovered category tree into `SourceCategory` and internal `Category`.
+- Parses product name, SKU, brand, price, description, images, breadcrumbs, specs.
+- Creates/updates `Product`, `ProductImage`, `Specification`, `ProductSpecification`, `SourceProduct`.
+- Cleans previously stored Dukon template images from `ProductImage` during batch runs.
+- Marks non-product pages as `SKIPPED` rather than failed parser errors.
+
+Cron behavior when `PARSER_CRON_ENABLED=true`:
+
+- Every 30 minutes: process `DUKON_CRON_BATCH_LIMIT` pending URLs, concurrency `1`.
+- Daily at `06:00`: refresh sitemap/discovery.
+- Monthly on day `1` at `12:00`: refresh and revalidate queue.
+- Overlap protection prevents the same Dukon cron job from running twice in parallel.
+
+## th-tools Parser
+
+Main files:
+
+- `src/parser/sites/th-tools.parser.ts`
+- `src/parser/sites/th-tools.cron.ts`
+- `src/parser/sitemaps/sitemaps.service.ts`
+
+Current behavior:
+
+- Loads th-tools sitemap into `SitemapsThTools`.
+- Processes `TH_TOOLS_CRON_BATCH_LIMIT` items every 30 minutes when cron is enabled.
+- Writes full `SourceProduct` snapshot.
+- Uses overlap protection in cron.
+
+## Admin API Highlights
+
+All `/admin/*` endpoints require `x-admin-token`.
+
+Parsing/monitoring endpoints:
+
+- `GET /admin/queue`
+- `GET /admin/queue/sitemaps`
+- `GET /admin/queue/errors`
+- `DELETE /admin/queue/errors`
+- `GET /admin/queue/runtime-status`
+- `GET /admin/queue/health`
+- `GET /admin/queue/supplier-summary`
+- `POST /admin/queue/refresh-sitemaps`
+- `POST /admin/queue/process`
+- `GET /admin/queue/dukon`
+- `GET /admin/queue/dukon/sitemaps`
+- `POST /admin/queue/dukon/refresh-sitemaps`
+- `POST /admin/queue/dukon/process`
+- `POST /admin/queue/dukon/sitemaps/:id/retry`
+- `POST /admin/queue/dukon/sitemaps/retry-problems`
+
+Public/internal health endpoint:
+
+- `GET /health/parser`: sanitized parser health for uptime monitoring, no admin token.
+
+If this endpoint should not be public, restrict it at reverse proxy or firewall level.
+
+## Public Product API
+
+- `GET /products`
+- `GET /products/:slug`
+
+`GET /products` supports:
+
+- `search`
+- `categoryId`
+- `brandId`
+- `sourceCode`, for example `dukon`
+- `priceMin`
+- `priceMax`
+- `sortBy`: `name`, `price`, `createdAt`, `updatedAt`
+- `sortOrder`: `asc`, `desc`
+- `page`
+- `limit`
+
+## Development Rules
+
+- Keep parser changes small and fixture-backed when possible.
+- Do not make supplier products `DRAFT` unless product visibility requirements change.
+- Do not overwrite `HIDDEN` or `ARCHIVED` products from parser code.
+- Prefer adding supplier-specific parser tests before changing selectors.
+- Keep migrations committed with schema changes.
+- Run `npx prisma generate` after Prisma schema changes.
+- Run `npm run build`, `npm run lint`, and relevant tests before handing off.
+
+## Production Checklist
+
+- Apply migrations: production Docker runs `npx prisma migrate deploy` before start.
+- Set `PARSER_CRON_ENABLED=true`.
+- Keep `DUKON_CRON_BATCH_LIMIT=30` unless crawl pressure needs changing.
+- Monitor `GET /health/parser`.
+- Check admin parsing page after deploy:
+  - cron status;
+  - supplier summary;
+  - Dukon queue counts;
+  - parser errors.

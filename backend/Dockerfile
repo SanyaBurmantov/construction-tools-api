@@ -1,46 +1,36 @@
-FROM node:20-bookworm
+FROM node:22-bookworm-slim AS base
 
-WORKDIR /app
+WORKDIR /backend
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpango-1.0-0 \
-    libcairo2 \
-    python3 \
-    python3-pip \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
+COPY prisma ./prisma/
 
-RUN npm install --legacy-peer-deps
-
-# Install Playwright browsers
-RUN npx playwright install chromium --with-deps
-
+FROM base AS development
+RUN npm ci
 COPY . .
-
-# Create directories for parsers and logs
-RUN mkdir -p /app/logs /app/parsers /app/configs
-
 RUN npx prisma generate
+EXPOSE 8000
+CMD ["npm", "run", "start:dev"]
 
+FROM base AS build
+RUN npm ci
+COPY . .
+RUN npx prisma generate
 RUN npm run build
 
-EXPOSE 3000
-
-CMD ["npm", "run", "start:prod"]
+FROM node:22-bookworm-slim AS production
+ENV NODE_ENV=production
+WORKDIR /backend
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+COPY package*.json ./
+COPY prisma ./prisma/
+RUN npm ci --omit=dev && npx prisma generate
+COPY --from=build /backend/dist ./dist
+EXPOSE 8000
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]

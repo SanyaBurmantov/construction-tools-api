@@ -1,151 +1,164 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
+import { Injectable, NotFoundException } from '@nestjs/common';
+
+import { PrismaService } from '../prisma/prisma.service';
+import { CategoryPage, CategoryTreeNode } from './types/category-tree.type';
+import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
 
 @Injectable()
 export class CategoriesService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createCategoryDto: CreateCategoryDto) {
-    const data: any = { ...createCategoryDto };
-
-    // Calculate depth if parent exists
-    if (createCategoryDto.parentId) {
-      const parent = await this.prisma.category.findUnique({
-        where: { id: createCategoryDto.parentId },
-      });
-
-      if (!parent) {
-        throw new NotFoundException(
-          `Parent category with ID ${createCategoryDto.parentId} not found`,
-        );
-      }
-
-      data.depth = (parent.depth || 0) + 1;
-    }
+  async create(dto: CreateCategoryDto) {
+    const parent = dto.parentId
+      ? await this.prisma.category.findUnique({ where: { id: dto.parentId } })
+      : null;
 
     return this.prisma.category.create({
-      data,
-      include: {
-        parent: true,
-        children: true,
-        sourceWebsite: true,
-        facetFilters: true,
+      data: {
+        name: dto.name,
+        slug: dto.slug,
+        parentId: dto.parentId,
+        description: dto.description,
+        level: parent ? parent.level + 1 : 0,
+        path: parent ? [...parent.path, dto.slug] : [dto.slug],
+        seoTitle: dto.name,
+        seoDescription: dto.description || dto.name,
       },
     });
   }
 
-  async findAll(sourceWebsiteId?: string) {
-    const where: any = {};
-    if (sourceWebsiteId) {
-      where.sourceWebsiteId = sourceWebsiteId;
-    }
-
-    return this.prisma.category.findMany({
-      where,
-      include: {
-        parent: true,
-        children: true,
-        sourceWebsite: true,
-        facetFilters: true,
-        _count: {
-          select: { products: true },
-        },
-      },
-      orderBy: { name: 'asc' },
-    });
+  findAll() {
+    return this.prisma.category.findMany();
   }
 
-  async getTree(sourceWebsiteId?: string) {
-    const categories = await this.findAll(sourceWebsiteId);
-    const rootCategories = categories.filter((c) => !c.parentId);
-
-    const buildTree = (parent: any) => {
-      const children = categories.filter((c) => c.parentId === parent.id);
-      return {
-        ...parent,
-        children: children.map((child) => buildTree(child)),
-      };
-    };
-
-    return rootCategories.map((root) => buildTree(root));
+  /**
+   * Category tree for storefront navigation. Counts include descendants;
+   * branches without published products are pruned. The parser fallback
+   * category is unlisted (still reachable by direct URL until curated).
+   */
+  async getTree(): Promise<CategoryTreeNode[]> {
+    const { roots } = await this.buildCountedTree();
+    return this.pruneEmpty(
+      roots.filter((node) => node.slug !== FALLBACK_CATEGORY_SLUG),
+    );
   }
 
-  async findOne(id: string) {
+  /** Category landing page payload: breadcrumb ancestors + children with counts. */
+  async getBySlug(slug: string): Promise<CategoryPage> {
     const category = await this.prisma.category.findUnique({
-      where: { id },
-      include: {
-        parent: true,
-        children: true,
-        sourceWebsite: true,
-        facetFilters: true,
-        products: {
-          take: 10,
-          orderBy: { createdAt: 'desc' },
-        },
-        _count: {
-          select: { products: true },
-        },
-      },
-    });
-
-    if (!category) {
-      throw new NotFoundException(`Category with ID ${id} not found`);
-    }
-
-    return category;
-  }
-
-  async findBySlug(slug: string) {
-    const category = await this.prisma.category.findFirst({
       where: { slug },
-      include: {
-        parent: true,
-        children: true,
-        sourceWebsite: true,
-        facetFilters: true,
-      },
     });
-
     if (!category) {
-      throw new NotFoundException(`Category with slug ${slug} not found`);
+      throw new NotFoundException('Category not found');
     }
 
-    return category;
+    const { nodes } = await this.buildCountedTree();
+    const node = nodes.get(category.id);
+
+    const ancestorSlugs = category.path.filter((item) => item !== slug);
+    const ancestorRows = ancestorSlugs.length
+      ? await this.prisma.category.findMany({
+          where: { slug: { in: ancestorSlugs } },
+          select: { id: true, name: true, slug: true },
+        })
+      : [];
+    const ancestors = ancestorSlugs
+      .map((item) => ancestorRows.find((row) => row.slug === item))
+      .filter((row): row is (typeof ancestorRows)[number] => Boolean(row));
+
+    const children = this.pruneEmpty(node?.children ?? []).map((child) => ({
+      id: child.id,
+      name: child.name,
+      slug: child.slug,
+      productCount: child.productCount,
+    }));
+
+    return {
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      image: category.image,
+      level: category.level,
+      seoTitle: category.seoTitle,
+      seoDescription: category.seoDescription,
+      productCount: node?.productCount ?? 0,
+      ancestors,
+      children,
+    };
   }
 
-  async update(id: string, updateCategoryDto: UpdateCategoryDto) {
-    await this.findOne(id); // Check if exists
+  private async buildCountedTree(): Promise<{
+    nodes: Map<string, CategoryTreeNode>;
+    roots: CategoryTreeNode[];
+  }> {
+    const [categories, counts] = await Promise.all([
+      this.prisma.category.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          parentId: true,
+          level: true,
+          image: true,
+        },
+      }),
+      this.prisma.product.groupBy({
+        by: ['categoryId'],
+        where: { status: 'PUBLISHED' },
+        _count: { _all: true },
+      }),
+    ]);
 
-    return this.prisma.category.update({
-      where: { id },
-      data: updateCategoryDto,
-      include: {
-        parent: true,
-        children: true,
-        sourceWebsite: true,
-        facetFilters: true,
-      },
-    });
-  }
+    const ownCounts = new Map(
+      counts.map((item) => [item.categoryId, item._count._all]),
+    );
+    const nodes = new Map<string, CategoryTreeNode>(
+      categories.map((category) => [
+        category.id,
+        {
+          ...category,
+          productCount: ownCounts.get(category.id) ?? 0,
+          children: [],
+        },
+      ]),
+    );
 
-  async remove(id: string) {
-    await this.findOne(id); // Check if exists
+    const roots: CategoryTreeNode[] = [];
+    for (const node of nodes.values()) {
+      const parent = node.parentId ? nodes.get(node.parentId) : undefined;
+      if (parent) {
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
 
-    // Check if category has children
-    const children = await this.prisma.category.findMany({
-      where: { parentId: id },
-    });
-
-    if (children.length > 0) {
-      throw new Error(
-        `Cannot delete category with ${children.length} child categories`,
+    const aggregate = (node: CategoryTreeNode): number => {
+      node.productCount += node.children.reduce(
+        (sum, child) => sum + aggregate(child),
+        0,
       );
-    }
+      return node.productCount;
+    };
+    roots.forEach(aggregate);
 
-    return this.prisma.category.delete({
-      where: { id },
-    });
+    const sortChildren = (list: CategoryTreeNode[]) => {
+      list.sort(
+        (a, b) =>
+          b.productCount - a.productCount || a.name.localeCompare(b.name, 'ru'),
+      );
+      list.forEach((node) => sortChildren(node.children));
+    };
+    sortChildren(roots);
+
+    return { nodes, roots };
+  }
+
+  private pruneEmpty(list: CategoryTreeNode[]): CategoryTreeNode[] {
+    return list
+      .filter((node) => node.productCount > 0)
+      .map((node) => ({ ...node, children: this.pruneEmpty(node.children) }));
   }
 }

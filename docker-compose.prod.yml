@@ -1,78 +1,107 @@
-# Production Docker Compose
-version: '3.8'
-
 services:
-  # PostgreSQL Database
   db:
     image: postgres:15-alpine
     container_name: construction-tools-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_in_production}
-      POSTGRES_DB: construction_tools
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-construction_tools}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-construction_tools}"]
+      interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - app-network
-    restart: unless-stopped
 
-  # NestJS API
-  app:
+  backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
+      target: production
     container_name: construction-tools-api
-    ports:
-      - "${API_PORT:-3000}:3000"
+    restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-changeme_in_production}@db:5432/construction_tools?schema=public
-      JWT_SECRET: ${JWT_SECRET:-change_this_secret_in_production}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-7d}
-      PORT: 3000
+      PORT: 8000
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+      # Both must be set for new-order Telegram notifications; empty = disabled.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
+      DUKON_CRON_BATCH_LIMIT: ${DUKON_CRON_BATCH_LIMIT:-30}
+      TH_TOOLS_CRON_BATCH_LIMIT: ${TH_TOOLS_CRON_BATCH_LIMIT:-30}
+      SUPPLIER_7745_CRON_BATCH_LIMIT: ${SUPPLIER_7745_CRON_BATCH_LIMIT:-30}
+      SUPPLIER_7745_CRON_ENABLED: ${SUPPLIER_7745_CRON_ENABLED:-false}
+      SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
+      SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
+      DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
       db:
         condition: service_healthy
-    volumes:
-      - ./logs:/app/logs
-      - ./parsers:/app/parsers
-      - ./configs:/app/configs
+    healthcheck:
+      test:
+        ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - app-network
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
 
-  # Nginx Reverse Proxy
-  nginx:
-    image: nginx:alpine
-    container_name: construction-tools-nginx
-    ports:
-      - "${HTTP_PORT:-80}:80"
-      - "${HTTPS_PORT:-443}:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ./logs/nginx:/var/log/nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        NUXT_PUBLIC_API_BASE: /api
+    container_name: construction-tools-front
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      API_BASE_SERVER: http://backend:8000
+      NUXT_PUBLIC_API_BASE: /api
+      # Absolute origin for canonical URLs, sitemap.xml and robots.txt.
+      NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-https://${DOMAIN:-localhost}}
     depends_on:
-      - app
+      backend:
+        condition: service_healthy
     networks:
       - app-network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: construction-tools-caddy
     restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   app-network:

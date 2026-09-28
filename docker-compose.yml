@@ -18,21 +18,46 @@ services:
     networks:
       - app-network
 
-  app:
-    build: .
+  back:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
     container_name: construction-tools-api
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8000:8000"
+    volumes:
+      - ./backend:/backend:cached
+      - /backend/node_modules
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/construction_tools?schema=public
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
       JWT_EXPIRATION: 7d
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     networks:
       - app-network
+    command: npm run start:dev
+
+  front:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: construction-tools-front
     restart: unless-stopped
+    volumes:
+      - ./frontend:/frontend:cached
+      - /frontend/node_modules
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    environment:
+      NODE_ENV: development
+      API_BASE_SERVER: http://back:8000
+      NUXT_PUBLIC_API_BASE: /api
+    command: npm run dev
 
 volumes:
   postgres_data:
