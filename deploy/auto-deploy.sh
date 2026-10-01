@@ -54,3 +54,4 @@ echo "$target" > "$STATE_FILE"
 rm -f "$FAILED_FILE"
 echo "Deployed $target successfully"
 docker image prune -f >/dev/null
+docker builder prune -af --keep-storage 1GB >/dev/null || true
