@@ -33,7 +33,9 @@ deploy() {
   "${compose[@]}" up -d --no-build || return 1
   for _ in {1..60}; do
     if curl --fail --silent --show-error --max-time 10 "https://$domain/api/health/ready" >/dev/null 2>&1 &&
-       curl --fail --silent --show-error --max-time 10 "https://$domain/" >/dev/null 2>&1; then
+       curl --fail --silent --show-error --max-time 10 "https://$domain/api/products?limit=1" >/dev/null 2>&1 &&
+       curl --fail --silent --show-error --max-time 10 "https://$domain/" >/dev/null 2>&1 &&
+       curl --fail --silent --show-error --max-time 10 "https://$domain/catalog" >/dev/null 2>&1; then
       return 0
     fi
     sleep 5
