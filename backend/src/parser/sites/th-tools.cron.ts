@@ -1,4 +1,4 @@
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { Injectable, Logger } from '@nestjs/common';
 import { ThToolsParserService } from './th-tools.parser';
 import { ParserRuntimeStatusService } from '../parser-runtime-status.service';
@@ -23,7 +23,7 @@ export class ThToolsCron {
     private readonly runtimeStatus: ParserRuntimeStatusService,
   ) {}
 
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @Cron('0 */5 * * * *')
   async handleCron() {
     if (process.env.PARSER_CRON_ENABLED !== 'true' || this.isProcessing) return;
 

@@ -45,6 +45,11 @@ sh deploy-prod.sh
 - `frontend`: Nuxt Nitro node-server on internal `frontend:3000` with ISR/SWR route rules.
 - `caddy`: public reverse proxy on ports `80` and `443`, automatic TLS for `DOMAIN`.
 
+TH-Tools and Dukon process their queues every five minutes when
+`PARSER_CRON_ENABLED=true`. Set `TH_TOOLS_CRON_BATCH_LIMIT` and
+`DUKON_CRON_BATCH_LIMIT` in `.env.prod` to control each run. The catalog page
+cache refreshes every 30 seconds, and the home page every 60 seconds.
+
 ## Backend DB Schema
 
 The backend production container runs:

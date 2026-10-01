@@ -15,9 +15,9 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
-    '/': { isr: 300, swr: 300 },
-    '/catalog': { isr: 300, swr: 300 },
-    '/catalog/**': { isr: 300, swr: 300 },
+    '/': { swr: 60 },
+    '/catalog': { swr: 30 },
+    '/catalog/**': { swr: 30 },
     '/product/**': { isr: 900, swr: 900 },
     '/cart': { ssr: false },
     '/checkout/**': { ssr: false },
