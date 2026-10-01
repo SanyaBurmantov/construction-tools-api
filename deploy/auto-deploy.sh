@@ -11,7 +11,7 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || exit 0
 cd "$APP_DIR"
 
-if ! git fetch --quiet --depth=1 origin refs/heads/prod; then
+if ! GIT_TERMINAL_PROMPT=0 timeout 30s git fetch --quiet --depth=1 origin refs/heads/prod; then
   echo "GitHub prod branch is not available yet"
   exit 0
 fi
