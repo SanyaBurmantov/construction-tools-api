@@ -1,0 +1,10 @@
+[Unit]
+Description=Deploy construction tools from GitHub prod branch
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/construction-tools-auto-deploy
+TimeoutStartSec=1800

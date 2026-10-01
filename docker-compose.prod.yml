@@ -1,8 +1,15 @@
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:15-alpine
     container_name: construction-tools-db
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
@@ -24,6 +31,7 @@ services:
       target: production
     container_name: construction-tools-api
     restart: unless-stopped
+    logging: *default-logging
     environment:
       NODE_ENV: production
       PORT: 8000
@@ -42,6 +50,13 @@ services:
       SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
       SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
       DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
+      PARSER_FETCH_TIMEOUT_MS: ${PARSER_FETCH_TIMEOUT_MS:-20000}
+      DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
+      DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
+      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-120}
+      BODY_LIMIT: ${BODY_LIMIT:-1mb}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
     depends_on:
       db:
@@ -65,11 +80,13 @@ services:
         NUXT_PUBLIC_API_BASE: /api
     container_name: construction-tools-front
     restart: unless-stopped
+    logging: *default-logging
     environment:
       NODE_ENV: production
       PORT: 3000
       HOST: 0.0.0.0
       API_BASE_SERVER: http://backend:8000
+      NUXT_API_BASE_SERVER: http://backend:8000
       NUXT_PUBLIC_API_BASE: /api
       # Absolute origin for canonical URLs, sitemap.xml and robots.txt.
       NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-https://${DOMAIN:-localhost}}
@@ -83,6 +100,7 @@ services:
     image: caddy:2-alpine
     container_name: construction-tools-caddy
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"

@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up construction tools PostgreSQL database
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/construction-tools-backup
+TimeoutStartSec=900

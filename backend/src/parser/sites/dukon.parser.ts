@@ -955,11 +955,14 @@ export class DukonParserService {
   }
 
   private isProductPage($: cheerio.CheerioAPI) {
-    return Boolean(
+    const hasDetails = Boolean(
       $('#properties .groupedprops.table .table__item').length ||
-      $('.price.gen').length ||
-      this.parseJsonLdProduct($).name,
+        $('.price.gen').length,
     );
+    // Dukon marks some category pages as JSON-LD Products. A category listing
+    // without its own details must not become a published product.
+    if (!hasDetails && $('.prod-list__item').length) return false;
+    return hasDetails || Boolean(this.parseJsonLdProduct($).name);
   }
 
   private parseBrand($: cheerio.CheerioAPI) {

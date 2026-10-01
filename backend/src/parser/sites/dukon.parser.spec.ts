@@ -67,6 +67,17 @@ describe('DukonParserService parsing helpers', () => {
     );
   });
 
+  it('rejects a category listing even when it has Product JSON-LD', () => {
+    const category = cheerio.load(`
+      <h1>Шкафы для газовых баллонов</h1>
+      <script type="application/ld+json">
+        {"@type":"Product","name":"Шкафы для газовых баллонов"}
+      </script>
+      <div class="prod-list__item"></div>
+    `);
+    expect(parser.isProductPage(category)).toBe(false);
+  });
+
   it('parses rich json-ld and stock data from Dukon fixture', () => {
     const jsonLd = parser.parseJsonLdProduct($);
 

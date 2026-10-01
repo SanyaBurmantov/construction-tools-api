@@ -1,0 +1,11 @@
+[Unit]
+Description=Check GitHub prod branch for construction tools updates
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+RandomizedDelaySec=15s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
