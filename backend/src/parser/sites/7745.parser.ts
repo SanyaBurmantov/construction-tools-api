@@ -12,7 +12,9 @@ type ParsedJsonLdProduct = {
   images: string[];
 };
 
-export function parse7745(html: string): TParsedProduct {
+export function parse7745(
+  html: string,
+): TParsedProduct & { inStock?: boolean } {
   const $ = cheerio.load(html);
   const jsonLd = parseJsonLdProduct($);
 
@@ -38,10 +40,19 @@ export function parse7745(html: string): TParsedProduct {
   return {
     name,
     price,
+    inStock: parseAvailability($),
     images,
     description,
     specifications,
   };
+}
+
+function parseAvailability($: cheerio.CheerioAPI) {
+  const node = $('[itemprop="availability"]').first();
+  const value = node.attr('href') || node.attr('content') || node.text();
+  if (/OutOfStock|SoldOut|Discontinued/i.test(value)) return false;
+  if (/InStock|LimitedAvailability/i.test(value)) return true;
+  return undefined;
 }
 
 function parseSpecs($: cheerio.CheerioAPI) {
@@ -128,7 +139,7 @@ function parseImages($: cheerio.CheerioAPI, jsonLdImages: string[] = []) {
     }
   });
 
-  return [...urls].slice(0, 12);
+  return [...urls];
 }
 
 function parseDescription($: cheerio.CheerioAPI) {

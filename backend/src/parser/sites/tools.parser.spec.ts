@@ -88,3 +88,22 @@ describe('parseTools', () => {
     expect(result.images).toEqual([]);
   });
 });
+
+describe('Tools.by complete content', () => {
+  it('preserves full description rather than only the title clarification', () => {
+    const parsed = parseTools(
+      '<h1 class="product__title" data-product-id="1">Товар<span class="short-description">Коротко</span></h1><div class="product__description"><p>Полное описание воздуходувки.</p><table><tr><td>Служебная строка</td></tr></table></div>',
+    );
+    expect(parsed.description).toContain('Полное описание воздуходувки.');
+    expect(parsed.description).not.toContain('Служебная строка');
+  });
+  it('does not truncate galleries at twelve photos', () => {
+    const images = Array.from(
+      { length: 15 },
+      (_, i) => `<img src="/photos/${i}-1200x900.jpg">`,
+    ).join('');
+    expect(
+      parseTools(`<div class="product__carousel">${images}</div>`).images,
+    ).toHaveLength(15);
+  });
+});

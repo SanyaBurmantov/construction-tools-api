@@ -4,7 +4,10 @@ import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { SitemapsService } from '../sitemaps/sitemaps.service';
 import { ParserLogService } from '../parser-log.service';
 import { ParserHttpError } from '../parser-http.error';
-import { getParserSource } from '../parser-settings.service';
+import {
+  getParserSource,
+  ParserSettingsService,
+} from '../parser-settings.service';
 import {
   TH_TOOLS_BASE_URL,
   isThToolsCategoryUrl,
@@ -15,21 +18,6 @@ import {
 } from '../sites/th-tools-category.crawler';
 
 const TH_TOOLS_SITEMAP_URL = `${TH_TOOLS_BASE_URL}/sitemap.xml`;
-
-/** Pages to walk per category before giving up — a guard against a pager loop. */
-const MAX_PAGES_PER_CATEGORY = getPositiveEnvNumber(
-  'TH_TOOLS_CATEGORY_MAX_PAGES',
-  100,
-);
-const REQUEST_DELAY_MS = getPositiveEnvNumber(
-  'TH_TOOLS_REQUEST_DELAY_MS',
-  1500,
-);
-
-function getPositiveEnvNumber(name: string, fallback: number) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
 
 /**
  * The category queue is the second source of product URLs, next to sitemap.xml.
@@ -46,6 +34,7 @@ export class CategoryQueueService {
     private readonly prisma: PrismaService,
     private readonly sitemaps: SitemapsService,
     private readonly parserLog: ParserLogService,
+    private readonly settings: ParserSettingsService,
   ) {}
 
   /* ------------------------------------------------------------ read ---- */
@@ -271,12 +260,14 @@ export class CategoryQueueService {
    * rather than a 404, so "no new URLs" is the only reliable stop signal.
    */
   private async crawlCategory(url: string) {
+    const maxPages = await this.settings.getMaxPages('th-tools');
+    const delayMs = await this.settings.getRequestDelayMs('th-tools');
     const productUrls = new Set<string>();
     let name: string | undefined;
     let pagesCrawled = 0;
 
-    for (let page = 1; page <= MAX_PAGES_PER_CATEGORY; page++) {
-      if (page > 1) await this.sleep(REQUEST_DELAY_MS);
+    for (let page = 1; page <= maxPages; page++) {
+      if (page > 1) await this.sleep(delayMs);
 
       const pageUrl = thToolsCategoryPageUrl(url, page);
       const parsed = parseThToolsCategoryPage(

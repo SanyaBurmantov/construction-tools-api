@@ -1,5 +1,5 @@
 import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
 import { XMLParser } from 'fast-xml-parser';
@@ -9,7 +9,8 @@ import { generateSlug } from '../../common/utils/generate-slug';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
 import { ParserLogService } from '../parser-log.service';
-import { ParserHttpError } from '../parser-http.error';
+import { ParserHttpError, isGoneError } from '../parser-http.error';
+import { BatchOutcome, countOutcome, emptyBatchResult } from '../batch-result';
 import { OffersService } from '../../offers/offers.service';
 import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
@@ -36,10 +37,7 @@ type ParsedJsonLdProduct = {
 const SOURCE_CODE = 'dukon';
 const DUKON_BASE_URL = 'https://dukon.by';
 const DUKON_SITEMAP_URL = `${DUKON_BASE_URL}/sitemap-iblock-7.xml`;
-const DUKON_DISCOVERY_DELAY_MS = 1000;
-const DUKON_PRIORITY_CATEGORY_URLS = [
-  `${DUKON_BASE_URL}/catalog/nabory-instrumentov/`,
-];
+const DUKON_CATALOG_ROOT_URLS = [`${DUKON_BASE_URL}/catalog/`];
 
 class NonProductPageError extends Error {
   constructor(message: string) {
@@ -50,6 +48,7 @@ class NonProductPageError extends Error {
 
 @Injectable()
 export class DukonParserService {
+  private readonly logger = new Logger(DukonParserService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
@@ -60,9 +59,18 @@ export class DukonParserService {
   ) {}
 
   async refreshSitemaps() {
-    const xml = await this.fetchText(DUKON_SITEMAP_URL);
-    await this.enqueueUrls(this.parseSitemapUrls(xml));
-    await this.discoverCatalogUrls();
+    let sitemapError: Error | undefined;
+    try {
+      const xml = await this.fetchText(DUKON_SITEMAP_URL);
+      await this.enqueueUrls(this.parseSitemapUrls(xml));
+    } catch (error) {
+      sitemapError = error instanceof Error ? error : new Error(String(error));
+      this.logger.warn(
+        'Dukon sitemap unavailable; discovering products from the catalog',
+      );
+    }
+    const discovered = await this.discoverCatalogUrls();
+    if (sitemapError && !discovered.discoveredProducts) throw sitemapError;
 
     return this.getQueueStats();
   }
@@ -71,7 +79,7 @@ export class DukonParserService {
     let visitedPages = 0;
     let discoveredProducts = 0;
 
-    for (const categoryUrl of DUKON_PRIORITY_CATEGORY_URLS) {
+    for (const categoryUrl of DUKON_CATALOG_ROOT_URLS) {
       const result = await this.discoverCatalogBranch(categoryUrl);
       visitedPages += result.visitedPages;
       discoveredProducts += result.discoveredProducts;
@@ -82,6 +90,7 @@ export class DukonParserService {
 
   async discoverCatalogBranch(rootUrl: string) {
     const maxPages = await this.settings.getMaxPages(SOURCE_CODE);
+    const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
     const root = this.absoluteUrl(rootUrl);
     const source = await this.upsertSource();
     const visitedPages = new Set<string>();
@@ -119,7 +128,7 @@ export class DukonParserService {
         }
       }
 
-      await this.sleep(DUKON_DISCOVERY_DELAY_MS);
+      await this.sleep(delayMs);
     }
 
     return {
@@ -223,15 +232,16 @@ export class DukonParserService {
 
     const urls = await this.prisma.sitemapsDukon.findMany({
       where: { status: 'PENDING' },
+      orderBy: [{ visitedAt: { sort: 'asc', nulls: 'first' } }, { url: 'asc' }],
       take: limit,
     });
 
+    const batch = emptyBatchResult();
     await runWithConcurrency(urls, concurrency, async (entry) => {
       await this.sleep(delayMs);
-      await this.processSitemapUrl(entry.url);
+      countOutcome(batch, await this.processSitemapUrl(entry.url));
     });
-
-    return this.getQueueStats();
+    return { ...(await this.getQueueStats()), batch };
   }
 
   async publishDraftProducts() {
@@ -259,7 +269,7 @@ export class DukonParserService {
     });
   }
 
-  async processSitemapUrl(url: string) {
+  async processSitemapUrl(url: string): Promise<BatchOutcome> {
     await this.prisma.sitemapsDukon.updateMany({
       where: { url },
       data: { attempts: { increment: 1 }, lastTriedAt: new Date() },
@@ -276,8 +286,23 @@ export class DukonParserService {
           visitedAt: new Date(),
         },
       });
-      return product;
+      void product;
+      return 'DONE';
     } catch (error) {
+      if (isGoneError(error)) {
+        const source = await this.upsertSource();
+        await this.offers.delistOffer(source.id, this.canonicalUrl(url));
+        await this.prisma.sitemapsDukon.updateMany({
+          where: { url },
+          data: {
+            isVisited: true,
+            status: 'SKIPPED',
+            lastError: 'Removed by supplier (404/410)',
+            visitedAt: new Date(),
+          },
+        });
+        return 'DELISTED';
+      }
       const isSkipped = error instanceof NonProductPageError;
       if (!isSkipped) {
         await this.parserLogService.addError(url, error);
@@ -296,15 +321,15 @@ export class DukonParserService {
       } else {
         console.error(`Error processing ${url}`, error);
       }
+      return isSkipped ? 'SKIPPED' : 'FAILED';
     }
   }
 
   async parseProductUrl(url: string) {
+    url = this.canonicalUrl(url);
     const res = await fetchWithTimeout(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
-    if (res.status === 404)
-      throw new NonProductPageError('Product page returned 404');
     if (!res.ok) throw new ParserHttpError(res.status, url);
 
     const html = await res.text();
@@ -358,6 +383,7 @@ export class DukonParserService {
     const canonicalUrl = this.parseCanonicalUrl($, url);
     const breadcrumbs = this.parseBreadcrumbNames($);
     const source = await this.upsertSource();
+    await this.ensureAllowedCategory(source.id, breadcrumbs);
     const { sourceCategoryId, categoryId } = await this.parseAndSaveCategories(
       $,
       source.id,
@@ -394,6 +420,7 @@ export class DukonParserService {
       data: {
         update: {
           ...statusUpdate,
+          name: name,
           // priceValue/oldPrice are deliberately absent: PricingService owns both
           // so markup rules apply and MANUAL prices aren't clobbered.
           priceCurrency,
@@ -465,8 +492,6 @@ export class DukonParserService {
     const res = await fetchWithTimeout(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
-    if (res.status === 404)
-      throw new NonProductPageError('Product page returned 404');
     if (!res.ok) throw new ParserHttpError(res.status, url);
 
     const html = await res.text();
@@ -585,7 +610,7 @@ export class DukonParserService {
       sku: data.sku,
       price: data.priceValue,
       currency: data.priceCurrency,
-      stock: data.stockStatus !== 'out_of_stock',
+      stock: data.stockStatus === 'in_stock',
       images: data.images,
       description: data.descriptionFull,
       specifications,
@@ -603,6 +628,37 @@ export class DukonParserService {
     );
   }
 
+  private async ensureAllowedCategory(sourceId: string, breadcrumbs: string[]) {
+    const names = breadcrumbs.filter(
+      (name) => !['главная', 'каталог'].includes(name.toLowerCase()),
+    );
+    const filters = await this.settings.getCategoryFilters(SOURCE_CODE);
+    const haystack = names.join(' / ');
+    if (
+      (filters.include && !new RegExp(filters.include, 'i').test(haystack)) ||
+      (filters.exclude && new RegExp(filters.exclude, 'i').test(haystack))
+    ) {
+      throw new NonProductPageError(`Category is filtered out: ${haystack}`);
+    }
+    const path: string[] = [];
+    const externalIds: string[] = [];
+    for (const name of names) {
+      const slug = generateSlug(name);
+      if (!slug) continue;
+      path.push(slug);
+      externalIds.push(path.join('/'));
+    }
+    if (!externalIds.length) return;
+    const disabled = await this.prisma.sourceCategory.findFirst({
+      where: { sourceId, externalId: { in: externalIds }, isEnabled: false },
+      select: { name: true },
+    });
+    if (disabled)
+      throw new NonProductPageError(
+        `Category is disabled in admin: ${disabled.name}`,
+      );
+  }
+
   private async parseAndSaveCategories(
     $: cheerio.CheerioAPI,
     sourceId: string,
@@ -613,7 +669,6 @@ export class DukonParserService {
       .filter((name) => name && name !== 'Главная' && name !== 'Каталог');
 
     // Canonical tree keyed on the full slug chain — see CategoryTreeService.
-    const leafCategory = await this.categoryTree.upsertBranch(names);
 
     let sourceParentId: string | null = null;
     const sourcePath: string[] = [];
@@ -655,10 +710,14 @@ export class DukonParserService {
       mappedCategoryId = sourceCategory.mappedCategoryId ?? null;
     }
 
-    if (sourceCategoryId && leafCategory) {
+    const leafCategory =
+      mappedCategoryId || !names.length
+        ? null
+        : await this.categoryTree.upsertBranch(names);
+    if (sourceCategoryId && (mappedCategoryId || leafCategory)) {
       return {
         sourceCategoryId,
-        categoryId: mappedCategoryId || leafCategory.id,
+        categoryId: mappedCategoryId || leafCategory!.id,
       };
     }
 
@@ -752,8 +811,6 @@ export class DukonParserService {
     names: string[],
     url?: string,
   ) {
-    await this.categoryTree.upsertBranch(names);
-
     let sourceParentId: string | null = null;
     const path: string[] = [];
 
@@ -800,7 +857,11 @@ export class DukonParserService {
       .filter((name) => name && name !== 'Главная' && name !== 'Каталог');
     const currentName = this.clean($('h1').first().text());
 
-    if (currentName && names[names.length - 1] !== currentName) {
+    if (
+      currentName &&
+      !['главная', 'каталог'].includes(currentName.toLowerCase()) &&
+      names[names.length - 1] !== currentName
+    ) {
       names.push(currentName);
     }
 
@@ -945,7 +1006,7 @@ export class DukonParserService {
   private isProductPage($: cheerio.CheerioAPI) {
     const hasDetails = Boolean(
       $('#properties .groupedprops.table .table__item').length ||
-        $('.price.gen').length,
+      $('.price.gen').length,
     );
     // Dukon marks some category pages as JSON-LD Products. A category listing
     // without its own details must not become a published product.
@@ -981,24 +1042,13 @@ export class DukonParserService {
   ) {
     for (const spec of specs) {
       const key = generateSlug(spec.name);
-      const specification = await this.prisma.specification
-        .upsert({
-          where: { categoryId_key: { categoryId, key } },
-          update: {},
-          create: { name: spec.name, key, categoryId, filterable: true },
-        })
-        .catch(async (error: unknown) => {
-          if (
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === 'P2002'
-          ) {
-            return this.prisma.specification.findUnique({
-              where: { categoryId_key: { categoryId, key } },
-            });
-          }
-
-          throw error;
-        });
+      if (!key) continue;
+      const specification = await this.identity.upsertSpecification(
+        categoryId,
+        spec.name,
+        key,
+        spec.value,
+      );
       if (!specification) continue;
 
       await this.prisma.productSpecification.upsert({
@@ -1052,9 +1102,7 @@ export class DukonParserService {
       urls.add(this.absoluteUrl(src));
     });
 
-    return [...urls]
-      .slice(0, 12)
-      .map((url, order) => ({ url, alt: name, order }));
+    return [...urls].map((url, order) => ({ url, alt: name, order }));
   }
 
   private parseJsonLdProduct($: cheerio.CheerioAPI): ParsedJsonLdProduct {

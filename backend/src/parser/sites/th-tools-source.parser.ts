@@ -83,6 +83,7 @@ export class ThToolsParserService {
   async getUnvisitedSitemaps(limit = 10) {
     return this.prisma.sitemapsThTools.findMany({
       where: { status: 'PENDING' },
+      orderBy: [{ visitedAt: { sort: 'asc', nulls: 'first' } }, { url: 'asc' }],
       take: limit,
     });
   }
@@ -341,8 +342,10 @@ export class ThToolsParserService {
       data: {
         update: {
           ...statusUpdate,
+          name: parsed.name,
           sku: parsed.sku,
           barcode: parsed.barcode,
+          model: parsed.model,
           brandId,
           categoryId,
           // priceValue is deliberately absent: PricingService owns the storefront
@@ -359,6 +362,7 @@ export class ThToolsParserService {
           slug,
           sku: parsed.sku,
           barcode: parsed.barcode,
+          model: parsed.model,
           brandId,
           categoryId,
           priceValue: parsed.price,
@@ -383,6 +387,7 @@ export class ThToolsParserService {
       name: parsed.name,
       sku: parsed.sku,
       barcode: parsed.barcode,
+      model: parsed.model,
       brandName: parsed.brand,
       price: parsed.price,
       description: parsed.description,
@@ -413,6 +418,7 @@ export class ThToolsParserService {
       name: parsed.name,
       sku: parsed.sku,
       barcode: parsed.barcode,
+      model: parsed.model,
       brandName: parsed.brand,
       priceValue: parsed.price,
       priceCurrency: 'BYN',
@@ -502,7 +508,6 @@ export class ThToolsParserService {
   ) {
     // The canonical tree is built by CategoryTreeService, which keys on the
     // full slug chain. Doing it here by leaf slug merged unrelated branches.
-    const leafCategory = await this.categoryTree.upsertBranch(breadcrumbs);
 
     let sourceParentId: string | null = null;
     const path: string[] = [];
@@ -542,10 +547,14 @@ export class ThToolsParserService {
       mappedCategoryId = sourceCategory.mappedCategoryId ?? null;
     }
 
-    if (sourceCategoryId && leafCategory) {
+    const leafCategory =
+      mappedCategoryId || !breadcrumbs.length
+        ? null
+        : await this.categoryTree.upsertBranch(breadcrumbs);
+    if (sourceCategoryId && (mappedCategoryId || leafCategory)) {
       return {
         sourceCategoryId,
-        categoryId: mappedCategoryId || leafCategory.id,
+        categoryId: mappedCategoryId || leafCategory!.id,
       };
     }
 
@@ -570,6 +579,12 @@ export class ThToolsParserService {
         },
       }),
     );
+    if (sourceCategory.mappedCategoryId) {
+      return {
+        sourceCategoryId: sourceCategory.id,
+        categoryId: sourceCategory.mappedCategoryId,
+      };
+    }
     const category = await upsertTolerantly(() =>
       this.prisma.category.upsert({
         where: { slug: FALLBACK_CATEGORY_SLUG },
@@ -635,6 +650,7 @@ export class ThToolsParserService {
       name: string;
       sku?: string;
       barcode?: string;
+      model?: string;
       brandName?: string;
       price?: number;
       description?: string;
@@ -656,6 +672,7 @@ export class ThToolsParserService {
         breadcrumbs: data.breadcrumbs,
         brandName: data.brandName,
         barcode: data.barcode,
+        model: data.model,
         inStock: data.inStock ?? null,
         parsedAt: new Date().toISOString(),
       },

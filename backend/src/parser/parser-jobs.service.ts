@@ -59,7 +59,10 @@ export class ParserJobsService {
             label: 'Загрузить sitemap',
             description:
               'Читает sitemap поставщика и добавляет новые товары в очередь.',
-            run: () => this.sitemaps.parseAllSitemapsThTools(),
+            run: async () => {
+              await this.sitemaps.parseAllSitemapsThTools();
+              return this.categoryQueue.refresh(code);
+            },
           },
           {
             name: 'categories',
@@ -118,7 +121,7 @@ export class ParserJobsService {
           {
             name: 'refresh',
             label: 'Загрузить sitemap',
-            description: 'Sitemap плюс обход приоритетных разделов каталога.',
+            description: 'Sitemap плюс обход всех разделов каталога.',
             run: () => this.dukon.refreshSitemaps(),
           },
           {
