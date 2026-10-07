@@ -6,6 +6,19 @@ import { PrismaService } from '../prisma/prisma.service';
 // after each run so the table stays bounded (mirrors ParserLogService).
 const MAX_RUNS_PER_KEY = 100;
 
+/**
+ * Share of hard failures in the last run above which a job counts as broken.
+ *
+ * A run that fails on nearly every URL still *finishes*, so staleness alone
+ * reported it as healthy — which is exactly how a parser dies silently after a
+ * supplier changes its markup.
+ */
+const FAILURE_RATE_THRESHOLD = Number(
+  process.env.PARSER_FAILURE_RATE_THRESHOLD ?? 0.5,
+);
+/** Below this many URLs a batch is too small for a rate to mean anything. */
+const MIN_BATCH_FOR_RATE = 5;
+
 @Injectable()
 export class ParserRuntimeStatusService {
   private readonly logger = new Logger(ParserRuntimeStatusService.name);
@@ -185,12 +198,20 @@ export class ParserRuntimeStatusService {
       const lastSuccessMs = status.lastSuccessAt?.getTime();
       const isStale = !lastSuccessMs || now - lastSuccessMs > maxAgeMs;
       const hasError = Boolean(status.lastError);
+      const batch = this.lastBatch(status.lastResult);
+      const rate =
+        batch && batch.processed >= MIN_BATCH_FOR_RATE
+          ? batch.failed / batch.processed
+          : 0;
+      const isFailingHard = rate > FAILURE_RATE_THRESHOLD;
 
       return {
         ...status,
+        failureRate: batch ? Number(rate.toFixed(3)) : null,
+        lastBatch: batch,
         health: status.isRunning
           ? 'RUNNING'
-          : hasError
+          : hasError || isFailingHard
             ? 'ERROR'
             : isStale
               ? 'STALE'
@@ -203,6 +224,22 @@ export class ParserRuntimeStatusService {
       maxAgeHours,
       jobs,
     };
+  }
+
+  /** Pulls the per-batch counters a parser puts into its run result. */
+  private lastBatch(result: unknown) {
+    if (!result || typeof result !== 'object') return null;
+    const batch = (result as { batch?: unknown }).batch;
+    if (!batch || typeof batch !== 'object') return null;
+
+    const { processed, failed } = batch as {
+      processed?: unknown;
+      failed?: unknown;
+    };
+    if (typeof processed !== 'number' || typeof failed !== 'number')
+      return null;
+
+    return { ...(batch as Record<string, number>), processed, failed };
   }
 
   private toJson(value: unknown) {

@@ -6,7 +6,12 @@
 const { token, authorized, loadToken, saveToken, logout, adminFetch, errorMessage }
   = useAdminApi()
 
-type Stats = { newOrders: number, pendingReviews: number, queuedSitemaps: number }
+type Stats = {
+  newOrders: number
+  pendingReviews: number
+  queuedSitemaps: number
+  priceReviewNeeded: number
+}
 
 const checking = ref(true)
 const signingIn = ref(false)
@@ -18,6 +23,14 @@ const nav = computed(() => [
   { label: 'Дашборд', to: '/admin', icon: 'grid', exact: true },
   { label: 'Заказы', to: '/admin/orders', icon: 'cart', badge: badges.value?.newOrders },
   { label: 'Товары', to: '/admin/products', icon: 'box' },
+  {
+    label: 'Цены',
+    to: '/admin/pricing',
+    icon: 'tag',
+    badge: badges.value?.priceReviewNeeded,
+  },
+  { label: 'Дубли', to: '/admin/duplicates', icon: 'copy' },
+  { label: 'Баннеры', to: '/admin/banners', icon: 'image' },
   { label: 'Категории', to: '/admin/categories', icon: 'tree' },
   { label: 'Бренды', to: '/admin/brands', icon: 'tag' },
   {
@@ -28,6 +41,7 @@ const nav = computed(() => [
   },
   { label: 'Промокоды', to: '/admin/promo-codes', icon: 'ticket' },
   { label: 'Парсинг', to: '/admin/parsing', icon: 'refresh' },
+  { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
 
 const ICONS: Record<string, string> = {
@@ -39,6 +53,9 @@ const ICONS: Record<string, string> = {
   star: 'M12 3l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8-4.2-4.1 5.9-.9z',
   ticket: 'M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z',
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6',
+  copy: 'M9 9h10v10H9zM5 15V5h10',
+  image: 'M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4',
+  book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5zM8 7h7M8 11h7',
 }
 
 /** Validates whatever token we have by hitting a cheap admin endpoint. */
@@ -99,7 +116,7 @@ useHead({
     <div v-else-if="!authorized" class="gate">
       <form class="login" @submit.prevent="signIn">
         <div class="login-brand">
-          <span class="logo-mark" aria-hidden="true">М</span>
+          <BrandLogo size="sm" />
           <div>
             <h1>Панель управления</h1>
             <p>Введите ADMIN_TOKEN для доступа</p>
@@ -129,8 +146,7 @@ useHead({
       <aside class="sidebar" :class="{ 'is-open': sidebarOpen }">
         <div class="sidebar-head">
           <NuxtLink to="/admin" class="brand">
-            <span class="logo-mark" aria-hidden="true">М</span>
-            <span>Мультитул</span>
+            <BrandLogo size="sm" />
           </NuxtLink>
           <button type="button" class="sidebar-close" aria-label="Закрыть меню" @click="sidebarOpen = false">
             <svg viewBox="0 0 20 20" aria-hidden="true">

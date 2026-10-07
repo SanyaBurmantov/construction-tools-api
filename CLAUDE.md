@@ -41,11 +41,58 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (`NUXT_PUBLIC_API_BASE`); SSR calls go through the Nuxt server route
   `frontend/server/api/[...path].ts` → `API_BASE_SERVER` (`http://backend:8000`).
 - **Frontend ISR**: `nuxt.config.ts` `routeRules` — home/catalog `isr: 300`,
-  product `isr: 900`, admin `ssr: false`. Cached HTML is served cheaply; runtime
+  product/brand `isr: 900`, admin `ssr: false`. Note that Nitro's cache key is a
+  hash of the **full URL including the query string**, so every filter
+  combination on `/catalog` and every `?search=` on `/brand` is its own cache
+  entry. Cached HTML is served cheaply; runtime
   is light. The build is the memory-heavy step.
 - **Data model**: products are stored in two layers — `Product` (normalized
   storefront card) and `SourceProduct` (raw supplier snapshot, identity
   `@@unique([sourceId, url])`). See the parsing docs below.
+- **Reliability guarantees worth not undoing.** `fetchWithTimeout` already
+  retries transient failures (timeouts, 429, 5xx) with backoff and `Retry-After`,
+  and deliberately does **not** retry 404/403. Parsers throw `ParserHttpError`
+  so a 404/410 is distinguishable: it means the supplier delisted the product,
+  and `OffersService.delistOffer()` withdraws the offer, re-prices from whoever
+  still carries it, and hides the product only when no live offer remains
+  (never touching an `ARCHIVED`/`HIDDEN` decision a human made). Batches report
+  per-run counters (`BatchResult`), which is what lets `getHealth()` call a job
+  `ERROR` when most of a run failed — a run that fails on every URL still
+  *finishes*, so staleness alone reported the classic silent parser death as
+  healthy. `ParserWatchdogCron` (:07/:37, off the parsing slots) requeues
+  `FAILED` rows with `attempts < PARSER_MAX_ATTEMPTS` older than
+  `PARSER_RETRY_AFTER_MINUTES`, and alerts Telegram once per breakage — it
+  remembers what it already reported so an unhealthy job does not re-alert every
+  15 minutes.
+- **Not every characteristic becomes a filter.** `shouldBeFilterable()`
+  (`parser/spec-filterable.ts`) decides `Specification.filterable` when a spec
+  first appears in a category. Parsers used to set it to `true` unconditionally,
+  which turned "Штрихкод" (unique per product) and "Производитель" (a legal
+  address) into catalogue facets. Identity/paperwork names are blocked by list,
+  and any value over 60 characters is treated as prose. It is only the default:
+  admins flip specs in `/admin/specifications`, and `auto-select` still applies
+  the distinct-value heuristic over real data.
+- **Product identity is the supplier offer, not `Product.slug`.** Parsers must
+  save through `ProductIdentityService.save()` (`parser/product-identity.service.ts`),
+  which resolves the product via `SourceProduct(sourceId, url)` and only mints a
+  slug for genuinely new products (`-2`, `-3`… when the pretty one is taken).
+  The old `product.upsert({ where: { slug } })` had two failure modes seen in
+  production: two items whose names slugify the same **silently overwrote each
+  other** (queue said DONE, catalogue gained nothing), and — because a nested
+  `images: { create }` stops Prisma using `INSERT … ON CONFLICT` — two workers in
+  one batch raced and the loser threw `Unique constraint failed … (slug)`. The
+  same service wraps the `Brand` and `Specification` upserts, which raced for the
+  same reason. Anything creating products from a parse goes through it.
+- **Category identity is `Category.pathKey`, not `slug`.** `pathKey` is the full
+  slug chain (`aksessuary/avtolampy/narva`); `slug` is only the public URL.
+  Parsers must build the tree through `CategoryTreeService.upsertBranch()`
+  (`parser/categories/`), never with `category.upsert({ where: { slug } })` —
+  that keyed on the leaf name, so every branch ending in "Прочее" collapsed into
+  one category and the first branch to parse won the parent. The slug still
+  prefers the bare leaf (existing URLs don't move) and only falls back to
+  `parent-leaf` → full chain → numbered when another branch already holds it.
+  Anything that re-parents a category must update `pathKey` too, or the next
+  parse recreates the row at its old position — see `category-merge.service.ts`.
 - **Catalog browsing**: categories are a tree (parsers build it from supplier
   breadcrumbs; products attach to leaves). Public API: `GET /categories/tree`
   (aggregated counts, empty branches pruned), `GET /categories/:slug`
@@ -88,6 +135,47 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   outage must never fail the request or crash the process on an unhandled
   rejection. Customer-supplied text is HTML-escaped (the message uses
   `parse_mode: HTML`). `PUBLIC_ORIGIN` adds a deep link to the order in admin.
+- **One product, many supplier offers** (`offers/`). `Product` is the canonical
+  card; `SourceProduct` rows hanging off it are competing supplier offers.
+  Matching (`product-matching.ts`, pure and unit-tested) ranks signals
+  barcode > brand+sku > brand+model > similar name. An article number only
+  identifies together with its brand, and a name match across *different*
+  brands is always rejected. **Only barcode and brand+sku auto-merge** — weaker
+  signals go to `/admin/duplicates` for a human, because an incorrect merge is
+  expensive to unpick.
+  `ProductMergeService.merge()` moves offers, images, specs, reviews, price
+  history and order lines onto the survivor inside one transaction. Moving
+  `Review` and `PriceHistory` is **mandatory, not tidiness**: both cascade on
+  delete, so skipping them would silently destroy customer reviews. The merged
+  slug becomes a `ProductRedirect`, and the product page turns that into a 301.
+  **`Product.costPrice` comes from the cheapest offer**, not from whichever
+  parser ran last — in-stock offers outrank a cheaper unavailable one. Parsers
+  call `offers.onProductParsed(productId)` *after* saving their SourceProduct.
+  Public API exposes only `offers: { count, inStockCount }`. Supplier URLs and
+  our costs must never reach the storefront — they are admin-only
+  (`GET /admin/offers/product/:id`).
+- **Pricing / margin engine** (`pricing/`). Supplier cost lives in
+  `Product.costPrice`; the storefront price is derived from it by `PricingRule`
+  (percent and/or flat markup, minimum absolute margin, cost bands, rounding
+  `.90/.99/integer/tens`, priority). The most specific active rule wins —
+  SOURCE > BRAND > CATEGORY > GLOBAL — and a CATEGORY rule covers the whole
+  subtree. Pure arithmetic sits in `pricing.calculator.ts` with no DB access,
+  so it is directly testable.
+  **Invariant: `PricingService` is the sole owner of `Product.priceValue` and
+  `oldPrice`.** Parsers must NOT write either in their upsert `update` branch —
+  they call `pricing.applyCost(productId, cost)` after the upsert instead.
+  Writing the price in the parser would clobber MANUAL prices, and writing
+  `costPrice` there would defeat the spike guard, which compares old cost to new.
+  Guards worth knowing: a cost change beyond
+  `PRICING_SPIKE_THRESHOLD_PERCENT` (default 50) is treated as a supplier typo —
+  the product keeps its price, gets `priceReviewNeeded`, and the rejected cost
+  waits in `PriceHistory` until an admin accepts or rejects it in
+  `/admin/pricing`. `pricingMode = MANUAL` pins the price: parsing records the
+  cost (so margin stays honest) but never touches the price. A supplier's own
+  "was" price is marked up by the same rule, and cleared when the supplier's
+  discount ends. Every change is written to `PriceHistory`.
+  Adoption on an existing catalogue: `POST /admin/pricing/backfill-cost` adopts
+  current storefront prices as costs, then run the recalculation.
 - **Discounts**: `Product.oldPrice` above `priceValue` marks a product as
   discounted — that's what `onSale` and the `/sales` page filter on.
   `PromoCode` (`promo/` module) is validated at `POST /promo-codes/validate` for
@@ -99,6 +187,20 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   returned by `GET /products/:slug/reviews` and counted into the denormalized
   `Product.ratingAvg` / `ratingCount`, which is recomputed on every moderation
   action. Moderation: `/admin/reviews`.
+- **Review spam defence**, cheapest check first:
+  1. a `website` honeypot field (off-screen in the form, never shown);
+  2. `@Throttle` on the POST route — 5/hour per IP, far stricter than the
+     global 120/min;
+  3. one review per product per IP per 24h, and 5 per IP per 24h overall;
+  4. identical text on the same product within 24h.
+  Honeypot and duplicate-text hits return the **normal success response** on
+  purpose — telling a bot it was caught only teaches it what to change. Only
+  the per-IP limits answer with an error, since a real person can hit those.
+  IPs are stored as a salted SHA-256 (`Review.ipHash`, salt from
+  `REVIEW_IP_SALT`, falling back to `ADMIN_TOKEN`) — never in the clear.
+  Trade-off to keep in mind: behind carrier-grade NAT several customers share
+  one address, so the per-IP-per-product rule can reject a genuine second
+  review. Loosen the constants in `reviews.service.ts` if that shows up.
 - **Frontend design system**: tokens in `app/assets/scss/tokens.scss` (semantic
   layer + dark mode); primitives in `app/components/ui/*` (`UiButton`, `UiInput`,
   `UiModal`, `UiTable`, `UiPrice`, `UiRating`, …). Components read tokens, never
@@ -135,11 +237,90 @@ URLs with a `status`. `refreshSitemaps()` fills it from the site's sitemap.xml;
 fetches HTML, runs a pure `parse<Source>(html)` function (cheerio + JSON-LD),
 upserts `Product` + images + specs + `SourceProduct`, and marks the row
 `DONE` / `SKIPPED` / `FAILED`. Crons in `sites/<source>.cron.ts` drive this on a
-schedule, gated by env flags, writing health to `ParserRuntimeStatus`
-(exposed at `GET /health/parser`).
+schedule, writing health to `ParserRuntimeStatus` (exposed at
+`GET /health/parser`).
+
+**All parser configuration is runtime, not deploy-time.** `ParserSettingsService`
+(`parser/parser-settings.service.ts`) resolves every knob as *DB row → env var →
+code default*, and the admin writes the rows via `PATCH /admin/parser/cron` and
+`PATCH /admin/parser/sources/:code`:
+
+| Setting | DB key | env fallback |
+| --- | --- | --- |
+| global switch | `cron.enabled` | `PARSER_CRON_ENABLED` |
+| per-source switch | `cron.<code>.enabled` | `<SOURCE>_CRON_ENABLED` |
+| batch size | `cron.<code>.batchLimit` | `<SOURCE>_CRON_BATCH_LIMIT` |
+| request delay | `parser.<code>.requestDelayMs` | `<SOURCE>_REQUEST_DELAY_MS` |
+| crawl page cap | `parser.<code>.maxPages` | `<SOURCE>_DISCOVERY_MAX_PAGES` |
+| category filters | `parser.<code>.category{Include,Exclude}` | `<SOURCE>_CATEGORY_*_REGEX` |
+
+A source runs only when the global switch **and** its own switch are on. Parsers
+must read these through the service — **never** `process.env` at module load,
+which is what made the delay and the filters need a restart. Regexes are
+validated on write: a broken one would throw on every product. Code-level filter
+defaults live in `parser/parser-defaults.ts` (a dependency-free module, so the
+registry and the parsers can both import them). `PARSER_SOURCES` is the registry
+the admin UI iterates; a new supplier has to be added there too.
+
+**Throughput is the thing people mistake for a hang.** One run every 30 min
+means `batchLimit × 48` URLs a day. At the old default of 30 that is 1440/day
+against a ~39k queue — a month, and indistinguishable from "остановилось" in the
+UI. `/admin/parsing` shows the resulting ETA per source next to the switch.
+
+**Category queue** (`parser/categories/category-queue.service.ts` +
+`sites/th-tools-category.crawler.ts`). `ParserCategoryQueue` holds the supplier's
+category URLs; processing one walks its `?page=N` pagination and pushes every
+product URL it finds into the products queue, catching products the sitemap has
+not listed yet. The crawler keys off the **URL shape** (`isThToolsProductUrl`),
+not CSS classes, because the shop's theme markup churns. Switching a category
+off in the admin also sets `SourceCategory.isEnabled = false` for that branch,
+and the product parser skips (not fails) anything whose breadcrumb chain hits a
+disabled row — so an admin toggle stops the import, not just the crawl.
 
 Canonical, complete example to copy from: **`backend/src/parser/sites/7745-source.parser.ts`**
 (service) + `7745.parser.ts` (pure parse fn) + `7745.cron.ts` (cron).
+
+**tools.by specifics** (`tools.parser.ts` pure + `tools-by-source.parser.ts`
+service + `tools-by.cron.ts`). Our supplier, catalogue export agreed with them —
+their `robots.txt` is a blanket `Disallow: /` aimed at competitors, not at us.
+Two things make this site different from the others:
+- **No sitemap.xml.** `refreshSitemaps()` is a catalog crawl (`/catalog` →
+  `/catalog/<id>/<id>` → `/product/<id>`), and it is the only way new products
+  ever reach the queue. Bounded by `TOOLS_BY_DISCOVERY_MAX_PAGES`.
+- **A product page embeds many other products** (recommendation carousels), each
+  with its own `data-price` and gallery. So the price is read from the
+  `.js-markup-price` block whose `data-product-id` matches the h1's, and images
+  only from `.product__carousel`. "First price on the page" happens to work
+  today and would silently put a recommended item's price on our card tomorrow.
+Also: JSON-LD carries brand and availability but publishes `"price": "0.00"` —
+never take the price from it. The h1 has a nested `.short-description` span that
+belongs in the description, not the name; the last breadcrumb is a brand filter
+(`?brand_id=…`), not a category; `Штрихкод` in the spec table becomes
+`Product.barcode` and is what merges a tools.by offer with the same product from
+th-tool.by. Photos come from `content.tools.by` at three sizes — deduplicated by
+the size-stripped URL, largest kept.
+
+**Which sources are real.** `th-tool.by`, `dukon.by` and `tools.by` are actual
+suppliers.
+**`7745.by` is not** — it was a sample site from the client and survives only as
+the reference implementation of the parser shape. Its cron needs both
+`PARSER_CRON_ENABLED` and `SUPPLIER_7745_CRON_ENABLED`, and both default to
+`false`; keep it that way. Copy its structure, don't turn it on.
+
+**th-tool.by specifics** (`th-tools.parser.ts` pure + `th-tools-source.parser.ts`
+service, mirroring the 7745 split): it is a Webasyst shop with ~39k products on
+flat one-segment URLs (`/<slug>/`), so `isThToolsProductUrl()` in
+`sitemaps.service.ts` filters `/category/` and static pages out of the queue
+*before* they cost an HTTP request. The page exposes `Штрихкод` in its spec
+table — that becomes `Product.barcode`, which is the only signal besides
+brand+sku that auto-merges duplicates, so don't drop it. Availability comes from
+`[itemprop="availability"]`, and the gallery serves every photo at three sizes
+(`.750x0` / `.970` / `.0x600`), deduplicated by the size-stripped URL. The
+supplier also carries car accessories, bikes, garden and toiletries;
+`TH_TOOLS_CATEGORY_EXCLUDE_REGEX` drops those while deliberately keeping
+`Аксессуары / Измерительные приборы` and `Аксессуары / Спецодежда, защита`
+(welding masks and PPE live there). The regexes are unit-tested in
+`th-tools-category-filter.spec.ts` — a typo there silently empties the catalogue.
 
 ## Conventions
 

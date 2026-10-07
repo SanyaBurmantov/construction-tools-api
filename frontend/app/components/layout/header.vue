@@ -158,8 +158,7 @@ watch(() => route.fullPath, () => {
         </button>
 
         <NuxtLink to="/" class="logo" aria-label="Мультитул — на главную">
-          <span class="logo-mark" aria-hidden="true">М</span>
-          <span class="logo-text">Мультитул</span>
+          <BrandLogo />
         </NuxtLink>
 
         <UiButton
@@ -280,7 +279,13 @@ watch(() => route.fullPath, () => {
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.35 16H17a2 2 0 0 0 1.95-1.55L20.5 8H6M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm8 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <span class="action-label">Корзина</span>
+            <span class="action-label">
+              <ClientOnly>
+                <template #fallback>Корзина</template>
+                <template v-if="cart.count">{{ formatPrice(cart.totalPrice, cart.currency) }}</template>
+                <template v-else>Корзина</template>
+              </ClientOnly>
+            </span>
             <ClientOnly>
               <span v-if="cart.count" class="counter">{{ cart.count }}</span>
             </ClientOnly>
@@ -290,7 +295,7 @@ watch(() => route.fullPath, () => {
     </div>
 
     <nav class="navbar" aria-label="Основная навигация">
-      <div class="container navbar-inner scroll-x">
+      <UiScroller class="container navbar-inner" label="Категории каталога">
         <NuxtLink
           v-for="category in topCategories"
           :key="category.id"
@@ -300,7 +305,7 @@ watch(() => route.fullPath, () => {
           {{ category.name }}
         </NuxtLink>
         <NuxtLink to="/sales" class="nav-link is-sale">Акции</NuxtLink>
-      </div>
+      </UiScroller>
     </nav>
 
     <!-- Catalog mega menu -->
@@ -432,24 +437,6 @@ watch(() => route.fullPath, () => {
   gap: var(--space-2);
 }
 
-.logo-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  background: var(--brand);
-  color: #fff;
-  font-weight: 800;
-  place-items: center;
-}
-
-.logo-text {
-  color: var(--text-strong);
-  font-family: var(--font-heading);
-  font-size: var(--text-lg);
-  font-weight: 800;
-  letter-spacing: var(--tracking-tight);
-}
 
 .catalog-trigger {
   flex-shrink: 0;
@@ -641,8 +628,7 @@ watch(() => route.fullPath, () => {
   border-top: 1px solid var(--border-subtle);
 }
 
-.navbar-inner {
-  display: flex;
+.navbar-inner :deep(.viewport) {
   gap: var(--space-1);
 }
 

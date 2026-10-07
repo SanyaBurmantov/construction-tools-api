@@ -146,6 +146,51 @@ export class TelegramService implements OnModuleInit {
    * Fire-and-forget notification. Resolves to false instead of throwing when
    * disabled or when Telegram is unreachable.
    */
+  /**
+   * Tells the operator a parser is broken, so "the catalogue stopped growing"
+   * is noticed in half an hour instead of next week. Deduplicated by the caller:
+   * an already-broken job must not re-alert every 30 minutes.
+   */
+  async notifyParserProblem(problem: {
+    key: string;
+    label: string;
+    reason: string;
+  }): Promise<boolean> {
+    const lines = [
+      '⚠️ <b>Парсер требует внимания</b>',
+      `<b>Задание:</b> ${this.escape(problem.label)} (${this.escape(problem.key)})`,
+      `<b>Причина:</b> ${this.escape(problem.reason)}`,
+    ];
+    const origin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
+    if (origin) lines.push(`${origin}/admin/parsing`);
+
+    return this.send(lines.join('\n'));
+  }
+
+  /** Fire-and-forget POST shared by every notification. */
+  private async send(text: string): Promise<boolean> {
+    if (!this.enabled) return false;
+
+    try {
+      await axios.post(
+        `${TELEGRAM_API}/bot${this.botToken}/sendMessage`,
+        {
+          chat_id: this.chatId,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        },
+        { timeout: SEND_TIMEOUT_MS },
+      );
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Telegram send failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+  }
+
   async notifyNewOrder(order: OrderNotification): Promise<boolean> {
     if (!this.enabled) return false;
 

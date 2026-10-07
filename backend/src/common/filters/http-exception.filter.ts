@@ -12,7 +12,17 @@ type ErrorResponse = {
   statusCode: number;
   message?: string | string[];
   error?: string;
+  [key: string]: unknown;
 };
+
+/** Keys the filter renders itself; anything else is passthrough detail. */
+const RESERVED_KEYS = new Set([
+  'statusCode',
+  'message',
+  'error',
+  'path',
+  'timestamp',
+]);
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -52,6 +62,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
       );
     }
 
+    // Client errors may carry machine-readable detail the caller needs to act
+    // on — a `code`, a redirect target, the totals behind a 409. Server errors
+    // never pass anything through, so internals can't leak in a 500 body.
+    const detail: Record<string, unknown> = {};
+    if (status < 500 && payload) {
+      for (const [key, value] of Object.entries(payload)) {
+        if (!RESERVED_KEYS.has(key)) detail[key] = value;
+      }
+    }
+
     response.status(status).json({
       statusCode: status,
       message:
@@ -60,6 +80,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           ? exception.message
           : 'Internal server error'),
       error: payload?.error || HttpStatus[status],
+      ...detail,
       path: request.url,
       timestamp: new Date().toISOString(),
     });

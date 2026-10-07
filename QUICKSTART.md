@@ -16,7 +16,7 @@
 
 ## Вариант 1. Локально в Docker (рекомендуется)
 
-Поднимает три сервиса: `db` (5432), `back` (8000), `front` (3000).
+Поднимает три сервиса: `db` (2222), `back` (8000), `front` (3000).
 
 ### Первый запуск
 
@@ -41,7 +41,7 @@
 ### Где что
 - **Фронт:** http://localhost:3000 · админка: http://localhost:3000/admin
 - **API:** http://localhost:8000 (Swagger: поставь `SWAGGER_ENABLED=true` → http://localhost:8000/api)
-- **БД:** `localhost:5432`, `postgres` / `postgres`, база `construction_tools`
+- **БД:** `localhost:2222`, `postgres` / `postgres`, база `construction_tools`
 - **Логи:** `docker compose logs -f back`
 
 ### Запустить парсинг — вручную (сразу, без ожидания)
@@ -80,7 +80,7 @@ docker compose up -d --build   # пересобрать после измене�
 
 2. **`backend/.env`:**
    ```env
-   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/construction_tools?schema=public
+   DATABASE_URL=postgresql://postgres:postgres@localhost:2222/construction_tools?schema=public
    ADMIN_TOKEN=dev-secret
    PARSER_CRON_ENABLED=false
    ```

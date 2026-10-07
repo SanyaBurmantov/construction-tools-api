@@ -1,11 +1,23 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
+import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
 import { ParserLogService } from '../parser-log.service';
+import { ParserHttpError, isGoneError } from '../parser-http.error';
+import {
+  BatchOutcome,
+  BatchResult,
+  countOutcome,
+  emptyBatchResult,
+} from '../batch-result';
+import { OffersService } from '../../offers/offers.service';
+import { CategoryTreeService } from '../categories/category-tree.service';
+import { ProductIdentityService } from '../product-identity.service';
+import { ParserSettingsService } from '../parser-settings.service';
 import { parseTools } from './tools.parser';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
@@ -14,22 +26,25 @@ type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 const SOURCE_CODE = 'tools-by';
 const SOURCE_NAME = 'Tools.by';
 const SOURCE_BASE_URL = 'https://tools.by';
-const TOOLS_BY_REQUEST_DELAY_MS = 2000;
-const TOOLS_BY_DISCOVERY_MAX_PAGES = getPositiveEnvNumber(
-  'TOOLS_BY_DISCOVERY_MAX_PAGES',
-  500,
-);
-
-function getPositiveEnvNumber(name: string, fallback: number) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
+/** Skipped, not failed: the page parsed fine, we just don't want the product. */
+class SkippedToolsByProductError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SkippedToolsByProductError';
+  }
 }
 
 @Injectable()
 export class ToolsByParserService {
+  private readonly logger = new Logger(ToolsByParserService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly parserLogService: ParserLogService,
+    private readonly offers: OffersService,
+    private readonly categoryTree: CategoryTreeService,
+    private readonly settings: ParserSettingsService,
+    private readonly identity: ProductIdentityService,
   ) {}
 
   async refreshSitemaps() {
@@ -39,15 +54,14 @@ export class ToolsByParserService {
   }
 
   async discoverCatalogUrls() {
+    const maxPages = await this.settings.getMaxPages(SOURCE_CODE);
+    const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
     const visitedPages = new Set<string>();
     const queuedPages = new Set<string>([`${SOURCE_BASE_URL}/catalog`]);
     const pageQueue = [`${SOURCE_BASE_URL}/catalog`];
     const productUrls = new Set<string>();
 
-    while (
-      pageQueue.length &&
-      visitedPages.size < TOOLS_BY_DISCOVERY_MAX_PAGES
-    ) {
+    while (pageQueue.length && visitedPages.size < maxPages) {
       const pageUrl = pageQueue.shift();
       if (!pageUrl || visitedPages.has(pageUrl)) continue;
       visitedPages.add(pageUrl);
@@ -65,11 +79,12 @@ export class ToolsByParserService {
         }
       }
 
-      await this.sleep(TOOLS_BY_REQUEST_DELAY_MS);
+      await this.sleep(delayMs);
     }
 
     return {
       visitedPages: visitedPages.size,
+      maxPages,
       discoveredProducts: productUrls.size,
     };
   }
@@ -150,21 +165,46 @@ export class ToolsByParserService {
     });
   }
 
+  /**
+   * Puts the whole queue back to PENDING so every product is read again.
+   *
+   * Needed after a parser fix that changed what gets saved — products lost to
+   * the old slug-collision bug, for instance, only reappear on a re-read.
+   * `attempts` is reset too: these rows get a clean slate, not the watchdog's
+   * three-strikes budget from a previous life.
+   */
+  async revalidateAllSitemaps() {
+    return this.prisma.sitemapsToolsBy.updateMany({
+      data: {
+        isVisited: false,
+        status: 'PENDING',
+        attempts: 0,
+        lastError: null,
+        lastTriedAt: null,
+        visitedAt: null,
+      },
+    });
+  }
+
   async processSitemapsBatch(limit = 30, concurrency = 1) {
     const urls = await this.prisma.sitemapsToolsBy.findMany({
       where: { status: 'PENDING' },
       take: limit,
     });
 
+    const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
+
+    const batch: BatchResult = emptyBatchResult();
+
     await runWithConcurrency(urls, concurrency, async (entry) => {
-      await this.sleep(TOOLS_BY_REQUEST_DELAY_MS);
-      await this.processSitemapUrl(entry.url);
+      await this.sleep(delayMs);
+      countOutcome(batch, await this.processSitemapUrl(entry.url));
     });
 
-    return this.getQueueStats();
+    return { ...(await this.getQueueStats()), batch };
   }
 
-  async processSitemapUrl(url: string) {
+  async processSitemapUrl(url: string): Promise<BatchOutcome> {
     await this.prisma.sitemapsToolsBy.updateMany({
       where: { url },
       data: { attempts: { increment: 1 }, lastTriedAt: new Date() },
@@ -181,56 +221,93 @@ export class ToolsByParserService {
           visitedAt: new Date(),
         },
       });
-      return product;
+      void product;
+      return 'DONE';
     } catch (error) {
-      await this.parserLogService.addError(url, error);
+      // The supplier removed this product: withdraw the offer and re-price
+      // whatever is left, instead of leaving a dead price on the storefront.
+      if (isGoneError(error)) {
+        const source = await this.upsertSource();
+        await this.offers.delistOffer(source.id, this.canonicalUrl(url));
+        await this.prisma.sitemapsToolsBy.updateMany({
+          where: { url },
+          data: {
+            isVisited: true,
+            status: 'SKIPPED',
+            lastError: 'Removed by supplier (404)',
+            visitedAt: new Date(),
+          },
+        });
+        this.logger.log(`Delisted ${url}: gone from supplier`);
+        return 'DELISTED';
+      }
+
+      // A filtered-out category is an expected outcome, not a failure — it must
+      // not fill the error log or show up as a broken URL in the admin.
+      const isSkipped = error instanceof SkippedToolsByProductError;
+      if (!isSkipped) await this.parserLogService.addError(url, error);
+
       await this.prisma.sitemapsToolsBy.updateMany({
         where: { url },
         data: {
           isVisited: true,
-          status: 'FAILED',
+          status: isSkipped ? 'SKIPPED' : 'FAILED',
           lastError: error instanceof Error ? error.message : String(error),
           visitedAt: new Date(),
         },
       });
-      console.error(`Error processing ${url}`, error);
+
+      const message = error instanceof Error ? error.message : String(error);
+      if (isSkipped) {
+        this.logger.debug(`Skipped ${url}: ${message}`);
+      } else {
+        this.logger.warn(`Failed ${url}: ${message}`);
+      }
+
+      return isSkipped ? 'SKIPPED' : 'FAILED';
     }
   }
 
   async parseProductUrl(url: string) {
     const canonicalUrl = this.absoluteUrl(url);
-    const html = await this.fetchText(canonicalUrl);
-    const $ = cheerio.load(html);
-    const parsed = parseTools(html);
+    const parsed = parseTools(await this.fetchText(canonicalUrl));
     if (!parsed.name) throw new Error('Product name was not parsed');
+    if (!parsed.isProductPage) {
+      throw new SkippedToolsByProductError('URL is not a product page');
+    }
+    await this.ensureAllowedCategory(parsed.breadcrumbs);
 
     const source = await this.upsertSource();
-    const breadcrumbs = this.parseBreadcrumbs($);
+    await this.ensureCategoryNotDisabled(source.id, parsed.breadcrumbs);
+    const breadcrumbs = parsed.breadcrumbs;
     const { sourceCategoryId, categoryId } = await this.parseAndSaveCategories(
       source.id,
       breadcrumbs,
     );
-    const sku = this.findSpecValue(parsed.specifications, [
-      'артикул',
-      'код товара',
-      'sku',
-    ]);
-    const brandName =
-      this.findSpecValue(parsed.specifications, ['бренд', 'торговая марка']) ||
-      this.parseBrand($);
-    const brandId = brandName ? await this.upsertBrand(brandName) : undefined;
+    const sku = parsed.sku;
+    const brandName = parsed.brand;
+    const brandId = brandName
+      ? await this.identity.upsertBrand(brandName)
+      : undefined;
     const slug = this.productSlug(parsed.name, sku);
-    const existingProduct = await this.prisma.product.findUnique({
-      where: { slug },
-      select: { status: true },
-    });
+    // Status of the product THIS offer belongs to. Looking it up by slug
+    // could republish an unrelated product that merely shares the name.
+    const existingProductId = await this.identity.findByOffer(
+      source.id,
+      canonicalUrl,
+    );
+    const existingProduct = existingProductId
+      ? await this.prisma.product.findUnique({
+          where: { id: existingProductId },
+          select: { status: true },
+        })
+      : null;
     const statusUpdate =
       existingProduct?.status === 'DRAFT'
         ? { status: 'PUBLISHED' as const }
         : {};
-    const seoTitle = this.parseMeta($, 'og:title') || parsed.name;
-    const seoDescription =
-      this.parseMeta($, 'description') || parsed.description || parsed.name;
+    const seoTitle = parsed.name;
+    const seoDescription = parsed.description || parsed.name;
     const images = parsed.images.map((image, order) => ({
       url: image,
       alt: parsed.name,
@@ -241,37 +318,46 @@ export class ToolsByParserService {
     const imagesUpdate =
       images.length > 0 ? { images: { deleteMany: {}, create: images } } : {};
 
-    const product = await this.prisma.product.upsert({
-      where: { slug },
-      update: {
-        ...statusUpdate,
-        sku,
-        brandId,
-        categoryId,
-        priceValue: parsed.price,
-        priceCurrency: 'BYN',
-        stockStatus: 'unknown',
-        descriptionShort: seoDescription,
-        descriptionFull: parsed.description,
-        seoTitle,
-        seoDescription,
-        ...imagesUpdate,
-      },
-      create: {
-        name: parsed.name,
-        slug,
-        sku,
-        brandId,
-        categoryId,
-        priceValue: parsed.price,
-        priceCurrency: 'BYN',
-        stockStatus: 'unknown',
-        status: 'PUBLISHED',
-        descriptionShort: seoDescription,
-        descriptionFull: parsed.description,
-        seoTitle,
-        seoDescription,
-        images: { create: images },
+    // Identity is the supplier offer, not the slug — see
+    // ProductIdentityService for why upserting on slug lost products.
+    const product = await this.identity.save({
+      sourceId: source.id,
+      url: canonicalUrl,
+      baseSlug: slug,
+      data: {
+        update: {
+          ...statusUpdate,
+          sku,
+          barcode: parsed.barcode,
+          brandId,
+          categoryId,
+          // priceValue is deliberately absent: PricingService owns the storefront
+          // price so markup rules apply and MANUAL prices aren't clobbered.
+          priceCurrency: 'BYN',
+          stockStatus: this.stockStatus(parsed.inStock),
+          descriptionShort: seoDescription,
+          descriptionFull: parsed.description,
+          seoTitle,
+          seoDescription,
+          ...imagesUpdate,
+        },
+        create: {
+          name: parsed.name,
+          slug,
+          sku,
+          barcode: parsed.barcode,
+          brandId,
+          categoryId,
+          priceValue: parsed.price,
+          priceCurrency: 'BYN',
+          stockStatus: this.stockStatus(parsed.inStock),
+          status: 'PUBLISHED',
+          descriptionShort: seoDescription,
+          descriptionFull: parsed.description,
+          seoTitle,
+          seoDescription,
+          images: { create: images },
+        },
       },
     });
 
@@ -284,7 +370,9 @@ export class ToolsByParserService {
       sourceCategoryId,
       name: parsed.name,
       sku,
+      barcode: parsed.barcode,
       brandName,
+      inStock: parsed.inStock,
       price: parsed.price,
       description: parsed.description,
       images: parsed.images,
@@ -294,43 +382,100 @@ export class ToolsByParserService {
       seoDescription,
     });
 
+    // Offers are saved by now, so the price comes from the cheapest available
+    // supplier rather than whichever parser happened to run last. Also refreshes
+    // the dedup keys so a newly learned barcode makes the product matchable.
+    await this.offers.onProductParsed(product.id);
+
     return product;
   }
 
   async previewProductUrl(url: string) {
     const canonicalUrl = this.canonicalUrl(url);
-    const html = await this.fetchText(canonicalUrl);
-    const $ = cheerio.load(html);
-    const parsed = parseTools(html);
+    const parsed = parseTools(await this.fetchText(canonicalUrl));
     if (!parsed.name) throw new Error('Product name was not parsed');
-
-    const breadcrumbs = this.parseBreadcrumbs($);
-    const sku = this.findSpecValue(parsed.specifications, [
-      'артикул',
-      'код товара',
-      'sku',
-    ]);
 
     return {
       source: SOURCE_CODE,
       url: canonicalUrl,
+      isProductPage: parsed.isProductPage,
+      allowedByCategoryFilter: await this.isAllowedCategory(parsed.breadcrumbs),
       name: parsed.name,
-      sku,
-      brandName:
-        this.findSpecValue(parsed.specifications, [
-          'бренд',
-          'торговая марка',
-        ]) || this.parseBrand($),
+      sku: parsed.sku,
+      barcode: parsed.barcode,
+      brandName: parsed.brand,
       priceValue: parsed.price,
       priceCurrency: 'BYN',
+      inStock: parsed.inStock,
       description: parsed.description,
       images: parsed.images,
       specifications: parsed.specifications,
-      breadcrumbs,
-      seoTitle: this.parseMeta($, 'og:title') || parsed.name,
-      seoDescription:
-        this.parseMeta($, 'description') || parsed.description || parsed.name,
+      breadcrumbs: parsed.breadcrumbs,
+      seoTitle: parsed.name,
+      seoDescription: parsed.description || parsed.name,
     };
+  }
+
+  /* -------------------------------------------------------- filtering ---- */
+
+  /** Filters come from /admin/parsing (DB), falling back to env then code. */
+  private async isAllowedCategory(breadcrumbs: string[]) {
+    const filters = await this.settings.getCategoryFilters(SOURCE_CODE);
+    const haystack = breadcrumbs.join(' / ').toLowerCase();
+    const include = this.optionalRegex(filters.include);
+    const exclude = this.optionalRegex(filters.exclude);
+
+    if (include && !include.test(haystack)) return false;
+    if (exclude?.test(haystack)) return false;
+    return true;
+  }
+
+  private optionalRegex(value?: string) {
+    return value?.trim() ? new RegExp(value, 'i') : undefined;
+  }
+
+  private async ensureAllowedCategory(breadcrumbs: string[]) {
+    if (!(await this.isAllowedCategory(breadcrumbs))) {
+      throw new SkippedToolsByProductError(
+        `Category is filtered out: ${breadcrumbs.join(' / ') || '(no breadcrumbs)'}`,
+      );
+    }
+  }
+
+  /**
+   * Per-category switch from /admin/parsing. A parent being off disables its
+   * children, hence the check against every prefix of the breadcrumb chain.
+   */
+  private async ensureCategoryNotDisabled(
+    sourceId: string,
+    breadcrumbs: string[],
+  ) {
+    const path: string[] = [];
+    const externalIds: string[] = [];
+
+    for (const name of breadcrumbs) {
+      const slug = generateSlug(name);
+      if (!slug) continue;
+      path.push(slug);
+      externalIds.push(path.join('/'));
+    }
+    if (!externalIds.length) return;
+
+    const disabled = await this.prisma.sourceCategory.findFirst({
+      where: { sourceId, externalId: { in: externalIds }, isEnabled: false },
+      select: { name: true },
+    });
+
+    if (disabled) {
+      throw new SkippedToolsByProductError(
+        `Category is disabled in admin: ${disabled.name}`,
+      );
+    }
+  }
+
+  private stockStatus(inStock?: boolean) {
+    if (inStock === undefined) return 'unknown';
+    return inStock ? 'in_stock' : 'out_of_stock';
   }
 
   private async saveSourceProduct(
@@ -341,7 +486,9 @@ export class ToolsByParserService {
       sourceCategoryId: string;
       name: string;
       sku?: string;
+      barcode?: string;
       brandName?: string;
+      inStock?: boolean;
       price?: number;
       description?: string;
       images: string[];
@@ -361,44 +508,48 @@ export class ToolsByParserService {
         url,
         breadcrumbs: data.breadcrumbs,
         brandName: data.brandName,
+        barcode: data.barcode,
+        inStock: data.inStock ?? null,
         seoTitle: data.seoTitle,
         seoDescription: data.seoDescription,
         parsedAt: new Date().toISOString(),
       },
     });
 
-    await this.prisma.sourceProduct.upsert({
-      where: { sourceId_url: { sourceId, url } },
-      update: {
-        externalId: url,
-        name: data.name,
-        sku: data.sku,
-        price: data.price,
-        currency: 'BYN',
-        stock: true,
-        images: data.images,
-        description: data.description,
-        specifications: snapshot,
-        productId,
-        sourceCategoryId: data.sourceCategoryId,
-        lastSync: new Date(),
-      },
-      create: {
-        sourceId,
-        externalId: url,
-        url,
-        name: data.name,
-        sku: data.sku,
-        price: data.price,
-        currency: 'BYN',
-        stock: true,
-        images: data.images,
-        description: data.description,
-        specifications: snapshot,
-        productId,
-        sourceCategoryId: data.sourceCategoryId,
-      },
-    });
+    await upsertTolerantly(() =>
+      this.prisma.sourceProduct.upsert({
+        where: { sourceId_url: { sourceId, url } },
+        update: {
+          externalId: url,
+          name: data.name,
+          sku: data.sku,
+          price: data.price,
+          currency: 'BYN',
+          stock: data.inStock ?? false,
+          images: data.images,
+          description: data.description,
+          specifications: snapshot,
+          productId,
+          sourceCategoryId: data.sourceCategoryId,
+          lastSync: new Date(),
+        },
+        create: {
+          sourceId,
+          externalId: url,
+          url,
+          name: data.name,
+          sku: data.sku,
+          price: data.price,
+          currency: 'BYN',
+          stock: data.inStock ?? false,
+          images: data.images,
+          description: data.description,
+          specifications: snapshot,
+          productId,
+          sourceCategoryId: data.sourceCategoryId,
+        },
+      }),
+    );
   }
 
   private async parseAndSaveCategories(
@@ -406,12 +557,13 @@ export class ToolsByParserService {
     breadcrumbs: string[],
   ) {
     const names = breadcrumbs.filter(Boolean);
+    // Canonical tree keyed on the full slug chain — see CategoryTreeService.
+    const leafCategory = await this.categoryTree.upsertBranch(names);
+
     let sourceParentId: string | null = null;
-    let categoryParentId: string | null = null;
     const path: string[] = [];
     let sourceCategoryId = '';
     let mappedCategoryId: string | null = null;
-    let categoryId = '';
 
     for (const name of names) {
       const slug = generateSlug(name);
@@ -419,48 +571,38 @@ export class ToolsByParserService {
 
       path.push(slug);
       const externalId = path.join('/');
-      const sourceCategory = (await this.prisma.sourceCategory.upsert({
-        where: { sourceId_externalId: { sourceId, externalId } },
-        update: {
-          name,
-          slug,
-          parentId: sourceParentId,
-          level: path.length - 1,
-          path: [...path],
-        },
-        create: {
-          sourceId,
-          externalId,
-          name,
-          slug,
-          parentId: sourceParentId,
-          level: path.length - 1,
-          path: [...path],
-        },
-      })) as SavedCategoryRef;
-      const category = (await this.prisma.category.upsert({
-        where: { slug },
-        update: {},
-        create: {
-          name,
-          slug,
-          parentId: categoryParentId,
-          level: path.length - 1,
-          path: [...path],
-          seoTitle: name,
-          seoDescription: name,
-        },
-      })) as SavedCategoryRef;
+      const sourceCategory = (await upsertTolerantly(() =>
+        this.prisma.sourceCategory.upsert({
+          where: { sourceId_externalId: { sourceId, externalId } },
+          update: {
+            name,
+            slug,
+            parentId: sourceParentId,
+            level: path.length - 1,
+            path: [...path],
+          },
+          create: {
+            sourceId,
+            externalId,
+            name,
+            slug,
+            parentId: sourceParentId,
+            level: path.length - 1,
+            path: [...path],
+          },
+        }),
+      )) as SavedCategoryRef;
 
       sourceParentId = sourceCategory.id;
-      categoryParentId = category.id;
       sourceCategoryId = sourceCategory.id;
       mappedCategoryId = sourceCategory.mappedCategoryId ?? null;
-      categoryId = category.id;
     }
 
-    if (sourceCategoryId) {
-      return { sourceCategoryId, categoryId: mappedCategoryId || categoryId };
+    if (sourceCategoryId && leafCategory) {
+      return {
+        sourceCategoryId,
+        categoryId: mappedCategoryId || leafCategory.id,
+      };
     }
 
     const fallback = await this.getFallbackCategory(sourceId);
@@ -468,30 +610,35 @@ export class ToolsByParserService {
   }
 
   private async getFallbackCategory(sourceId: string) {
-    const sourceCategory = await this.prisma.sourceCategory.upsert({
-      where: { sourceId_externalId: { sourceId, externalId: SOURCE_CODE } },
-      update: {},
-      create: {
-        sourceId,
-        externalId: SOURCE_CODE,
-        name: SOURCE_NAME,
-        slug: SOURCE_CODE,
-        level: 0,
-        path: [SOURCE_CODE],
-      },
-    });
-    const category = await this.prisma.category.upsert({
-      where: { slug: 'tools' },
-      update: {},
-      create: {
-        name: 'Tools',
-        slug: 'tools',
-        level: 0,
-        path: ['tools'],
-        seoTitle: 'Tools',
-        seoDescription: 'Tools',
-      },
-    });
+    const sourceCategory = await upsertTolerantly(() =>
+      this.prisma.sourceCategory.upsert({
+        where: { sourceId_externalId: { sourceId, externalId: SOURCE_CODE } },
+        update: {},
+        create: {
+          sourceId,
+          externalId: SOURCE_CODE,
+          name: SOURCE_NAME,
+          slug: SOURCE_CODE,
+          level: 0,
+          path: [SOURCE_CODE],
+        },
+      }),
+    );
+    const category = await upsertTolerantly(() =>
+      this.prisma.category.upsert({
+        where: { slug: 'tools' },
+        update: {},
+        create: {
+          name: 'Tools',
+          slug: 'tools',
+          pathKey: 'tools',
+          level: 0,
+          path: ['tools'],
+          seoTitle: 'Tools',
+          seoDescription: 'Tools',
+        },
+      }),
+    );
     return {
       sourceCategoryId: sourceCategory.id,
       categoryId: sourceCategory.mappedCategoryId || category.id,
@@ -507,11 +654,13 @@ export class ToolsByParserService {
       const key = generateSlug(spec.name);
       if (!key) continue;
 
-      const specification = await this.prisma.specification.upsert({
-        where: { categoryId_key: { categoryId, key } },
-        update: {},
-        create: { name: spec.name, key, categoryId, filterable: true },
-      });
+      const specification = await this.identity.upsertSpecification(
+        categoryId,
+        spec.name,
+        key,
+        spec.value,
+      );
+      if (!specification) continue;
 
       await this.prisma.productSpecification.upsert({
         where: {
@@ -528,16 +677,6 @@ export class ToolsByParserService {
         },
       });
     }
-  }
-
-  private async upsertBrand(name: string) {
-    const slug = generateSlug(name);
-    const brand = await this.prisma.brand.upsert({
-      where: { slug },
-      update: {},
-      create: { name, slug, seoTitle: name, seoDescription: name },
-    });
-    return brand.id;
   }
 
   private upsertSource() {
@@ -626,7 +765,7 @@ export class ToolsByParserService {
     const res = await fetchWithTimeout(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
-    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+    if (!res.ok) throw new ParserHttpError(res.status, url);
     return res.text();
   }
 

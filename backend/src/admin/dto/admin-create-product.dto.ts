@@ -69,4 +69,19 @@ export class AdminCreateProductDto {
   @IsOptional()
   @IsIn(['DRAFT', 'PUBLISHED', 'HIDDEN', 'ARCHIVED'])
   status?: 'DRAFT' | 'PUBLISHED' | 'HIDDEN' | 'ARCHIVED';
+
+  /** Supplier cost. Normally written by the parser, editable for manual items. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  costPrice?: number;
+
+  /**
+   * MANUAL pins the price so parsing can't overwrite it; AUTO hands the product
+   * back to the markup rules.
+   */
+  @IsOptional()
+  @IsIn(['AUTO', 'MANUAL'])
+  pricingMode?: 'AUTO' | 'MANUAL';
 }

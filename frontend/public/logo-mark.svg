@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Мультитул">
+  <!--
+    Brand mark: an open-end wrench inside a rounded square.
+    Shapes are deliberately chunky — the same file is used at 16px in the
+    browser tab, where thin strokes would turn to mush.
+  -->
+  <rect width="64" height="64" rx="14" fill="#1d4ed8"/>
+  <path
+    fill="#fff"
+    d="M43.6 14.2a12.4 12.4 0 0 0-14.2 15.9L14.9 44.6a4.6 4.6 0 0 0 0 6.5l1.6 1.6a4.6 4.6 0 0 0 6.5 0l14.5-14.5a12.4 12.4 0 0 0 15.9-14.2l-7.2 7.2-6.6-1.8-1.8-6.6 7.2-7.2a12.6 12.6 0 0 0-1.4-1.4Z"
+  />
+</svg>

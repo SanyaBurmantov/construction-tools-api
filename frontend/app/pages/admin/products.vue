@@ -9,6 +9,9 @@ type AdminProduct = {
   model: string | null
   priceValue: number | null
   oldPrice: number | null
+  costPrice: number | null
+  pricingMode: 'AUTO' | 'MANUAL'
+  priceReviewNeeded?: boolean
   priceCurrency: string | null
   stockStatus: string | null
   stockQuantity: number | null
@@ -130,6 +133,8 @@ const blankForm = () => ({
   model: '',
   priceValue: null as number | null,
   oldPrice: null as number | null,
+  costPrice: null as number | null,
+  pricingMode: 'AUTO' as 'AUTO' | 'MANUAL',
   priceCurrency: 'BYN',
   stockStatus: 'in_stock',
   stockQuantity: null as number | null,
@@ -183,6 +188,8 @@ function openEdit(product: AdminProduct) {
     model: product.model ?? '',
     priceValue: product.priceValue,
     oldPrice: product.oldPrice,
+    costPrice: product.costPrice,
+    pricingMode: product.pricingMode ?? 'AUTO',
     priceCurrency: product.priceCurrency ?? 'BYN',
     stockStatus: product.stockStatus ?? 'in_stock',
     stockQuantity: product.stockQuantity,
@@ -201,6 +208,15 @@ function openEdit(product: AdminProduct) {
 // product's slug would break its URL.
 watch(() => form.name, (name) => {
   if (!editing.value) form.slug = slugify(name)
+})
+
+/** Live margin readout in the editor, so pricing decisions are visible. */
+const editorMargin = computed(() => {
+  const cost = form.costPrice
+  const price = form.priceValue
+  if (cost == null || price == null || cost <= 0) return null
+  const absolute = Math.round((price - cost) * 100) / 100
+  return { absolute, percent: Math.round((absolute / cost) * 1000) / 10 }
 })
 
 const discountPercent = computed(() => {
@@ -244,6 +260,8 @@ async function save() {
     model: form.model.trim() || undefined,
     priceValue: toNumber(form.priceValue),
     oldPrice: toNumber(form.oldPrice),
+    costPrice: toNumber(form.costPrice),
+    pricingMode: form.pricingMode,
     priceCurrency: form.priceCurrency || 'BYN',
     stockStatus: form.stockStatus,
     stockQuantity: toNumber(form.stockQuantity),
@@ -490,6 +508,9 @@ const brandOptions = computed(() => brands.value.map((b) => ({ value: b.id, labe
                 <s v-if="product.oldPrice && product.priceValue && product.oldPrice > product.priceValue">
                   {{ formatPrice(product.oldPrice, product.priceCurrency) }}
                 </s>
+                <span v-if="product.costPrice && product.priceValue" class="margin-hint">
+                  маржа {{ Math.round(((product.priceValue - product.costPrice) / product.costPrice) * 100) }}%
+                </span>
               </div>
             </td>
             <td>
@@ -592,8 +613,48 @@ const brandOptions = computed(() => brands.value.map((b) => ({ value: b.id, labe
       </div>
 
       <div v-show="editorTab === 'price'" class="form">
+        <UiField
+          label="Режим цены"
+          :hint="form.pricingMode === 'AUTO'
+            ? 'Цена считается правилами наценки и обновляется при каждом парсинге'
+            : 'Цена закреплена вручную — парсинг её не перезапишет'"
+          for="p-mode"
+        >
+          <UiSelect
+            id="p-mode"
+            v-model="form.pricingMode"
+            :options="[
+              { value: 'AUTO', label: 'Автоматически по правилам' },
+              { value: 'MANUAL', label: 'Вручную (зафиксировать)' }
+            ]"
+          />
+        </UiField>
+
         <div class="form-row">
-          <UiField label="Цена" for="p-price">
+          <UiField label="Закупочная цена" hint="Основа для расчёта наценки" for="p-cost">
+            <UiInput id="p-cost" v-model="form.costPrice" type="number" step="0.01" min="0" />
+          </UiField>
+
+          <UiField
+            label="Маржа"
+            :hint="editorMargin ? `${editorMargin.absolute} BYN` : 'укажите закупку и цену'"
+            for="p-margin"
+          >
+            <UiInput
+              id="p-margin"
+              :model-value="editorMargin ? `${editorMargin.percent}%` : '—'"
+              readonly
+              disabled
+            />
+          </UiField>
+        </div>
+
+        <div class="form-row">
+          <UiField
+            label="Цена"
+            :hint="form.pricingMode === 'AUTO' ? 'Будет пересчитана правилами' : undefined"
+            for="p-price"
+          >
             <UiInput id="p-price" v-model="form.priceValue" type="number" step="0.01" min="0" />
           </UiField>
 
@@ -851,6 +912,12 @@ const brandOptions = computed(() => brands.value.map((b) => ({ value: b.id, labe
 .price-cell s {
   color: var(--text-subtle);
   font-size: var(--text-xs);
+}
+
+.margin-hint {
+  color: var(--success);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 
 .row-actions {

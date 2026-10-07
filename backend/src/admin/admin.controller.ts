@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -37,6 +38,24 @@ import {
   AdminReviewQueryDto,
   AdminUpdateReviewStatusDto,
 } from '../reviews/dto/review-query.dto';
+import { PricingService } from '../pricing/pricing.service';
+import { PricingRulesService } from '../pricing/pricing-rules.service';
+import {
+  AdminCreatePricingRuleDto,
+  AdminUpdatePricingRuleDto,
+  PricingPreviewDto,
+  PricingRecalculateDto,
+  PricingReviewDto,
+} from '../pricing/dto/pricing.dto';
+import { OffersService } from '../offers/offers.service';
+import { ProductMergeService } from '../offers/product-merge.service';
+import { AdminMergeProductsDto } from '../offers/dto/merge-products.dto';
+import { SpecificationsAdminService } from './specifications-admin.service';
+import { BannersService } from '../banners/banners.service';
+import {
+  AdminCreateBannerDto,
+  AdminUpdateBannerDto,
+} from '../banners/dto/banner.dto';
 import { PromoService } from '../promo/promo.service';
 import {
   AdminCreatePromoCodeDto,
@@ -53,6 +72,12 @@ export class AdminController {
     private readonly categoryMergeService: CategoryMergeService,
     private readonly reviewsService: ReviewsService,
     private readonly promoService: PromoService,
+    private readonly pricingService: PricingService,
+    private readonly pricingRulesService: PricingRulesService,
+    private readonly offersService: OffersService,
+    private readonly productMergeService: ProductMergeService,
+    private readonly bannersService: BannersService,
+    private readonly specsAdminService: SpecificationsAdminService,
   ) {}
 
   @Get('stats')
@@ -168,6 +193,16 @@ export class AdminController {
     return this.adminService.get7745Sitemaps(query);
   }
 
+  @Get('queue/tools-by')
+  getToolsByQueueStats() {
+    return this.adminService.getToolsByQueueStats();
+  }
+
+  @Get('queue/tools-by/sitemaps')
+  getToolsBySitemaps(@Query() query: AdminSitemapQueryDto) {
+    return this.adminService.getToolsBySitemaps(query);
+  }
+
   @Get('queue/sitemaps')
   getSitemaps(@Query() query: AdminSitemapQueryDto) {
     return this.adminService.getSitemaps(query);
@@ -267,6 +302,26 @@ export class AdminController {
     return this.adminService.retry7745Sitemap(id);
   }
 
+  @Post('queue/tools-by/refresh-sitemaps')
+  refreshToolsBySitemaps() {
+    return this.adminService.refreshToolsBySitemaps();
+  }
+
+  @Post('queue/tools-by/process')
+  processToolsByQueuedProducts(@Body('limit') limit?: number) {
+    return this.adminService.processToolsByQueuedProducts(limit || 25);
+  }
+
+  @Post('queue/tools-by/sitemaps/retry-problems')
+  retryProblemToolsBySitemaps() {
+    return this.adminService.retryProblemToolsBySitemaps();
+  }
+
+  @Post('queue/tools-by/sitemaps/:id/retry')
+  retryToolsBySitemap(@Param('id') id: string) {
+    return this.adminService.retryToolsBySitemap(id);
+  }
+
   @Post('categories')
   createCategory(@Body() dto: AdminCreateCategoryDto) {
     return this.adminService.createCategory(dto);
@@ -344,5 +399,141 @@ export class AdminController {
   @Delete('promo-codes/:id')
   deletePromoCode(@Param('id') id: string) {
     return this.promoService.remove(id);
+  }
+
+  @Get('pricing/rules')
+  getPricingRules() {
+    return this.pricingRulesService.list();
+  }
+
+  @Post('pricing/rules')
+  createPricingRule(@Body() dto: AdminCreatePricingRuleDto) {
+    return this.pricingRulesService.create(dto);
+  }
+
+  @Patch('pricing/rules/:id')
+  updatePricingRule(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdatePricingRuleDto,
+  ) {
+    return this.pricingRulesService.update(id, dto);
+  }
+
+  @Delete('pricing/rules/:id')
+  deletePricingRule(@Param('id') id: string) {
+    return this.pricingRulesService.remove(id);
+  }
+
+  /** Simulator: what would this cost be priced at, and by which rule. */
+  @Post('pricing/preview')
+  @HttpCode(200)
+  previewPricing(@Body() dto: PricingPreviewDto) {
+    return this.pricingService.preview(dto);
+  }
+
+  @Post('pricing/recalculate')
+  recalculatePricing(@Body() dto: PricingRecalculateDto) {
+    return this.pricingService.recalculateAll(dto);
+  }
+
+  /** One-off adoption step: treat existing storefront prices as supplier cost. */
+  @Post('pricing/backfill-cost')
+  backfillPricingCost() {
+    return this.pricingService.backfillCostFromPrice();
+  }
+
+  @Get('pricing/review-queue')
+  getPricingReviewQueue() {
+    return this.pricingService.reviewQueue();
+  }
+
+  @Post('pricing/review/:productId')
+  @HttpCode(200)
+  resolvePricingReview(
+    @Param('productId') productId: string,
+    @Body() dto: PricingReviewDto,
+  ) {
+    return this.pricingService.confirmReviewed(productId, dto.accept);
+  }
+
+  @Get('offers/duplicates')
+  getDuplicateGroups() {
+    return this.offersService.findDuplicates();
+  }
+
+  /** Merges only barcode / brand+sku groups; weaker matches stay manual. */
+  @Post('offers/auto-merge')
+  autoMergeDuplicates() {
+    return this.offersService.autoMerge();
+  }
+
+  @Post('offers/rebuild-keys')
+  rebuildMatchKeys() {
+    return this.productMergeService.rebuildAllMatchKeys();
+  }
+
+  @Get('offers/product/:productId')
+  getProductOffers(@Param('productId') productId: string) {
+    return this.offersService.adminOffers(productId);
+  }
+
+  @Get('offers/suggestions/:productId')
+  getMergeSuggestions(@Param('productId') productId: string) {
+    return this.offersService.suggestionsFor(productId);
+  }
+
+  @Post('offers/merge')
+  @HttpCode(200)
+  mergeProducts(@Body() dto: AdminMergeProductsDto) {
+    return this.offersService.mergeAndReprice(dto.targetId, dto.duplicateId);
+  }
+
+  @Get('specifications')
+  getSpecifications(@Query('categoryId') categoryId?: string) {
+    return this.specsAdminService.list(categoryId);
+  }
+
+  @Patch('specifications/:id/filterable')
+  setSpecificationFilterable(
+    @Param('id') id: string,
+    @Body('filterable') filterable: boolean,
+  ) {
+    return this.specsAdminService.setFilterable(id, Boolean(filterable));
+  }
+
+  /** Enables every specification matching the "useful filter" heuristic. */
+  @Post('specifications/auto-select')
+  autoSelectSpecifications(@Body('categoryId') categoryId?: string) {
+    return this.specsAdminService.autoSelect(categoryId);
+  }
+
+  @Post('specifications/disable-all')
+  disableAllSpecifications(@Body('categoryId') categoryId?: string) {
+    return this.specsAdminService.disableAll(categoryId);
+  }
+
+  @Get('banners')
+  getBanners() {
+    return this.bannersService.adminList();
+  }
+
+  @Post('banners')
+  createBanner(@Body() dto: AdminCreateBannerDto) {
+    return this.bannersService.create(dto);
+  }
+
+  @Patch('banners/:id')
+  updateBanner(@Param('id') id: string, @Body() dto: AdminUpdateBannerDto) {
+    return this.bannersService.update(id, dto);
+  }
+
+  @Delete('banners/:id')
+  deleteBanner(@Param('id') id: string) {
+    return this.bannersService.remove(id);
+  }
+
+  @Get('pricing/history/:productId')
+  getPriceHistory(@Param('productId') productId: string) {
+    return this.pricingService.getHistory(productId);
   }
 }

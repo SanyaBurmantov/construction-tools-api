@@ -14,7 +14,13 @@ datasource db {
 model Category {
   id             String   @id @default(uuid())
   name           String
+  /// Public URL segment. Pretty and short where possible, so it is NOT a
+  /// reliable identity — two suppliers' branches can both end in "Прочее".
   slug           String   @unique
+  /// Identity: the full slug chain from the root ("aksessuary/avtolampy/narva").
+  /// Parsers upsert on this, which is what keeps same-named leaves under
+  /// different parents from collapsing into one category.
+  pathKey        String   @unique
   parentId       String?
   level          Int
   path           String[]
@@ -29,6 +35,7 @@ model Category {
   products               Product[]
   specifications         Specification[]
   mappedSourceCategories SourceCategory[] @relation("MappedSourceCategory")
+  pricingRules           PricingRule[]
 
   @@index([parentId])
 }
@@ -43,6 +50,7 @@ model Brand {
   seoTitle       String
   seoDescription String
   products       Product[]
+  pricingRules   PricingRule[]
 }
 
 model Specification {
@@ -81,6 +89,17 @@ model Product {
   priceValue       Float?
   priceCurrency    String?
   oldPrice         Float?
+  /// Supplier cost the storefront price is derived from.
+  costPrice        Float?
+  /// AUTO — recomputed from PricingRule on every parse. MANUAL — an admin set
+  /// the price by hand and parsing must not overwrite it.
+  pricingMode      PricingMode            @default(AUTO)
+  appliedRule      PricingRule?           @relation(fields: [appliedRuleId], references: [id])
+  appliedRuleId    String?
+  /// Set when a cost jump looked like a supplier error; the old price is kept
+  /// until an admin confirms.
+  priceReviewNeeded Boolean               @default(false)
+  priceHistory     PriceHistory[]
   stockStatus      String?
   stockQuantity    Int?
   status           ProductStatus          @default(PUBLISHED)
@@ -94,9 +113,17 @@ model Product {
   sourceProducts   SourceProduct[]
   orderItems       OrderItem[]
   reviews          Review[]
+  redirects        ProductRedirect[]
   /// Denormalized aggregate over APPROVED reviews, recomputed on moderation.
   ratingAvg        Float?
   ratingCount      Int                    @default(0)
+  /// Normalized dedup keys, rebuilt whenever identity fields change. Matching
+  /// looks these up directly instead of re-normalizing the whole catalogue.
+  matchBarcode     String?
+  /// brand + sku, normalized.
+  matchSku         String?
+  /// brand + model, normalized.
+  matchModel       String?
 
   @@index([status, categoryId])
   @@index([status, brandId])
@@ -104,6 +131,10 @@ model Product {
   @@index([status, createdAt])
   @@index([status, name])
   @@index([status, ratingAvg])
+  @@index([priceReviewNeeded])
+  @@index([matchBarcode])
+  @@index([matchSku])
+  @@index([matchModel])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin)
 }
@@ -135,6 +166,7 @@ model Source {
   url              String
   sourceProducts   SourceProduct[]
   sourceCategories SourceCategory[]
+  pricingRules     PricingRule[]
 }
 
 model SourceCategory {
@@ -152,6 +184,9 @@ model SourceCategory {
   path             String[]
   mappedCategory   Category?        @relation("MappedSourceCategory", fields: [mappedCategoryId], references: [id])
   mappedCategoryId String?
+  /// Off means "do not import products from this branch" — checked against the
+  /// breadcrumb chain before a product is saved, so it also covers children.
+  isEnabled        Boolean          @default(true)
   sourceProducts   SourceProduct[]
 
   @@unique([sourceId, externalId])
@@ -362,6 +397,9 @@ model Review {
   title       String?
   text        String
   status      ReviewStatus @default(PENDING)
+  /// Salted hash of the submitter's IP — pseudonymous, used only for
+  /// rate-limiting and duplicate detection. The raw address is never stored.
+  ipHash      String?
   /// Set when an admin approves or rejects the review.
   moderatedAt DateTime?
   createdAt   DateTime     @default(now())
@@ -369,6 +407,7 @@ model Review {
 
   @@index([productId, status, createdAt])
   @@index([status, createdAt])
+  @@index([ipHash, createdAt])
 }
 
 enum PromoCodeType {
@@ -398,4 +437,147 @@ model PromoCode {
   orders        Order[]
 
   @@index([isActive, endsAt])
+}
+
+enum PricingScope {
+  GLOBAL
+  CATEGORY
+  BRAND
+  SOURCE
+}
+
+enum RoundingMode {
+  NONE
+  INTEGER
+  CHARM_90
+  CHARM_99
+  TENS
+}
+
+/// Markup rule turning a supplier cost into the storefront price.
+/// The most specific active rule wins: SOURCE > BRAND > CATEGORY > GLOBAL,
+/// ties broken by `priority` (higher first).
+model PricingRule {
+  id            String       @id @default(uuid())
+  name          String
+  scope         PricingScope @default(GLOBAL)
+  category      Category?    @relation(fields: [categoryId], references: [id])
+  categoryId    String?
+  brand         Brand?       @relation(fields: [brandId], references: [id])
+  brandId       String?
+  source        Source?      @relation(fields: [sourceId], references: [id])
+  sourceId      String?
+  /// Cost band the rule applies to; null means unbounded on that side.
+  minCost       Float?
+  maxCost       Float?
+  markupPercent Float        @default(0)
+  /// Flat amount added on top of the percentage markup.
+  markupFixed   Float        @default(0)
+  /// Floor on absolute margin, applied after markup and before rounding.
+  minMargin     Float?
+  rounding      RoundingMode @default(CHARM_90)
+  priority      Int          @default(0)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  products      Product[]
+
+  @@index([isActive, scope])
+}
+
+enum PricingMode {
+  AUTO
+  MANUAL
+}
+
+/// Audit trail of storefront price changes, used to spot supplier drift and
+/// to explain "why is this product priced like that".
+model PriceHistory {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  costPrice Float?
+  oldPrice  Float?
+  newPrice  Float?
+  /// Short machine-readable cause: 'rule', 'manual', 'cost_changed', 'blocked_spike'.
+  reason    String
+  ruleId    String?
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([createdAt])
+}
+
+/// Slug of a product that was merged away, pointing at the survivor.
+/// Lets the storefront 301 instead of 404ing, so merging never costs links.
+model ProductRedirect {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+}
+
+/// Promo banner for the home page slider.
+/// Images are referenced by URL — there is no upload endpoint, so the admin
+/// pastes a link (supplier CDN, own hosting, or an existing product image).
+model Banner {
+  id         String    @id @default(uuid())
+  title      String
+  subtitle   String?
+  /// Desktop/base image.
+  imageUrl   String
+  /// Optional narrower crop; falls back to imageUrl when empty.
+  mobileUrl  String?
+  linkUrl    String?
+  buttonText String?
+  /// Background behind the image, so letterboxing doesn't look broken.
+  bgColor    String?
+  order      Int       @default(0)
+  isActive   Boolean   @default(true)
+  startsAt   DateTime?
+  endsAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([isActive, order])
+}
+
+/// Runtime-tunable parser knobs, so an admin can stop or start parsing without
+/// a redeploy. A missing row means "fall back to the env variable" — env stays
+/// the deploy-time default, the DB row is the operator's override.
+model ParserSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+/// Supplier category pages, queued the same way product URLs are. Crawling a
+/// category yields product URLs that the sitemap may not list, and `isEnabled`
+/// lets an admin drop a whole branch without touching the regex env vars.
+model ParserCategoryQueue {
+  id             String    @id @default(uuid())
+  sourceCode     String
+  url            String
+  name           String
+  /// Slug chain from the supplier URL, so the UI can render a tree.
+  path           String[]
+  level          Int       @default(0)
+  isEnabled      Boolean   @default(true)
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  pagesCrawled   Int       @default(0)
+  productsFound  Int       @default(0)
+  productsQueued Int       @default(0)
+  lastError      String?
+  lastTriedAt    DateTime?
+  visitedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([sourceCode, url])
+  @@index([sourceCode, status])
+  @@index([sourceCode, level])
 }

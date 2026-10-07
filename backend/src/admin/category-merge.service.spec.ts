@@ -88,10 +88,16 @@ describe('CategoryMergeService.merge', () => {
       where: { mappedCategoryId: 'child' },
       data: { mappedCategoryId: 'other' },
     });
-    // grandchild moves under 'other' with recomputed level/path
+    // grandchild moves under 'other' with recomputed level/path, and pathKey
+    // follows — otherwise the next parse would recreate it at the old place.
     expect(tx.category.update).toHaveBeenCalledWith({
       where: { id: 'grandchild' },
-      data: { parentId: 'other', path: ['other', 'grandchild'], level: 1 },
+      data: {
+        parentId: 'other',
+        path: ['other', 'grandchild'],
+        level: 1,
+        pathKey: 'other/grandchild',
+      },
     });
     expect(tx.category.delete).toHaveBeenCalledWith({ where: { id: 'child' } });
     expect(result).toEqual({ ok: true, movedProducts: 7, movedChildren: 1 });

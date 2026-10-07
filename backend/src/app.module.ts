@@ -15,6 +15,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AdminModule } from './admin/admin.module';
 import { OrdersModule } from './orders/orders.module';
 import { CartModule } from './cart/cart.module';
+import { PricingModule } from './pricing/pricing.module';
+import { OffersModule } from './offers/offers.module';
+import { BannersModule } from './banners/banners.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { PromoModule } from './promo/promo.module';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
@@ -41,6 +44,9 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     ParserModule,
     OrdersModule,
     CartModule,
+    PricingModule,
+    OffersModule,
+    BannersModule,
     ReviewsModule,
     PromoModule,
     AdminModule,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
+import { company } from '~/data/company'
 
 interface OrderResponse {
   id: string
@@ -15,11 +16,28 @@ const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()
 
-const deliveryOptions = [
-  { value: 'PICKUP', label: 'Самовывоз', cost: 0, hint: 'Витебск, пр-т Фрунзе, 39а' },
-  { value: 'COURIER', label: 'Курьер', cost: 15, hint: 'По адресу, в течение 1–2 дней' },
-  { value: 'POST', label: 'Почта', cost: 10, hint: 'Белпочта, по всей стране' },
-] as const
+// Costs come from runtimeConfig so they track the backend's DELIVERY_COST_*
+// instead of drifting from it.
+const deliveryOptions = computed(() => [
+  {
+    value: 'PICKUP' as const,
+    label: 'Самовывоз',
+    cost: 0,
+    hint: company.storeAddress,
+  },
+  {
+    value: 'COURIER' as const,
+    label: 'Курьер',
+    cost: Number(config.public.deliveryCourier),
+    hint: 'По адресу, в течение 1–2 дней',
+  },
+  {
+    value: 'POST' as const,
+    label: 'Почта',
+    cost: Number(config.public.deliveryPost),
+    hint: 'Белпочта, по всей стране',
+  },
+])
 
 const paymentOptions = [
   { value: 'CASH', label: 'Наличными', hint: 'При получении' },
@@ -54,7 +72,8 @@ const hasBlockingIssues = computed(() => cartValidation.unavailableItems.value.l
 
 const needsAddress = computed(() => form.deliveryMethod !== 'PICKUP')
 const deliveryCost = computed(() => {
-  const base = deliveryOptions.find((o) => o.value === form.deliveryMethod)?.cost ?? 0
+  const base
+    = deliveryOptions.value.find((o) => o.value === form.deliveryMethod)?.cost ?? 0
   return promo.freeDelivery.value ? 0 : base
 })
 // Preview only — POST /orders recomputes every number server-side.

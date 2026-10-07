@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -14,8 +14,17 @@ export class AdminSitemapQueryDto {
   @IsString()
   search?: string;
 
+  /**
+   * `@Type(() => Boolean)` would call `Boolean('false')`, which is `true` — so
+   * "show me the queued URLs" used to return the processed ones. Parse the
+   * string explicitly, the same way the public product filters do.
+   */
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(({ value }) =>
+    value === undefined || value === ''
+      ? undefined
+      : value === 'true' || value === '1' || value === true,
+  )
   @IsBoolean()
   isVisited?: boolean;
 

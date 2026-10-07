@@ -15,30 +15,59 @@ type CategoryTreeNode = {
   children: CategoryTreeNode[]
 }
 
-type Brand = { id: string, name: string, slug: string }
+type Brand = { id: string, name: string, slug: string, logo?: string | null }
+
+type Banner = {
+  id: string
+  title: string
+  subtitle: string | null
+  imageUrl: string
+  mobileUrl: string | null
+  linkUrl: string | null
+  buttonText: string | null
+  bgColor: string | null
+}
 
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+const { formatPrice } = useFormatPrice()
 const search = ref('')
 
-// One request per rail; each degrades to an empty list rather than failing the
-// whole page, since the home page is ISR-cached and must always render.
-const { data: newest } = await useAsyncData<ProductsResponse>(
-  'home-newest',
-  () =>
-    $fetch<ProductsResponse>(`${apiBase}/products`, {
-      params: { limit: 8, sortBy: 'createdAt', sortOrder: 'desc' },
-    }).catch(() => ({ data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } })),
-  { default: () => ({ data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } }) }
-)
+const emptyPage = { data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } }
 
+// Each rail degrades to an empty list instead of failing the page — the home
+// page is ISR-cached and must always render.
 const { data: sales } = await useAsyncData<ProductsResponse>(
   'home-sales',
   () =>
     $fetch<ProductsResponse>(`${apiBase}/products`, {
       params: { limit: 8, onSale: true, sortBy: 'createdAt', sortOrder: 'desc' },
-    }).catch(() => ({ data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } })),
-  { default: () => ({ data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } }) }
+    }).catch(() => emptyPage),
+  { default: () => emptyPage }
+)
+
+const { data: popular } = await useAsyncData<ProductsResponse>(
+  'home-popular',
+  () =>
+    $fetch<ProductsResponse>(`${apiBase}/products`, {
+      params: { limit: 8, inStock: true, sortBy: 'rating', sortOrder: 'desc' },
+    }).catch(() => emptyPage),
+  { default: () => emptyPage }
+)
+
+const { data: newest } = await useAsyncData<ProductsResponse>(
+  'home-newest',
+  () =>
+    $fetch<ProductsResponse>(`${apiBase}/products`, {
+      params: { limit: 8, sortBy: 'createdAt', sortOrder: 'desc' },
+    }).catch(() => emptyPage),
+  { default: () => emptyPage }
+)
+
+const { data: banners } = await useAsyncData<{ data: Banner[] }>(
+  'home-banners',
+  () => $fetch<{ data: Banner[] }>(`${apiBase}/banners`).catch(() => ({ data: [] })),
+  { default: () => ({ data: [] }) }
 )
 
 const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
@@ -53,9 +82,38 @@ const { data: brands } = await useAsyncData<Brand[]>(
   { default: () => [] }
 )
 
+/**
+ * Category tiles need a picture, and there is no artwork for categories — so
+ * each tile borrows the first product image found in its subtree. Costs one
+ * extra request and turns a wall of text boxes into a browsable grid.
+ */
+const { data: categoryImages } = await useAsyncData<Record<string, string>>(
+  'home-category-images',
+  async () => {
+    const roots = (tree.value || []).slice(0, 8)
+    const pairs = await Promise.all(
+      roots.map(async (category) => {
+        const response = await $fetch<ProductsResponse>(`${apiBase}/products`, {
+          params: { categorySlug: category.slug, limit: 1 },
+        }).catch(() => emptyPage)
+        return [category.slug, response.data[0]?.images?.[0]?.url ?? ''] as const
+      })
+    )
+    return Object.fromEntries(pairs.filter(([, url]) => url))
+  },
+  { watch: [tree], default: () => ({}) }
+)
+
 const topCategories = computed(() => (tree.value || []).slice(0, 8))
-const topBrands = computed(() => (brands.value || []).slice(0, 12))
-const totalProducts = computed(() => newest.value?.pagination.total || 0)
+const topBrands = computed(() => (brands.value || []).slice(0, 14))
+const popularProducts = computed(() =>
+  popular.value.data.filter((product) => product.ratingCount)
+)
+
+const recentlyViewed = useRecentlyViewed()
+
+const courierCost = computed(() => Number(config.public.deliveryCourier))
+const postCost = computed(() => Number(config.public.deliveryPost))
 
 function submitSearch() {
   const query = search.value.trim()
@@ -63,17 +121,16 @@ function submitSearch() {
 }
 
 const description
-  = 'Мультитул: каталог инструмента, оборудования, крепежа и расходных материалов от поставщиков Беларуси.'
+  = 'Мультитул: инструмент, оборудование, крепёж и расходные материалы. Доставка по Беларуси, оплата картой или по счёту, самовывоз в Витебске.'
 const homeUrl = `${String(config.public.siteUrl).replace(/\/$/, '')}/`
 
 useSeoMeta({
-  title: 'Мультитул | Каталог инструмента и оборудования',
+  title: 'Мультитул — инструмент и оборудование в Беларуси',
   description,
-  ogTitle: 'Мультитул | Каталог инструмента и оборудования',
+  ogTitle: 'Мультитул — инструмент и оборудование в Беларуси',
   ogDescription: description,
   ogType: 'website',
   ogUrl: homeUrl,
-  twitterCard: 'summary',
 })
 
 useHead({
@@ -102,14 +159,15 @@ useHead({
 
 <template>
   <div class="home">
-    <!-- Hero -->
+    <HomeHeroBanners v-if="banners.data.length" :banners="banners.data" />
+
+    <!-- Hero: search and categories, not a slogan -->
     <section class="hero">
-      <div class="hero-copy">
-        <span class="eyebrow">Каталог инструмента</span>
-        <h1>Инструмент и оборудование от поставщиков — в одном каталоге</h1>
-        <p>
-          Ищите по названию, бренду или артикулу. Каталог пополняется автоматически,
-          цены и наличие обновляются каждый день.
+      <div class="hero-main">
+        <h1>Инструмент и оборудование</h1>
+        <p class="hero-sub">
+          Подберём под задачу, отгрузим со склада или привезём под заказ.
+          Работаем с физлицами и организациями.
         </p>
 
         <form class="hero-search" role="search" @submit.prevent="submitSearch">
@@ -117,7 +175,7 @@ useHead({
             v-model="search"
             type="search"
             size="lg"
-            placeholder="Например: домкрат, KING TONY, набор ключей"
+            placeholder="Что ищете? Например: перфоратор, набор ключей, KING TONY"
             aria-label="Поиск по каталогу"
           >
             <template #leading>
@@ -130,53 +188,66 @@ useHead({
         </form>
 
         <div class="hero-links">
-          <NuxtLink v-for="category in topCategories.slice(0, 5)" :key="category.id" :to="`/catalog/${category.slug}`">
+          <span>Популярное:</span>
+          <NuxtLink
+            v-for="category in topCategories.slice(0, 4)"
+            :key="category.id"
+            :to="`/catalog/${category.slug}`"
+          >
             {{ category.name }}
           </NuxtLink>
         </div>
       </div>
 
-      <dl class="hero-stats">
-        <div>
-          <dt>товаров в каталоге</dt>
-          <dd>{{ totalProducts }}</dd>
-        </div>
-        <div>
-          <dt>категорий</dt>
-          <dd>{{ tree.length }}</dd>
-        </div>
-        <div>
-          <dt>брендов</dt>
-          <dd>{{ brands.length }}</dd>
-        </div>
-      </dl>
+      <!-- Contact card: the fastest path for a buyer who'd rather just ask -->
+      <aside class="hero-contact">
+        <span class="eyebrow">Отдел продаж</span>
+        <a :href="company.phoneHref" class="hero-phone">{{ company.phone }}</a>
+        <p>Поможем подобрать инструмент и уточним наличие</p>
+        <UiButton variant="secondary" block :href="company.emailHref">
+          Написать на почту
+        </UiButton>
+        <dl class="hero-facts">
+          <div>
+            <dt>Самовывоз</dt>
+            <dd>{{ company.storeAddress }}</dd>
+          </div>
+        </dl>
+      </aside>
     </section>
 
-    <!-- Value props -->
-    <section class="benefits">
+    <!-- Trust strip: concrete terms, not adjectives -->
+    <section class="terms">
       <article>
-        <h3>Доставка по Беларуси</h3>
-        <p>Курьером, почтой или самовывозом из Витебска.</p>
+        <h3>Доставка</h3>
+        <p>
+          Курьер — {{ formatPrice(courierCost, 'BYN') }}, почта —
+          {{ formatPrice(postCost, 'BYN') }}, самовывоз бесплатно.
+        </p>
+        <NuxtLink to="/delivery">Условия доставки →</NuxtLink>
       </article>
       <article>
-        <h3>Оплата как удобно</h3>
-        <p>Наличными, картой или по счёту для юридических лиц.</p>
+        <h3>Оплата</h3>
+        <p>Наличными или картой при получении. Организациям — счёт и закрывающие документы.</p>
+        <NuxtLink to="/delivery">Способы оплаты →</NuxtLink>
       </article>
       <article>
-        <h3>Возврат 14 дней</h3>
-        <p>По закону о защите прав потребителей.</p>
+        <h3>Возврат</h3>
+        <p>14 дней на возврат товара надлежащего качества по закону о защите прав потребителей.</p>
+        <NuxtLink to="/oferta">Публичная оферта →</NuxtLink>
       </article>
       <article>
-        <h3>Цены от поставщиков</h3>
-        <p>Обновляются автоматически, без наценки за посредников.</p>
+        <h3>Наличие</h3>
+        <p>Цены и остатки обновляются каждый день — то, что видите в каталоге, актуально.</p>
+        <NuxtLink to="/catalog/?inStock=1">Товары в наличии →</NuxtLink>
       </article>
     </section>
 
-    <!-- Categories -->
+    <!-- Categories with pictures -->
     <section v-if="topCategories.length" class="block">
       <header class="block-head">
-        <h2>Категории</h2>
-        <UiButton variant="link" to="/catalog/">Весь каталог →</UiButton>
+        <h2>Каталог</h2>
+        <UiButton variant="link" to="/catalog/">Все категории →</UiButton>
       </header>
 
       <div class="category-grid">
@@ -186,13 +257,19 @@ useHead({
           :to="`/catalog/${category.slug}`"
           class="category-card"
         >
-          <span class="category-name">{{ category.name }}</span>
-          <span class="category-count">{{ category.productCount }} товаров</span>
-          <ul v-if="category.children.length" class="category-children">
-            <li v-for="child in category.children.slice(0, 3)" :key="child.id">
-              {{ child.name }}
-            </li>
-          </ul>
+          <div class="category-image">
+            <img
+              v-if="categoryImages[category.slug]"
+              :src="categoryImages[category.slug]"
+              :alt="category.name"
+              loading="lazy"
+            >
+            <span v-else class="category-image-empty" aria-hidden="true" />
+          </div>
+          <div class="category-body">
+            <span class="category-name">{{ category.name }}</span>
+            <span class="category-count">{{ category.productCount }} товаров</span>
+          </div>
         </NuxtLink>
       </div>
     </section>
@@ -200,16 +277,23 @@ useHead({
     <!-- Sales -->
     <section v-if="sales.data.length" class="block">
       <header class="block-head">
-        <div>
-          <h2>Со скидкой</h2>
-          <p>Товары, на которые поставщик снизил цену</p>
-        </div>
+        <h2>Со скидкой</h2>
         <UiButton variant="link" to="/sales">Все акции →</UiButton>
       </header>
+      <div class="product-grid">
+        <ProductCatalogCard v-for="product in sales.data" :key="product.id" :product="product" />
+      </div>
+    </section>
 
+    <!-- Rated by customers -->
+    <section v-if="popularProducts.length" class="block">
+      <header class="block-head">
+        <h2>Выбирают покупатели</h2>
+        <UiButton variant="link" to="/catalog/?sort=rating-desc">Смотреть все →</UiButton>
+      </header>
       <div class="product-grid">
         <ProductCatalogCard
-          v-for="product in sales.data"
+          v-for="product in popularProducts"
           :key="product.id"
           :product="product"
         />
@@ -219,19 +303,11 @@ useHead({
     <!-- Newest -->
     <section v-if="newest.data.length" class="block">
       <header class="block-head">
-        <div>
-          <h2>Новинки каталога</h2>
-          <p>Последние поступления от поставщиков</p>
-        </div>
+        <h2>Новинки</h2>
         <UiButton variant="link" to="/catalog/?sort=new">Смотреть все →</UiButton>
       </header>
-
       <div class="product-grid">
-        <ProductCatalogCard
-          v-for="product in newest.data"
-          :key="product.id"
-          :product="product"
-        />
+        <ProductCatalogCard v-for="product in newest.data" :key="product.id" :product="product" />
       </div>
     </section>
 
@@ -242,34 +318,45 @@ useHead({
       description="Товары появятся, как только отработают парсеры поставщиков."
     />
 
+    <!-- Recently viewed -->
+    <ClientOnly>
+      <section v-if="recentlyViewed.items.value.length" class="block">
+        <header class="block-head">
+          <h2>Вы смотрели</h2>
+          <UiButton variant="link" @click="recentlyViewed.clear()">Очистить</UiButton>
+        </header>
+        <div class="viewed-grid">
+          <NuxtLink
+            v-for="item in recentlyViewed.items.value"
+            :key="item.slug"
+            :to="`/product/${item.slug}`"
+            class="viewed-card"
+          >
+            <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+            <span v-else class="viewed-empty" aria-hidden="true" />
+            <span class="viewed-name">{{ item.name }}</span>
+            <strong>{{ formatPrice(item.price, item.currency) }}</strong>
+          </NuxtLink>
+        </div>
+      </section>
+    </ClientOnly>
+
     <!-- Brands -->
     <section v-if="topBrands.length" class="block">
       <header class="block-head">
         <h2>Бренды</h2>
         <UiButton variant="link" to="/brand/">Все бренды →</UiButton>
       </header>
-
       <div class="brand-grid">
         <NuxtLink
           v-for="brand in topBrands"
           :key="brand.id"
           :to="`/brand/${brand.slug}`"
-          class="brand-chip"
+          class="brand-card"
         >
-          {{ brand.name }}
+          <img v-if="brand.logo" :src="brand.logo" :alt="brand.name" loading="lazy">
+          <span v-else>{{ brand.name }}</span>
         </NuxtLink>
-      </div>
-    </section>
-
-    <!-- Contact -->
-    <section class="contact">
-      <div>
-        <h2>Нужна помощь с подбором?</h2>
-        <p>Позвоните или напишите — подскажем, что подойдёт под вашу задачу.</p>
-      </div>
-      <div class="contact-actions">
-        <UiButton size="lg" :href="company.phoneHref">{{ company.phone }}</UiButton>
-        <UiButton size="lg" variant="secondary" to="/contacts">Контакты</UiButton>
       </div>
     </section>
   </div>
@@ -279,40 +366,40 @@ useHead({
 .home {
   display: flex;
   flex-direction: column;
-  gap: var(--space-12);
+  gap: var(--space-10);
 }
 
 /* ---- Hero ---- */
 .hero {
   display: grid;
-  align-items: center;
-  padding: var(--space-10);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, var(--brand-soft), var(--surface-card) 60%);
-  gap: var(--space-8);
-  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr) 320px;
 }
 
-.hero-copy {
+.hero-main {
   display: flex;
-  max-width: 62ch;
   flex-direction: column;
+  justify-content: center;
+  padding: var(--space-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--brand-soft), var(--surface-card) 65%);
   gap: var(--space-3);
 }
 
-.hero h1 {
-  font-size: var(--text-4xl);
+.hero-main h1 {
+  font-size: var(--text-3xl);
 }
 
-.hero p {
+.hero-sub {
+  max-width: 56ch;
   color: var(--text-muted);
-  font-size: var(--text-md);
 }
 
 .hero-search {
   display: flex;
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
   gap: var(--space-2);
 }
 
@@ -323,136 +410,178 @@ useHead({
 .hero-links {
   display: flex;
   flex-wrap: wrap;
-  margin-top: var(--space-2);
+  align-items: center;
   gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .hero-links a {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--surface-card);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
+  color: var(--text-link);
 }
 
 .hero-links a:hover {
-  border-color: var(--brand);
+  text-decoration: underline;
+}
+
+.hero-contact {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  gap: var(--space-2);
+}
+
+.hero-phone {
+  color: var(--text-strong);
+  font-size: var(--text-xl);
+  font-weight: 800;
+  letter-spacing: var(--tracking-tight);
+}
+
+.hero-phone:hover {
   color: var(--brand);
 }
 
-.hero-stats {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  gap: var(--space-4);
-}
-
-.hero-stats > div {
-  display: flex;
-  min-width: 160px;
-  flex-direction: column-reverse;
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-}
-
-.hero-stats dt {
+.hero-contact p {
+  margin-bottom: var(--space-2);
   color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.hero-facts {
+  margin: auto 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hero-facts dt {
+  color: var(--text-subtle);
   font-size: var(--text-xs);
 }
 
-.hero-stats dd {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: var(--text-2xl);
-  font-weight: 800;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+.hero-facts dd {
+  margin: 2px 0 0;
+  color: var(--text-default);
+  font-size: var(--text-sm);
 }
 
-/* ---- Benefits ---- */
-.benefits {
+/* ---- Terms ---- */
+.terms {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--space-3);
 }
 
-.benefits article {
+.terms article {
+  display: flex;
+  flex-direction: column;
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-card);
+  gap: var(--space-1);
 }
 
-.benefits h3 {
-  margin-bottom: var(--space-1);
+.terms h3 {
   font-size: var(--text-base);
 }
 
-.benefits p {
+.terms p {
+  flex: 1;
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+.terms a {
+  margin-top: var(--space-2);
+  color: var(--text-link);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.terms a:hover {
+  text-decoration: underline;
 }
 
 /* ---- Blocks ---- */
 .block {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .block-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
 }
 
-.block-head p {
-  margin-top: var(--space-1);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 .product-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
   gap: var(--space-4);
 }
 
 /* ---- Categories ---- */
 .category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-3);
 }
 
 .category-card {
   display: flex;
+  overflow: hidden;
   flex-direction: column;
-  padding: var(--space-5);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-card);
-  gap: var(--space-1);
   transition:
     border-color var(--duration-base) var(--ease-out),
-    box-shadow var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
+    box-shadow var(--duration-base) var(--ease-out);
 }
 
 .category-card:hover {
   border-color: var(--brand);
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
+}
+
+.category-image {
+  aspect-ratio: 4 / 3;
+  padding: var(--space-4);
+  background: var(--surface-card);
+}
+
+.category-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: var(--image-blend);
+}
+
+.category-image-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+.category-body {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .category-name {
   color: var(--text-strong);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   font-weight: 700;
 }
 
@@ -461,93 +590,98 @@ useHead({
   font-size: var(--text-xs);
 }
 
-.category-children {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  margin: var(--space-3) 0 0;
-  gap: 2px;
-  list-style: none;
+/* ---- Recently viewed ---- */
+.viewed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
 }
 
-.category-children li {
-  color: var(--text-muted);
+.viewed-card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  gap: var(--space-1);
+}
+
+.viewed-card:hover {
+  border-color: var(--brand);
+}
+
+.viewed-card img,
+.viewed-empty {
+  width: 100%;
+  height: 90px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  object-fit: contain;
+}
+
+.viewed-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-default);
+  font-size: var(--text-xs);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.viewed-card strong {
+  color: var(--text-strong);
   font-size: var(--text-sm);
 }
 
 /* ---- Brands ---- */
 .brand-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-3);
 }
 
-.brand-chip {
-  padding: var(--space-2) var(--space-4);
+.brand-card {
+  display: grid;
+  height: 68px;
+  padding: var(--space-3);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--surface-card);
   color: var(--text-default);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 700;
+  place-items: center;
+  text-align: center;
 }
 
-.brand-chip:hover {
+.brand-card:hover {
   border-color: var(--brand);
   color: var(--brand);
 }
 
-/* ---- Contact ---- */
-.contact {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-8);
-  border-radius: var(--radius-lg);
-  background: var(--surface-inverse);
-  color: var(--text-inverse);
-  gap: var(--space-6);
-}
-
-.contact h2 {
-  color: var(--text-inverse);
-}
-
-.contact p {
-  margin-top: var(--space-2);
-  opacity: 0.75;
-}
-
-.contact-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+.brand-card img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 /* ---- Responsive ---- */
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   .hero {
-    padding: var(--space-6);
     grid-template-columns: 1fr;
   }
 
-  .hero h1 {
+  .hero-main {
+    padding: var(--space-5);
+  }
+
+  .hero-main h1 {
     font-size: var(--text-2xl);
-  }
-
-  .hero-stats {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .hero-stats > div {
-    flex: 1;
-    min-width: 120px;
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 560px) {
   .hero-search {
     flex-direction: column;
   }
