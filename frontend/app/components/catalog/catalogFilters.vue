@@ -49,6 +49,12 @@ const emit = defineEmits<{
   clear: []
 }>()
 
+// Brands have a dedicated facet; category-specific brand specs duplicate it.
+const visibleSpecFacets = computed(() => props.specFacets.filter(spec => {
+  const name = spec.name.trim().replace(/[:：]$/, '').trim().toLowerCase()
+  return !['бренд', 'бренды', 'brand', 'brands'].includes(name)
+}))
+
 /**
  * Long value lists are collapsed to the first few options. Supplier feeds
  * produce dozens of near-duplicate values, and an unbounded list would push
@@ -190,7 +196,7 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       </button>
     </section>
 
-    <section v-for="spec in specFacets" :key="spec.id" class="group">
+    <section v-for="spec in visibleSpecFacets" :key="spec.id" class="group">
       <h3>
         {{ spec.name }}<template v-if="spec.unit">, {{ spec.unit }}</template>
         <button

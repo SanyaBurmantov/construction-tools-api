@@ -1,3 +1,4 @@
+import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
@@ -21,6 +22,17 @@ import { ParserSettingsService } from '../parser-settings.service';
 import { parseTools } from './tools.parser';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
+type CatalogSnapshot = {
+  data: {
+    show_more_button?: boolean;
+    loaded?: number;
+    availableCategories?: unknown;
+  };
+  memo: { name: string };
+};
+type CatalogSession = { csrfToken: string; cookies: Map<string, string> };
+type CatalogPage = { url: string; snapshot?: string; session?: CatalogSession };
+
 type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 
 const SOURCE_CODE = 'tools-by';
@@ -58,15 +70,34 @@ export class ToolsByParserService {
     const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
     const visitedPages = new Set<string>();
     const queuedPages = new Set<string>([`${SOURCE_BASE_URL}/catalog`]);
-    const pageQueue = [`${SOURCE_BASE_URL}/catalog`];
+    const pageQueue: CatalogPage[] = [{ url: `${SOURCE_BASE_URL}/catalog` }];
     const productUrls = new Set<string>();
+    let fetchedPages = 0;
 
-    while (pageQueue.length && visitedPages.size < maxPages) {
-      const pageUrl = pageQueue.shift();
-      if (!pageUrl || visitedPages.has(pageUrl)) continue;
-      visitedPages.add(pageUrl);
-
-      const html = await this.fetchText(pageUrl);
+    while (pageQueue.length && fetchedPages < maxPages) {
+      const entry = pageQueue.shift();
+      if (!entry) continue;
+      let html: string;
+      let snapshot: string | undefined;
+      let session: CatalogSession;
+      if (entry.snapshot && entry.session) {
+        const result = await this.loadMore(
+          entry.url,
+          entry.snapshot,
+          entry.session,
+        );
+        html = result.html;
+        snapshot = result.snapshot;
+        session = entry.session;
+      } else {
+        if (visitedPages.has(entry.url)) continue;
+        visitedPages.add(entry.url);
+        const result = await this.fetchCatalogPage(entry.url);
+        html = result.html;
+        session = result.session;
+        snapshot = this.catalogSnapshot(cheerio.load(html));
+      }
+      fetchedPages += 1;
       const $ = cheerio.load(html);
       const pageProductUrls = this.parseProductLinks($);
       pageProductUrls.forEach((url) => productUrls.add(url));
@@ -75,17 +106,34 @@ export class ToolsByParserService {
       for (const catalogUrl of this.parseCatalogLinks($)) {
         if (!visitedPages.has(catalogUrl) && !queuedPages.has(catalogUrl)) {
           queuedPages.add(catalogUrl);
-          pageQueue.push(catalogUrl);
+          pageQueue.push({ url: catalogUrl });
         }
       }
-
+      if (snapshot && this.readSnapshot(snapshot)?.data.show_more_button) {
+        // Round-robin: visit other categories before loading the next 25 items.
+        const previousLoaded = entry.snapshot
+          ? this.readSnapshot(entry.snapshot)?.data.loaded
+          : undefined;
+        const loaded = this.readSnapshot(snapshot)?.data.loaded;
+        if (
+          previousLoaded !== undefined &&
+          loaded !== undefined &&
+          loaded <= previousLoaded
+        ) {
+          throw new Error(
+            `Tools.by loadMore did not advance the catalog: ${entry.url}`,
+          );
+        }
+        pageQueue.push({ url: entry.url, snapshot, session });
+      }
       await this.sleep(delayMs);
     }
 
     return {
-      visitedPages: visitedPages.size,
+      visitedPages: fetchedPages,
       maxPages,
       discoveredProducts: productUrls.size,
+      remainingPages: pageQueue.length,
     };
   }
 
@@ -189,6 +237,7 @@ export class ToolsByParserService {
   async processSitemapsBatch(limit = 30, concurrency = 1) {
     const urls = await this.prisma.sitemapsToolsBy.findMany({
       where: { status: 'PENDING' },
+      orderBy: [{ visitedAt: { sort: 'asc', nulls: 'first' } }, { url: 'asc' }],
       take: limit,
     });
 
@@ -327,8 +376,10 @@ export class ToolsByParserService {
       data: {
         update: {
           ...statusUpdate,
+          name: parsed.name,
           sku,
           barcode: parsed.barcode,
+          model: parsed.model,
           brandId,
           categoryId,
           // priceValue is deliberately absent: PricingService owns the storefront
@@ -346,6 +397,7 @@ export class ToolsByParserService {
           slug,
           sku,
           barcode: parsed.barcode,
+          model: parsed.model,
           brandId,
           categoryId,
           priceValue: parsed.price,
@@ -371,6 +423,7 @@ export class ToolsByParserService {
       name: parsed.name,
       sku,
       barcode: parsed.barcode,
+      model: parsed.model,
       brandName,
       inStock: parsed.inStock,
       price: parsed.price,
@@ -403,6 +456,7 @@ export class ToolsByParserService {
       name: parsed.name,
       sku: parsed.sku,
       barcode: parsed.barcode,
+      model: parsed.model,
       brandName: parsed.brand,
       priceValue: parsed.price,
       priceCurrency: 'BYN',
@@ -487,6 +541,7 @@ export class ToolsByParserService {
       name: string;
       sku?: string;
       barcode?: string;
+      model?: string;
       brandName?: string;
       inStock?: boolean;
       price?: number;
@@ -509,6 +564,7 @@ export class ToolsByParserService {
         breadcrumbs: data.breadcrumbs,
         brandName: data.brandName,
         barcode: data.barcode,
+        model: data.model,
         inStock: data.inStock ?? null,
         seoTitle: data.seoTitle,
         seoDescription: data.seoDescription,
@@ -558,7 +614,6 @@ export class ToolsByParserService {
   ) {
     const names = breadcrumbs.filter(Boolean);
     // Canonical tree keyed on the full slug chain — see CategoryTreeService.
-    const leafCategory = await this.categoryTree.upsertBranch(names);
 
     let sourceParentId: string | null = null;
     const path: string[] = [];
@@ -598,10 +653,14 @@ export class ToolsByParserService {
       mappedCategoryId = sourceCategory.mappedCategoryId ?? null;
     }
 
-    if (sourceCategoryId && leafCategory) {
+    const leafCategory =
+      mappedCategoryId || !names.length
+        ? null
+        : await this.categoryTree.upsertBranch(names);
+    if (sourceCategoryId && (mappedCategoryId || leafCategory)) {
       return {
         sourceCategoryId,
-        categoryId: mappedCategoryId || leafCategory.id,
+        categoryId: mappedCategoryId || leafCategory!.id,
       };
     }
 
@@ -624,18 +683,24 @@ export class ToolsByParserService {
         },
       }),
     );
+    if (sourceCategory.mappedCategoryId) {
+      return {
+        sourceCategoryId: sourceCategory.id,
+        categoryId: sourceCategory.mappedCategoryId,
+      };
+    }
     const category = await upsertTolerantly(() =>
       this.prisma.category.upsert({
-        where: { slug: 'tools' },
+        where: { slug: FALLBACK_CATEGORY_SLUG },
         update: {},
         create: {
-          name: 'Tools',
-          slug: 'tools',
-          pathKey: 'tools',
+          name: 'Неразобранные товары поставщиков',
+          slug: FALLBACK_CATEGORY_SLUG,
+          pathKey: FALLBACK_CATEGORY_SLUG,
           level: 0,
-          path: ['tools'],
-          seoTitle: 'Tools',
-          seoDescription: 'Tools',
+          path: [FALLBACK_CATEGORY_SLUG],
+          seoTitle: 'Неразобранные товары поставщиков',
+          seoDescription: 'Неразобранные товары поставщиков',
         },
       }),
     );
@@ -715,15 +780,144 @@ export class ToolsByParserService {
 
   private parseCatalogLinks($: cheerio.CheerioAPI) {
     const urls = new Set<string>();
-
-    $('a[href*="/catalog/"]').each((_, el) => {
-      const href = $(el).attr('href');
-      if (!href || href.includes('?') || href.includes('#')) return;
-      const url = this.canonicalUrl(this.absoluteUrl(href));
-      if (url.startsWith(`${SOURCE_BASE_URL}/catalog/`)) urls.add(url);
+    // The catalog menu is lazy-loaded. Its top-level IDs are nevertheless
+    // present in the filters snapshot, even on the /catalog -> novelties page.
+    $('[wire\\:snapshot]').each((_, el) => {
+      const raw = $(el).attr('wire:snapshot');
+      const snapshot = raw ? this.readSnapshot(raw) : undefined;
+      if (snapshot?.memo.name !== 'catalog.filters') return;
+      const categories = snapshot.data.availableCategories;
+      if (!Array.isArray(categories) || !categories[0]) return;
+      for (const id of Object.keys(categories[0] as object)) {
+        if (/^\d+$/.test(id)) urls.add(`${SOURCE_BASE_URL}/catalog/${id}`);
+      }
     });
-
+    $('a[href]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (!href) return;
+      let url: URL;
+      try {
+        url = new URL(href, SOURCE_BASE_URL);
+      } catch {
+        return;
+      }
+      if (
+        url.origin !== SOURCE_BASE_URL ||
+        !/^\/catalog\/\d+(?:\/\d+)*\/?$/.test(url.pathname)
+      )
+        return;
+      // Preserve only pagination; sorting and brand filters duplicate pages.
+      const page = url.searchParams.get('page');
+      url.search = '';
+      url.hash = '';
+      if (page && /^[1-9]\d*$/.test(page)) url.searchParams.set('page', page);
+      urls.add(url.toString());
+    });
     return [...urls];
+  }
+
+  private readSnapshot(raw: string): CatalogSnapshot | undefined {
+    try {
+      const snapshot = JSON.parse(raw) as CatalogSnapshot;
+      return snapshot?.memo?.name && snapshot?.data ? snapshot : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private catalogSnapshot($: cheerio.CheerioAPI) {
+    return $('[wire\\:snapshot]')
+      .map((_, el) => $(el).attr('wire:snapshot'))
+      .get()
+      .find((raw) =>
+        ['catalog.catalog', 'catalog.novelties'].includes(
+          this.readSnapshot(raw)?.memo.name || '',
+        ),
+      );
+  }
+
+  private saveCookies(response: Response, session: CatalogSession) {
+    for (const value of response.headers.getSetCookie()) {
+      const pair = value.split(';', 1)[0];
+      const separator = pair.indexOf('=');
+      if (separator > 0) session.cookies.set(pair.slice(0, separator), pair);
+    }
+  }
+
+  private async fetchCatalogPage(url: string) {
+    const response = await fetchWithTimeout(url, {
+      headers: { 'user-agent': 'Mozilla/5.0' },
+    });
+    if (!response.ok) throw new ParserHttpError(response.status, url);
+    const html = await response.text();
+    const session: CatalogSession = {
+      csrfToken:
+        cheerio.load(html)('meta[name="csrf-token"]').attr('content') || '',
+      cookies: new Map(),
+    };
+    this.saveCookies(response, session);
+    return { html, session };
+  }
+
+  private async loadMore(
+    url: string,
+    snapshot: string,
+    session: CatalogSession,
+  ) {
+    if (!session.csrfToken)
+      throw new Error(`Tools.by catalog CSRF token missing: ${url}`);
+    const endpoint = `${SOURCE_BASE_URL}/livewire/update`;
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'user-agent': 'Mozilla/5.0',
+        'content-type': 'application/json',
+        'x-livewire': '',
+        referer: url,
+        cookie: [...session.cookies.values()].join('; '),
+      },
+      body: JSON.stringify({
+        _token: session.csrfToken,
+        components: [
+          {
+            snapshot,
+            updates: {},
+            calls: [{ path: '', method: 'loadMore', params: [] }],
+          },
+        ],
+      }),
+    });
+    if (!response.ok) throw new ParserHttpError(response.status, endpoint);
+    this.saveCookies(response, session);
+    const payload = (await response.json()) as {
+      components?: Array<{
+        snapshot?: string;
+        effects?: {
+          html?: string;
+          dispatches?: Array<{ name?: string; params?: { htmlData?: string } }>;
+        };
+      }>;
+    };
+    const component = payload.components?.[0];
+    if (!component?.snapshot || !component.effects?.html) {
+      throw new Error(`Tools.by loadMore response has no catalog HTML: ${url}`);
+    }
+    // Product cards arrive in a dataRetrieved event, while effects.html only
+    // contains the load-more button. Both are needed to discover the next batch.
+    const productHtml = (component.effects.dispatches ?? [])
+      .filter((event) => event.name === 'dataRetrieved')
+      .map((event) => event.params?.htmlData ?? '')
+      .join('');
+    const html = component.effects.html + productHtml;
+    if (
+      this.readSnapshot(component.snapshot)?.data.show_more_button &&
+      !this.parseProductLinks(cheerio.load(html)).length
+    ) {
+      throw new Error(
+        `Tools.by loadMore response has no product links: ${url}`,
+      );
+    }
+    return { snapshot: component.snapshot, html };
   }
 
   private async enqueueUrls(urls: string[]) {

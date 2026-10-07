@@ -9,6 +9,7 @@ export type ParsedToolsProduct = {
   productId?: string;
   name: string;
   sku?: string;
+  model?: string;
   /**
    * From the "Штрихкод" spec row. Worth keeping even though it is buried in the
    * spec table: barcode is the only signal besides brand+sku that auto-merges a
@@ -62,15 +63,23 @@ export function parseTools(html: string): ParsedToolsProduct {
     productId,
     name: name || clean(jsonLd?.name ?? ''),
     sku: clean($('#product_artikul').first().text()) || undefined,
+    model: findSpecValue(specifications, ['модель']),
     barcode: findSpecValue(specifications, ['штрихкод', 'ean', 'gtin']),
     brand: clean(jsonLd?.brand?.name ?? '') || undefined,
     price: parseMainPrice($, productId),
     inStock: parseAvailability(jsonLd),
     images: parseImages($),
-    description: shortDescription || undefined,
+    description: parseDescription($) || shortDescription || undefined,
     breadcrumbs: parseBreadcrumbs($),
     specifications,
   };
+}
+
+function parseDescription($: cheerio.CheerioAPI) {
+  const description = $('.product__description').first().clone();
+  // The table is already retained in specifications; it is not descriptive prose.
+  description.find('table, script, style, button').remove();
+  return clean(description.text());
 }
 
 function findSpecValue(
@@ -128,7 +137,7 @@ function parseImages($: cheerio.CheerioAPI) {
       }
     });
 
-  return [...byKey.values()].slice(0, 12);
+  return [...byKey.values()];
 }
 
 /** Width from the `-1200x900` suffix, so the biggest variant wins. */

@@ -165,6 +165,7 @@ export class Supplier7745ParserService {
 
     const urls = await this.prisma.sitemaps7745.findMany({
       where: { status: 'PENDING' },
+      orderBy: [{ visitedAt: { sort: 'asc', nulls: 'first' } }, { url: 'asc' }],
       take: limit,
     });
 
@@ -317,6 +318,7 @@ export class Supplier7745ParserService {
       data: {
         update: {
           ...statusUpdate,
+          name: parsed.name,
           sku,
           model,
           barcode,
@@ -325,7 +327,12 @@ export class Supplier7745ParserService {
           // priceValue is deliberately absent: PricingService owns the storefront
           // price so markup rules apply and MANUAL prices aren't clobbered.
           priceCurrency: 'BYN',
-          stockStatus: 'unknown',
+          stockStatus:
+            parsed.inStock === undefined
+              ? 'unknown'
+              : parsed.inStock
+                ? 'in_stock'
+                : 'out_of_stock',
           descriptionShort: seoDescription,
           descriptionFull: parsed.description,
           seoTitle,
@@ -342,7 +349,12 @@ export class Supplier7745ParserService {
           categoryId,
           priceValue: parsed.price,
           priceCurrency: 'BYN',
-          stockStatus: 'unknown',
+          stockStatus:
+            parsed.inStock === undefined
+              ? 'unknown'
+              : parsed.inStock
+                ? 'in_stock'
+                : 'out_of_stock',
           status: 'PUBLISHED',
           descriptionShort: seoDescription,
           descriptionFull: parsed.description,
@@ -366,6 +378,7 @@ export class Supplier7745ParserService {
       barcode,
       brandName,
       price: parsed.price,
+      inStock: parsed.inStock,
       description: parsed.description,
       images: parsed.images,
       specifications: parsed.specifications,
@@ -449,6 +462,7 @@ export class Supplier7745ParserService {
       barcode?: string;
       brandName?: string;
       price?: number;
+      inStock?: boolean;
       description?: string;
       images: string[];
       specifications: { name: string; value: string }[];
@@ -468,6 +482,7 @@ export class Supplier7745ParserService {
         breadcrumbs: data.breadcrumbs,
         brandName: data.brandName,
         model: data.model,
+        inStock: data.inStock ?? null,
         barcode: data.barcode,
         seoTitle: data.seoTitle,
         seoDescription: data.seoDescription,
@@ -484,7 +499,7 @@ export class Supplier7745ParserService {
           sku: data.sku,
           price: data.price,
           currency: 'BYN',
-          stock: true,
+          stock: data.inStock ?? false,
           images: data.images,
           description: data.description,
           specifications: snapshot,
@@ -500,7 +515,7 @@ export class Supplier7745ParserService {
           sku: data.sku,
           price: data.price,
           currency: 'BYN',
-          stock: true,
+          stock: data.inStock ?? false,
           images: data.images,
           description: data.description,
           specifications: snapshot,
@@ -519,7 +534,6 @@ export class Supplier7745ParserService {
       (name) => name && !['Главная', 'Каталог'].includes(name),
     );
     // Canonical tree keyed on the full slug chain — see CategoryTreeService.
-    const leafCategory = await this.categoryTree.upsertBranch(names);
 
     let sourceParentId: string | null = null;
     const path: string[] = [];
@@ -559,10 +573,14 @@ export class Supplier7745ParserService {
       mappedCategoryId = sourceCategory.mappedCategoryId ?? null;
     }
 
-    if (sourceCategoryId && leafCategory) {
+    const leafCategory =
+      mappedCategoryId || !names.length
+        ? null
+        : await this.categoryTree.upsertBranch(names);
+    if (sourceCategoryId && (mappedCategoryId || leafCategory)) {
       return {
         sourceCategoryId,
-        categoryId: mappedCategoryId || leafCategory.id,
+        categoryId: mappedCategoryId || leafCategory!.id,
       };
     }
 
@@ -591,6 +609,12 @@ export class Supplier7745ParserService {
         },
       }),
     );
+    if (sourceCategory.mappedCategoryId) {
+      return {
+        sourceCategoryId: sourceCategory.id,
+        categoryId: sourceCategory.mappedCategoryId,
+      };
+    }
     const category = await upsertTolerantly(() =>
       this.prisma.category.upsert({
         where: { slug: FALLBACK_CATEGORY_SLUG },

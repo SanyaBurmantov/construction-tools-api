@@ -45,18 +45,49 @@ export class OffersService {
    * out-of-stock product still has a cost to price from.
    */
   async bestOfferCost(productId: string): Promise<number | null> {
+    return (await this.bestOffer(productId))?.price ?? null;
+  }
+
+  private async bestOffer(productId: string) {
     const offers = await this.prisma.sourceProduct.findMany({
       where: { productId, price: { not: null, gt: 0 } },
-      select: { price: true, stock: true },
+      select: { price: true, stock: true, specifications: true },
     });
     if (!offers.length) return null;
 
     const inStock = offers.filter((offer) => offer.stock);
     const pool = inStock.length ? inStock : offers;
-    return pool.reduce(
-      (best, offer) => Math.min(best, offer.price as number),
-      Number.POSITIVE_INFINITY,
+    const offer = pool.reduce((best, item) =>
+      (item.price as number) < (best.price as number) ? item : best,
     );
+    const snapshot = offer.specifications;
+    const metadata =
+      snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+        ? snapshot.source
+        : undefined;
+    const oldPrice =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? metadata.oldPrice
+        : undefined;
+    const availability =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata.stockStatus ?? metadata.inStock)
+        : undefined;
+    const stockStatus = offer.stock
+      ? 'in_stock'
+      : availability === 'preorder'
+        ? 'preorder'
+        : availability === false || availability === 'out_of_stock'
+          ? 'out_of_stock'
+          : 'unknown';
+    return {
+      stockStatus,
+      price: offer.price as number,
+      oldPrice:
+        typeof oldPrice === 'number' && Number.isFinite(oldPrice)
+          ? oldPrice
+          : null,
+    };
   }
 
   /**
@@ -65,9 +96,16 @@ export class OffersService {
    * than whichever parser happened to run last.
    */
   async recomputeFromOffers(productId: string) {
-    const cost = await this.bestOfferCost(productId);
-    if (cost == null) return null;
-    return this.pricing.applyCost(productId, cost);
+    const offer = await this.bestOffer(productId);
+    if (!offer) return null;
+    const result = await this.pricing.applyCost(productId, offer.price, {
+      oldCost: offer.oldPrice,
+    });
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { stockStatus: offer.stockStatus },
+    });
+    return result;
   }
 
   /**

@@ -9,6 +9,7 @@ describe('shouldBeFilterable', () => {
 
   it('never filters by identity fields — one value per product is not a filter', () => {
     expect(shouldBeFilterable('Штрихкод', '4660011273907')).toBe(false);
+    expect(shouldBeFilterable('Бренд', 'Makita')).toBe(false);
     expect(shouldBeFilterable('Артикул', '33000-150')).toBe(false);
     expect(shouldBeFilterable('Код товара', '24102')).toBe(false);
   });

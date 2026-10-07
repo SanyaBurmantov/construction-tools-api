@@ -121,3 +121,13 @@ describe('parseThTools', () => {
     expect(category.isProductPage).toBe(false);
   });
 });
+
+describe('TH-Tools page classification', () => {
+  it('does not import a category with prices in its product cards', () => {
+    expect(
+      parseThTools(
+        '<h1 class="category-name">Шарошки</h1><meta itemprop="price" content="33.12"><span itemprop="sku">F-617</span>',
+      ).isProductPage,
+    ).toBe(false);
+  });
+});

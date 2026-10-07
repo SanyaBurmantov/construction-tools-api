@@ -11,6 +11,7 @@ const BREADCRUMB_NOISE = new Set(['главная', 'каталог']);
 
 export type ParsedThToolsProduct = TParsedProduct & {
   sku?: string;
+  model?: string;
   brand?: string;
   barcode?: string;
   /** Category chain without the site root and without the product itself. */
@@ -44,6 +45,7 @@ export function parseThTools(html: string): ParsedThToolsProduct {
     description: parseDescription($),
     specifications,
     sku: parseSku($, specifications),
+    model: findSpecValue(specifications, ['модель']),
     brand: parseBrand($, specifications, breadcrumbs),
     barcode: findSpecValue(specifications, ['штрихкод', 'ean', 'gtin']),
     breadcrumbs,
@@ -197,7 +199,7 @@ function parseImages($: cheerio.CheerioAPI) {
   );
   $('meta[property="og:image"]').each((_, el) => add($(el).attr('content')));
 
-  return [...byKey.values()].slice(0, 12);
+  return [...byKey.values()];
 }
 
 /** `…/6889614.970.webp` and `…/6889614.0x600.webp` are the same photo. */
@@ -209,9 +211,9 @@ function sizelessKey(url: string) {
 }
 
 function isProductPage($: cheerio.CheerioAPI) {
+  if ($('h1.category-name').length) return false;
   return Boolean(
     $('.product__code span, [itemprop="sku"]').length ||
-    $('.price.product__price, [itemprop="price"]').length ||
     $('.features-two-val__block').length ||
     $('.p-images__slider-item').length,
   );
