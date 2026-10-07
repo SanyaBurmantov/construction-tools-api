@@ -3,6 +3,12 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
   modules: ['@nuxt/ui', '@pinia/nuxt', '@nuxt/eslint', '@nuxt/image'],
+  ui: { colorMode: false },
+  app: {
+    head: {
+      meta: [{ name: 'color-scheme', content: 'light' }],
+    },
+  },
   css: ['@/assets/scss/main.scss'],
   ssr: true,
   vite: {
