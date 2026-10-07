@@ -2,11 +2,12 @@
  * Design tokens. Every component reads from these — no raw hex values in
  * component styles, so a palette change lands everywhere at once.
  *
- * Dark mode: the semantic layer is redefined under `.theme-dark` and under
- * `prefers-color-scheme: dark`, so the primitive scales below stay fixed.
+ * The storefront uses one light palette for every visitor.
  */
 
 :root {
+  color-scheme: light;
+
   /* ---- Primitive scales ---------------------------------------------- */
   --gray-25: #fcfcfd;
   --gray-50: #f9fafb;
@@ -173,59 +174,4 @@
   --z-overlay: 400;
   --z-modal: 500;
   --z-toast: 600;
-}
-
-/* Dark theme: only the semantic layer is reassigned. */
-@mixin dark-tokens {
-  --surface-page: var(--gray-950);
-  --surface-card: var(--gray-900);
-  --surface-raised: var(--gray-800);
-  --surface-sunken: #0a0e16;
-  --surface-inverse: var(--gray-100);
-  --surface-hover: rgb(255 255 255 / 4%);
-  --surface-active: rgb(255 255 255 / 8%);
-
-  --text-strong: #f7f9fc;
-  --text-default: var(--gray-200);
-  --text-muted: var(--gray-400);
-  --text-subtle: var(--gray-500);
-  --text-inverse: var(--gray-900);
-  --text-link: #7aa5ff;
-
-  --border-subtle: rgb(255 255 255 / 8%);
-  --border-default: rgb(255 255 255 / 14%);
-  --border-strong: rgb(255 255 255 / 24%);
-
-  --brand: var(--blue-500);
-  --brand-hover: var(--blue-600);
-  --brand-soft: rgb(59 130 246 / 14%);
-  --brand-soft-text: #9dc0ff;
-  --brand-ring: rgb(59 130 246 / 40%);
-
-  --success-soft: rgb(18 183 106 / 14%);
-  --success-soft-text: #6ce9a6;
-  --warning-soft: rgb(247 144 9 / 14%);
-  --warning-soft-text: #fdb022;
-  --danger-soft: rgb(240 68 56 / 14%);
-  --danger-soft-text: #fda29b;
-  --info-soft: rgb(124 58 237 / 18%);
-  --info-soft-text: #c4b5fd;
-  --sale-soft: rgb(240 68 56 / 14%);
-
-  --shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
-  --shadow-sm: 0 1px 3px rgb(0 0 0 / 50%);
-  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 50%);
-  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 55%);
-  --shadow-xl: 0 20px 24px -4px rgb(0 0 0 / 60%);
-}
-
-/* Explicit choice always wins over the OS preference. */
-:root.theme-dark {
-  @include dark-tokens;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.theme-light) {
-    @include dark-tokens;
-  }
 }

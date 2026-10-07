@@ -786,22 +786,19 @@ useHead(() => ({
   overflow-y: auto;
   width: min(340px, 92vw);
   background: white;
-  padding: 18px;
+  padding: 12px 18px 18px;
 
   &.open {
     display: block;
   }
 
   @include media-breakpoint-up(lg) {
-    position: sticky;
-    top: 126px;
+    position: static;
     display: block;
-    overflow-y: visible;
+    overflow: visible;
     width: auto;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-lg);
-    max-height: calc(100vh - 150px);
-    overflow-y: auto;
   }
 }
 
@@ -883,10 +880,6 @@ useHead(() => ({
 .facet-list {
   display: grid;
   gap: 2px;
-  max-height: 260px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
 }
 
 .facet-link,
