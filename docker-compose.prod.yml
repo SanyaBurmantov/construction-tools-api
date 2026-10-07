@@ -75,7 +75,6 @@ services:
       SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
       SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
       DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
-      PARSER_FETCH_TIMEOUT_MS: ${PARSER_FETCH_TIMEOUT_MS:-20000}
       DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
       DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
       THROTTLE_TTL: ${THROTTLE_TTL:-60000}

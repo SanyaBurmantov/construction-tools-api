@@ -13,13 +13,13 @@ type SpecFacet = {
 }
 
 /**
- * The filter panel, rendered twice: as a sticky sidebar on desktop and inside
+ * The filter panel, rendered twice: as a full-height sidebar on desktop and inside
  * a drawer on mobile. Keeping one component means the two can't drift apart.
  *
  * All state lives in the URL (owned by CatalogView), so this is presentational:
  * it renders what it is given and emits intent.
  */
-defineProps<{
+const props = defineProps<{
   category: { name: string } | null
   categoryLinks: CategoryLink[]
   parentLink: { to: RouteLocationRaw, label: string } | null
@@ -54,21 +54,30 @@ const emit = defineEmits<{
  * produce dozens of near-duplicate values, and an unbounded list would push
  * every other filter off the screen.
  */
-const VALUES_COLLAPSED = 6
+const VALUES_COLLAPSED = 5
 const expanded = ref<Set<string>>(new Set())
 
-function toggleExpanded(specId: string) {
+function toggleExpanded(groupId: string) {
   const next = new Set(expanded.value)
-  if (next.has(specId)) next.delete(specId)
-  else next.add(specId)
+  if (next.has(groupId)) next.delete(groupId)
+  else next.add(groupId)
   expanded.value = next
 }
 
-function visibleValues(spec: SpecFacet) {
-  return expanded.value.has(spec.id) ? spec.values : spec.values.slice(0, VALUES_COLLAPSED)
+function visibleItems<T>(items: T[], groupId: string): T[] {
+  return expanded.value.has(groupId) ? items : items.slice(0, VALUES_COLLAPSED)
 }
 
 const brandQuery = defineModel<string>('brandQuery', { default: '' })
+
+function collapse(groupId: string) {
+  const next = new Set(expanded.value)
+  next.delete(groupId)
+  expanded.value = next
+}
+
+watch(() => props.categoryLinks, () => collapse('categories'))
+watch(brandQuery, () => collapse('brands'))
 // Two-way: the draft price inputs are edited here and applied by the parent
 // on submit, so they can't be plain props.
 const priceMin = defineModel<string>('priceMin', { default: '' })
@@ -89,7 +98,7 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       </NuxtLink>
       <div v-if="categoryLinks.length" class="links">
         <NuxtLink
-          v-for="item in categoryLinks"
+          v-for="item in visibleItems(categoryLinks, 'categories')"
           :key="item.id"
           :to="categoryTo(item.slug)"
           class="link"
@@ -99,6 +108,15 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
         </NuxtLink>
       </div>
       <p v-else-if="category" class="empty">Это конечная категория.</p>
+      <button
+        v-if="categoryLinks.length > VALUES_COLLAPSED"
+        type="button"
+        class="more"
+        :aria-expanded="expanded.has('categories')"
+        @click="toggleExpanded('categories')"
+      >
+        {{ expanded.has('categories') ? 'Свернуть' : `Ещё ${categoryLinks.length - VALUES_COLLAPSED}` }}
+      </button>
     </section>
 
     <section class="group">
@@ -152,7 +170,7 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       />
       <div class="checks">
         <UiCheckbox
-          v-for="brand in visibleBrands"
+          v-for="brand in visibleItems(visibleBrands, 'brands')"
           :key="brand.id"
           :model-value="selectedBrandIds.includes(brand.id)"
           :label="brand.name"
@@ -161,6 +179,15 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
         />
         <p v-if="!visibleBrands.length" class="empty">Нет брендов по запросу.</p>
       </div>
+      <button
+        v-if="visibleBrands.length > VALUES_COLLAPSED"
+        type="button"
+        class="more"
+        :aria-expanded="expanded.has('brands')"
+        @click="toggleExpanded('brands')"
+      >
+        {{ expanded.has('brands') ? 'Свернуть' : `Ещё ${visibleBrands.length - VALUES_COLLAPSED}` }}
+      </button>
     </section>
 
     <section v-for="spec in specFacets" :key="spec.id" class="group">
@@ -177,7 +204,7 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       </h3>
       <div class="checks">
         <UiCheckbox
-          v-for="item in visibleValues(spec)"
+          v-for="item in visibleItems(spec.values, `spec:${spec.id}`)"
           :key="item.value"
           :model-value="selectedSpecs[spec.id]?.includes(item.value) ?? false"
           :label="item.value"
@@ -189,9 +216,10 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
         v-if="spec.values.length > VALUES_COLLAPSED"
         type="button"
         class="more"
-        @click="toggleExpanded(spec.id)"
+        :aria-expanded="expanded.has(`spec:${spec.id}`)"
+        @click="toggleExpanded(`spec:${spec.id}`)"
       >
-        {{ expanded.has(spec.id) ? 'Свернуть' : `Ещё ${spec.values.length - VALUES_COLLAPSED}` }}
+        {{ expanded.has(`spec:${spec.id}`) ? 'Свернуть' : `Ещё ${spec.values.length - VALUES_COLLAPSED}` }}
       </button>
     </section>
 
@@ -199,7 +227,7 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       <h3>Поставщики</h3>
       <div class="links">
         <button
-          v-for="source in sources"
+          v-for="source in visibleItems(sources, 'sources')"
           :key="source.id"
           type="button"
           class="link"
@@ -212,6 +240,15 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
           <small>{{ sourceCounts[source.id] || 0 }}</small>
         </button>
       </div>
+      <button
+        v-if="sources.length > VALUES_COLLAPSED"
+        type="button"
+        class="more"
+        :aria-expanded="expanded.has('sources')"
+        @click="toggleExpanded('sources')"
+      >
+        {{ expanded.has('sources') ? 'Свернуть' : `Ещё ${sources.length - VALUES_COLLAPSED}` }}
+      </button>
     </section>
   </div>
 </template>
@@ -268,9 +305,7 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
 .links,
 .checks {
   display: flex;
-  max-height: 260px;
   flex-direction: column;
-  overflow-y: auto;
 }
 
 .link {

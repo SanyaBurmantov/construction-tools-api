@@ -7,6 +7,15 @@ on:
     branches: [main, prod]
 
 jobs:
+  production-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.prod.yml config --quiet
+        env:
+          DB_PASSWORD: ci-validation-only
+          ADMIN_TOKEN: ci-validation-only
+
   backend:
     runs-on: ubuntu-latest
     defaults:

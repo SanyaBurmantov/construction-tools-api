@@ -45,7 +45,7 @@ deploy() {
 
 if ! deploy; then
   echo "Deployment $target failed; restoring $previous" >&2
-  "${compose[@]}" ps >&2
+  "${compose[@]}" ps >&2 || true
   echo "$target" > "$FAILED_FILE"
   git checkout -q -f --detach "$previous"
   deploy || echo "Rollback also failed; manual intervention required" >&2
