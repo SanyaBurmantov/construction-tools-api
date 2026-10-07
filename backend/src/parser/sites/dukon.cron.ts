@@ -25,7 +25,7 @@ export class DukonCron {
     private readonly runtimeStatus: ParserRuntimeStatusService,
   ) {}
 
-  @Cron('0 */30 * * * *')
+  @Cron('0 */5 * * * *')
   async processPendingQueue() {
     if (!this.isEnabled() || this.isProcessing) return;
 

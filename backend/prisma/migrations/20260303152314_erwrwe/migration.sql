@@ -1,3 +1,0 @@
--- AlterTable
-ALTER TABLE "User" ALTER COLUMN "name" DROP DEFAULT,
-ALTER COLUMN "surname" DROP DEFAULT;
