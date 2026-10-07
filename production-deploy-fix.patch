@@ -1,0 +1,59 @@
+From d1adff8f618e185c6e62dee7c2796a3ad893b3a8 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Wed, 7 Oct 2026 15:20:20 +0000
+Subject: [PATCH] Fix production Compose validation and deployment rollback
+
+---
+ .github/workflows/ci.yml | 9 +++++++++
+ deploy/auto-deploy.sh    | 2 +-
+ docker-compose.prod.yml  | 1 -
+ 3 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index b94af08..6e97c71 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -7,6 +7,15 @@ on:
+     branches: [main, prod]
+ 
+ jobs:
++  production-config:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - run: docker compose -f docker-compose.prod.yml config --quiet
++        env:
++          DB_PASSWORD: ci-validation-only
++          ADMIN_TOKEN: ci-validation-only
++
+   backend:
+     runs-on: ubuntu-latest
+     defaults:
+diff --git a/deploy/auto-deploy.sh b/deploy/auto-deploy.sh
+index 6d05c2e..d914cd7 100644
+--- a/deploy/auto-deploy.sh
++++ b/deploy/auto-deploy.sh
+@@ -45,7 +45,7 @@ deploy() {
+ 
+ if ! deploy; then
+   echo "Deployment $target failed; restoring $previous" >&2
+-  "${compose[@]}" ps >&2
++  "${compose[@]}" ps >&2 || true
+   echo "$target" > "$FAILED_FILE"
+   git checkout -q -f --detach "$previous"
+   deploy || echo "Rollback also failed; manual intervention required" >&2
+diff --git a/docker-compose.prod.yml b/docker-compose.prod.yml
+index 9c7f94f..18a0033 100644
+--- a/docker-compose.prod.yml
++++ b/docker-compose.prod.yml
+@@ -75,7 +75,6 @@ services:
+       SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
+       SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
+       DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
+-      PARSER_FETCH_TIMEOUT_MS: ${PARSER_FETCH_TIMEOUT_MS:-20000}
+       DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
+       DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
+       THROTTLE_TTL: ${THROTTLE_TTL:-60000}
+-- 
+2.43.0
+

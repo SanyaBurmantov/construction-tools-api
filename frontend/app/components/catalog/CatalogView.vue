@@ -759,10 +759,7 @@ useHead(() => ({
 }
 
 .filters-desktop {
-  position: sticky;
-  top: calc(var(--header-height) + var(--space-4));
-  max-height: calc(100vh - var(--header-height) - var(--space-8));
-  overflow-y: auto;
+  height: 100%;
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
