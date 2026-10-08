@@ -4,7 +4,7 @@ import { useWishlistStore } from '~/stores/wishlist'
 
 const cart = useCartStore()
 const wishlist = useWishlistStore()
-const toast = useToast()
+const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()

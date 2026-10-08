@@ -11,7 +11,7 @@ interface OrderResponse {
 
 const cart = useCartStore()
 const config = useRuntimeConfig()
-const toast = useToast()
+const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()

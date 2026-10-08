@@ -34,7 +34,11 @@ export function useRecentlyViewed() {
 
   function persist() {
     if (!import.meta.client) return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items.value))
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items.value))
+    } catch {
+      // Browsing should keep working when storage is blocked or full.
+    }
   }
 
   /** Records a view, moving an already-seen product back to the front. */

@@ -45,7 +45,7 @@ type ListResponse = {
 const route = useRoute()
 const router = useRouter()
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 
 const orders = ref<Order[]>([])

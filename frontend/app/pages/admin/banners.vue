@@ -17,7 +17,7 @@ type Banner = {
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 
 const banners = ref<Banner[]>([])
 const loading = ref(true)

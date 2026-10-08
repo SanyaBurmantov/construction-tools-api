@@ -71,7 +71,7 @@ type DataQualityReport = {
 }
 
 const { token, loadToken, adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 
 const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
   day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',

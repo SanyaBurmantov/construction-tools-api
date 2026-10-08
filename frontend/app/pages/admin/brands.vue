@@ -14,7 +14,7 @@ type Brand = {
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 
 const brands = ref<Brand[]>([])
 const loading = ref(false)

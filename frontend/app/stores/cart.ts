@@ -46,7 +46,11 @@ export const useCartStore = defineStore('cart', {
     },
     persist() {
       if (!import.meta.client) return
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+      } catch {
+        // The in-memory store still works when storage is blocked or full.
+      }
     },
     add(item: Omit<CartItem, 'quantity'>, quantity = 1) {
       const existing = this.items.find((i) => i.productId === item.productId)

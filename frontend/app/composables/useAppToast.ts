@@ -14,7 +14,7 @@ let nextId = 0
  * App-wide toast queue. Shared via `useState` so any component can push and the
  * single <UiToaster> in the layout renders them.
  */
-export function useToast() {
+export function useAppToast() {
   const toasts = useState<Toast[]>('toasts', () => [])
 
   function dismiss(id: number) {

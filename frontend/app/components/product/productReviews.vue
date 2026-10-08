@@ -24,7 +24,7 @@ type ReviewsResponse = {
 }
 
 const config = useRuntimeConfig()
-const toast = useToast()
+const toast = useAppToast()
 
 const page = ref(1)
 const sort = ref<'createdAt' | 'rating'>('createdAt')
