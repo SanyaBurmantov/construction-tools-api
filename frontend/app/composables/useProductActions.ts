@@ -33,7 +33,7 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
   const cart = useCartStore()
   const wishlist = useWishlistStore()
   const compare = useCompareStore()
-  const toast = useToast()
+  const toast = useAppToast()
   const { normalizeCurrency } = useFormatPrice()
 
   const item = computed(() => toValue(product))

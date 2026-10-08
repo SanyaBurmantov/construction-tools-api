@@ -4,11 +4,6 @@ export default defineNuxtConfig({
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
   modules: ['@nuxt/ui', '@pinia/nuxt', '@nuxt/eslint', '@nuxt/image'],
   ui: { colorMode: false },
-  app: {
-    head: {
-      meta: [{ name: 'color-scheme', content: 'light' }],
-    },
-  },
   css: ['@/assets/scss/main.scss'],
   ssr: true,
   app: {
@@ -24,6 +19,7 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/site.webmanifest' },
       ],
       meta: [
+        { name: 'color-scheme', content: 'light' },
         { name: 'theme-color', content: '#1d4ed8' },
         { name: 'apple-mobile-web-app-title', content: 'Мультитул' },
         // Default social preview; pages with their own image override it.

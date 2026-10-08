@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { toasts, dismiss } = useToast()
+const { toasts, dismiss } = useAppToast()
 </script>
 
 <template>
@@ -116,5 +116,21 @@ button svg {
 
 .toast-leave-active {
   position: absolute;
+}
+@media (max-width: 860px) {
+  .toaster {
+    bottom: calc(62px + var(--space-4) + env(safe-area-inset-bottom));
+  }
+
+  :global(body:has(.mobile-buy) .toaster) {
+    bottom: calc(148px + var(--space-4) + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter-active,
+  .toast-leave-active {
+    transition: none;
+  }
 }
 </style>

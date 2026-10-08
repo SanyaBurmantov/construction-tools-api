@@ -28,17 +28,25 @@ const {
 // More specs than the card shows — there's room for them in a row.
 const specs = computed(() => props.product.productSpecs?.slice(0, 4) ?? [])
 const link = computed(() => `/product/${props.product.slug}`)
+const imageFailed = ref(false)
+const imageElement = ref<HTMLImageElement | null>(null)
+onMounted(() => {
+  const element = imageElement.value
+  if (element?.complete && !element.naturalWidth) imageFailed.value = true
+})
+watch(image, () => { imageFailed.value = false })
 </script>
 
 <template>
   <article class="product-row">
     <NuxtLink :to="link" class="media" :aria-label="product.name">
       <img
-        v-if="image"
-        :src="image"
+        v-if="image && !imageFailed"
+        ref="imageElement" :src="image"
         :alt="product.images?.[0]?.alt || product.name"
         loading="lazy"
         decoding="async"
+        @error="imageFailed = true"
       >
       <span v-else class="placeholder" aria-hidden="true">
         <svg viewBox="0 0 24 24">

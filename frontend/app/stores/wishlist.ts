@@ -44,7 +44,11 @@ export const useWishlistStore = defineStore('wishlist', {
     },
     persist() {
       if (!import.meta.client) return
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
+      } catch {
+        // The in-memory store still works when storage is blocked or full.
+      }
     },
     add(item: Omit<WishlistItem, 'addedAt'>) {
       if (this.has(item.productId)) return

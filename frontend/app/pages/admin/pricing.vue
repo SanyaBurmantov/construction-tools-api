@@ -36,7 +36,7 @@ type ReviewItem = {
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 
 const rules = ref<PricingRule[]>([])

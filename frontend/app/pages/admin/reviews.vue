@@ -27,7 +27,7 @@ type ListResponse = {
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 
 const reviews = ref<Review[]>([])
 const pendingCount = ref(0)

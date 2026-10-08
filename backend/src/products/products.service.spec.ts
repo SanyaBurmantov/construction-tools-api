@@ -44,6 +44,7 @@ function buildService() {
   } as unknown as PrismaService;
   return {
     service: new ProductService(prisma),
+    prisma,
     productFindMany,
     productGroupBy,
     productAggregate,
@@ -211,5 +212,27 @@ describe('ProductService.findAllFiltered', () => {
       where: { stockStatus?: string };
     };
     expect(args.where.stockStatus).toBe('in_stock');
+  });
+});
+
+describe('ProductService legacy identity filters', () => {
+  it('omits an enabled article spec while retaining useful characteristic facets', async () => {
+    const { service, prisma } = buildService();
+    jest.spyOn(prisma.specification, 'findMany').mockResolvedValue([
+      { id: 'article', name: 'Артикул', unit: null, group: null },
+      { id: 'power', name: 'Мощность', unit: 'Вт', group: null },
+    ] as never);
+    const groupBy = jest.spyOn(prisma.productSpecification, 'groupBy');
+    groupBy.mockResolvedValue([
+      { specificationId: 'power', value: '750', _count: { _all: 3 } },
+      { specificationId: 'power', value: '900', _count: { _all: 2 } },
+    ] as never);
+
+    const result = await service.findAllFiltered({});
+    expect(result.facets.specs.map((spec) => spec.name)).toEqual(['Мощность']);
+    const args = groupBy.mock.calls[0][0] as {
+      where: { specificationId: { in: string[] } };
+    };
+    expect(args.where.specificationId.in).toEqual(['power']);
   });
 });

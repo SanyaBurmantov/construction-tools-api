@@ -31,6 +31,13 @@ const specs = computed(() =>
   props.compact ? [] : (props.product.productSpecs?.slice(0, 3) ?? [])
 )
 const link = computed(() => `/product/${props.product.slug}`)
+const imageFailed = ref(false)
+const imageElement = ref<HTMLImageElement | null>(null)
+onMounted(() => {
+  const element = imageElement.value
+  if (element?.complete && !element.naturalWidth) imageFailed.value = true
+})
+watch(image, () => { imageFailed.value = false })
 </script>
 
 <template>
@@ -38,11 +45,12 @@ const link = computed(() => `/product/${props.product.slug}`)
     <div class="media">
       <NuxtLink :to="link" class="image-link" :aria-label="product.name">
         <img
-          v-if="image"
-          :src="image"
+          v-if="image && !imageFailed"
+          ref="imageElement" :src="image"
           :alt="product.images?.[0]?.alt || product.name"
           loading="lazy"
           decoding="async"
+          @error="imageFailed = true"
         >
         <span v-else class="placeholder" aria-hidden="true">
           <svg viewBox="0 0 24 24">

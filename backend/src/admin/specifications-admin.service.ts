@@ -1,5 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { shouldBeFilterable } from '../parser/spec-filterable';
 
 /**
  * A specification is only worth filtering by when it covers a decent share of a
@@ -60,6 +65,7 @@ export class SpecificationsAdminService {
           longestValue: stat.longest,
           /** Meets the auto-selection heuristic below. */
           recommended:
+            shouldBeFilterable(spec.name) &&
             spec._count.productSpecs >= AUTO_MIN_PRODUCTS &&
             stat.distinct > 1 &&
             stat.distinct <= AUTO_MAX_DISTINCT_VALUES &&
@@ -74,6 +80,11 @@ export class SpecificationsAdminService {
       where: { id },
     });
     if (!existing) throw new NotFoundException('Характеристика не найдена');
+    if (filterable && !shouldBeFilterable(existing.name)) {
+      throw new BadRequestException(
+        'Служебные характеристики нельзя использовать как фильтры',
+      );
+    }
 
     return this.prisma.specification.update({
       where: { id },

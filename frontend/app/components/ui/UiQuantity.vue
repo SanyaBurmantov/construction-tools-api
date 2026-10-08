@@ -10,6 +10,12 @@ const props = withDefaults(
 )
 
 const model = defineModel<number>({ default: 1 })
+const draft = ref(String(model.value))
+const editing = ref(false)
+
+watch(model, (value) => {
+  if (!editing.value) draft.value = String(value)
+})
 
 function clamp(value: number) {
   if (!Number.isFinite(value)) return props.min
@@ -17,11 +23,26 @@ function clamp(value: number) {
 }
 
 function step(delta: number) {
-  model.value = clamp(model.value + delta)
+  const next = clamp(model.value + delta)
+  draft.value = String(next)
+  model.value = next
 }
 
 function onInput(event: Event) {
-  model.value = clamp(Number((event.target as HTMLInputElement).value))
+  editing.value = true
+  draft.value = (event.target as HTMLInputElement).value
+  const value = Number(draft.value)
+  // Keep unfinished edits visible without putting invalid quantities in the cart.
+  if (draft.value !== '' && Number.isInteger(value) && value >= props.min && value <= props.max) {
+    model.value = value
+  }
+}
+
+function commit() {
+  editing.value = false
+  const next = clamp(Number(draft.value))
+  draft.value = String(next)
+  model.value = next
 }
 </script>
 
@@ -36,14 +57,17 @@ function onInput(event: Event) {
       −
     </button>
     <input
-      :value="model"
+      :value="draft"
       type="number"
       inputmode="numeric"
       :min="min"
       :max="max"
       :disabled="disabled"
       aria-label="Количество"
+      @focus="editing = true"
       @input="onInput"
+      @blur="commit"
+      @keydown.enter.prevent="commit"
     >
     <button
       type="button"
@@ -96,6 +120,11 @@ input {
   outline: none;
   text-align: center;
   -moz-appearance: textfield;
+}
+
+input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
 }
 
 input::-webkit-outer-spin-button,

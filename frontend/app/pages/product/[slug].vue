@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
 import { company } from '~/data/company'
+import ProductGallery from '~/components/product/productGallery.vue'
 
 type Product = CatalogProduct & {
   model?: string | null
@@ -51,27 +52,17 @@ const {
 
 // Feeds the "Вы смотрели" rail on the home page.
 const recentlyViewed = useRecentlyViewed()
-onMounted(() => {
-  if (!product.value) return
+watch(() => product.value?.id, () => {
+  const value = product.value
+  if (!value) return
   recentlyViewed.track({
-    slug: product.value.slug,
-    name: product.value.name,
-    image: product.value.images?.[0]?.url ?? null,
-    price: product.value.priceValue ?? null,
-    currency: product.value.priceCurrency || 'BYN',
+    slug: value.slug,
+    name: value.name,
+    image: value.images?.[0]?.url ?? null,
+    price: value.priceValue ?? null,
+    currency: value.priceCurrency || 'BYN',
   })
-})
-
-/* ---- Gallery ----------------------------------------------------------- */
-const images = computed(() => product.value?.images ?? [])
-const activeImage = ref(0)
-const zoomOpen = ref(false)
-
-watch(images, () => {
-  activeImage.value = 0
-})
-
-const selectedImage = computed(() => images.value[activeImage.value])
+}, { immediate: true })
 
 /* ---- Buy box ----------------------------------------------------------- */
 const quantity = ref(1)
@@ -101,11 +92,10 @@ const hasDescription = computed(
 )
 const specs = computed(() => product.value?.productSpecs ?? [])
 
-watch(product, (value) => {
-  // Land on whichever tab actually has content.
-  if (!value?.descriptionFull && !value?.descriptionShort && value?.productSpecs?.length) {
-    tab.value = 'specs'
-  }
+watch(() => product.value?.id, () => {
+  quantity.value = 1
+  // Each product starts on a tab with content, even when the page is reused.
+  tab.value = hasDescription.value ? 'description' : 'specs'
 }, { immediate: true })
 
 /* ---- Related ----------------------------------------------------------- */
@@ -139,6 +129,7 @@ const breadcrumbs = computed(() => {
 })
 
 /* ---- SEO --------------------------------------------------------------- */
+const images = computed(() => product.value?.images ?? [])
 const siteBase = computed(() => String(config.public.siteUrl).replace(/\/$/, ''))
 const canonicalUrl = computed(() => `${siteBase.value}/product/${slug.value}`)
 const ogImage = computed(() => images.value[0]?.url || undefined)
@@ -219,46 +210,9 @@ useHead(() => {
 
       <div class="layout">
         <!-- Gallery -->
-        <section class="gallery">
-          <div class="gallery-main">
-            <div class="flags">
-              <UiBadge v-if="hasDiscount" tone="sale">−{{ discountPercent }}%</UiBadge>
-            </div>
-            <button
-              v-if="selectedImage"
-              type="button"
-              class="main-image"
-              aria-label="Увеличить изображение"
-              @click="zoomOpen = true"
-            >
-              <img
-                :src="selectedImage.url"
-                :alt="selectedImage.alt || product.name"
-                fetchpriority="high"
-              >
-            </button>
-            <div v-else class="main-image is-empty" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" fill="none" stroke="currentColor" stroke-width="1" stroke-linejoin="round" />
-              </svg>
-            </div>
-          </div>
-
-          <div v-if="images.length > 1" class="thumbs scroll-x">
-            <button
-              v-for="(image, index) in images"
-              :key="image.id || image.url"
-              type="button"
-              class="thumb"
-              :class="{ 'is-active': index === activeImage }"
-              :aria-label="`Фото ${index + 1}`"
-              :aria-current="index === activeImage"
-              @click="activeImage = index"
-            >
-              <img :src="image.url" :alt="image.alt || product.name" loading="lazy">
-            </button>
-          </div>
-        </section>
+        <ProductGallery :images="product.images ?? []" :name="product.name">
+          <UiBadge v-if="hasDiscount" tone="sale">−{{ discountPercent }}%</UiBadge>
+        </ProductGallery>
 
         <!-- Summary + buy box -->
         <section class="summary">
@@ -450,15 +404,6 @@ useHead(() => {
         <UiButton size="lg" @click="addToCart(quantity)">В корзину</UiButton>
       </div>
 
-      <!-- Zoom -->
-      <UiModal v-model:open="zoomOpen" size="xl" :title="product.name">
-        <img
-          v-if="selectedImage"
-          :src="selectedImage.url"
-          :alt="selectedImage.alt || product.name"
-          class="zoom-image"
-        >
-      </UiModal>
     </template>
   </div>
 </template>
@@ -481,85 +426,6 @@ useHead(() => {
   align-items: start;
   gap: var(--space-8);
   grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
-}
-
-/* ---- Gallery ---- */
-.gallery {
-  position: sticky;
-  top: calc(var(--header-height) + var(--space-4));
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.gallery-main {
-  position: relative;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-card);
-}
-
-.flags {
-  position: absolute;
-  top: var(--space-4);
-  left: var(--space-4);
-  z-index: 1;
-}
-
-.main-image {
-  display: grid;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  padding: var(--space-8);
-  cursor: zoom-in;
-  place-items: center;
-}
-
-.main-image img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.main-image.is-empty {
-  color: var(--text-subtle);
-  cursor: default;
-}
-
-.main-image.is-empty svg {
-  width: 96px;
-  height: 96px;
-}
-
-.thumbs {
-  display: flex;
-  padding-bottom: var(--space-1);
-  gap: var(--space-2);
-}
-
-.thumb {
-  width: 74px;
-  height: 74px;
-  flex-shrink: 0;
-  padding: var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  transition: border-color var(--duration-fast) var(--ease-out);
-}
-
-.thumb:hover {
-  border-color: var(--border-strong);
-}
-
-.thumb.is-active {
-  border-color: var(--brand);
-}
-
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
 }
 
 /* ---- Summary ---- */
@@ -870,20 +736,10 @@ useHead(() => {
   font-weight: 600;
 }
 
-.zoom-image {
-  width: 100%;
-  max-height: 70vh;
-  object-fit: contain;
-}
-
 /* ---- Responsive ---- */
 @media (max-width: 1024px) {
   .layout {
     grid-template-columns: 1fr;
-  }
-
-  .gallery {
-    position: static;
   }
 
   .loading {

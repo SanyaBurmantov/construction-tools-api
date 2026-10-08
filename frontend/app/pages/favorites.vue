@@ -4,7 +4,7 @@ import { useCartStore } from '~/stores/cart'
 
 const wishlist = useWishlistStore()
 const cart = useCartStore()
-const toast = useToast()
+const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 
 /** Favourites are a client-only list, so the cards are rendered from the store. */

@@ -26,7 +26,7 @@ type DuplicateGroup = {
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 
 const groups = ref<DuplicateGroup[]>([])

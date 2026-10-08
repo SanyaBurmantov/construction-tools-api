@@ -15,7 +15,7 @@ type Category = {
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useToast()
+const toast = useAppToast()
 
 const categories = ref<Category[]>([])
 const loading = ref(false)

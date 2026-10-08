@@ -22,7 +22,7 @@ type CompareProduct = {
 
 const compare = useCompareStore()
 const cart = useCartStore()
-const toast = useToast()
+const toast = useAppToast()
 const config = useRuntimeConfig()
 const { formatPrice } = useFormatPrice()
 

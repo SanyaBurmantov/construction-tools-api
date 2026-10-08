@@ -6,9 +6,10 @@
  * every single product) and "Производитель" (a 200-character legal address).
  * A filter with as many options as there are products is not a filter.
  *
- * This is only the default at creation time; an admin can flip any spec in
- * /admin/specifications, and `POST /admin/specifications/auto-select` still
- * applies the smarter distinct-value heuristic over real data afterwards.
+ * Parsers use this at creation time. The storefront and admin controls also
+ * enforce the name blocklist, so legacy imports and auto-selection cannot
+ * expose identity fields. Admins can toggle eligible characteristics, and
+ * auto-selection additionally checks coverage and distinct values.
  */
 
 /**

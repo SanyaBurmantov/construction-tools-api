@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
 import { SpecSelection, parseSpecFilter } from './spec-filter';
 import { searchVariants } from '../common/utils/transliterate';
+import { shouldBeFilterable } from '../parser/spec-filterable';
 
 const SEARCH_CANDIDATE_LIMIT = 1000;
 /** word_similarity threshold: below this trigram matches are noise */
@@ -121,7 +122,7 @@ export class ProductService {
       omitSpecId?: string,
     ) => Prisma.ProductWhereInput,
   ) {
-    const filterable = await this.prisma.specification.findMany({
+    const candidates = await this.prisma.specification.findMany({
       where: {
         filterable: true,
         ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
@@ -130,6 +131,10 @@ export class ProductService {
       orderBy: { name: 'asc' },
       take: 40,
     });
+    // Old imports may still have enabled identity fields such as Артикул.
+    const filterable = candidates.filter((spec) =>
+      shouldBeFilterable(spec.name),
+    );
     if (!filterable.length) return [];
 
     const ids = filterable.map((spec) => spec.id);
