@@ -217,6 +217,10 @@ if (props.categorySlug && !category.value) {
   throw createError({ statusCode: 404, statusMessage: 'Категория не найдена', fatal: true })
 }
 
+if (category.value && props.categorySlug !== category.value.slug) {
+  await navigateTo({ path: `/catalog/${category.value.slug}`, query: route.query }, { redirectCode: 301, replace: true })
+}
+
 const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
 const { data: products, pending, error } = await useAsyncData<ProductResponse>(
   catalogDataKey,

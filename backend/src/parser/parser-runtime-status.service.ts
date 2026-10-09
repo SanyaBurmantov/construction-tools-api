@@ -19,6 +19,29 @@ const FAILURE_RATE_THRESHOLD = Number(
 /** Below this many URLs a batch is too small for a rate to mean anything. */
 const MIN_BATCH_FOR_RATE = 5;
 
+export type PriceFreshness = {
+  sourceCode: string;
+  total: number;
+  stale: number;
+  stalePercent: number;
+  oldestSync: Date | null;
+  newestSync: Date | null;
+  health: 'OK' | 'STALE' | 'EMPTY';
+};
+
+type FreshnessRow = {
+  sourceCode: string;
+  total: bigint;
+  stale: bigint;
+  oldestSync: Date | null;
+  newestSync: Date | null;
+};
+
+function positiveSetting(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 @Injectable()
 export class ParserRuntimeStatusService {
   private readonly logger = new Logger(ParserRuntimeStatusService.name);
@@ -191,12 +214,33 @@ export class ParserRuntimeStatusService {
   }
 
   async getHealth(maxAgeHours = 2) {
-    const statuses = await this.getAll();
+    const priceMaxAgeHours = positiveSetting(
+      process.env.PARSER_PRICE_MAX_AGE_HOURS,
+      48,
+    );
+    const priceStalePercent = Math.min(
+      positiveSetting(process.env.PARSER_PRICE_STALE_PERCENT, 10),
+      100,
+    );
+    const [statuses, priceFreshness] = await Promise.all([
+      this.getAll(),
+      this.getPriceFreshness(priceMaxAgeHours, priceStalePercent),
+    ]);
     const now = Date.now();
-    const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
     const jobs = statuses.map((status) => {
       const lastSuccessMs = status.lastSuccessAt?.getTime();
-      const isStale = !lastSuccessMs || now - lastSuccessMs > maxAgeMs;
+      // TH-tools revalidation is an operator action without a cron schedule.
+      const jobMaxAgeHours =
+        status.key === 'th-tools-revalidate'
+          ? null
+          : status.key.endsWith('-revalidate')
+            ? 32 * 24
+            : status.key.endsWith('-refresh')
+              ? 26
+              : maxAgeHours;
+      const isStale =
+        jobMaxAgeHours !== null &&
+        (!lastSuccessMs || now - lastSuccessMs > jobMaxAgeHours * 3_600_000);
       const hasError = Boolean(status.lastError);
       const batch = this.lastBatch(status.lastResult);
       const rate =
@@ -207,6 +251,7 @@ export class ParserRuntimeStatusService {
 
       return {
         ...status,
+        maxAgeHours: jobMaxAgeHours,
         failureRate: batch ? Number(rate.toFixed(3)) : null,
         lastBatch: batch,
         health: status.isRunning
@@ -220,10 +265,49 @@ export class ParserRuntimeStatusService {
     });
 
     return {
-      ok: jobs.every((job) => job.health === 'OK' || job.health === 'RUNNING'),
+      ok:
+        jobs.every((job) => job.health === 'OK' || job.health === 'RUNNING') &&
+        priceFreshness.every((source) => source.health !== 'STALE'),
       maxAgeHours,
+      priceMaxAgeHours,
+      priceStalePercent,
+      priceFreshness,
       jobs,
     };
+  }
+
+  /** Published, priced, in-stock offers are the prices customers can buy at. */
+  private async getPriceFreshness(
+    maxAgeHours: number,
+    stalePercent: number,
+  ): Promise<PriceFreshness[]> {
+    const cutoff = new Date(Date.now() - maxAgeHours * 3_600_000);
+    const rows = await this.prisma.$queryRaw<FreshnessRow[]>`
+      SELECT s.code AS "sourceCode", count(sp.id) AS total,
+        count(sp.id) FILTER (WHERE sp."lastSync" < ${cutoff}) AS stale,
+        min(sp."lastSync") AS "oldestSync", max(sp."lastSync") AS "newestSync"
+      FROM "Source" s
+      LEFT JOIN (
+        SELECT sp.* FROM "SourceProduct" sp JOIN "Product" p ON p.id = sp."productId"
+        WHERE p.status = 'PUBLISHED' AND sp.stock = true AND sp.price > 0
+      ) sp ON sp."sourceId" = s.id
+      WHERE s.code IN ('th-tools', 'tools-by', 'dukon')
+      GROUP BY s.code ORDER BY s.code
+    `;
+    return rows.map((row) => {
+      const total = Number(row.total);
+      const stale = Number(row.stale);
+      const percent = total ? (stale / total) * 100 : 0;
+      return {
+        sourceCode: row.sourceCode,
+        total,
+        stale,
+        stalePercent: Number(percent.toFixed(1)),
+        oldestSync: row.oldestSync,
+        newestSync: row.newestSync,
+        health: !total ? 'EMPTY' : percent >= stalePercent ? 'STALE' : 'OK',
+      };
+    });
   }
 
   /** Pulls the per-batch counters a parser puts into its run result. */

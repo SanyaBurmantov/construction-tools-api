@@ -52,7 +52,8 @@ export const PARSER_SOURCES = [
     envCategoryExclude: 'TOOLS_BY_CATEGORY_EXCLUDE_REGEX',
     envMaxPages: 'TOOLS_BY_DISCOVERY_MAX_PAGES',
     defaultRequestDelayMs: 2000,
-    defaultMaxPages: 500,
+    defaultMaxPages: 2000,
+    defaultBatchLimit: 300,
     hasCategoryQueue: false,
     defaultEnabled: true,
   },
@@ -149,7 +150,9 @@ export class ParserSettingsService {
     const fallback =
       Number.isFinite(envValue) && envValue > 0
         ? envValue
-        : DEFAULT_BATCH_LIMIT;
+        : source && 'defaultBatchLimit' in source
+          ? source.defaultBatchLimit
+          : DEFAULT_BATCH_LIMIT;
     const stored = Number(await this.read(sourceBatchLimitKey(code)));
 
     return this.clampBatchLimit(

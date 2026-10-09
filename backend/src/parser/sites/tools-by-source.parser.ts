@@ -31,7 +31,18 @@ type CatalogSnapshot = {
   memo: { name: string };
 };
 type CatalogSession = { csrfToken: string; cookies: Map<string, string> };
-type CatalogPage = { url: string; snapshot?: string; session?: CatalogSession };
+type CatalogPage = {
+  url: string;
+  snapshot?: string;
+  session?: CatalogSession;
+};
+type SavedCatalogPage = Omit<CatalogPage, 'session'> & {
+  session?: { csrfToken: string; cookies: [string, string][] };
+};
+type CatalogCrawlState = {
+  visitedPages: string[];
+  pageQueue: SavedCatalogPage[];
+};
 
 type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 
@@ -68,31 +79,72 @@ export class ToolsByParserService {
   async discoverCatalogUrls() {
     const maxPages = await this.settings.getMaxPages(SOURCE_CODE);
     const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
-    const visitedPages = new Set<string>();
-    const queuedPages = new Set<string>([`${SOURCE_BASE_URL}/catalog`]);
-    const pageQueue: CatalogPage[] = [{ url: `${SOURCE_BASE_URL}/catalog` }];
+    const saved = await this.prisma.parserCatalogCrawl.findUnique({
+      where: { sourceCode: SOURCE_CODE },
+    });
+    const state = saved?.state as CatalogCrawlState | undefined;
+    const visitedPages = new Set<string>(state?.visitedPages ?? []);
+    const pageQueue: CatalogPage[] = state
+      ? state.pageQueue.map((entry) => ({
+          ...entry,
+          session: entry.session
+            ? { ...entry.session, cookies: new Map(entry.session.cookies) }
+            : undefined,
+        }))
+      : [{ url: `${SOURCE_BASE_URL}/catalog` }];
+    const queuedPages = new Set<string>([
+      ...visitedPages,
+      ...pageQueue.map((entry) => entry.url),
+    ]);
+    // Persist before fetching; a failed request must retain its queue entry.
+    await this.saveCatalogCrawl(visitedPages, pageQueue);
     const productUrls = new Set<string>();
     let fetchedPages = 0;
+    const renewedSessions = new Set<string>();
 
     while (pageQueue.length && fetchedPages < maxPages) {
-      const entry = pageQueue.shift();
+      const entry = pageQueue[0];
       if (!entry) continue;
       let html: string;
       let snapshot: string | undefined;
       let session: CatalogSession;
       if (entry.snapshot && entry.session) {
-        const result = await this.loadMore(
-          entry.url,
-          entry.snapshot,
-          entry.session,
-        );
+        let result: { html: string; snapshot: string };
+        try {
+          result = await this.loadMore(
+            entry.url,
+            entry.snapshot,
+            entry.session,
+          );
+        } catch (error) {
+          if (
+            error instanceof ParserHttpError &&
+            error.status === 419 &&
+            !renewedSessions.has(entry.url)
+          ) {
+            // CSRF sessions can expire between daily runs. Keep the signed
+            // pagination snapshot and get fresh cookies on the next request.
+            entry.session = undefined;
+            fetchedPages += 1;
+            await this.saveCatalogCrawl(visitedPages, pageQueue);
+            await this.sleep(delayMs);
+            continue;
+          }
+          throw error;
+        }
         html = result.html;
         snapshot = result.snapshot;
         session = entry.session;
       } else {
-        if (visitedPages.has(entry.url)) continue;
-        visitedPages.add(entry.url);
         const result = await this.fetchCatalogPage(entry.url);
+        if (entry.snapshot) {
+          entry.session = result.session;
+          renewedSessions.add(entry.url);
+          fetchedPages += 1;
+          await this.saveCatalogCrawl(visitedPages, pageQueue);
+          await this.sleep(delayMs);
+          continue;
+        }
         html = result.html;
         session = result.session;
         snapshot = this.catalogSnapshot(cheerio.load(html));
@@ -103,6 +155,10 @@ export class ToolsByParserService {
       pageProductUrls.forEach((url) => productUrls.add(url));
       await this.enqueueUrls(pageProductUrls);
 
+      // Advance only after the product URLs are saved. Replaying a page after
+      // a crash is safe: enqueueUrls uses idempotent upserts.
+      pageQueue.shift();
+      visitedPages.add(entry.url);
       for (const catalogUrl of this.parseCatalogLinks($)) {
         if (!visitedPages.has(catalogUrl) && !queuedPages.has(catalogUrl)) {
           queuedPages.add(catalogUrl);
@@ -126,6 +182,7 @@ export class ToolsByParserService {
         }
         pageQueue.push({ url: entry.url, snapshot, session });
       }
+      await this.saveCatalogCrawl(visitedPages, pageQueue);
       await this.sleep(delayMs);
     }
 
@@ -135,6 +192,39 @@ export class ToolsByParserService {
       discoveredProducts: productUrls.size,
       remainingPages: pageQueue.length,
     };
+  }
+
+  private async saveCatalogCrawl(
+    visitedPages: Set<string>,
+    pageQueue: CatalogPage[],
+  ) {
+    if (!pageQueue.length) {
+      // A completed crawl starts a fresh catalog pass next time.
+      await this.prisma.parserCatalogCrawl.deleteMany({
+        where: { sourceCode: SOURCE_CODE },
+      });
+      return;
+    }
+    const state: CatalogCrawlState = {
+      visitedPages: [...visitedPages],
+      pageQueue: pageQueue.map((entry) => ({
+        ...entry,
+        session: entry.session
+          ? {
+              csrfToken: entry.session.csrfToken,
+              cookies: [...entry.session.cookies],
+            }
+          : undefined,
+      })),
+    };
+    const data = {
+      state: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue,
+    };
+    await this.prisma.parserCatalogCrawl.upsert({
+      where: { sourceCode: SOURCE_CODE },
+      create: { sourceCode: SOURCE_CODE, ...data },
+      update: data,
+    });
   }
 
   async getQueueStats() {
@@ -844,8 +934,15 @@ export class ToolsByParserService {
     }
   }
 
+  private fetchCatalogResponse(url: string, init: RequestInit) {
+    const configured = Number(process.env.TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS);
+    const timeoutMs =
+      Number.isFinite(configured) && configured > 0 ? configured : 60_000;
+    return fetchWithTimeout(url, init, { timeoutMs });
+  }
+
   private async fetchCatalogPage(url: string) {
-    const response = await fetchWithTimeout(url, {
+    const response = await this.fetchCatalogResponse(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
     if (!response.ok) throw new ParserHttpError(response.status, url);
@@ -867,7 +964,7 @@ export class ToolsByParserService {
     if (!session.csrfToken)
       throw new Error(`Tools.by catalog CSRF token missing: ${url}`);
     const endpoint = `${SOURCE_BASE_URL}/livewire/update`;
-    const response = await fetchWithTimeout(endpoint, {
+    const response = await this.fetchCatalogResponse(endpoint, {
       method: 'POST',
       headers: {
         'user-agent': 'Mozilla/5.0',

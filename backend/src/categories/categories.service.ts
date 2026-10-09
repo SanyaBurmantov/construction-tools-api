@@ -49,9 +49,16 @@ export class CategoriesService {
 
   /** Category landing page payload: breadcrumb ancestors + children with counts. */
   async getBySlug(slug: string): Promise<CategoryPage> {
-    const category = await this.prisma.category.findUnique({
+    const direct = await this.prisma.category.findUnique({
       where: { slug },
     });
+    const alias = direct
+      ? null
+      : await this.prisma.categoryRedirect.findUnique({
+          where: { slug },
+          include: { category: true },
+        });
+    const category = direct ?? alias?.category;
     if (!category) {
       throw new NotFoundException('Category not found');
     }
@@ -59,16 +66,22 @@ export class CategoriesService {
     const { nodes } = await this.buildCountedTree();
     const node = nodes.get(category.id);
 
-    const ancestorSlugs = category.path.filter((item) => item !== slug);
-    const ancestorRows = ancestorSlugs.length
-      ? await this.prisma.category.findMany({
-          where: { slug: { in: ancestorSlugs } },
-          select: { id: true, name: true, slug: true },
-        })
-      : [];
-    const ancestors = ancestorSlugs
-      .map((item) => ancestorRows.find((row) => row.slug === item))
-      .filter((row): row is (typeof ancestorRows)[number] => Boolean(row));
+    // Identity paths contain supplier name slugs, which may differ from the
+    // public slugs after collisions/merges. Follow parent IDs for navigation.
+    const ancestors: Array<{ id: string; name: string; slug: string }> = [];
+    const seen = new Set<string>([category.id]);
+    let parentId = category.parentId;
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = nodes.get(parentId);
+      if (!parent) break;
+      ancestors.unshift({
+        id: parent.id,
+        name: parent.name,
+        slug: parent.slug,
+      });
+      parentId = parent.parentId;
+    }
 
     const children = this.pruneEmpty(node?.children ?? []).map((child) => ({
       id: child.id,

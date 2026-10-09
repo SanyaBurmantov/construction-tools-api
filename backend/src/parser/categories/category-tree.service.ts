@@ -42,7 +42,9 @@ export class CategoryTreeService {
     let parentId: string | null = null;
     let leaf: UpsertedCategory | null = null;
 
-    for (const name of breadcrumbs) {
+    for (const name of breadcrumbs.filter(
+      (name) => !['главная', 'каталог'].includes(name.trim().toLowerCase()),
+    )) {
       const slug = generateSlug(name);
       if (!slug) continue;
 
@@ -102,6 +104,13 @@ export class CategoryTreeService {
         attempt < candidates.length
           ? candidates[attempt]
           : numberedSlug(fallbackBase, attempt - candidates.length + 2);
+
+      // A merged category's old address belongs to its redirect permanently.
+      const alias = await this.prisma.categoryRedirect.findUnique({
+        where: { slug },
+        select: { slug: true },
+      });
+      if (alias) continue;
 
       try {
         const created = await this.prisma.category.create({

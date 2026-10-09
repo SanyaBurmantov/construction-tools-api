@@ -36,6 +36,13 @@ export class ToolsByCron {
     this.jobs.runFromCron(SOURCE_CODE, 'refresh');
   }
 
+  /** Periodically refresh prices even when discovery finds no new URLs. */
+  @Cron('0 30 12 1 * *')
+  async revalidateMonthly() {
+    if (!(await this.isEnabled())) return;
+    this.jobs.runFromCron(SOURCE_CODE, 'revalidate');
+  }
+
   private isEnabled() {
     return this.settings.isSourceCronEnabled(SOURCE_CODE);
   }

@@ -177,4 +177,25 @@ describe('ParserSettingsService — runtime knobs', () => {
       service.setCategoryFilters('th-tools', { include: '' }),
     ).resolves.toBeDefined();
   });
+  it('uses a larger tools.by crawl and product batch without changing other sources', async () => {
+    delete process.env.TOOLS_BY_CRON_BATCH_LIMIT;
+    delete process.env.TOOLS_BY_DISCOVERY_MAX_PAGES;
+    delete process.env.TH_TOOLS_CRON_BATCH_LIMIT;
+    const { service } = createService();
+    await expect(service.getBatchLimit('tools-by')).resolves.toBe(300);
+    await expect(service.getMaxPages('tools-by')).resolves.toBe(2000);
+    await expect(service.getBatchLimit('th-tools')).resolves.toBe(30);
+  });
+
+  it('preserves env and stored overrides over the new tools.by defaults', async () => {
+    process.env.TOOLS_BY_CRON_BATCH_LIMIT = '100';
+    process.env.TOOLS_BY_DISCOVERY_MAX_PAGES = '500';
+    const { service } = createService();
+    await expect(service.getBatchLimit('tools-by')).resolves.toBe(100);
+    await expect(service.getMaxPages('tools-by')).resolves.toBe(500);
+    await service.setBatchLimit('tools-by', 600);
+    await service.setMaxPages('tools-by', 4000);
+    await expect(service.getBatchLimit('tools-by')).resolves.toBe(600);
+    await expect(service.getMaxPages('tools-by')).resolves.toBe(4000);
+  });
 });

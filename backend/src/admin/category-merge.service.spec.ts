@@ -28,6 +28,11 @@ function buildService() {
     sourceCategory: {
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
+    pricingRule: { updateMany: jest.fn(() => Promise.resolve({ count: 1 })) },
+    categoryRedirect: {
+      updateMany: jest.fn(() => Promise.resolve({ count: 2 })),
+      upsert: jest.fn(() => Promise.resolve({})),
+    },
     specification: {
       findMany: jest.fn(() => Promise.resolve([])),
       findUnique: jest.fn(() => Promise.resolve(null)),
@@ -98,6 +103,19 @@ describe('CategoryMergeService.merge', () => {
         level: 1,
         pathKey: 'other/grandchild',
       },
+    });
+    expect(tx.pricingRule.updateMany).toHaveBeenCalledWith({
+      where: { categoryId: 'child' },
+      data: { categoryId: 'other' },
+    });
+    expect(tx.categoryRedirect.updateMany).toHaveBeenCalledWith({
+      where: { categoryId: 'child' },
+      data: { categoryId: 'other' },
+    });
+    expect(tx.categoryRedirect.upsert).toHaveBeenCalledWith({
+      where: { slug: 'child' },
+      create: { slug: 'child', categoryId: 'other' },
+      update: { categoryId: 'other' },
     });
     expect(tx.category.delete).toHaveBeenCalledWith({ where: { id: 'child' } });
     expect(result).toEqual({ ok: true, movedProducts: 7, movedChildren: 1 });
