@@ -157,7 +157,7 @@ watch(() => route.fullPath, () => {
           </svg>
         </button>
 
-        <NuxtLink to="/" class="logo" aria-label="Мультитул — на главную">
+        <NuxtLink to="/" class="logo" aria-label="Gost.by — на главную">
           <BrandLogo />
         </NuxtLink>
 
