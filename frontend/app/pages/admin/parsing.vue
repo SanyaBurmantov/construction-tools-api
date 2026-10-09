@@ -19,10 +19,17 @@ type BulkRetryResponse = { count: number }
 type ParserHealth = {
   ok: boolean
   maxAgeHours: number
+  priceMaxAgeHours: number
+  priceStalePercent: number
+  priceFreshness: Array<{
+    sourceCode: string, total: number, stale: number, stalePercent: number,
+    oldestSync: string | null, newestSync: string | null, health: 'OK' | 'STALE' | 'EMPTY'
+  }>
   jobs: Array<{
     key: string
     label: string
     isRunning: boolean
+    maxAgeHours: number | null
     health: 'OK' | 'RUNNING' | 'ERROR' | 'STALE'
     startedAt: string | null
     finishedAt: string | null
@@ -352,7 +359,7 @@ const controlBanner = computed(() => {
     return {
       tone: 'warning' as const,
       title: 'Парсинг включён, но есть проблемы',
-      text: `Успешного запуска не было дольше ${overview.health.maxAgeHours} ч — смотрите карточки кронов ниже.`,
+      text: `Есть ошибки, пропущенные запуски или устаревшие цены — смотрите состояние кронов и свежесть цен ниже.`,
     }
   }
 
@@ -1014,8 +1021,8 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
         <div class="card-head">
           <h2>Состояние кронов</h2>
           <p>
-            Парсер считается «молчащим», если успешного запуска не было дольше
-            {{ health?.maxAgeHours ?? 2 }} ч.
+            Проверяем успешные запуски с учётом расписания каждой задачи
+            и отдельно — свежесть цен поставщиков.
           </p>
         </div>
       </template>
@@ -1024,6 +1031,24 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
           {{ health.ok ? 'Всё в норме' : 'Требует внимания' }}
         </UiBadge>
       </template>
+
+      <div v-if="health?.priceFreshness.length" class="pad">
+        <h3>Свежесть цен поставщиков</h3>
+        <p class="muted">Требует внимания, если {{ health.priceStalePercent }}% доступных офферов не обновлялись более {{ health.priceMaxAgeHours }} ч.</p>
+        <div class="health-grid">
+          <article v-for="source in health.priceFreshness" :key="source.sourceCode" class="health-card" :class="source.health === 'STALE' ? 'is-stale' : 'is-ok'">
+            <div class="health-top">
+              <strong>{{ source.sourceCode }}</strong>
+              <UiBadge :tone="source.health === 'STALE' ? 'warning' : 'neutral'" size="sm">{{ source.health === 'EMPTY' ? 'Нет доступных цен' : source.health === 'STALE' ? 'Цены устарели' : 'Свежесть в норме' }}</UiBadge>
+            </div>
+            <dl class="health-meta">
+              <div><dt>Устаревшие офферы</dt><dd>{{ source.stale }} / {{ source.total }} ({{ source.stalePercent }}%)</dd></div>
+              <div><dt>Самое старое обновление</dt><dd>{{ formatAgo(source.oldestSync) }}</dd></div>
+              <div><dt>Самое новое обновление</dt><dd>{{ formatAgo(source.newestSync) }}</dd></div>
+            </dl>
+          </article>
+        </div>
+      </div>
 
       <div v-if="health?.jobs.length" class="health-grid pad">
         <article v-for="job in health.jobs" :key="job.key" class="health-card" :class="`is-${job.health.toLowerCase()}`">

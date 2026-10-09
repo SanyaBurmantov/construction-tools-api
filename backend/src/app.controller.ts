@@ -43,10 +43,14 @@ export class AppController {
     return {
       ok: health.ok,
       maxAgeHours: health.maxAgeHours,
+      priceMaxAgeHours: health.priceMaxAgeHours,
+      priceStalePercent: health.priceStalePercent,
+      priceFreshness: health.priceFreshness,
       jobs: health.jobs.map((job) => ({
         key: job.key,
         label: job.label,
         health: job.health,
+        maxAgeHours: job.maxAgeHours,
         isRunning: job.isRunning,
         lastSuccessAt: job.lastSuccessAt,
         lastErrorAt: job.lastErrorAt,

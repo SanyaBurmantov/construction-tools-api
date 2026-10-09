@@ -103,4 +103,20 @@ describe('fetchWithTimeout', () => {
     expect(res.status).toBe(503);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+  it('reports the failing URL, exhausted attempts and timeout while preserving the cause', async () => {
+    const cause = new DOMException('This operation was aborted', 'AbortError');
+    global.fetch = jest.fn().mockRejectedValue(cause) as typeof fetch;
+    await expect(
+      fetchWithTimeout(
+        'https://tools.by/catalog/65',
+        {},
+        { timeoutMs: 20, retries: 2, retryBaseMs: 0 },
+      ),
+    ).rejects.toMatchObject({
+      message:
+        'Failed to fetch https://tools.by/catalog/65 after 3 attempts (timeout 20ms): This operation was aborted',
+      cause,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
 });

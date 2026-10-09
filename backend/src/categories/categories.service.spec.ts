@@ -68,6 +68,7 @@ function buildService() {
         ),
       ),
     },
+    categoryRedirect: { findUnique: jest.fn(() => Promise.resolve(null)) },
     product: {
       groupBy: jest.fn(() => Promise.resolve(counts)),
     },
@@ -117,5 +118,45 @@ describe('CategoriesService.getBySlug', () => {
     await expect(buildService().getBySlug('nope')).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('CategoriesService category redirects', () => {
+  it('resolves an old address to the surviving category with its canonical slug', async () => {
+    const findRedirect = jest.fn().mockResolvedValue({ category: rows[1] });
+    const prisma = {
+      category: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue(rows),
+      },
+      categoryRedirect: {
+        findUnique: findRedirect,
+      },
+      product: { groupBy: jest.fn().mockResolvedValue(counts) },
+    } as unknown as PrismaService;
+    const result = await new CategoriesService(prisma).getBySlug(
+      'legacy-dreli',
+    );
+    expect(result).toMatchObject({ id: 'c2', slug: 'dreli', productCount: 5 });
+    expect(findRedirect).toHaveBeenCalledWith({
+      where: { slug: 'legacy-dreli' },
+      include: { category: true },
+    });
+  });
+  it('uses actual parents for breadcrumbs when public slugs differ from identity components', async () => {
+    const renamed = rows.map((r) =>
+      r.id === 'c1' ? { ...r, slug: 'tools-elektro' } : r,
+    );
+    const prisma = {
+      category: {
+        findUnique: jest.fn().mockResolvedValue(renamed[1]),
+        findMany: jest.fn().mockResolvedValue(renamed),
+      },
+      product: { groupBy: jest.fn().mockResolvedValue(counts) },
+    } as unknown as PrismaService;
+    const result = await new CategoriesService(prisma).getBySlug('dreli');
+    expect(result.ancestors).toEqual([
+      { id: 'c1', name: 'Электроинструмент', slug: 'tools-elektro' },
+    ]);
   });
 });

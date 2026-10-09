@@ -72,6 +72,20 @@ export class CategoryMergeService {
         data: { mappedCategoryId: targetId },
       });
 
+      await tx.pricingRule.updateMany({
+        where: { categoryId: id },
+        data: { categoryId: targetId },
+      });
+      await tx.categoryRedirect.updateMany({
+        where: { categoryId: id },
+        data: { categoryId: targetId },
+      });
+      await tx.categoryRedirect.upsert({
+        where: { slug: source.slug },
+        create: { slug: source.slug, categoryId: targetId },
+        update: { categoryId: targetId },
+      });
+
       await this.foldSpecifications(tx, id, targetId);
 
       const directChildren = childrenByParent.get(id) ?? [];

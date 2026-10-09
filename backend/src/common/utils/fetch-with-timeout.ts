@@ -67,9 +67,17 @@ export async function fetchWithTimeout(
     }
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(`Failed to fetch ${url}`);
+  const reason =
+    typeof lastError === 'object' &&
+    lastError !== null &&
+    'message' in lastError &&
+    typeof lastError.message === 'string'
+      ? lastError.message
+      : String(lastError);
+  throw new Error(
+    `Failed to fetch ${url} after ${retries + 1} attempts (timeout ${timeoutMs}ms): ${reason}`,
+    { cause: lastError },
+  );
 }
 
 function retryDelay(attempt: number, baseMs: number, res?: Response): number {

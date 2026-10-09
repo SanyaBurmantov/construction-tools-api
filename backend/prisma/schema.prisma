@@ -35,6 +35,7 @@ model Category {
   products               Product[]
   specifications         Specification[]
   mappedSourceCategories SourceCategory[] @relation("MappedSourceCategory")
+  redirects              CategoryRedirect[]
   pricingRules           PricingRule[]
 
   @@index([parentId])
@@ -148,6 +149,7 @@ model ProductSpecification {
   value           String
 
   @@unique([productId, specificationId])
+  @@index([specificationId])
 }
 
 model ProductImage {
@@ -580,4 +582,31 @@ model ParserCategoryQueue {
   @@unique([sourceCode, url])
   @@index([sourceCode, status])
   @@index([sourceCode, level])
+}
+
+/// Checkpoint for bounded catalog crawls, independent of operator settings.
+model ParserCatalogCrawl {
+  sourceCode String   @id
+  state      Json
+  updatedAt  DateTime @updatedAt
+}
+
+/// Old category addresses retained after consolidating the legacy catalog tree.
+model CategoryRedirect {
+  slug       String   @id
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+}
+
+/// Different values on duplicate specification keys are retained for review.
+model CategoryRepairConflict {
+  id                    String   @id
+  productId             String
+  fromSpecificationId   String
+  toSpecificationId     String
+  value                 String
+  keptValue             String
+  createdAt             DateTime @default(now())
 }
