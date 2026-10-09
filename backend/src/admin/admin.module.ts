@@ -32,5 +32,9 @@ import { SpecificationsAdminService } from './specifications-admin.service';
     CategoryMergeService,
     SpecificationsAdminService,
   ],
+  // The catalogue normalizer merges categories too, and re-implementing the
+  // move of products / supplier mappings / pricing rules / children would be
+  // one more place to get a redirect or a cascade wrong.
+  exports: [AdminGuard, CategoryMergeService],
 })
 export class AdminModule {}

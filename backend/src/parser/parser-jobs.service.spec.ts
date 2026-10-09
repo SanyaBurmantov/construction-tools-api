@@ -120,4 +120,65 @@ describe('ParserJobsService', () => {
       'revalidate',
     ]);
   });
+
+  describe('th-tools refresh', () => {
+    it('reports the sitemap and the category pass separately', async () => {
+      const sitemapResult = {
+        urlsInSitemap: 41_000,
+        productUrls: 39_465,
+        queuedNow: 0,
+      };
+      const categoryResult = { seen: 716, added: 0 };
+
+      const sitemaps = {
+        parseAllSitemapsThTools: jest.fn(() => Promise.resolve(sitemapResult)),
+      };
+      const categoryQueue = { refresh: jest.fn(() => categoryResult) };
+
+      const service = new ParserJobsService(
+        {} as never,
+        {} as never,
+        sitemaps as never,
+        categoryQueue as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      const refresh = service
+        .jobsFor('th-tools')
+        .find((job) => job.name === 'refresh')!;
+
+      // The job used to return the category refresh alone, so the admin showed
+      // `{"seen": 716, "added": 0}` — the size of the category queue — and the
+      // sitemap looked broken when it was simply never counted.
+      await expect(refresh.run()).resolves.toEqual({
+        sitemap: sitemapResult,
+        categories: categoryResult,
+      });
+      expect(sitemaps.parseAllSitemapsThTools).toHaveBeenCalled();
+    });
+
+    it('crawls as many categories as the settings allow', async () => {
+      const processBatch = jest.fn(() => Promise.resolve({}));
+      const service = new ParserJobsService(
+        {} as never,
+        { getCategoryBatchLimit: () => Promise.resolve(20) } as never,
+        {} as never,
+        { processBatch } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+      const categories = service
+        .jobsFor('th-tools')
+        .find((job) => job.name === 'categories')!;
+      await categories.run();
+
+      expect(processBatch).toHaveBeenCalledWith('th-tools', 20);
+    });
+  });
 });

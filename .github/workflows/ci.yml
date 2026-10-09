@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, prod]
+    branches: [master, main, prod]
   pull_request:
-    branches: [main, prod]
+    branches: [master, main, prod]
 
 jobs:
   production-config:
@@ -30,6 +30,12 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npx prisma generate
+      - run: npm run lint
+      # `npm run build` uses tsconfig.build.json, which excludes **/*spec.ts.
+      # This checks the tests themselves: it is what catches a spec that
+      # constructs a service with the wrong arguments and still passes because
+      # Jest transpiles without type information.
+      - run: npx tsc -p tsconfig.json --noEmit
       - run: npm test -- --runInBand --silent
       - run: npm run build
 
@@ -46,4 +52,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run build

@@ -111,6 +111,9 @@ export class ParserAdminController {
     if (dto.maxPages !== undefined) {
       await this.settings.setMaxPages(code, dto.maxPages);
     }
+    if (dto.categoryBatchLimit !== undefined) {
+      await this.settings.setCategoryBatchLimit(code, dto.categoryBatchLimit);
+    }
     if (
       dto.categoryIncludeRegex !== undefined ||
       dto.categoryExcludeRegex !== undefined

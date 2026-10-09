@@ -43,10 +43,27 @@ type DukonParserTestAccess = {
     $: cheerio.CheerioAPI,
   ) => { name: string; url: string }[];
   isProductPage: ($: cheerio.CheerioAPI) => boolean;
+  resolveBrand: (
+    $: cheerio.CheerioAPI,
+    specs: { name: string; value: string }[],
+    jsonLdBrand: string | undefined,
+    breadcrumbs: string[],
+  ) => string | undefined;
 };
 
 describe('DukonParserService parsing helpers', () => {
-  const service = new DukonParserService({} as never, {} as never);
+  // All six dependencies, even though the helpers under test touch none of
+  // them: the spec was built with two and only compiled because specs were
+  // excluded from the type check. The first test to call something that reaches
+  // a dependency would have failed on `undefined` instead of saying so.
+  const service = new DukonParserService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
   const parser = service as unknown as DukonParserTestAccess;
   const html = readFileSync(
     join(__dirname, 'fixtures', 'dukon-product.html'),
@@ -140,5 +157,99 @@ describe('DukonParserService parsing helpers', () => {
       'https://dukon.by/catalog/nabory-instrumentov/?PAGEN_1=3',
       'https://dukon.by/catalog/nabory-instrumentov/?PAGEN_1=4',
     ]);
+  });
+
+  describe('brand', () => {
+    const spec = (name: string, value: string) => ({ name, value });
+    const empty = cheerio.load('<html></html>');
+
+    it('takes the manufacturer from the spec table', () => {
+      expect(
+        parser.resolveBrand(
+          empty,
+          [spec('Производитель', 'Nordberg')],
+          undefined,
+          [],
+        ),
+      ).toBe('Nordberg');
+    });
+
+    it('rejects a legal entity and falls through to the next candidate', () => {
+      // dukon's "Производитель" is frequently the company record. A wrong brand
+      // is worse than none: brand+sku is one of only two signals that auto-merge
+      // duplicates, so it would silently fuse unrelated products.
+      expect(
+        parser.resolveBrand(
+          empty,
+          [
+            spec(
+              'Производитель',
+              'ООО «Нордберг Руссия», г. Москва, ул. Ленина, д. 1',
+            ),
+            spec('Бренд', 'Nordberg'),
+          ],
+          undefined,
+          [],
+        ),
+      ).toBe('Nordberg');
+    });
+
+    it.each([
+      'ООО "Инструмент-Сервис"',
+      'ИП Иванов И.И.',
+      'Nordberg GmbH',
+      'г. Минск, ул. Притыцкого 29',
+    ])('rejects %s', (value) => {
+      expect(
+        parser.resolveBrand(
+          empty,
+          [spec('Производитель', value)],
+          undefined,
+          [],
+        ),
+      ).toBeUndefined();
+    });
+
+    it('rejects a value too long to be a name', () => {
+      expect(
+        parser.resolveBrand(
+          empty,
+          [
+            spec(
+              'Производитель',
+              'Завод по производству пневматического инструмента и оснастки',
+            ),
+          ],
+          undefined,
+          [],
+        ),
+      ).toBeUndefined();
+    });
+
+    it('rejects the product category echoed back as a brand', () => {
+      expect(
+        parser.resolveBrand(
+          empty,
+          [spec('Производитель', 'Запчасти')],
+          undefined,
+          ['Каталог', 'Запчасти'],
+        ),
+      ).toBeUndefined();
+    });
+
+    it('keeps a real name that merely starts with a category word', () => {
+      expect(
+        parser.resolveBrand(
+          empty,
+          [spec('Производитель', 'Запчасти Rotake')],
+          undefined,
+          ['Каталог', 'Запчасти'],
+        ),
+      ).toBe('Запчасти Rotake');
+    });
+
+    it('falls back to JSON-LD when the table has nothing usable', () => {
+      expect(parser.resolveBrand(empty, [], 'Rotake', [])).toBe('Rotake');
+    });
   });
 });

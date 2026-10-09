@@ -503,7 +503,7 @@ export class ToolsByParserService {
       },
     });
 
-    await this.saveSpecifications(
+    await this.identity.saveSpecifications(
       parsed.specifications,
       product.id,
       categoryId,
@@ -798,40 +798,6 @@ export class ToolsByParserService {
       sourceCategoryId: sourceCategory.id,
       categoryId: sourceCategory.mappedCategoryId || category.id,
     };
-  }
-
-  private async saveSpecifications(
-    specs: { name: string; value: string }[],
-    productId: string,
-    categoryId: string,
-  ) {
-    for (const spec of specs) {
-      const key = generateSlug(spec.name);
-      if (!key) continue;
-
-      const specification = await this.identity.upsertSpecification(
-        categoryId,
-        spec.name,
-        key,
-        spec.value,
-      );
-      if (!specification) continue;
-
-      await this.prisma.productSpecification.upsert({
-        where: {
-          productId_specificationId: {
-            productId,
-            specificationId: specification.id,
-          },
-        },
-        update: { value: spec.value },
-        create: {
-          productId,
-          specificationId: specification.id,
-          value: spec.value,
-        },
-      });
-    }
   }
 
   private upsertSource() {

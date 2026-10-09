@@ -71,17 +71,33 @@ export class SitemapsService {
 
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * Returns what the pass actually did, rather than only logging it.
+   *
+   * The admin reported `{"seen": 716, "added": 0}` for a supplier with ~39k
+   * products and it looked like the sitemap had stopped working. 716 was the
+   * *category* queue: this function returned nothing, so the job behind the
+   * button could only report the category refresh that runs after it. Counting
+   * the sitemap separately is what tells "nothing new to add" apart from
+   * "adding is broken".
+   */
   async parseAllSitemapsThTools() {
     this.logger.log('Loading https://th-tool.by/sitemap.xml');
     const urls = await this.getProductUrlsThTools(
       'https://th-tool.by/sitemap.xml',
     );
     const productUrls = urls.filter((url) => isThToolsProductUrl(url));
-    await this.saveSitemaps(productUrls);
+    const queued = await this.saveSitemaps(productUrls);
     this.logger.log(
-      `th-tool.by sitemap parsed: ${productUrls.length} product URLs queued, ` +
+      `th-tool.by sitemap parsed: ${productUrls.length} product URLs seen, ` +
+        `${queued} new, ` +
         `${urls.length - productUrls.length} non-product URLs skipped`,
     );
+    return {
+      urlsInSitemap: urls.length,
+      productUrls: productUrls.length,
+      queuedNow: queued,
+    };
   }
 
   async getProductUrlsThTools(url: string): Promise<string[]> {
@@ -122,13 +138,15 @@ export class SitemapsService {
     return urls;
   }
 
+  /** Queues URLs, returning how many were new — `skipDuplicates` ignores the rest. */
   async saveSitemaps(urls: string[]) {
-    if (!urls.length) return;
+    if (!urls.length) return 0;
 
     const chunks = chunkArray(urls, 1000);
+    let added = 0;
 
     for (const chunk of chunks) {
-      await this.prisma.sitemapsThTools.createMany({
+      const created = await this.prisma.sitemapsThTools.createMany({
         data: chunk.map((url) => ({
           url,
           isVisited: false,
@@ -136,6 +154,9 @@ export class SitemapsService {
         })),
         skipDuplicates: true,
       });
+      added += created.count;
     }
+
+    return added;
   }
 }

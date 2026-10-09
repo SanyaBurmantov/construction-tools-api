@@ -121,6 +121,8 @@ type ParserSourceOverview = {
   batchLimit: number
   requestDelayMs: number
   maxPages: number
+  /** Only sent for a source with a category queue. */
+  categoryBatchLimit?: number
   categoryFilters: { include: string, exclude: string }
   envFlag: string
   envFlagValue: string | null
@@ -141,6 +143,7 @@ type SourceDraft = {
   batchLimit: number
   requestDelayMs: number
   maxPages: number
+  categoryBatchLimit: number
   categoryIncludeRegex: string
   categoryExcludeRegex: string
 }
@@ -224,6 +227,7 @@ function draftFor(source: ParserSourceOverview): SourceDraft {
     batchLimit: source.batchLimit,
     requestDelayMs: source.requestDelayMs,
     maxPages: source.maxPages,
+    categoryBatchLimit: source.categoryBatchLimit ?? 0,
     categoryIncludeRegex: source.categoryFilters.include,
     categoryExcludeRegex: source.categoryFilters.exclude,
   })
@@ -237,6 +241,8 @@ function isDirty(source: ParserSourceOverview) {
     draft.batchLimit !== source.batchLimit
     || draft.requestDelayMs !== source.requestDelayMs
     || draft.maxPages !== source.maxPages
+    || (source.categoryBatchLimit !== undefined
+      && draft.categoryBatchLimit !== source.categoryBatchLimit)
     || draft.categoryIncludeRegex !== source.categoryFilters.include
     || draft.categoryExcludeRegex !== source.categoryFilters.exclude
   )
@@ -252,6 +258,7 @@ async function loadControl() {
         batchLimit: source.batchLimit,
         requestDelayMs: source.requestDelayMs,
         maxPages: source.maxPages,
+        categoryBatchLimit: source.categoryBatchLimit ?? 0,
         categoryIncludeRegex: source.categoryFilters.include,
         categoryExcludeRegex: source.categoryFilters.exclude,
       }
@@ -296,12 +303,18 @@ const toggleSource = (code: string, enabled: boolean) =>
 const saveSourceSettings = (code: string) =>
   runControl(`settings-${code}`, async () => {
     const draft = drafts[code]!
+    const source = control.value?.sources.find(item => item.code === code)
     await adminFetch(`/parser/sources/${code}`, {
       method: 'PATCH',
       body: {
         batchLimit: Number(draft.batchLimit),
         requestDelayMs: Number(draft.requestDelayMs),
         maxPages: Number(draft.maxPages),
+        // Sent only for a source that crawls categories: the API validates
+        // `Min(1)`, and the others have no such setting to send.
+        ...(source?.categoryBatchLimit !== undefined
+          ? { categoryBatchLimit: Number(draft.categoryBatchLimit) }
+          : {}),
         categoryIncludeRegex: draft.categoryIncludeRegex,
         categoryExcludeRegex: draft.categoryExcludeRegex,
       },
@@ -940,6 +953,18 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
               max="100000"
             />
             <small>Если счётчик обхода упирается ровно в это число — каталог обошёлся не весь.</small>
+          </label>
+
+          <label v-if="expandedSourceRow.categoryBatchLimit !== undefined">
+            <span>Категорий за прогон</span>
+            <UiInput
+              v-model.number="draftFor(expandedSourceRow).categoryBatchLimit"
+              type="number"
+              size="sm"
+              min="1"
+              max="200"
+            />
+            <small>Обход категорий идёт раз в час. Делите число ожидающих категорий на это значение — столько часов займёт полный круг.</small>
           </label>
         </div>
 
