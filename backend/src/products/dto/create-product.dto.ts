@@ -5,7 +5,6 @@ import {
   IsBoolean,
   IsArray,
   IsObject,
-  IsDateString,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -84,7 +83,10 @@ export class CreateProductDto {
   @IsOptional()
   weight?: number;
 
-  @ApiPropertyOptional({ description: 'Габариты', example: { length: 10, width: 5, height: 3 } })
+  @ApiPropertyOptional({
+    description: 'Габариты',
+    example: { length: 10, width: 5, height: 3 },
+  })
   @IsObject()
   @IsOptional()
   dimensions?: Record<string, any>;
@@ -119,7 +121,10 @@ export class CreateProductDto {
   @IsOptional()
   mainImage?: string;
 
-  @ApiPropertyOptional({ description: 'Характеристики', example: { "Мощность": "2200 Вт", "Вес": "5.2 кг" } })
+  @ApiPropertyOptional({
+    description: 'Характеристики',
+    example: { Мощность: '2200 Вт', Вес: '5.2 кг' },
+  })
   @IsObject()
   @IsOptional()
   specifications?: Record<string, any>;

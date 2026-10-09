@@ -11,4 +11,17 @@ backend/node_modules
 frontend/node_modules
 frontend/.nuxt
 frontend/.output
-*.md
+
+# Local scratch notes. `*.md` used to be ignored wholesale, which quietly kept
+# BUGS.md and the audit out of the repository — a blanket rule is why nobody
+# noticed. Ignore the one personal file by name instead.
+TASKS.md
+
+# Parser run logs and JVM crash dumps land in the project root.
+*.log
+hs_err_pid*.log
+
+# Abandoned Nuxt prototype on mock data — nothing builds or deploys it, and the
+# real storefront is frontend/. Untracked rather than deleted so whoever wants
+# anything out of it still can; safe to `rm -rf` once nobody does.
+frontend-new/

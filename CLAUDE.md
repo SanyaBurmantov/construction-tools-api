@@ -34,8 +34,10 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 ## Architecture notes
 
 - **Auth**: admin endpoints are guarded by `AdminGuard`, which checks the
-  `x-admin-token` header against `ADMIN_TOKEN`. There is **no JWT** — the
-  `@nestjs/jwt` / `passport-jwt` deps and `JWT_SECRET` env are dead code.
+  `x-admin-token` header against `ADMIN_TOKEN`. There is **no JWT**: the
+  `src/auth` module, the `@nestjs/jwt` / `passport` / `bcrypt` deps and the
+  `JWT_SECRET` env have been removed. They referenced a `User` model the
+  schema does not have, so nothing in them ever ran.
 - **API routing in prod**: Caddy serves `/api/*` → strips `/api` → `backend:8000`;
   everything else → `frontend:3000`. Client calls use base `/api`
   (`NUXT_PUBLIC_API_BASE`); SSR calls go through the Nuxt server route
@@ -59,7 +61,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   per-run counters (`BatchResult`), which is what lets `getHealth()` call a job
   `ERROR` when most of a run failed — a run that fails on every URL still
   *finishes*, so staleness alone reported the classic silent parser death as
-  healthy. `ParserWatchdogCron` (:07/:37, off the parsing slots) requeues
+  healthy. `ParserWatchdogCron` (:07/:37, off the parsing slots) is also what keeps the
+  catalogue fresh: `QueueRecoveryService` requeues every `DONE` row older than
+  `PARSER_REFRESH_AFTER_HOURS` (24) for **all** sources, keeping `visitedAt`,
+  so never-seen URLs go first and then the stalest snapshots. That — not the
+  monthly `revalidate` job — is what re-reads prices; `revalidate` resets the
+  *whole* queue including deliberate `SKIPPED` rows, which is why it is a
+  manual "after a parser fix" button. The watchdog also requeues
   `FAILED` rows with `attempts < PARSER_MAX_ATTEMPTS` older than
   `PARSER_RETRY_AFTER_MINUTES`, and alerts Telegram once per breakage — it
   remembers what it already reported so an unhealthy job does not re-alert every
@@ -252,6 +260,7 @@ code default*, and the admin writes the rows via `PATCH /admin/parser/cron` and
 | batch size | `cron.<code>.batchLimit` | `<SOURCE>_CRON_BATCH_LIMIT` |
 | request delay | `parser.<code>.requestDelayMs` | `<SOURCE>_REQUEST_DELAY_MS` |
 | crawl page cap | `parser.<code>.maxPages` | `<SOURCE>_DISCOVERY_MAX_PAGES` |
+| categories per run | `cron.<code>.categoryBatchLimit` | `<SOURCE>_CATEGORY_BATCH_LIMIT` |
 | category filters | `parser.<code>.category{Include,Exclude}` | `<SOURCE>_CATEGORY_*_REGEX` |
 
 A source runs only when the global switch **and** its own switch are on. Parsers

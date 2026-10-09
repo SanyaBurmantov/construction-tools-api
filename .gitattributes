@@ -1,0 +1,29 @@
+# The repository stores text as LF, and so does every checkout.
+#
+# Without this file the working tree drifted to CRLF while the repository held
+# LF, so ~200 files showed up as modified with no actual change in them —
+# CLAUDE.md alone was "339 insertions, 339 deletions" of identical text. Real
+# changes were invisible in that noise.
+* text=auto eol=lf
+
+# Things that must keep their own endings regardless of the platform.
+*.sh     text eol=lf
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# Binaries: never touched, never diffed as text.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.webp   binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.eot    binary
+*.pdf    binary
+
+# Generated, and enormous. Collapsed in diffs and out of language stats.
+package-lock.json  -diff linguist-generated

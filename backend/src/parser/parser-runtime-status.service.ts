@@ -237,7 +237,11 @@ export class ParserRuntimeStatusService {
             ? 32 * 24
             : status.key.endsWith('-refresh')
               ? 26
-              : maxAgeHours;
+              : // The catalogue normalizer runs nightly, so the batch-parser
+                // window would report it STALE for 22 hours out of every 24.
+                status.key.endsWith('-normalize')
+                ? 26
+                : maxAgeHours;
       const isStale =
         jobMaxAgeHours !== null &&
         (!lastSuccessMs || now - lastSuccessMs > jobMaxAgeHours * 3_600_000);

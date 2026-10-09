@@ -36,8 +36,15 @@ export const PARSER_SOURCES = [
     envCategoryInclude: 'TH_TOOLS_CATEGORY_INCLUDE_REGEX',
     envCategoryExclude: 'TH_TOOLS_CATEGORY_EXCLUDE_REGEX',
     envMaxPages: 'TH_TOOLS_CATEGORY_MAX_PAGES',
+    envCategoryBatchLimit: 'TH_TOOLS_CATEGORY_BATCH_LIMIT',
     defaultRequestDelayMs: 1500,
     defaultMaxPages: 100,
+    /**
+     * Categories crawled per run. Was a literal 5 at the call site, which
+     * against 591 pending categories at one run an hour is five days per
+     * sweep — long enough that a new department reaches the shop next week.
+     */
+    defaultCategoryBatchLimit: 20,
     /** Sources without a category crawler only show the products queue. */
     hasCategoryQueue: true,
     defaultEnabled: true,
@@ -101,6 +108,8 @@ const sourceDelayKey = (code: string) => `parser.${code}.requestDelayMs`;
 const sourceIncludeKey = (code: string) => `parser.${code}.categoryInclude`;
 const sourceExcludeKey = (code: string) => `parser.${code}.categoryExclude`;
 const sourceMaxPagesKey = (code: string) => `parser.${code}.maxPages`;
+const sourceCategoryBatchKey = (code: string) =>
+  `cron.${code}.categoryBatchLimit`;
 
 const MIN_REQUEST_DELAY_MS = 200;
 const MAX_REQUEST_DELAY_MS = 60_000;
@@ -108,6 +117,15 @@ const MAX_PAGES_CEILING = 100_000;
 
 const DEFAULT_BATCH_LIMIT = 30;
 const MAX_BATCH_LIMIT = 2000;
+
+/**
+ * A category crawl walks every page of the category with the politeness delay
+ * between requests, so a batch is minutes of work rather than seconds. The
+ * ceiling keeps one run from spilling far past the next hour's slot — the job
+ * lock would make that harmless, but it would also stall discovery.
+ */
+const DEFAULT_CATEGORY_BATCH_LIMIT = 5;
+const MAX_CATEGORY_BATCH_LIMIT = 200;
 
 /**
  * Settings are read on every cron tick and on every admin request, so they are
@@ -197,6 +215,29 @@ export class ParserSettingsService {
    * Category filters as raw regex source. An empty string is a real value
    * ("no filter"), which is why a stored empty row still wins over the env var.
    */
+  /**
+   * Categories crawled per run of the category job.
+   *
+   * Resolved like every other knob — DB row, then env var, then code default —
+   * because it used to be a literal `5` at the call site, which is exactly the
+   * kind of setting CLAUDE.md says must not need a deploy to change.
+   */
+  async getCategoryBatchLimit(code: string) {
+    const source = getParserSource(code);
+    const fallback = this.envNumber(
+      source && 'envCategoryBatchLimit' in source
+        ? source.envCategoryBatchLimit
+        : undefined,
+      source && 'defaultCategoryBatchLimit' in source
+        ? source.defaultCategoryBatchLimit
+        : DEFAULT_CATEGORY_BATCH_LIMIT,
+    );
+    const stored = Number(await this.read(sourceCategoryBatchKey(code)));
+    const value = Number.isFinite(stored) && stored > 0 ? stored : fallback;
+
+    return Math.min(Math.max(Math.round(value), 1), MAX_CATEGORY_BATCH_LIMIT);
+  }
+
   async getCategoryFilters(code: string) {
     const source = getParserSource(code);
     const defaults = DEFAULT_CATEGORY_FILTERS[code] ?? {
@@ -236,6 +277,13 @@ export class ParserSettingsService {
           batchLimit: await this.getBatchLimit(source.code),
           requestDelayMs: await this.getRequestDelayMs(source.code),
           maxPages: await this.getMaxPages(source.code),
+          ...(source.hasCategoryQueue
+            ? {
+                categoryBatchLimit: await this.getCategoryBatchLimit(
+                  source.code,
+                ),
+              }
+            : {}),
           categoryFilters: await this.getCategoryFilters(source.code),
           envFlag: source.envFlag,
           envFlagValue: process.env[source.envFlag] ?? null,
@@ -277,6 +325,17 @@ export class ParserSettingsService {
     await this.write(
       sourceBatchLimitKey(code),
       String(this.clampBatchLimit(limit)),
+    );
+    return this.getOverview();
+  }
+
+  async setCategoryBatchLimit(code: string, limit: number) {
+    this.ensureKnownSource(code);
+    await this.write(
+      sourceCategoryBatchKey(code),
+      String(
+        Math.min(Math.max(Math.round(limit), 1), MAX_CATEGORY_BATCH_LIMIT),
+      ),
     );
     return this.getOverview();
   }

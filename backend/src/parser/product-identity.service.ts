@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug } from '../common/utils/generate-slug';
 import { shouldBeFilterable } from './spec-filterable';
+import { canonicalSpec, normalizeSpecValue } from './spec-canonical';
 
 /** How many `-2`, `-3`… suffixes to try before giving up on a slug. */
 const MAX_SLUG_ATTEMPTS = 50;
@@ -128,10 +129,66 @@ export class ProductIdentityService {
   }
 
   /**
+   * Writes a parsed product's characteristics.
+   *
+   * Every parser had its own copy of this loop. They are now one method, which
+   * is also what guarantees the canonical identity and the normalized value are
+   * written on *every* source — a parser that forgot either would quietly drop
+   * its products out of the facets.
+   */
+  async saveSpecifications(
+    specs: Array<{ name: string; value: string }>,
+    productId: string,
+    categoryId: string,
+  ) {
+    for (const spec of specs) {
+      const key = generateSlug(spec.name);
+      if (!key) continue;
+
+      const specification = await this.upsertSpecification(
+        categoryId,
+        spec.name,
+        key,
+        spec.value,
+      );
+      if (!specification) continue;
+
+      const { display, facet } = normalizeSpecValue(
+        spec.value,
+        specification.canonicalUnit ?? undefined,
+      );
+
+      const identity = {
+        productId,
+        specificationId: specification.id,
+      };
+
+      // A value that carries no information is not stored at all. Keeping it
+      // would put a supplier's "-" or its impossible `Вес = "0 кг"` (6188
+      // products had one) on the product page while the filter ignored it.
+      // deleteMany, not delete: the row usually does not exist.
+      if (facet === null) {
+        await this.prisma.productSpecification.deleteMany({ where: identity });
+        continue;
+      }
+
+      await this.prisma.productSpecification.upsert({
+        where: { productId_specificationId: identity },
+        update: { value: display, valueNorm: facet },
+        create: { ...identity, value: display, valueNorm: facet },
+      });
+    }
+  }
+
+  /**
    * Same race, same fix, for `Specification(categoryId, key)`.
    *
    * `filterable` is decided once, when the spec first appears in a category —
    * see `shouldBeFilterable`. Existing specs keep whatever an admin set.
+   *
+   * The canonical columns are written on create *and* backfilled on update: the
+   * normalizer cron needs them everywhere, and a row created before this
+   * existed would otherwise never get them.
    */
   async upsertSpecification(
     categoryId: string,
@@ -139,15 +196,27 @@ export class ProductIdentityService {
     key: string,
     value?: string,
   ) {
+    const canonical = canonicalSpec(name);
+    const canonicalFields = canonical
+      ? {
+          canonicalKey: canonical.key,
+          canonicalName: canonical.name,
+          canonicalUnit: canonical.unit ?? null,
+        }
+      : {};
+
     try {
       return await this.prisma.specification.upsert({
         where: { categoryId_key: { categoryId, key } },
-        update: {},
+        // Only the canonical columns — `filterable` and `name` stay as an
+        // admin left them.
+        update: canonicalFields,
         create: {
           name,
           key,
           categoryId,
           filterable: shouldBeFilterable(name, value),
+          ...canonicalFields,
         },
       });
     } catch (error) {

@@ -41,6 +41,10 @@ function deps() {
     findByOffer: jest.fn(() => Promise.resolve('product')),
     save: jest.fn(() => Promise.resolve({ id: 'product' })),
     upsertSpecification: jest.fn(() => Promise.resolve({ id: 'spec' })),
+    // Characteristics are written by the identity service for every source, so
+    // the canonical key and the normalized value cannot be forgotten by one
+    // parser. See ProductIdentityService.saveSpecifications.
+    saveSpecifications: jest.fn(() => Promise.resolve()),
   };
   const logs = { addError: jest.fn(() => Promise.resolve()) };
   return { prisma, offers, categoryTree, settings, identity, logs };

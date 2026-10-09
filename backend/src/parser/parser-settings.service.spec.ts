@@ -198,4 +198,50 @@ describe('ParserSettingsService — runtime knobs', () => {
     await expect(service.getBatchLimit('tools-by')).resolves.toBe(600);
     await expect(service.getMaxPages('tools-by')).resolves.toBe(4000);
   });
+
+  describe('category batch limit', () => {
+    it('falls back to the code default', async () => {
+      delete process.env.TH_TOOLS_CATEGORY_BATCH_LIMIT;
+      const { service } = createService();
+
+      await expect(service.getCategoryBatchLimit('th-tools')).resolves.toBe(20);
+    });
+
+    it('prefers the env var over the code default', async () => {
+      process.env.TH_TOOLS_CATEGORY_BATCH_LIMIT = '40';
+      const { service } = createService();
+
+      await expect(service.getCategoryBatchLimit('th-tools')).resolves.toBe(40);
+    });
+
+    it('prefers a stored row over the env var', async () => {
+      process.env.TH_TOOLS_CATEGORY_BATCH_LIMIT = '40';
+      const { service } = createService([
+        { key: 'cron.th-tools.categoryBatchLimit', value: '7' },
+      ]);
+
+      await expect(service.getCategoryBatchLimit('th-tools')).resolves.toBe(7);
+    });
+
+    it('clamps what an admin can store', async () => {
+      const { service, store } = createService();
+
+      await service.setCategoryBatchLimit('th-tools', 10_000);
+      expect(store.get('cron.th-tools.categoryBatchLimit')).toBe('200');
+
+      await service.setCategoryBatchLimit('th-tools', 0);
+      expect(store.get('cron.th-tools.categoryBatchLimit')).toBe('1');
+    });
+
+    it('is reported only for a source that crawls categories', async () => {
+      const { service } = createService();
+      const overview = await service.getOverview();
+
+      const thTools = overview.sources.find((s) => s.code === 'th-tools');
+      const dukon = overview.sources.find((s) => s.code === 'dukon');
+
+      expect(thTools).toHaveProperty('categoryBatchLimit');
+      expect(dukon).not.toHaveProperty('categoryBatchLimit');
+    });
+  });
 });

@@ -53,6 +53,14 @@ export class ParserSourceSettingsDto {
   @Max(100000)
   maxPages?: number;
 
+  /** Categories crawled per run; only meaningful for a source with a category queue. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  categoryBatchLimit?: number;
+
   // Regex source, validated for compilability in the service — an empty string
   // is a legitimate value meaning "no filter".
   @IsOptional()

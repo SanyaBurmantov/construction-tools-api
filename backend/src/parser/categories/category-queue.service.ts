@@ -294,9 +294,9 @@ export class CategoryQueueService {
   private async enqueueProductUrls(urls: string[]) {
     if (!urls.length) return 0;
 
-    const before = await this.prisma.sitemapsThTools.count();
-    await this.sitemaps.saveSitemaps(urls);
-    return (await this.prisma.sitemapsThTools.count()) - before;
+    // `createMany({ skipDuplicates: true })` already reports how many rows it
+    // inserted, so this no longer counts a 40k-row table twice per category.
+    return this.sitemaps.saveSitemaps(urls);
   }
 
   /* ----------------------------------------------------------- utils ---- */

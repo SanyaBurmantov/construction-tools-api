@@ -20,6 +20,7 @@ import { OffersModule } from './offers/offers.module';
 import { BannersModule } from './banners/banners.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { PromoModule } from './promo/promo.module';
+import { CatalogNormalizerModule } from './catalog-normalizer/catalog-normalizer.module';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
 
 @Module({
@@ -50,6 +51,7 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     ReviewsModule,
     PromoModule,
     AdminModule,
+    CatalogNormalizerModule,
   ],
   controllers: [AppController],
   providers: [

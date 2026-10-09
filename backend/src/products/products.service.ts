@@ -8,6 +8,10 @@ import { searchVariants } from '../common/utils/transliterate';
 import { shouldBeFilterable } from '../parser/spec-filterable';
 
 const SEARCH_CANDIDATE_LIMIT = 1000;
+/** How many characteristics a category page offers as filters. */
+const SPEC_FACET_LIMIT = 40;
+/** How many options one characteristic offers. */
+const SPEC_FACET_VALUE_LIMIT = 30;
 /** word_similarity threshold: below this trigram matches are noise */
 const SIMILARITY_THRESHOLD = 0.45;
 /** trigram matching needs a few characters to mean anything */
@@ -105,79 +109,181 @@ export class ProductService {
   }
 
   /**
-   * Value facets for the specifications marked `filterable` in the categories
-   * currently in scope.
+   * Value facets for the characteristics of the categories currently in scope.
    *
-   * Each specification's counts are computed with its *own* selection removed,
+   * Grouped by **canonical key**, not by `Specification.id`. `Specification` is
+   * keyed by `(categoryId, key)`, so "Вес" is one row per category — 773 of
+   * them in production. Returning one facet per row put "Вес" in the sidebar
+   * ten times on any parent category, each copy holding a slice of the values.
+   * Grouping by `canonicalKey` (`parser/spec-canonical.ts`) folds those back
+   * into one filter, and folds the supplier spellings with them: all four of
+   * `Мощность ( Вт )`, `Мощность (Вт)`, `Мощность, Вт` and `Мощность, Вт.`
+   * share a key.
+   *
+   * Each characteristic's counts are computed with its *own* selection removed,
    * so ticking "750 Вт" doesn't collapse the power filter to a single option —
-   * the same rule the brand and price facets already follow. Specifications the
-   * user hasn't touched share one query; each selected one costs an extra query,
-   * and there are rarely more than a few of those.
+   * the same rule the brand and price facets already follow. Characteristics
+   * the user hasn't touched share one query; each selected one costs an extra
+   * query, and there are rarely more than a few of those.
    */
   private async buildSpecFacets(
     categoryIds: string[] | undefined,
     selections: SpecSelection[],
     buildWhere: (
       omit?: 'category' | 'brand' | 'source' | 'price' | 'specs',
-      omitSpecId?: string,
+      omitSpecKey?: string,
     ) => Prisma.ProductWhereInput,
   ) {
-    const candidates = await this.prisma.specification.findMany({
-      where: {
-        filterable: true,
-        ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
-      },
-      select: { id: true, name: true, unit: true, group: true },
-      orderBy: { name: 'asc' },
-      take: 40,
+    // Without a category there is nothing sensible to offer: power and blade
+    // diameter are not comparable across hammers and work gloves, and the
+    // aggregation would run over the whole catalogue to say so. The previous
+    // code took the alphabetically first 40 characteristics of all 15k, which
+    // is why the root catalogue page showed an arbitrary set of filters.
+    if (!categoryIds?.length) return [];
+
+    const inScope: Prisma.SpecificationWhereInput = {
+      filterable: true,
+      canonicalKey: { not: null },
+      categoryId: { in: categoryIds },
+    };
+
+    // Candidates first, so the value aggregation is bounded. Ranked by how
+    // many of the categories in scope use the characteristic — a far better
+    // proxy for usefulness than the name's position in the alphabet.
+    const candidates = await this.prisma.specification.groupBy({
+      by: ['canonicalKey'],
+      where: inScope,
+      _count: { _all: true },
+      orderBy: { _count: { canonicalKey: 'desc' } },
+      take: SPEC_FACET_LIMIT,
     });
-    // Old imports may still have enabled identity fields such as Артикул.
-    const filterable = candidates.filter((spec) =>
-      shouldBeFilterable(spec.name),
-    );
-    if (!filterable.length) return [];
 
-    const ids = filterable.map((spec) => spec.id);
-    const selectedIds = new Set(selections.map((s) => s.specificationId));
+    const keys = candidates
+      .map((row) => row.canonicalKey)
+      .filter((key): key is string => Boolean(key));
+    if (!keys.length) return [];
 
-    const groupFor = (omitSpecId?: string, only?: string[]) =>
+    // Labels: rows sharing a key can disagree on spelling, so the label is the
+    // most common `canonicalName` among them. The normalizer converges these,
+    // but a freshly parsed row may still be the odd one out.
+    const labelRows = await this.prisma.specification.findMany({
+      where: { ...inScope, canonicalKey: { in: keys } },
+      select: { canonicalKey: true, canonicalName: true, canonicalUnit: true },
+    });
+
+    const labels = this.pickSpecLabels(labelRows);
+    const selectedKeys = new Set(selections.map((s) => s.specKey));
+
+    // The relation filter is what makes grouping by canonical key possible
+    // without listing thousands of specification ids in an IN clause.
+    const groupFor = (omitSpecKey?: string, only?: string[]) =>
       this.prisma.productSpecification.groupBy({
-        by: ['specificationId', 'value'],
+        by: ['specificationId', 'valueNorm'],
         where: {
-          specificationId: { in: only ?? ids },
-          product: buildWhere(undefined, omitSpecId),
+          valueNorm: { not: null },
+          specification: { ...inScope, canonicalKey: { in: only ?? keys } },
+          product: buildWhere(undefined, omitSpecKey),
         },
         _count: { _all: true },
-        orderBy: [{ specificationId: 'asc' }, { value: 'asc' }],
       });
 
-    const unselected = ids.filter((id) => !selectedIds.has(id));
-    const rows = (
-      await Promise.all([
-        ...(unselected.length ? [groupFor(undefined, unselected)] : []),
-        ...[...selectedIds].map((id) => groupFor(id, [id])),
-      ])
-    ).flat();
+    const unselected = keys.filter((key) => !selectedKeys.has(key));
+    const grouped = await Promise.all([
+      ...(unselected.length ? [groupFor(undefined, unselected)] : []),
+      ...[...selectedKeys]
+        .filter((key) => keys.includes(key))
+        .map((key) => groupFor(key, [key])),
+    ]);
 
-    const byId = new Map<string, Array<{ value: string; count: number }>>();
-    for (const row of rows) {
-      const bucket = byId.get(row.specificationId) ?? [];
-      bucket.push({ value: row.value, count: row._count._all });
-      byId.set(row.specificationId, bucket);
+    // groupBy can only group by scalars, so the rows come back per
+    // specification id and are folded into their canonical key here.
+    const specKeyById = new Map(
+      (
+        await this.prisma.specification.findMany({
+          where: { ...inScope, canonicalKey: { in: keys } },
+          select: { id: true, canonicalKey: true },
+        })
+      ).map((row) => [row.id, row.canonicalKey as string]),
+    );
+
+    const counts = new Map<string, Map<string, number>>();
+    for (const row of grouped.flat()) {
+      const key = specKeyById.get(row.specificationId);
+      if (!key || row.valueNorm === null) continue;
+
+      const bucket = counts.get(key) ?? new Map<string, number>();
+      bucket.set(
+        row.valueNorm,
+        (bucket.get(row.valueNorm) ?? 0) + row._count._all,
+      );
+      counts.set(key, bucket);
     }
 
-    return filterable
-      .map((spec) => ({
-        ...spec,
-        // Most-common values first: the long tail of one-off values from
-        // supplier feeds shouldn't push the useful options out of sight.
-        values: (byId.get(spec.id) ?? [])
-          .sort(
-            (a, b) => b.count - a.count || a.value.localeCompare(b.value, 'ru'),
-          )
-          .slice(0, 30),
-      }))
-      .filter((spec) => spec.values.length > 1);
+    return (
+      keys
+        .map((key) => {
+          const label = labels.get(key);
+          return {
+            // The frontend treats this as an opaque filter id and puts it in the
+            // `specs` query parameter, which is exactly what it now is.
+            id: key,
+            name: label?.name ?? key,
+            unit: label?.unit ?? null,
+            group: null,
+            values: [...(counts.get(key) ?? new Map<string, number>())]
+              .map(([value, count]) => ({ value, count }))
+              // Most-common values first: the long tail of one-off values from
+              // supplier feeds shouldn't push the useful options out of sight.
+              .sort(
+                (a, b) =>
+                  b.count - a.count || compareFacetValues(a.value, b.value),
+              )
+              .slice(0, SPEC_FACET_VALUE_LIMIT),
+          };
+        })
+        // Old imports may still have enabled identity fields such as Артикул.
+        .filter((spec) => shouldBeFilterable(spec.name))
+        // A filter with one option filters nothing.
+        .filter((spec) => spec.values.length > 1)
+        .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    );
+  }
+
+  /**
+   * One label per canonical key: the spelling most of the rows agree on, with
+   * the name as the tie-break so the choice is stable between requests.
+   */
+  private pickSpecLabels(
+    rows: Array<{
+      canonicalKey: string | null;
+      canonicalName: string | null;
+      canonicalUnit: string | null;
+    }>,
+  ) {
+    const tally = new Map<string, Map<string, number>>();
+    const units = new Map<string, string | null>();
+
+    for (const row of rows) {
+      if (!row.canonicalKey) continue;
+      const names = tally.get(row.canonicalKey) ?? new Map<string, number>();
+      const name = row.canonicalName?.trim();
+      if (name) names.set(name, (names.get(name) ?? 0) + 1);
+      tally.set(row.canonicalKey, names);
+      if (!units.has(row.canonicalKey)) {
+        units.set(row.canonicalKey, row.canonicalUnit);
+      }
+    }
+
+    const labels = new Map<string, { name: string; unit: string | null }>();
+    for (const [key, names] of tally) {
+      const best = [...names].sort(
+        (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru'),
+      )[0];
+      if (!best) continue;
+      labels.set(key, { name: best[0], unit: units.get(key) ?? null });
+    }
+
+    return labels;
   }
 
   /** Slim list of published products for sitemap generation. */
@@ -232,7 +338,7 @@ export class ProductService {
     // `omitSpecId` does the same for one specification's own values.
     const buildWhere = (
       omit?: 'category' | 'brand' | 'source' | 'price' | 'specs',
-      omitSpecId?: string,
+      omitSpecKey?: string,
     ): Prisma.ProductWhereInput => {
       const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
       if (searchIds) {
@@ -266,18 +372,23 @@ export class ProductService {
           where.priceValue.lte = filter.priceMax;
       }
 
-      // One AND clause per selected specification: values inside a
-      // specification are alternatives, different specifications must all hold.
+      // One AND clause per selected characteristic: values inside one are
+      // alternatives, different characteristics must all hold.
+      //
+      // Matching goes through the canonical key and the normalized value, so a
+      // selection made on a parent category keeps working across the whole
+      // subtree — each subcategory has its own `Specification` row, and they
+      // all share the canonical key.
       if (omit !== 'specs') {
         const applicable = specSelections.filter(
-          (selection) => selection.specificationId !== omitSpecId,
+          (selection) => selection.specKey !== omitSpecKey,
         );
         if (applicable.length) {
           where.AND = applicable.map((selection) => ({
             productSpecs: {
               some: {
-                specificationId: selection.specificationId,
-                value: { in: selection.values },
+                specification: { canonicalKey: selection.specKey },
+                valueNorm: { in: selection.values },
               },
             },
           }));
@@ -581,4 +692,16 @@ export class ProductService {
     }
     return ids;
   }
+}
+
+/**
+ * Orders two facet options. Numeric options sort as numbers, so a power filter
+ * reads 500 · 750 · 1000 rather than 1000 · 500 · 750; everything else falls
+ * back to Russian collation.
+ */
+function compareFacetValues(a: string, b: string): number {
+  const left = Number(a);
+  const right = Number(b);
+  if (Number.isFinite(left) && Number.isFinite(right)) return left - right;
+  return a.localeCompare(b, 'ru');
 }

@@ -46,6 +46,18 @@ class NonProductPageError extends Error {
   }
 }
 
+/** Longer than this and the "brand" is an address or a description. */
+const MAX_BRAND_LENGTH = 40;
+
+/**
+ * Legal-entity and address markers. dukon's "Производитель" field frequently
+ * holds the manufacturer's company record rather than the brand.
+ */
+// `\b` is ASCII-only in JavaScript, so it never matches before а Cyrillic
+// letter — the address markers need an explicit start-or-separator instead.
+const LEGAL_ENTITY =
+  /(^|[\s"«(,])(ООО|ОАО|ЗАО|ОДО|ЧУП|УП|ИП|ПАО|АО|GmbH|LLC|Ltd|Inc)([\s".,»)]|$)|(^|[\s,])(г|ул|пер|пр-т|просп|д|оф|корп)\./i;
+
 @Injectable()
 export class DukonParserService {
   private readonly logger = new Logger(DukonParserService.name);
@@ -361,11 +373,8 @@ export class DukonParserService {
       this.findSpecValue(specs, 'ean') ||
       this.findSpecValue(specs, 'gtin') ||
       jsonLd?.barcode;
-    const brandName =
-      this.findSpecValue(specs, 'производитель') ||
-      this.findSpecValue(specs, 'бренд') ||
-      jsonLd?.brand ||
-      this.parseBrand($);
+    const breadcrumbs = this.parseBreadcrumbNames($);
+    const brandName = this.resolveBrand($, specs, jsonLd?.brand, breadcrumbs);
     const priceValue =
       this.parsePrice($('.price.gen').first().text()) || jsonLd?.price;
     const priceCurrency = this.normalizeCurrency(jsonLd?.currency) || 'BYN';
@@ -381,7 +390,6 @@ export class DukonParserService {
       descriptionFull ||
       name;
     const canonicalUrl = this.parseCanonicalUrl($, url);
-    const breadcrumbs = this.parseBreadcrumbNames($);
     const source = await this.upsertSource();
     await this.ensureAllowedCategory(source.id, breadcrumbs);
     const { sourceCategoryId, categoryId } = await this.parseAndSaveCategories(
@@ -458,7 +466,7 @@ export class DukonParserService {
       },
     });
 
-    await this.saveSpecifications(specs, product.id, categoryId);
+    await this.identity.saveSpecifications(specs, product.id, categoryId);
     await this.saveSourceProduct(url, product.id, source.id, sourceCategoryId, {
       name,
       sku,
@@ -512,11 +520,8 @@ export class DukonParserService {
       jsonLd?.sku ||
       jsonLd?.mpn ||
       this.parseModelCodeFromName(name);
-    const brandName =
-      this.findSpecValue(specs, 'производитель') ||
-      this.findSpecValue(specs, 'бренд') ||
-      jsonLd?.brand ||
-      this.parseBrand($);
+    const breadcrumbs = this.parseBreadcrumbNames($);
+    const brandName = this.resolveBrand($, specs, jsonLd?.brand, breadcrumbs);
     const priceValue =
       this.parsePrice($('.price.gen').first().text()) || jsonLd?.price;
     const descriptionFull =
@@ -549,7 +554,7 @@ export class DukonParserService {
         (image) => image.url,
       ),
       specifications: specs,
-      breadcrumbs: this.parseBreadcrumbNames($),
+      breadcrumbs,
       jsonLd,
     };
   }
@@ -1014,6 +1019,59 @@ export class DukonParserService {
     return hasDetails || Boolean(this.parseJsonLdProduct($).name);
   }
 
+  /**
+   * Brand from the spec table, the JSON-LD, or the "Производитель:" line —
+   * whichever first yields something that is actually a brand.
+   *
+   * dukon puts whatever the supplier typed under "Производитель", which is
+   * often a legal entity ("ООО «Нордберг Руссия», г. Москва, ул. …") or the
+   * product's own category. Either one is worse than no brand at all: an
+   * article number only identifies a product *together with its brand*, so a
+   * wrong brand silently merges two unrelated products under brand+sku, and
+   * unpicking a bad merge is expensive. It also mints a junk brand page.
+   */
+  private resolveBrand(
+    $: cheerio.CheerioAPI,
+    specs: { name: string; value: string }[],
+    jsonLdBrand: string | undefined,
+    breadcrumbs: string[],
+  ) {
+    const candidates = [
+      this.findSpecValue(specs, 'производитель'),
+      this.findSpecValue(specs, 'бренд'),
+      jsonLdBrand,
+      this.parseBrand($),
+    ];
+
+    for (const candidate of candidates) {
+      const brand = this.sanitizeBrand(candidate, breadcrumbs);
+      if (brand) return brand;
+    }
+    return undefined;
+  }
+
+  /** Returns the brand, or undefined when the value is not one. */
+  private sanitizeBrand(value: string | undefined, breadcrumbs: string[]) {
+    const brand = this.clean(value ?? '');
+    if (!brand) return undefined;
+
+    // A brand is a name, not a sentence. Anything this long is an address, a
+    // description or a whole company record.
+    if (brand.length > MAX_BRAND_LENGTH) return undefined;
+    if (LEGAL_ENTITY.test(brand)) return undefined;
+
+    // The product's own category echoed back as a brand. Exact match only, so
+    // a genuine name that merely starts with the word survives.
+    const normalized = brand.toLowerCase();
+    if (
+      breadcrumbs.some((crumb) => crumb.trim().toLowerCase() === normalized)
+    ) {
+      return undefined;
+    }
+
+    return brand;
+  }
+
   private parseBrand($: cheerio.CheerioAPI) {
     const text = this.clean(
       $('.parameters-block__text, .prod-proplist__item')
@@ -1033,39 +1091,6 @@ export class DukonParserService {
   ) {
     return specs.find((spec) => spec.name.toLowerCase().includes(needle))
       ?.value;
-  }
-
-  private async saveSpecifications(
-    specs: { name: string; value: string }[],
-    productId: string,
-    categoryId: string,
-  ) {
-    for (const spec of specs) {
-      const key = generateSlug(spec.name);
-      if (!key) continue;
-      const specification = await this.identity.upsertSpecification(
-        categoryId,
-        spec.name,
-        key,
-        spec.value,
-      );
-      if (!specification) continue;
-
-      await this.prisma.productSpecification.upsert({
-        where: {
-          productId_specificationId: {
-            productId,
-            specificationId: specification.id,
-          },
-        },
-        update: { value: spec.value },
-        create: {
-          productId,
-          specificationId: specification.id,
-          value: spec.value,
-        },
-      });
-    }
   }
 
   private parseImages(

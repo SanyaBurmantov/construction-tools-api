@@ -59,9 +59,14 @@ export class ParserJobsService {
             label: 'Загрузить sitemap',
             description:
               'Читает sitemap поставщика и добавляет новые товары в очередь.',
+            // Both halves are reported, keyed by what they are. The job used to
+            // return only the category refresh, so the admin showed
+            // `{"seen": 716, "added": 0}` — 716 being the category queue — and
+            // the sitemap looked dead when it was simply never counted.
             run: async () => {
-              await this.sitemaps.parseAllSitemapsThTools();
-              return this.categoryQueue.refresh(code);
+              const sitemap = await this.sitemaps.parseAllSitemapsThTools();
+              const categories = await this.categoryQueue.refresh(code);
+              return { sitemap, categories };
             },
           },
           {
@@ -69,7 +74,11 @@ export class ParserJobsService {
             label: 'Обойти категории',
             description:
               'Идёт по страницам категорий и находит товары, которых нет в sitemap.',
-            run: () => this.categoryQueue.processBatch(code, 5),
+            run: async () =>
+              this.categoryQueue.processBatch(
+                code,
+                await this.settings.getCategoryBatchLimit(code),
+              ),
           },
           {
             name: 'process',

@@ -1,7 +1,7 @@
 // prisma/schema.prisma
 generator client {
-  provider = "prisma-client-js"
-  binaryTargets = ["native","debian-openssl-1.1.x","debian-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
   previewFeatures = ["postgresqlExtensions"]
 }
 
@@ -34,7 +34,7 @@ model Category {
 
   products               Product[]
   specifications         Specification[]
-  mappedSourceCategories SourceCategory[] @relation("MappedSourceCategory")
+  mappedSourceCategories SourceCategory[]   @relation("MappedSourceCategory")
   redirects              CategoryRedirect[]
   pricingRules           PricingRule[]
 
@@ -42,9 +42,9 @@ model Category {
 }
 
 model Brand {
-  id             String    @id @default(uuid())
+  id             String        @id @default(uuid())
   name           String
-  slug           String    @unique
+  slug           String        @unique
   description    String?
   logo           String?
   country        String?
@@ -55,17 +55,32 @@ model Brand {
 }
 
 model Specification {
-  id           String                 @id @default(uuid())
-  name         String
-  key          String
-  categoryId   String
-  category     Category               @relation(fields: [categoryId], references: [id])
-  unit         String?
-  group        String?
-  filterable   Boolean                @default(false)
+  id         String   @id @default(uuid())
+  name       String
+  key        String
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  unit       String?
+  group      String?
+  filterable Boolean  @default(false)
+
+  /// Source-independent identity of the characteristic, from
+  /// `parser/spec-canonical.ts`. Facets group by this, NOT by `id`: `id` is
+  /// per-category, so grouping by it put "Вес" in the sidebar once per
+  /// subcategory and made the spec filter miss the rest of the subtree.
+  /// The unit is part of the key, so `Длина, мм` and `Длина, м` stay apart.
+  canonicalKey  String?
+  /// Label shown for the whole canonical group. Several rows share a key and
+  /// may disagree on spelling; the normalizer picks the most common one.
+  canonicalName String?
+  /// Unit lifted out of the name, or inferred from the values.
+  canonicalUnit String?
+
   productSpecs ProductSpecification[]
 
   @@unique([categoryId, key])
+  @@index([canonicalKey])
+  @@index([canonicalKey, filterable])
 }
 
 enum ProductStatus {
@@ -76,55 +91,55 @@ enum ProductStatus {
 }
 
 model Product {
-  id               String                 @id @default(uuid())
-  slug             String                 @unique
-  name             String
-  brand            Brand?                 @relation(fields: [brandId], references: [id])
-  brandId          String?
-  category         Category               @relation(fields: [categoryId], references: [id])
-  categoryId       String
-  sku              String?
-  barcode          String?
-  model            String?
-  images           ProductImage[]
-  priceValue       Float?
-  priceCurrency    String?
-  oldPrice         Float?
+  id                String                 @id @default(uuid())
+  slug              String                 @unique
+  name              String
+  brand             Brand?                 @relation(fields: [brandId], references: [id])
+  brandId           String?
+  category          Category               @relation(fields: [categoryId], references: [id])
+  categoryId        String
+  sku               String?
+  barcode           String?
+  model             String?
+  images            ProductImage[]
+  priceValue        Float?
+  priceCurrency     String?
+  oldPrice          Float?
   /// Supplier cost the storefront price is derived from.
-  costPrice        Float?
+  costPrice         Float?
   /// AUTO — recomputed from PricingRule on every parse. MANUAL — an admin set
   /// the price by hand and parsing must not overwrite it.
-  pricingMode      PricingMode            @default(AUTO)
-  appliedRule      PricingRule?           @relation(fields: [appliedRuleId], references: [id])
-  appliedRuleId    String?
+  pricingMode       PricingMode            @default(AUTO)
+  appliedRule       PricingRule?           @relation(fields: [appliedRuleId], references: [id])
+  appliedRuleId     String?
   /// Set when a cost jump looked like a supplier error; the old price is kept
   /// until an admin confirms.
-  priceReviewNeeded Boolean               @default(false)
-  priceHistory     PriceHistory[]
-  stockStatus      String?
-  stockQuantity    Int?
-  status           ProductStatus          @default(PUBLISHED)
-  descriptionShort String?
-  descriptionFull  String?
-  seoTitle         String?
-  seoDescription   String?
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  productSpecs     ProductSpecification[]
-  sourceProducts   SourceProduct[]
-  orderItems       OrderItem[]
-  reviews          Review[]
-  redirects        ProductRedirect[]
+  priceReviewNeeded Boolean                @default(false)
+  priceHistory      PriceHistory[]
+  stockStatus       String?
+  stockQuantity     Int?
+  status            ProductStatus          @default(PUBLISHED)
+  descriptionShort  String?
+  descriptionFull   String?
+  seoTitle          String?
+  seoDescription    String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  productSpecs      ProductSpecification[]
+  sourceProducts    SourceProduct[]
+  orderItems        OrderItem[]
+  reviews           Review[]
+  redirects         ProductRedirect[]
   /// Denormalized aggregate over APPROVED reviews, recomputed on moderation.
-  ratingAvg        Float?
-  ratingCount      Int                    @default(0)
+  ratingAvg         Float?
+  ratingCount       Int                    @default(0)
   /// Normalized dedup keys, rebuilt whenever identity fields change. Matching
   /// looks these up directly instead of re-normalizing the whole catalogue.
-  matchBarcode     String?
+  matchBarcode      String?
   /// brand + sku, normalized.
-  matchSku         String?
+  matchSku          String?
   /// brand + model, normalized.
-  matchModel       String?
+  matchModel        String?
 
   @@index([status, categoryId])
   @@index([status, brandId])
@@ -146,10 +161,17 @@ model ProductSpecification {
   productId       String
   specification   Specification @relation(fields: [specificationId], references: [id])
   specificationId String
+  /// As the supplier wrote it, for the product page.
   value           String
+  /// What the facets group and filter by: case folded, unit stripped when it
+  /// only repeats the specification's own unit, numbers formatted one way.
+  /// NULL means "not usable as a filter option" — no data, or a physically
+  /// impossible zero such as the `Вес = "0 кг"` that 6188 products carried.
+  valueNorm       String?
 
   @@unique([productId, specificationId])
   @@index([specificationId])
+  @@index([specificationId, valueNorm])
 }
 
 model ProductImage {
@@ -195,24 +217,24 @@ model SourceCategory {
 }
 
 model SourceProduct {
-  id             String   @id @default(uuid())
-  source         Source   @relation(fields: [sourceId], references: [id])
-  sourceId       String
-  externalId     String
-  url            String
-  name           String
-  sku            String?
-  price          Float?
-  currency       String?
-  stock          Boolean  @default(true)
-  images         String[]
-  description    String?
-  specifications Json
-  product        Product? @relation(fields: [productId], references: [id])
-  productId      String?
-  sourceCategory SourceCategory? @relation(fields: [sourceCategoryId], references: [id])
+  id               String          @id @default(uuid())
+  source           Source          @relation(fields: [sourceId], references: [id])
+  sourceId         String
+  externalId       String
+  url              String
+  name             String
+  sku              String?
+  price            Float?
+  currency         String?
+  stock            Boolean         @default(true)
+  images           String[]
+  description      String?
+  specifications   Json
+  product          Product?        @relation(fields: [productId], references: [id])
+  productId        String?
+  sourceCategory   SourceCategory? @relation(fields: [sourceCategoryId], references: [id])
   sourceCategoryId String?
-  lastSync       DateTime @default(now())
+  lastSync         DateTime        @default(now())
 
   @@unique([sourceId, url])
 }
@@ -283,48 +305,48 @@ enum PaymentMethod {
 }
 
 model Order {
-  id             String         @id @default(uuid())
-  number         Int            @unique @default(autoincrement())
-  status         OrderStatus    @default(NEW)
-  customerName   String
-  customerPhone  String
-  customerEmail  String?
-  comment        String?
-  deliveryMethod DeliveryMethod @default(PICKUP)
+  id              String         @id @default(uuid())
+  number          Int            @unique @default(autoincrement())
+  status          OrderStatus    @default(NEW)
+  customerName    String
+  customerPhone   String
+  customerEmail   String?
+  comment         String?
+  deliveryMethod  DeliveryMethod @default(PICKUP)
   deliveryAddress String?
-  paymentMethod  PaymentMethod  @default(CASH)
-  currency       String         @default("BYN")
-  itemsTotal     Float          @default(0)
-  deliveryCost   Float          @default(0)
-  discountTotal  Float          @default(0)
-  total          Float          @default(0)
-  promoCode      PromoCode?     @relation(fields: [promoCodeId], references: [id])
-  promoCodeId    String?
+  paymentMethod   PaymentMethod  @default(CASH)
+  currency        String         @default("BYN")
+  itemsTotal      Float          @default(0)
+  deliveryCost    Float          @default(0)
+  discountTotal   Float          @default(0)
+  total           Float          @default(0)
+  promoCode       PromoCode?     @relation(fields: [promoCodeId], references: [id])
+  promoCodeId     String?
   /// Snapshot of the code as typed, kept readable if the PromoCode is deleted.
-  promoCodeLabel String?
-  items          OrderItem[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  promoCodeLabel  String?
+  items           OrderItem[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   @@index([status])
   @@index([createdAt])
 }
 
 model OrderItem {
-  id          String   @id @default(uuid())
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  orderId     String
-  product     Product? @relation(fields: [productId], references: [id])
-  productId   String?
-  productName String
-  productSlug String
-  productSku  String?
+  id           String   @id @default(uuid())
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId      String
+  product      Product? @relation(fields: [productId], references: [id])
+  productId    String?
+  productName  String
+  productSlug  String
+  productSku   String?
   productImage String?
-  unitPrice   Float
+  unitPrice    Float
   /// Pre-discount price at order time, when the product was on sale.
   unitOldPrice Float?
-  quantity    Int
-  lineTotal   Float
+  quantity     Int
+  lineTotal    Float
 
   @@index([orderId])
 }
@@ -365,20 +387,20 @@ model ParserRun {
 }
 
 model ParserRuntimeStatus {
-  id            String   @id @default(uuid())
-  key           String   @unique
+  id            String    @id @default(uuid())
+  key           String    @unique
   label         String
-  isRunning     Boolean  @default(false)
+  isRunning     Boolean   @default(false)
   startedAt     DateTime?
   finishedAt    DateTime?
   lastSuccessAt DateTime?
   lastErrorAt   DateTime?
   lastError     String?
   lastResult    Json?
-  runs          Int      @default(0)
-  successes     Int      @default(0)
-  failures      Int      @default(0)
-  updatedAt     DateTime @updatedAt
+  runs          Int       @default(0)
+  successes     Int       @default(0)
+  failures      Int       @default(0)
+  updatedAt     DateTime  @updatedAt
 }
 
 enum ReviewStatus {
@@ -602,11 +624,11 @@ model CategoryRedirect {
 
 /// Different values on duplicate specification keys are retained for review.
 model CategoryRepairConflict {
-  id                    String   @id
-  productId             String
-  fromSpecificationId   String
-  toSpecificationId     String
-  value                 String
-  keptValue             String
-  createdAt             DateTime @default(now())
+  id                  String   @id
+  productId           String
+  fromSpecificationId String
+  toSpecificationId   String
+  value               String
+  keptValue           String
+  createdAt           DateTime @default(now())
 }
