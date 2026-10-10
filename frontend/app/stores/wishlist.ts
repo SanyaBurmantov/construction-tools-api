@@ -15,8 +15,9 @@ const STORAGE_KEY = 'wishlist:v1'
 const MAX_ITEMS = 200
 
 /**
- * Guest favourites. Client-side only, persisted to localStorage — same
- * approach as the cart, since the storefront has no accounts.
+ * Favourites. localStorage is the source of truth the UI renders (and all a
+ * guest has); for a signed-in account `plugins/lists-sync.client.ts` keeps a
+ * server-side copy in step, so the list survives a new device.
  */
 export const useWishlistStore = defineStore('wishlist', {
   state: () => ({
@@ -69,6 +70,18 @@ export const useWishlistStore = defineStore('wishlist', {
     },
     clear() {
       this.items = []
+      this.persist()
+    },
+    /**
+     * Replaces every line with the account's list as the server serves it
+     * (fresh prices, unavailable products already dropped). Used once per
+     * sign-in, after the local list has been merged into it.
+     */
+    applyServerList(items: Array<Omit<WishlistItem, 'addedAt'>>) {
+      this.items = items
+        .slice(0, MAX_ITEMS)
+        .map((item) => ({ ...item, addedAt: Date.now() }))
+      this.loaded = true
       this.persist()
     },
   },

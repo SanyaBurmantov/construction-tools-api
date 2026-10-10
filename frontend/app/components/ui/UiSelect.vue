@@ -62,7 +62,13 @@ const model = defineModel<string | number | null>()
 
 select {
   width: 100%;
+  /* A <select> reports its longest option as its min-content width, so inside
+     a narrow flex row it refuses to shrink and overflows the container
+     instead. The label is truncated rather than the layout broken. */
+  min-width: 0;
   padding: 0 var(--space-8) 0 var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 0;
   appearance: none;
   background: none;

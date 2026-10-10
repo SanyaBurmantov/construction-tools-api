@@ -96,5 +96,19 @@ export const useCartStore = defineStore('cart', {
       this.items = []
       this.persist()
     },
+    /**
+     * Replaces every line with the account's cart as the server serves it
+     * (fresh prices, unavailable products already dropped). Used once per
+     * sign-in, after the local cart has been merged into it — see
+     * `plugins/cart-sync.client.ts`.
+     */
+    applyServerCart(items: CartItem[]) {
+      this.items = items.map((item) => ({
+        ...item,
+        quantity: Math.max(1, Math.min(item.quantity, MAX_QTY)),
+      }))
+      this.loaded = true
+      this.persist()
+    },
   },
 })

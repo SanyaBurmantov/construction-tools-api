@@ -28,6 +28,9 @@ interface OrderConfirmation {
 const route = useRoute()
 const config = useRuntimeConfig()
 const { formatPrice } = useFormatPrice()
+// Orders placed from an account show up in its history — point there instead
+// of leaving this page as the only record of the order.
+const { isAuthenticated } = useAuth()
 
 const orderId = computed(() => String(route.query.id || ''))
 const order = ref<OrderConfirmation | null>(null)
@@ -111,7 +114,12 @@ useHead({
           <div class="total"><dt>Итого</dt><dd>{{ formatPrice(order.total, order.currency) }}</dd></div>
         </dl>
 
-        <NuxtLink to="/catalog/" class="primary">Продолжить покупки</NuxtLink>
+        <div class="actions">
+          <NuxtLink to="/catalog/" class="primary">Продолжить покупки</NuxtLink>
+          <NuxtLink v-if="isAuthenticated" to="/account?tab=orders" class="secondary">
+            Мои заказы
+          </NuxtLink>
+        </div>
       </div>
 
       <div v-else class="card narrow">
@@ -293,5 +301,26 @@ useHead({
   font-weight: 800;
   padding: 13px 20px;
   text-decoration: none;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.secondary {
+  display: inline-flex;
+  justify-content: center;
+  padding: 13px 20px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  color: var(--text-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.secondary:hover {
+  border-color: var(--border-strong);
 }
 </style>

@@ -1,47 +1,19 @@
 import { Injectable } from '@nestjs/common';
-import { CreateSourceProductDto } from './dto/create-source-product.dto';
-import { TSourceProduct } from './types/source-product.type';
+import { Prisma } from '@prisma/client';
 import { CreateSourceDto } from './dto/create-source.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
-@Injectable()
-export class SourcesProductsService {
-  private sourceProducts: TSourceProduct[] = [];
-
-  create(dto: CreateSourceProductDto) {
-    const item: TSourceProduct = {
-      id: crypto.randomUUID(),
-
-      sourceId: dto.sourceId,
-
-      externalId: dto.externalId,
-
-      url: dto.url,
-
-      name: dto.name,
-
-      price: dto.price,
-
-      currency: dto.currency,
-
-      stock: true,
-
-      images: [],
-
-      specifications: [],
-
-      lastSync: new Date(),
-    };
-
-    this.sourceProducts.push(item);
-
-    return item;
-  }
-
-  findAll() {
-    return this.sourceProducts;
-  }
-}
+/**
+ * What the storefront may know about a supplier: enough to render the
+ * "Поставщик" facet. **Not `url`** — the supplier's own address is internal,
+ * same rule as supplier prices and offer links (admin-only via
+ * `GET /admin/offers/product/:id`).
+ */
+const PUBLIC_SELECT = {
+  id: true,
+  name: true,
+  code: true,
+} satisfies Prisma.SourceSelect;
 
 @Injectable()
 export class SourcesService {
@@ -52,6 +24,9 @@ export class SourcesService {
   }
 
   getAll() {
-    return this.prisma.source.findMany({ orderBy: { name: 'asc' } });
+    return this.prisma.source.findMany({
+      select: PUBLIC_SELECT,
+      orderBy: { name: 'asc' },
+    });
   }
 }

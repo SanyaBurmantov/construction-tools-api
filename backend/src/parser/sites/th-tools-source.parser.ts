@@ -19,6 +19,7 @@ import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
 import { ParserSettingsService } from '../parser-settings.service';
 import { parseThTools } from './th-tools.parser';
+import { PLACEHOLDER_IMAGE_MARKERS } from '../../common/utils/product-images';
 
 type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
@@ -326,11 +327,25 @@ export class ThToolsParserService {
       order,
     }));
     // Keep existing images if a (possibly flaky) re-parse returned none, so a
-    // partial fetch never wipes a product's gallery.
+    // partial fetch never wipes a product's gallery — with one exception. A
+    // product whose gallery holds only the theme's placeholder parses to zero
+    // images, so "keep what we have" preserved that placeholder forever: ~12%
+    // of the catalogue was still showing th-tool.by's grey "нет фото" PNG as
+    // its product photo, and the "без фото" report could not see them either.
+    // Those rows are dropped so the storefront falls back to our own
+    // placeholder; a real photo is still never removed by an empty parse.
     const imagesUpdate =
       imageRows.length > 0
         ? { images: { deleteMany: {}, create: imageRows } }
-        : {};
+        : {
+            images: {
+              deleteMany: {
+                OR: PLACEHOLDER_IMAGE_MARKERS.map((marker) => ({
+                  url: { contains: marker, mode: 'insensitive' as const },
+                })),
+              },
+            },
+          };
     const stockStatus = this.stockStatus(parsed.inStock);
 
     // Identity is the supplier offer, not the slug — see

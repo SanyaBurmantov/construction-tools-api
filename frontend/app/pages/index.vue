@@ -7,14 +7,6 @@ type ProductsResponse = {
   pagination: { page: number, limit: number, total: number, pages: number }
 }
 
-type CategoryTreeNode = {
-  id: string
-  name: string
-  slug: string
-  productCount: number
-  children: CategoryTreeNode[]
-}
-
 type Brand = { id: string, name: string, slug: string, logo?: string | null }
 
 type Banner = {
@@ -70,11 +62,7 @@ const { data: banners } = await useAsyncData<{ data: Banner[] }>(
   { default: () => ({ data: [] }) }
 )
 
-const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
-  'catalog-tree',
-  () => $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`).catch(() => []),
-  { default: () => [] }
-)
+const { data: tree } = await useCategoryTree()
 
 const { data: brands } = await useAsyncData<Brand[]>(
   'home-brands',
@@ -83,28 +71,38 @@ const { data: brands } = await useAsyncData<Brand[]>(
 )
 
 /**
- * Category tiles need a picture, and there is no artwork for categories — so
- * each tile borrows the first product image found in its subtree. Costs one
- * extra request and turns a wall of text boxes into a browsable grid.
+ * The grid an admin curates: categories pinned in `/admin/categories` lead,
+ * then the biggest ones fill the row.
+ */
+const HOME_CATEGORY_COUNT = 8
+const topCategories = computed(() => featuredCategories(tree.value, HOME_CATEGORY_COUNT))
+
+/**
+ * Tiles want a picture. A category only has artwork once an admin sets it, so
+ * the rest borrow the first product image found in their subtree — one extra
+ * request, and it turns a wall of text boxes into a browsable grid.
  */
 const { data: categoryImages } = await useAsyncData<Record<string, string>>(
   'home-category-images',
   async () => {
-    const roots = (tree.value || []).slice(0, 8)
     const pairs = await Promise.all(
-      roots.map(async (category) => {
-        const response = await $fetch<ProductsResponse>(`${apiBase}/products`, {
-          params: { categorySlug: category.slug, limit: 1 },
-        }).catch(() => emptyPage)
-        return [category.slug, response.data[0]?.images?.[0]?.url ?? ''] as const
-      })
+      topCategories.value
+        .filter((category) => !category.image)
+        .map(async (category) => {
+          const response = await $fetch<ProductsResponse>(`${apiBase}/products`, {
+            params: { categorySlug: category.slug, limit: 1 },
+          }).catch(() => emptyPage)
+          return [category.slug, response.data[0]?.images?.[0]?.url ?? ''] as const
+        })
     )
     return Object.fromEntries(pairs.filter(([, url]) => url))
   },
-  { watch: [tree], default: () => ({}) }
+  { watch: [topCategories], default: () => ({}) }
 )
 
-const topCategories = computed(() => (tree.value || []).slice(0, 8))
+function categoryImage(category: CategoryNode) {
+  return category.image || categoryImages.value[category.slug] || null
+}
 const topBrands = computed(() => (brands.value || []).slice(0, 14))
 const popularProducts = computed(() =>
   popular.value.data.filter((product) => product.ratingCount)
@@ -251,26 +249,15 @@ useHead({
       </header>
 
       <div class="category-grid">
-        <NuxtLink
+        <UiCategoryCard
           v-for="category in topCategories"
           :key="category.id"
+          :name="category.name"
           :to="`/catalog/${category.slug}`"
-          class="category-card"
-        >
-          <div class="category-image">
-            <img
-              v-if="categoryImages[category.slug]"
-              :src="categoryImages[category.slug]"
-              :alt="category.name"
-              loading="lazy"
-            >
-            <span v-else class="category-image-empty" aria-hidden="true" />
-          </div>
-          <div class="category-body">
-            <span class="category-name">{{ category.name }}</span>
-            <span class="category-count">{{ category.productCount }} товаров</span>
-          </div>
-        </NuxtLink>
+          :count="category.productCount"
+          :image="categoryImage(category)"
+          variant="tile"
+        />
       </div>
     </section>
 
@@ -532,62 +519,6 @@ useHead({
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--space-3);
-}
-
-.category-card {
-  display: flex;
-  overflow: hidden;
-  flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  transition:
-    border-color var(--duration-base) var(--ease-out),
-    box-shadow var(--duration-base) var(--ease-out);
-}
-
-.category-card:hover {
-  border-color: var(--brand);
-  box-shadow: var(--shadow-md);
-}
-
-.category-image {
-  aspect-ratio: 4 / 3;
-  padding: var(--space-4);
-  background: var(--surface-card);
-}
-
-.category-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  mix-blend-mode: var(--image-blend);
-}
-
-.category-image-empty {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-}
-
-.category-body {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.category-name {
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.category-count {
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
 }
 
 /* ---- Recently viewed ---- */

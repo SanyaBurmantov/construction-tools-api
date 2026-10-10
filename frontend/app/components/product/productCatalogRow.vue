@@ -29,9 +29,11 @@ const {
 const specs = computed(() => props.product.productSpecs?.slice(0, 4) ?? [])
 const link = computed(() => `/product/${props.product.slug}`)
 const imageFailed = ref(false)
-const imageElement = ref<HTMLImageElement | null>(null)
+// NuxtImg renders an <img>, but the template ref points at the component.
+const imageElement = ref<{ $el?: HTMLImageElement } | HTMLImageElement | null>(null)
 onMounted(() => {
-  const element = imageElement.value
+  const ref_ = imageElement.value
+  const element = (ref_ && '$el' in ref_ ? ref_.$el : ref_) as HTMLImageElement | undefined
   if (element?.complete && !element.naturalWidth) imageFailed.value = true
 })
 watch(image, () => { imageFailed.value = false })
@@ -40,14 +42,18 @@ watch(image, () => { imageFailed.value = false })
 <template>
   <article class="product-row">
     <NuxtLink :to="link" class="media" :aria-label="product.name">
-      <img
+      <NuxtImg
         v-if="image && !imageFailed"
-        ref="imageElement" :src="image"
+        ref="imageElement"
+        :src="image"
         :alt="product.images?.[0]?.alt || product.name"
+        sizes="140px"
+        format="webp"
+        densities="x1 x2"
         loading="lazy"
         decoding="async"
         @error="imageFailed = true"
-      >
+      />
       <span v-else class="placeholder" aria-hidden="true">
         <svg viewBox="0 0 24 24">
           <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
@@ -59,6 +65,9 @@ watch(image, () => { imageFailed.value = false })
     </NuxtLink>
 
     <div class="info">
+      <!-- Admins only; a regular visitor sees nothing and fires no request. -->
+      <AdminProductSourceNote :product-id="product.id" variant="line" />
+
       <NuxtLink :to="link" class="title">{{ product.name }}</NuxtLink>
 
       <div class="meta">
@@ -92,7 +101,7 @@ watch(image, () => { imageFailed.value = false })
       />
 
       <span v-if="hasMultipleOffers" class="offers">
-        {{ offerCount }} предложения
+        {{ pluralize(offerCount, 'offer') }}
       </span>
 
       <span class="availability" :class="{ 'is-in-stock': inStock }">
@@ -164,9 +173,11 @@ watch(image, () => { imageFailed.value = false })
 }
 
 .media img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: center;
   mix-blend-mode: var(--image-blend);
 }
 

@@ -120,27 +120,14 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
     </UiEmpty>
 
     <section v-else class="grid">
-      <NuxtLink
+      <UiCategoryCard
         v-for="category in categories"
         :key="category.id"
+        :name="category.name"
         :to="categoryLink(category)"
-        class="category-card"
-      >
-        <span class="category-text">
-          <span class="category-name">{{ category.name }}</span>
-          <span class="category-count">{{ category.count }} товаров</span>
-        </span>
-        <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M9 6l6 6-6 6"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </NuxtLink>
+        :count="category.count"
+        variant="row"
+      />
     </section>
   </div>
 </template>
@@ -216,57 +203,10 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  /* 260px is wider than the page container on the narrowest phones, and a bare
+     minmax() floor overflows rather than collapsing to one column. */
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: var(--space-3);
-}
-
-.category-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  text-decoration: none;
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
-}
-
-.category-card:hover {
-  border-color: var(--brand);
-  box-shadow: var(--shadow-sm);
-}
-
-.category-card:hover .chevron {
-  color: var(--brand);
-}
-
-.category-text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.category-name {
-  color: var(--text-strong);
-  font-weight: 700;
-}
-
-.category-count {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.chevron {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  color: var(--text-subtle);
-  transition: color var(--duration-fast) var(--ease-out);
 }
 
 @media (max-width: 640px) {

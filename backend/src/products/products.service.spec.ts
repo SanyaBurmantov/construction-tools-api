@@ -2,11 +2,18 @@ import { ProductService } from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const categories = [
-  { id: 'c1', parentId: null, slug: 'elektro' },
-  { id: 'c2', parentId: 'c1', slug: 'dreli' },
-  { id: 'c3', parentId: 'c2', slug: 'akkum-dreli' },
-  { id: 'c4', parentId: null, slug: 'krepezh' },
+  { id: 'c1', parentId: null, slug: 'elektro', isVisible: true },
+  { id: 'c2', parentId: 'c1', slug: 'dreli', isVisible: true },
+  { id: 'c3', parentId: 'c2', slug: 'akkum-dreli', isVisible: true },
+  { id: 'c4', parentId: null, slug: 'krepezh', isVisible: true },
+  // Switched off by an admin: still a category, never an option.
+  { id: 'c5', parentId: null, slug: 'avtotovary', isVisible: false },
 ];
+
+/** Old slugs a collision or a merge left behind, as `CategoryRedirect` rows. */
+const redirects: Record<string, { categoryId: string }> = {
+  'elektro-old': { categoryId: 'c1' },
+};
 
 function buildService() {
   // Typed with its argument list: the tests read back the Prisma args this was
@@ -15,8 +22,12 @@ function buildService() {
   const productFindMany = jest.fn<Promise<unknown[]>, [unknown]>(() =>
     Promise.resolve([]),
   );
-  const productCount = jest.fn(() => Promise.resolve(0));
-  const productGroupBy = jest.fn(() => Promise.resolve([]));
+  const productCount = jest.fn<Promise<number>, [{ where?: unknown }]>(() =>
+    Promise.resolve(0),
+  );
+  const productGroupBy = jest.fn<Promise<unknown[]>, [{ by?: string[] }]>(() =>
+    Promise.resolve([]),
+  );
   const productAggregate = jest.fn(() =>
     Promise.resolve({
       _min: { priceValue: 10.4 },
@@ -24,9 +35,16 @@ function buildService() {
     }),
   );
   const queryRaw = jest.fn(() => Promise.resolve([]));
+  const categoryRedirectFindUnique = jest.fn(
+    ({ where }: { where: { slug: string } }) =>
+      Promise.resolve(redirects[where.slug] ?? null),
+  );
   const prisma = {
     category: {
       findMany: jest.fn(() => Promise.resolve(categories)),
+    },
+    categoryRedirect: {
+      findUnique: categoryRedirectFindUnique,
     },
     product: {
       findMany: productFindMany,
@@ -51,6 +69,7 @@ function buildService() {
   return {
     service: new ProductService(prisma),
     prisma,
+    productCount,
     productFindMany,
     productGroupBy,
     productAggregate,
@@ -62,6 +81,16 @@ describe('ProductService.findAllFiltered', () => {
   it('expands a category filter to the whole subtree (by slug)', async () => {
     const { service, productFindMany } = buildService();
     await service.findAllFiltered({ categorySlug: 'elektro' });
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      where: { categoryId: { in: string[] } };
+    };
+    expect(args.where.categoryId.in.sort()).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('follows a CategoryRedirect alias to the whole subtree', async () => {
+    const { service, productFindMany } = buildService();
+    await service.findAllFiltered({ categorySlug: 'elektro-old' });
 
     const args = productFindMany.mock.calls[0][0] as never as {
       where: { categoryId: { in: string[] } };
@@ -97,32 +126,141 @@ describe('ProductService.findAllFiltered', () => {
     expect(brandFacetCall![0].where.brandId).toEqual({ not: null });
   });
 
+  // The storefront renders this facet as the subcategory links beside the
+  // grid, so a `0` there is a link to a guaranteed-empty page. Reporting the
+  // category at all is the bug, not the number beside it.
+  it('omits categories that match nothing in the current context', async () => {
+    const { service, productGroupBy } = buildService();
+    productGroupBy.mockImplementation(
+      (args: { by?: string[] }) =>
+        Promise.resolve(
+          args?.by?.includes('categoryId')
+            ? [{ categoryId: 'c2', _count: { _all: 4 } }]
+            : [],
+        ) as never,
+    );
+
+    const result = await service.findAllFiltered({});
+
+    // c1 carries c2's products through the subtree fold; c4 has none.
+    expect(result.facets.categories).toEqual({ c1: 4 });
+  });
+
+  it('never offers a category an admin switched off', async () => {
+    const { service, productGroupBy } = buildService();
+    productGroupBy.mockImplementation(
+      (args: { by?: string[] }) =>
+        Promise.resolve(
+          args?.by?.includes('categoryId')
+            ? [
+                { categoryId: 'c2', _count: { _all: 4 } },
+                { categoryId: 'c5', _count: { _all: 7 } },
+              ]
+            : [],
+        ) as never,
+    );
+
+    const result = await service.findAllFiltered({});
+
+    expect(result.facets.categories).toEqual({ c1: 4 });
+  });
+
   it('returns a rounded price range facet', async () => {
     const { service } = buildService();
     const result = await service.findAllFiltered({});
     expect(result.facets.priceRange).toEqual({ min: 10, max: 100 });
   });
 
-  it('resolves search to ranked ids and filters by them, preserving rank order', async () => {
+  // The ranked id list used to *be* the result set: it was fed into
+  // `where: { id: { in: … } }` with a 1000-row cap, so "ключ" answered
+  // `total: 1000` — the cap, not the truth — and the facets, price range and
+  // sort all described an arbitrary thousand rows. Membership is relational
+  // now; the ranking only orders.
+  it('expresses the search as a relational clause rather than a capped id list', async () => {
+    const { service, productCount, queryRaw } = buildService();
+    queryRaw.mockResolvedValue([{ id: 'p2' }, { id: 'p1' }] as never);
+
+    await service.findAllFiltered({ search: ' DF333D ' });
+
+    const where = productCount.mock.calls[0][0].where as {
+      id?: unknown;
+      AND?: Array<{ OR?: Array<Record<string, unknown>> }>;
+    };
+    // Nothing narrows the count to a fixed set of ids...
+    expect(where.id).toBeUndefined();
+    // ...the term is matched by column instead.
+    const clause = where.AND?.[0]?.OR ?? [];
+    expect(clause).toEqual(
+      expect.arrayContaining([
+        { name: { contains: 'DF333D', mode: 'insensitive' } },
+        { sku: { contains: 'DF333D', mode: 'insensitive' } },
+        { model: { contains: 'DF333D', mode: 'insensitive' } },
+        { brand: { name: { contains: 'DF333D', mode: 'insensitive' } } },
+      ]),
+    );
+    // Trigram hits have no Prisma equivalent, so they join as ids.
+    expect(clause).toEqual(
+      expect.arrayContaining([{ id: { in: ['p2', 'p1'] } }]),
+    );
+  });
+
+  it('orders the page by rank, not by the order the database returned', async () => {
     const { service, productFindMany, queryRaw } = buildService();
     queryRaw.mockResolvedValue([{ id: 'p2' }, { id: 'p1' }] as never);
     productFindMany
-      // findPageByRelevance: matching ids in arbitrary DB order
+      // ranked ∩ filtered, in arbitrary DB order
       .mockResolvedValueOnce([{ id: 'p1' }, { id: 'p2' }] as never)
+      // the unranked tail — empty here
+      .mockResolvedValueOnce([] as never)
       // page rows fetched by id
       .mockResolvedValueOnce([
-        { id: 'p1', productSpecs: [], _count: { sourceProducts: 2 } },
-        { id: 'p2', productSpecs: [], _count: { sourceProducts: 0 } },
+        {
+          id: 'p1',
+          images: [],
+          productSpecs: [],
+          _count: { sourceProducts: 2 },
+        },
+        {
+          id: 'p2',
+          images: [],
+          productSpecs: [],
+          _count: { sourceProducts: 0 },
+        },
       ] as never);
 
     const result = await service.findAllFiltered({ search: ' DF333D ' });
 
-    const args = productFindMany.mock.calls[0][0] as never as {
-      where: { id: { in: string[] } };
-    };
-    expect(args.where.id.in).toEqual(['p2', 'p1']);
-    // page follows the ranked order, not DB order
     expect(result.data.map((row) => row.id)).toEqual(['p2', 'p1']);
+  });
+
+  // Beyond the ranked window the matches must still be reachable — that is the
+  // half of the old bug that hid results rather than miscounting them.
+  it('pages past the ranked window into the alphabetical tail', async () => {
+    const { service, productFindMany, queryRaw } = buildService();
+    queryRaw.mockResolvedValue([{ id: 'r1' }] as never);
+    productFindMany
+      .mockResolvedValueOnce([{ id: 'r1' }] as never) // one ranked match
+      .mockResolvedValueOnce([{ id: 't1' }] as never) // the tail
+      .mockResolvedValueOnce([
+        { id: 't1', images: [], productSpecs: [], _count: null },
+      ] as never);
+
+    const result = await service.findAllFiltered({
+      search: 'kluch',
+      page: 2,
+      limit: 1,
+    });
+
+    const tailArgs = productFindMany.mock.calls[1][0] as never as {
+      orderBy: Record<string, string>;
+      skip: number;
+      where: { AND: Array<{ id?: { notIn?: string[] } }> };
+    };
+    expect(tailArgs.orderBy).toEqual({ name: 'asc' });
+    // page 2 of 1 starts right after the single ranked row
+    expect(tailArgs.skip).toBe(0);
+    expect(tailArgs.where.AND[1]).toEqual({ id: { notIn: ['r1'] } });
+    expect(result.data.map((row) => row.id)).toEqual(['t1']);
   });
 
   it('uses explicit sort instead of relevance when sortBy is set', async () => {
@@ -133,12 +271,13 @@ describe('ProductService.findAllFiltered', () => {
 
     const args = productFindMany.mock.calls[0][0] as never as {
       orderBy: Record<string, string>;
-      where: { id: { in: string[] } };
+      where: { AND: Array<{ OR?: unknown[] }> };
     };
     expect(args.orderBy).toEqual({
       priceValue: { sort: 'asc', nulls: 'last' },
     });
-    expect(args.where.id.in).toEqual(['p1']);
+    // the search still narrows the page, relationally
+    expect(args.where.AND[0].OR?.length).toBeGreaterThan(0);
   });
 
   // Prisma rejects `nulls` on non-nullable columns, so only priceValue and
@@ -338,7 +477,7 @@ describe('ProductService spec facets', () => {
       ],
       values: [
         { specificationId: 'a', valueNorm: '750', count: 2 },
-        { specificationId: 'c', valueNorm: '900', count: 1 },
+        { specificationId: 'c', valueNorm: '900', count: 2 },
       ],
     });
 
@@ -359,9 +498,9 @@ describe('ProductService spec facets', () => {
         },
       ],
       values: [
-        { specificationId: 'a', valueNorm: '1000', count: 1 },
-        { specificationId: 'a', valueNorm: '500', count: 1 },
-        { specificationId: 'a', valueNorm: '750', count: 1 },
+        { specificationId: 'a', valueNorm: '1000', count: 2 },
+        { specificationId: 'a', valueNorm: '500', count: 2 },
+        { specificationId: 'a', valueNorm: '750', count: 2 },
       ],
     });
 
@@ -425,6 +564,86 @@ describe('ProductService spec facets', () => {
     expect(result.facets.specs).toEqual([]);
   });
 
+  // On `santehnika-2` the "Вес" facet offered 17 options — 0.0733, 1.28, 6.5 …
+  // — each matching one product. Picking any of them is not filtering.
+  it('drops a characteristic whose options each match a single product', async () => {
+    const { service, prisma } = buildService();
+    stubFacet(prisma, {
+      candidates: [{ canonicalKey: 'ves~kg', count: 1 }],
+      rows: [
+        {
+          id: 'a',
+          canonicalKey: 'ves~kg',
+          canonicalName: 'Вес',
+          canonicalUnit: 'кг',
+        },
+      ],
+      values: [
+        { specificationId: 'a', valueNorm: '0.0733', count: 1 },
+        { specificationId: 'a', valueNorm: '1.28', count: 1 },
+        { specificationId: 'a', valueNorm: '6.5', count: 1 },
+      ],
+    });
+
+    const result = await service.findAllFiltered({ categorySlug: 'elektro' });
+    expect(result.facets.specs).toEqual([]);
+  });
+
+  it('keeps the shared options and trims the one-off tail', async () => {
+    const { service, prisma } = buildService();
+    stubFacet(prisma, {
+      candidates: [{ canonicalKey: 'cvet', count: 1 }],
+      rows: [
+        {
+          id: 'a',
+          canonicalKey: 'cvet',
+          canonicalName: 'Цвет',
+          canonicalUnit: null,
+        },
+      ],
+      values: [
+        { specificationId: 'a', valueNorm: 'Синий', count: 9 },
+        { specificationId: 'a', valueNorm: 'Красный', count: 4 },
+        { specificationId: 'a', valueNorm: 'Фуксия', count: 1 },
+      ],
+    });
+
+    const result = await service.findAllFiltered({ categorySlug: 'elektro' });
+    expect(result.facets.specs[0].values).toEqual([
+      { value: 'Синий', count: 9 },
+      { value: 'Красный', count: 4 },
+    ]);
+  });
+
+  // An active filter has to stay visible, or there is no way to clear it.
+  it('keeps a selected option even when only one product has it', async () => {
+    const { service, prisma } = buildService();
+    stubFacet(prisma, {
+      candidates: [{ canonicalKey: 'cvet', count: 1 }],
+      rows: [
+        {
+          id: 'a',
+          canonicalKey: 'cvet',
+          canonicalName: 'Цвет',
+          canonicalUnit: null,
+        },
+      ],
+      values: [
+        { specificationId: 'a', valueNorm: 'Синий', count: 9 },
+        { specificationId: 'a', valueNorm: 'Фуксия', count: 1 },
+      ],
+    });
+
+    const result = await service.findAllFiltered({
+      categorySlug: 'elektro',
+      specs: 'cvet:Фуксия',
+    });
+    expect(result.facets.specs[0].values.map((v) => v.value)).toEqual([
+      'Синий',
+      'Фуксия',
+    ]);
+  });
+
   // Power and blade diameter are not comparable across hammers and work
   // gloves, and aggregating to say so would scan the whole catalogue.
   it('offers no characteristic facets without a category in scope', async () => {
@@ -435,5 +654,59 @@ describe('ProductService spec facets', () => {
 
     expect(result.facets.specs).toEqual([]);
     expect(candidates).not.toHaveBeenCalled();
+  });
+});
+
+describe('public product payload', () => {
+  // `include` returns every scalar on the row, so the catalogue JSON — and
+  // with it the SSR payload in the page source — carried what we pay the
+  // supplier. Counting `sourceProducts` instead of returning them was only
+  // half the guarantee.
+  it('strips the admin-only pricing columns from the list payload', async () => {
+    const { service, productFindMany } = buildService();
+    productFindMany.mockResolvedValueOnce([
+      {
+        id: 'p1',
+        slug: 'drel',
+        name: 'Дрель',
+        priceValue: 120,
+        oldPrice: null,
+        costPrice: 80,
+        pricingMode: 'AUTO',
+        appliedRuleId: 'rule-1',
+        priceReviewNeeded: true,
+        matchBarcode: '123',
+        matchSku: 'sku',
+        matchModel: 'model',
+        images: [
+          { url: 'https://th-tool.by/site/themes/insales/img/default.png' },
+          { url: 'https://th-tool.by/shop/products/real.970.webp' },
+        ],
+        productSpecs: [],
+        _count: { sourceProducts: 2 },
+      },
+    ]);
+
+    const result = await service.findAllFiltered({});
+    const [product] = result.data as Array<Record<string, unknown>>;
+
+    for (const field of [
+      'costPrice',
+      'pricingMode',
+      'appliedRuleId',
+      'priceReviewNeeded',
+      'matchBarcode',
+      'matchSku',
+      'matchModel',
+    ]) {
+      expect(product).not.toHaveProperty(field);
+    }
+    // What the storefront does need stays.
+    expect(product.priceValue).toBe(120);
+    expect(product.offerCount).toBe(2);
+    // …and the supplier's "нет фото" asset is not passed off as the photo.
+    expect(product.images).toEqual([
+      { url: 'https://th-tool.by/shop/products/real.970.webp' },
+    ]);
   });
 });

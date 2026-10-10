@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -13,6 +13,11 @@ import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AdminModule } from './admin/admin.module';
+import { AuthModule } from './auth/auth.module';
+import { AccountModule } from './account/account.module';
+import { ListsModule } from './lists/lists.module';
+import { AuditModule } from './audit/audit.module';
+import { AdminActionLogInterceptor } from './audit/admin-action-log.interceptor';
 import { OrdersModule } from './orders/orders.module';
 import { CartModule } from './cart/cart.module';
 import { PricingModule } from './pricing/pricing.module';
@@ -37,6 +42,10 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
       },
     ]),
     PrismaModule,
+    AuthModule,
+    AccountModule,
+    ListsModule,
+    AuditModule,
     ProductsModule,
     CategoriesModule,
     SpecificationsModule,
@@ -58,6 +67,10 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     AppService,
     ParserRuntimeStatusService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Global because admin routes live in six controllers across four modules;
+    // it logs only mutating calls in admin scope, so the cost on the public
+    // storefront is one Set lookup per request.
+    { provide: APP_INTERCEPTOR, useClass: AdminActionLogInterceptor },
   ],
 })
 export class AppModule {}

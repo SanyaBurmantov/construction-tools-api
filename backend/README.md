@@ -38,7 +38,18 @@ Important env vars:
 
 - `DATABASE_URL`: PostgreSQL connection string.
 - `PORT`: defaults to `8000`.
-- `ADMIN_TOKEN`: required for `/admin/*` through `x-admin-token`.
+- `ADMIN_TOKEN`: the service-to-service key for `/admin/*` through
+  `x-admin-token` (runbook curl, CI). Humans sign in with an ADMIN account
+  instead — see `AuthModule`.
+- `ADMIN_LOGIN` / `ADMIN_PASSWORD`: the initial admin account, created on boot
+  only when no active ADMIN exists. Defaults: login `admin`, password
+  `test-111` (committed in `auth/admin-bootstrap.service.ts`) — change it in
+  `/admin/users` after the first sign-in, or set `ADMIN_PASSWORD` to start
+  from your own.
+- `AUTH_SESSION_TTL_DAYS`: account session lifetime, default `30`.
+- `CART_TTL_DAYS`: how long an untouched account cart is kept, default `90`.
+- `LIST_TTL_DAYS`: same for favourites/comparison, default `365`.
+- `ADMIN_LOG_TTL_DAYS`: how long the admin action log is kept, default `180`.
 - `PARSER_CRON_ENABLED`: set `true` to enable parser cron jobs.
 - `DUKON_CRON_BATCH_LIMIT`: default `30`.
 - `TH_TOOLS_CRON_BATCH_LIMIT`: default `30`.
@@ -52,9 +63,18 @@ If supplier requests fail through a proxy, bypass supplier domains, for example 
 - `ProductsModule`: public product list/detail API.
 - `CategoriesModule`: public category API.
 - `BrandsModule`: public brand API.
-- `SourcesModule`: public source list and source product API.
+- `SourcesModule`: public supplier list (`GET /sources`) — id, name and code
+  only, never the supplier URL.
 - `ParserModule`: parser services, cron jobs, parser logs.
-- `AdminModule`: guarded admin API.
+- `AdminModule`: guarded admin API, including `/admin/users`.
+- `AuthModule`: accounts and sessions (`/auth/*`), `AuthGuard`, and the
+  bootstrap that creates the first admin.
+- `AccountModule`: the customer's личный кабинет (`/account/*`).
+- `CartModule`: cart re-pricing (`POST /cart/validate`, public) and the
+  account's stored cart (`GET/PUT/DELETE /cart`, `POST /cart/merge`).
+- `ListsModule`: the account's favourites and comparison (`/lists`).
+- `AuditModule`: the admin action log (`/admin/audit`) and the interceptor that
+  fills it.
 - `PrismaModule`: global Prisma client.
 
 ## Product Visibility Rule

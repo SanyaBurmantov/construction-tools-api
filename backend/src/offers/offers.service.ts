@@ -191,6 +191,62 @@ export class OffersService {
   }
 
   /** Admin view: every offer with supplier, price and freshness. */
+  /**
+   * Which supplier(s) each of these products was parsed from — admin-only, and
+   * the one query behind the "откуда спаршен" line on the admin screens.
+   *
+   * Batched on purpose: the products list, an order's items and the catalogue
+   * cards all need it for many products at once, and one `IN` beats N
+   * requests. Returns a plain map so the caller can look up by product id.
+   */
+  async adminSourcesFor(productIds: string[]) {
+    if (!productIds.length) return {};
+
+    const offers = await this.prisma.sourceProduct.findMany({
+      where: { productId: { in: productIds } },
+      orderBy: [{ stock: 'desc' }, { price: 'asc' }],
+      select: {
+        productId: true,
+        url: true,
+        price: true,
+        currency: true,
+        stock: true,
+        lastSync: true,
+        source: { select: { id: true, name: true, code: true } },
+      },
+    });
+
+    const byProduct: Record<
+      string,
+      Array<{
+        sourceId: string;
+        sourceName: string;
+        sourceCode: string;
+        url: string;
+        price: number | null;
+        currency: string | null;
+        stock: boolean;
+        lastSync: Date;
+      }>
+    > = {};
+
+    for (const offer of offers) {
+      if (!offer.productId) continue;
+      (byProduct[offer.productId] ??= []).push({
+        sourceId: offer.source.id,
+        sourceName: offer.source.name,
+        sourceCode: offer.source.code,
+        url: offer.url,
+        price: offer.price,
+        currency: offer.currency,
+        stock: offer.stock,
+        lastSync: offer.lastSync,
+      });
+    }
+
+    return byProduct;
+  }
+
   async adminOffers(productId: string) {
     const offers = await this.prisma.sourceProduct.findMany({
       where: { productId },

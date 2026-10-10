@@ -22,6 +22,12 @@ type SpecFacet = {
 const props = defineProps<{
   category: { name: string } | null
   categoryLinks: CategoryLink[]
+  /**
+   * Whether the category has subcategories at all, regardless of the filters.
+   * `categoryLinks` is filter-aware and goes empty when nothing matches, which
+   * is a different thing to say than "this is a leaf".
+   */
+  categoryHasChildren: boolean
   parentLink: { to: RouteLocationRaw, label: string } | null
   categoryTo: CategoryTo
   inStock: boolean
@@ -113,6 +119,9 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
           <small>{{ item.count }}</small>
         </NuxtLink>
       </div>
+      <p v-else-if="categoryHasChildren" class="empty">
+        Нет подкатегорий с товарами по текущим фильтрам.
+      </p>
       <p v-else-if="category" class="empty">Это конечная категория.</p>
       <button
         v-if="categoryLinks.length > VALUES_COLLAPSED"

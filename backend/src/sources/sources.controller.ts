@@ -1,20 +1,13 @@
 import { Controller, Get } from '@nestjs/common';
-import { SourcesProductsService, SourcesService } from './sources.service';
+import { ApiTags } from '@nestjs/swagger';
+import { SourcesService } from './sources.service';
 
-@Controller('source-products')
-export class SourcesProductsController {
-  constructor(private service: SourcesProductsService) {}
-
-  @Get()
-  getAll() {
-    return this.service.findAll();
-  }
-}
-
+@ApiTags('Sources')
 @Controller('sources')
 export class SourceController {
   constructor(private service: SourcesService) {}
 
+  /** Supplier list for the catalogue facet — id, name and code only. */
   @Get()
   getAll() {
     return this.service.getAll();

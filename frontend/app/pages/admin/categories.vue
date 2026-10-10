@@ -9,9 +9,14 @@ type Category = {
   level: number
   path: string[]
   description: string | null
+  image: string | null
   seoTitle: string
   seoDescription: string
-  _count?: { products: number }
+  /** 0 = never placed by hand; the storefront then sorts by product count. */
+  sortOrder: number
+  isVisible: boolean
+  isFeatured: boolean
+  _count?: { products: number, children: number }
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
@@ -21,6 +26,21 @@ const categories = ref<Category[]>([])
 const loading = ref(false)
 const loadError = ref('')
 const search = ref('')
+
+/**
+ * Curation views. The tree is ~1500 rows built by the parsers, so the useful
+ * questions are not "find this name" but "what is switched off", "what is
+ * pinned" and "what is an empty shell" — a supplier branch whose products were
+ * all delisted. Those are invisible in a flat alphabetical tree.
+ */
+const VIEWS = [
+  { value: 'all', label: 'Все категории' },
+  { value: 'visible', label: 'Только видимые' },
+  { value: 'hidden', label: 'Скрытые' },
+  { value: 'featured', label: 'На главной' },
+  { value: 'empty', label: 'Пустые (0 товаров)' },
+]
+const view = ref('all')
 
 async function load() {
   loading.value = true
@@ -55,23 +75,61 @@ const tree = computed<TreeNode[]>(() => {
     else roots.push(node)
   }
 
+  /**
+   * Same order the storefront uses: curated positions first, then biggest,
+   * then alphabetical. Sorting this page by name instead would make the
+   * reorder buttons move rows to places the admin cannot see.
+   */
+  const rank = (node: TreeNode) => (node.sortOrder > 0 ? node.sortOrder : Number.MAX_SAFE_INTEGER)
   const sortRec = (nodes: TreeNode[]) => {
-    nodes.sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    nodes.sort(
+      (a, b) =>
+        rank(a) - rank(b)
+        || (b._count?.products ?? 0) - (a._count?.products ?? 0)
+        || a.name.localeCompare(b.name, 'ru')
+    )
     nodes.forEach((n) => sortRec(n.children))
   }
   sortRec(roots)
   return roots
 })
 
-/** Flattened tree with depth, filtered by the search box. */
+/** Siblings of a category, in the order this page shows them. */
+function siblingsOf(row: Category): TreeNode[] {
+  if (!row.parentId) return tree.value
+  const find = (nodes: TreeNode[]): TreeNode[] | null => {
+    for (const node of nodes) {
+      if (node.id === row.parentId) return node.children
+      const found = find(node.children)
+      if (found) return found
+    }
+    return null
+  }
+  return find(tree.value) ?? []
+}
+
+/**
+ * Does this row match the view? A branch is still shown when a descendant
+ * matches, so a hidden subcategory can be found through its parents.
+ */
+function matchesView(node: Category) {
+  if (view.value === 'hidden') return !node.isVisible
+  if (view.value === 'visible') return node.isVisible
+  if (view.value === 'featured') return node.isFeatured
+  if (view.value === 'empty') return !node._count?.products && !node._count?.children
+  return true
+}
+
+/** Flattened tree with depth, filtered by the search box and the view. */
 const rows = computed(() => {
   const query = search.value.trim().toLowerCase()
   const result: Array<TreeNode & { depth: number }> = []
 
   const walk = (nodes: TreeNode[], depth: number) => {
     for (const node of nodes) {
-      const matches = !query || node.name.toLowerCase().includes(query)
+      const matchesQuery = !query || node.name.toLowerCase().includes(query)
         || node.slug.toLowerCase().includes(query)
+      const matches = matchesQuery && matchesView(node)
       // Keep a branch when it matches or any descendant does.
       const childResult: Array<TreeNode & { depth: number }> = []
       const before = result.length
@@ -88,6 +146,9 @@ const rows = computed(() => {
   walk(tree.value, 0)
   return result
 })
+
+const hiddenCount = computed(() => categories.value.filter((row) => !row.isVisible).length)
+const featuredCount = computed(() => categories.value.filter((row) => row.isFeatured).length)
 
 const collapsed = ref<Set<string>>(new Set())
 
@@ -134,8 +195,12 @@ const blankForm = () => ({
   slug: '',
   parentId: '',
   description: '',
+  image: '',
   seoTitle: '',
   seoDescription: '',
+  sortOrder: '',
+  isVisible: true,
+  isFeatured: false,
 })
 const form = reactive(blankForm())
 
@@ -171,8 +236,12 @@ function openEdit(category: Category) {
     slug: category.slug,
     parentId: category.parentId ?? '',
     description: category.description ?? '',
+    image: category.image ?? '',
     seoTitle: category.seoTitle ?? '',
     seoDescription: category.seoDescription ?? '',
+    sortOrder: category.sortOrder ? String(category.sortOrder) : '',
+    isVisible: category.isVisible,
+    isFeatured: category.isFeatured,
   })
   formError.value = ''
   editorOpen.value = true
@@ -202,8 +271,12 @@ async function save() {
     slug: form.slug.trim(),
     parentId: form.parentId || undefined,
     description: form.description.trim() || undefined,
+    image: form.image.trim() || undefined,
     seoTitle: form.seoTitle.trim() || form.name.trim(),
     seoDescription: form.seoDescription.trim() || form.name.trim(),
+    sortOrder: form.sortOrder ? Number(form.sortOrder) : 0,
+    isVisible: form.isVisible,
+    isFeatured: form.isFeatured,
   }
 
   saving.value = true
@@ -222,6 +295,97 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+/* ---- Display settings -------------------------------------------------- */
+/**
+ * Visibility, pinning and order are one PATCH each, applied straight from the
+ * row: these are the settings an admin changes while *looking* at the tree,
+ * and routing them through the editor modal would mean opening and closing it
+ * once per category.
+ *
+ * The row is updated in place on success rather than reloading the whole list,
+ * so the tree keeps its scroll position and collapsed state.
+ */
+const busyRows = ref<Set<string>>(new Set())
+
+function setBusy(id: string, busy: boolean) {
+  const next = new Set(busyRows.value)
+  if (busy) next.add(id)
+  else next.delete(id)
+  busyRows.value = next
+}
+
+async function patchDisplay(row: Category, body: Record<string, unknown>, done: string) {
+  setBusy(row.id, true)
+  try {
+    const updated = await adminFetch<Category>(`/categories/${row.id}`, {
+      method: 'PATCH',
+      body,
+    })
+    const index = categories.value.findIndex((item) => item.id === row.id)
+    if (index >= 0) {
+      categories.value[index] = { ...categories.value[index]!, ...updated }
+    }
+    toast.success(done)
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось сохранить настройку'))
+  } finally {
+    setBusy(row.id, false)
+  }
+}
+
+function toggleVisible(row: Category) {
+  return patchDisplay(
+    row,
+    { isVisible: !row.isVisible },
+    row.isVisible ? `«${row.name}» скрыта из каталога` : `«${row.name}» снова в каталоге`
+  )
+}
+
+function toggleFeatured(row: Category) {
+  return patchDisplay(
+    row,
+    { isFeatured: !row.isFeatured },
+    row.isFeatured ? `«${row.name}» убрана с главной` : `«${row.name}» закреплена на главной`
+  )
+}
+
+/**
+ * Moving a row renumbers the whole row of siblings from 1 in one request, so
+ * two categories can never end up claiming the same position — which is what
+ * happens if each row's `sortOrder` is patched on its own and the second call
+ * fails.
+ */
+async function move(row: Category, direction: -1 | 1) {
+  const siblings = siblingsOf(row)
+  const from = siblings.findIndex((item) => item.id === row.id)
+  const to = from + direction
+  if (from < 0 || to < 0 || to >= siblings.length) return
+
+  const ids = siblings.map((item) => item.id)
+  const [moved] = ids.splice(from, 1)
+  ids.splice(to, 0, moved!)
+
+  setBusy(row.id, true)
+  try {
+    await adminFetch('/categories/order', { method: 'PATCH', body: { ids } })
+    // Positions are 1-based on the server; mirror that locally.
+    for (const [index, id] of ids.entries()) {
+      const target = categories.value.findIndex((item) => item.id === id)
+      if (target >= 0) categories.value[target] = { ...categories.value[target]!, sortOrder: index + 1 }
+    }
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось изменить порядок'))
+  } finally {
+    setBusy(row.id, false)
+  }
+}
+
+function canMove(row: Category, direction: -1 | 1) {
+  const siblings = siblingsOf(row)
+  const index = siblings.findIndex((item) => item.id === row.id)
+  return index >= 0 && index + direction >= 0 && index + direction < siblings.length
 }
 
 /* ---- Merge & delete ---------------------------------------------------- */
@@ -283,9 +447,13 @@ const mergeOptions = computed(() =>
     <header class="head">
       <div>
         <h1>Категории</h1>
-        <p>{{ categories.length }} категорий · дерево строится по родителям</p>
+        <p>
+          {{ categories.length }} категорий · {{ hiddenCount }} скрыто ·
+          {{ featuredCount }} на главной
+        </p>
       </div>
       <div class="head-actions">
+        <UiSelect v-model="view" size="sm" class="view" :options="VIEWS" />
         <UiInput v-model="search" placeholder="Найти категорию" size="sm" class="search" />
         <UiButton @click="openCreate()">Добавить</UiButton>
       </div>
@@ -300,7 +468,7 @@ const mergeOptions = computed(() =>
     <UiEmpty
       v-else-if="!visibleRows.length"
       icon="box"
-      :title="search ? 'Ничего не найдено' : 'Категорий пока нет'"
+      :title="search || view !== 'all' ? 'Ничего не найдено' : 'Категорий пока нет'"
       description="Категории обычно создаются парсерами из хлебных крошек поставщиков."
     >
       <UiButton @click="openCreate()">Добавить категорию</UiButton>
@@ -330,9 +498,63 @@ const mergeOptions = computed(() =>
         <div class="row-main">
           <button type="button" class="row-name" @click="openEdit(row)">{{ row.name }}</button>
           <code class="row-slug">/{{ row.slug }}</code>
+          <UiBadge v-if="!row.isVisible" tone="neutral" size="sm">скрыта</UiBadge>
+          <UiBadge v-if="row.isFeatured" tone="brand" size="sm">на главной</UiBadge>
+          <UiBadge v-if="row.isVisible && !row._count?.products && !row._count?.children" tone="warning" size="sm">
+            пустая
+          </UiBadge>
         </div>
 
         <span v-if="row._count" class="row-count">{{ row._count.products }} тов.</span>
+
+        <!-- Order, visibility and pinning sit on the row: they are changed
+             while looking at the tree, not inside the editor. -->
+        <div class="row-display">
+          <button
+            type="button"
+            class="icon-btn"
+            :disabled="!canMove(row, -1) || busyRows.has(row.id)"
+            aria-label="Выше"
+            title="Выше"
+            @click="move(row, -1)"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            :disabled="!canMove(row, 1) || busyRows.has(row.id)"
+            aria-label="Ниже"
+            title="Ниже"
+            @click="move(row, 1)"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            :class="{ 'is-on': row.isFeatured }"
+            :disabled="busyRows.has(row.id)"
+            :aria-pressed="row.isFeatured"
+            :aria-label="`Показывать «${row.name}» на главной`"
+            title="На главной"
+            @click="toggleFeatured(row)"
+          >
+            ★
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            :class="{ 'is-off': !row.isVisible }"
+            :disabled="busyRows.has(row.id)"
+            :aria-pressed="!row.isVisible"
+            :aria-label="`Скрыть «${row.name}» из каталога`"
+            :title="row.isVisible ? 'Скрыть из каталога' : 'Вернуть в каталог'"
+            @click="toggleVisible(row)"
+          >
+            {{ row.isVisible ? '👁' : '🚫' }}
+          </button>
+        </div>
 
         <div class="row-actions">
           <UiButton variant="ghost" size="sm" @click="openCreate(row.id)">+ Подкатегория</UiButton>
@@ -379,6 +601,27 @@ const mergeOptions = computed(() =>
         <UiField label="Описание" for="c-desc">
           <UiTextarea id="c-desc" v-model="form.description" :rows="3" />
         </UiField>
+
+        <UiField
+          label="Картинка категории"
+          hint="URL. Без неё плитка берёт фото первого товара"
+          for="c-image"
+        >
+          <UiInput id="c-image" v-model="form.image" placeholder="https://…" />
+        </UiField>
+
+        <UiField
+          label="Позиция в списке"
+          hint="Пусто или 0 — сортировать по числу товаров"
+          for="c-order"
+        >
+          <UiInput id="c-order" v-model="form.sortOrder" type="number" min="0" />
+        </UiField>
+
+        <div class="form-switches">
+          <UiCheckbox v-model="form.isVisible" label="Показывать в каталоге" />
+          <UiCheckbox v-model="form.isFeatured" label="Закрепить на главной" />
+        </div>
 
         <UiField label="SEO title" hint="Пусто — берётся название" for="c-seo-title">
           <UiInput id="c-seo-title" v-model="form.seoTitle" />
@@ -478,6 +721,10 @@ const mergeOptions = computed(() =>
   width: min(260px, 100%);
 }
 
+.view {
+  width: min(200px, 100%);
+}
+
 .tree,
 .list {
   display: flex;
@@ -559,6 +806,55 @@ const mergeOptions = computed(() =>
   flex-shrink: 0;
   color: var(--text-muted);
   font-size: var(--text-xs);
+}
+
+.row-display {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.icon-btn {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1;
+  place-items: center;
+}
+
+.icon-btn:hover:not(:disabled) {
+  border-color: var(--border-subtle);
+  background: var(--surface-active);
+  color: var(--text-strong);
+}
+
+.icon-btn:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.icon-btn.is-on {
+  color: var(--warning);
+}
+
+.icon-btn.is-off {
+  color: var(--danger);
+}
+
+.form-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+/* A hidden category stays in the tree but should read as switched off. */
+.tree-row:has(.row-display .is-off) .row-name {
+  color: var(--text-muted);
+  text-decoration: line-through;
 }
 
 .row-actions {

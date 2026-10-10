@@ -6,9 +6,11 @@ import { CreateReviewDto } from './dto/create-review.dto';
 function buildService(
   options: {
     product?: { id: string } | null;
-    existingForProduct?: { id: string } | null;
+    existingForProduct?: { id: string; status?: string } | null;
     duplicateText?: { id: string } | null;
     recentCount?: number;
+    /** A matching non-cancelled order, i.e. a verified purchase. */
+    purchase?: { id: string } | null;
   } = {},
 ) {
   const {
@@ -16,6 +18,7 @@ function buildService(
     existingForProduct = null,
     duplicateText = null,
     recentCount = 0,
+    purchase = null,
   } = options;
 
   type CreateArgs = {
@@ -34,6 +37,12 @@ function buildService(
     .mockResolvedValueOnce(existingForProduct)
     .mockResolvedValueOnce(duplicateText);
 
+  const orderFindFirstMock = jest.fn((args: { where?: unknown }) => {
+    orderQueries.push(args.where);
+    return Promise.resolve(purchase);
+  });
+  const orderQueries: unknown[] = [];
+
   const prisma = {
     product: {
       findFirst: jest.fn(() => Promise.resolve(product)),
@@ -43,9 +52,12 @@ function buildService(
       count: jest.fn(() => Promise.resolve(recentCount)),
       create: createMock,
     },
+    order: {
+      findFirst: orderFindFirstMock,
+    },
   } as unknown as PrismaService;
 
-  return { service: new ReviewsService(prisma), createMock };
+  return { service: new ReviewsService(prisma), createMock, orderQueries };
 }
 
 const baseDto: CreateReviewDto = {
@@ -164,5 +176,76 @@ describe('ReviewsService.create', () => {
     await expect(
       service.create('ghost', baseDto, '10.0.0.1'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('ReviewsService.create from an account', () => {
+  it('links the review to the account and marks a verified purchase', async () => {
+    const { service, createMock } = buildService({ purchase: { id: 'o1' } });
+
+    await service.create('drel', baseDto, '203.0.113.5', 'u1');
+
+    const data = createMock.mock.calls[0][0].data;
+    expect(data.userId).toBe('u1');
+    expect(data.isVerifiedPurchase).toBe(true);
+    // The IP is still hashed and kept: it is what duplicate detection uses.
+    expect(data.ipHash).toBeTruthy();
+  });
+
+  it('does not claim a verified purchase without a matching order', async () => {
+    const { service, createMock } = buildService({ purchase: null });
+
+    await service.create('drel', baseDto, undefined, 'u1');
+
+    expect(createMock.mock.calls[0][0].data.isVerifiedPurchase).toBe(false);
+  });
+
+  it('ignores cancelled orders when verifying the purchase', async () => {
+    const { service, orderQueries } = buildService({ purchase: { id: 'o1' } });
+
+    await service.create('drel', baseDto, undefined, 'u1');
+
+    expect(orderQueries[0]).toEqual({
+      userId: 'u1',
+      status: { not: 'CANCELLED' },
+      items: { some: { productId: 'p1' } },
+    });
+  });
+
+  it('refuses a second review of the same product from the same account', async () => {
+    const { service } = buildService({
+      existingForProduct: { id: 'r0', status: 'APPROVED' },
+    });
+
+    await expect(
+      service.create('drel', baseDto, '203.0.113.5', 'u1'),
+    ).rejects.toThrow('Вы уже оставили отзыв на этот товар.');
+  });
+
+  /**
+   * Behind carrier-grade NAT several customers share one address, so the
+   * per-IP rules are the ones that reject genuine reviews. An account is a
+   * better identity, so those rules step aside for it.
+   */
+  it('is not blocked by another customer on the same IP', async () => {
+    const { service, createMock } = buildService({
+      existingForProduct: null,
+      recentCount: 99,
+    });
+
+    await service.create('drel', baseDto, '203.0.113.5', 'u1');
+    expect(createMock).toHaveBeenCalled();
+  });
+
+  it('still drops a honeypot submission from an account', async () => {
+    const { service, createMock } = buildService();
+    const result = await service.create(
+      'drel',
+      { ...baseDto, website: 'http://spam' },
+      '203.0.113.5',
+      'u1',
+    );
+    expect(result.ok).toBe(true);
+    expect(createMock).not.toHaveBeenCalled();
   });
 });

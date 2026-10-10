@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { Prisma, ReviewStatus } from '@prisma/client';
+import { OrderStatus, Prisma, ReviewStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { AdminReviewQueryDto, ReviewQueryDto } from './dto/review-query.dto';
@@ -23,13 +23,18 @@ const SUBMIT_RESPONSE = {
   message: 'Спасибо! Отзыв отправлен на модерацию.',
 } as const;
 
-/** Fields safe to expose publicly — author email is never returned. */
+/**
+ * Fields safe to expose publicly — author email is never returned, and
+ * neither is the account behind the review: `isVerifiedPurchase` is the only
+ * thing a reader needs to know about it.
+ */
 const PUBLIC_SELECT = {
   id: true,
   authorName: true,
   rating: true,
   title: true,
   text: true,
+  isVerifiedPurchase: true,
   createdAt: true,
 } satisfies Prisma.ReviewSelect;
 
@@ -66,7 +71,35 @@ export class ReviewsService {
    * Spam defence, in order of cost: honeypot (free), then per-IP and duplicate
    * checks (one indexed query each). The route also carries a strict throttle.
    */
-  async create(slug: string, dto: CreateReviewDto, ip?: string) {
+  /**
+   * Did this account actually buy this product? Checked once, at submission,
+   * and stored as a snapshot on the review.
+   */
+  private async hasPurchased(userId: string, productId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        userId,
+        status: { not: OrderStatus.CANCELLED },
+        items: { some: { productId } },
+      },
+      select: { id: true },
+    });
+    return Boolean(order);
+  }
+
+  /**
+   * `userId` is set when the submitter was signed in. It changes the spam
+   * defence rather than adding to it: an account is a far better identity than
+   * an IP, so the per-IP limits — the ones that misfire behind carrier-grade
+   * NAT, where several customers share one address — are replaced by "one
+   * review per product per account".
+   */
+  async create(
+    slug: string,
+    dto: CreateReviewDto,
+    ip?: string,
+    userId?: string,
+  ) {
     const product = await this.getPublishedProduct(slug);
 
     // Honeypot tripped. Answer exactly as if it worked — telling a bot it was
@@ -79,7 +112,21 @@ export class ReviewsService {
     const ipHash = this.hashIp(ip);
     const since = new Date(Date.now() - DUPLICATE_WINDOW_MS);
 
-    if (ipHash) {
+    if (userId) {
+      // No time window here: a second review of the same product from the same
+      // account is an edit, not a new opinion.
+      const own = await this.prisma.review.findFirst({
+        where: { productId: product.id, userId },
+        select: { id: true, status: true },
+      });
+      if (own) {
+        throw new BadRequestException(
+          own.status === ReviewStatus.PENDING
+            ? 'Вы уже оставили отзыв на этот товар — он ждёт проверки модератором.'
+            : 'Вы уже оставили отзыв на этот товар.',
+        );
+      }
+    } else if (ipHash) {
       // One review per product per IP per day.
       const alreadyReviewed = await this.prisma.review.findFirst({
         where: { productId: product.id, ipHash, createdAt: { gte: since } },
@@ -119,6 +166,10 @@ export class ReviewsService {
     await this.prisma.review.create({
       data: {
         productId: product.id,
+        userId: userId ?? null,
+        isVerifiedPurchase: userId
+          ? await this.hasPurchased(userId, product.id)
+          : false,
         authorName: dto.authorName.trim(),
         authorEmail: dto.authorEmail?.trim() || null,
         rating: dto.rating,
@@ -233,6 +284,7 @@ export class ReviewsService {
               images: { orderBy: { order: 'asc' }, take: 1 },
             },
           },
+          user: { select: { id: true, login: true } },
         },
       }),
       this.prisma.review.count({ where }),

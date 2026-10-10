@@ -163,7 +163,7 @@ useHead({
         <h1>Сравнение товаров</h1>
         <ClientOnly>
           <p v-if="products.length" class="subtitle">
-            {{ products.length }} товара · различий: {{ differenceCount }}
+            {{ pluralize(products.length, 'product') }} · {{ pluralize(differenceCount, 'difference') }}
           </p>
         </ClientOnly>
       </div>

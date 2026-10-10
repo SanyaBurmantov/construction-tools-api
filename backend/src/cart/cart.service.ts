@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { withoutPlaceholderImages } from '../common/utils/product-images';
 import { ValidateCartDto } from './dto/validate-cart.dto';
 
 /** Why a cart line can't be ordered as-is. `null` means the line is fine. */
@@ -59,7 +60,9 @@ export class CartService {
     const productIds = [...quantities.keys()];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      include: { images: { orderBy: { order: 'asc' }, take: 1 } },
+      // Not `take: 1`: the first row may be a supplier placeholder, and the
+      // cart line snapshot should carry a real photo or none.
+      include: { images: { orderBy: { order: 'asc' } } },
     });
     const productById = new Map(products.map((p) => [p.id, p]));
 
@@ -122,7 +125,7 @@ export class CartService {
         currency: product.priceCurrency ?? currency,
         name: product.name,
         slug: product.slug,
-        image: product.images[0]?.url ?? null,
+        image: withoutPlaceholderImages(product.images)[0]?.url ?? null,
         stockStatus: product.stockStatus,
         lineTotal,
       };

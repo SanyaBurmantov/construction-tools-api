@@ -498,6 +498,12 @@ const brandOptions = computed(() => brands.value.map((b) => ({ value: b.id, labe
                     <span v-if="product.sku">Арт. {{ product.sku }}</span>
                     <span v-if="product.ratingCount">★ {{ product.ratingAvg?.toFixed(1) }}</span>
                   </span>
+                  <!-- Откуда спаршен: supplier(s) behind this card. -->
+                  <AdminProductSourceNote
+                    :product-id="product.id"
+                    variant="line"
+                    show-empty
+                  />
                 </div>
               </div>
             </td>

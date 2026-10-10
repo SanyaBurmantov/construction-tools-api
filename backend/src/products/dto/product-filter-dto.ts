@@ -78,6 +78,7 @@ export class ProductFilterDto {
     value === '' || value === undefined ? undefined : Number(value),
   )
   @IsNumber()
+  @Min(0)
   priceMin?: number;
 
   @ApiProperty({ required: false, description: 'Максимальная цена' })
@@ -86,6 +87,7 @@ export class ProductFilterDto {
     value === '' || value === undefined ? undefined : Number(value),
   )
   @IsNumber()
+  @Min(0)
   priceMax?: number;
 
   @ApiProperty({

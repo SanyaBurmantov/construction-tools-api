@@ -49,6 +49,41 @@ describe('Dukon discovery coverage and sitemap fallback', () => {
       .mockResolvedValue({ visitedPages: 1, discoveredProducts: 0 });
     await expect(service.refreshSitemaps()).rejects.toThrow('Sitemap HTTP 404');
   });
+
+  // Both legs of the crawl match on theme classes, so a re-theme shows up as
+  // pages walked with nothing extracted. With a working sitemap that used to
+  // record SUCCESS, leaving a stalled catalogue as the only symptom.
+  it('fails the refresh when the crawl walks pages but extracts no products', async () => {
+    jest
+      .spyOn(service as unknown as DiscoveryAccess, 'fetchText')
+      .mockResolvedValue('<urlset></urlset>');
+    jest
+      .spyOn(service as unknown as DiscoveryAccess, 'enqueueUrls')
+      .mockResolvedValue(undefined);
+    jest
+      .spyOn(service, 'discoverCatalogUrls')
+      .mockResolvedValue({ visitedPages: 40, discoveredProducts: 0 });
+
+    await expect(service.refreshSitemaps()).rejects.toThrow(
+      'walked 40 pages and found no product links',
+    );
+  });
+
+  it('stays quiet when the crawl did extract products', async () => {
+    jest
+      .spyOn(service as unknown as DiscoveryAccess, 'fetchText')
+      .mockResolvedValue('<urlset></urlset>');
+    jest
+      .spyOn(service as unknown as DiscoveryAccess, 'enqueueUrls')
+      .mockResolvedValue(undefined);
+    jest
+      .spyOn(service, 'discoverCatalogUrls')
+      .mockResolvedValue({ visitedPages: 40, discoveredProducts: 7 });
+    const stats = { queued: 7, visited: 0, failed: 0, skipped: 0, total: 7 };
+    jest.spyOn(service, 'getQueueStats').mockResolvedValue(stats);
+
+    expect(await service.refreshSitemaps()).toEqual(stats);
+  });
 });
 
 describe('Dukon batch monitoring', () => {

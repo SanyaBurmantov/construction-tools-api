@@ -29,6 +29,18 @@ model Category {
   seoTitle       String
   seoDescription String
 
+  /// Storefront ordering, lowest first. Ties fall back to product count, so
+  /// the default 0 keeps the "biggest category first" behaviour until an admin
+  /// pins something.
+  sortOrder  Int     @default(0)
+  /// Hidden categories disappear from every storefront listing (menu, tree,
+  /// facets) but stay reachable by URL, so an existing link keeps working
+  /// while the branch is being curated.
+  isVisible  Boolean @default(true)
+  /// Pinned into the home page category grid. With none pinned the grid falls
+  /// back to the largest root categories.
+  isFeatured Boolean @default(false)
+
   parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id])
   children Category[] @relation("CategoryChildren")
 
@@ -39,6 +51,7 @@ model Category {
   pricingRules           PricingRule[]
 
   @@index([parentId])
+  @@index([isVisible, sortOrder])
 }
 
 model Brand {
@@ -140,6 +153,10 @@ model Product {
   matchSku          String?
   /// brand + model, normalized.
   matchModel        String?
+
+  cartItems CartItem[]
+
+  listItems UserListItem[]
 
   @@index([status, categoryId])
   @@index([status, brandId])
@@ -308,6 +325,13 @@ model Order {
   id              String         @id @default(uuid())
   number          Int            @unique @default(autoincrement())
   status          OrderStatus    @default(NEW)
+  /// Set only when the order was placed from a signed-in account — guest
+  /// checkout stays the default, so this is null for most rows. It is what
+  /// the "История заказов" section of the account lists. Deliberately NOT
+  /// matched by phone or e-mail afterwards: anyone could register with
+  /// someone else's phone and read their orders.
+  user            User?          @relation(fields: [userId], references: [id])
+  userId          String?
   customerName    String
   customerPhone   String
   customerEmail   String?
@@ -330,6 +354,7 @@ model Order {
 
   @@index([status])
   @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model OrderItem {
@@ -412,26 +437,35 @@ enum ReviewStatus {
 /// Guest product review. Every review lands in PENDING and only counts towards
 /// the product's rating aggregate once an admin approves it.
 model Review {
-  id          String       @id @default(uuid())
-  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  productId   String
-  authorName  String
-  authorEmail String?
-  rating      Int
-  title       String?
-  text        String
-  status      ReviewStatus @default(PENDING)
+  id                 String       @id @default(uuid())
+  product            Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId          String
+  /// Set when the review came from a signed-in account. `SetNull` on delete:
+  /// a deleted account loses the link, the review and its text stay.
+  user               User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId             String?
+  /// True when, at submission time, the account had a non-cancelled order
+  /// containing this product. A stored snapshot, not a live check — the order
+  /// history behind it can change, the fact that it was verified cannot.
+  isVerifiedPurchase Boolean      @default(false)
+  authorName         String
+  authorEmail        String?
+  rating             Int
+  title              String?
+  text               String
+  status             ReviewStatus @default(PENDING)
   /// Salted hash of the submitter's IP — pseudonymous, used only for
   /// rate-limiting and duplicate detection. The raw address is never stored.
-  ipHash      String?
+  ipHash             String?
   /// Set when an admin approves or rejects the review.
-  moderatedAt DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  moderatedAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   @@index([productId, status, createdAt])
   @@index([status, createdAt])
   @@index([ipHash, createdAt])
+  @@index([userId, createdAt])
 }
 
 enum PromoCodeType {
@@ -456,6 +490,10 @@ model PromoCode {
   endsAt        DateTime?
   isActive      Boolean       @default(true)
   freeDelivery  Boolean       @default(false)
+  /// Listed in the customer's account ("Доступные промокоды"). Turn it off for
+  /// a code meant for one person — the code still works, it just stops being
+  /// advertised to everyone who signs in.
+  isPublic      Boolean       @default(true)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   orders        Order[]
@@ -631,4 +669,151 @@ model CategoryRepairConflict {
   value               String
   keptValue           String
   createdAt           DateTime @default(now())
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+/// Физическое или юридическое лицо. Chosen at registration; drives what the
+/// account has to fill in (a company needs a name to put on an invoice) and is
+/// what a future B2B price list would key off.
+enum CustomerType {
+  INDIVIDUAL
+  COMPANY
+}
+
+/// Storefront account. Guest checkout stays the default — an account only adds
+/// a saved profile and, for ADMIN, access to /admin.
+model User {
+  id           String       @id @default(uuid())
+  /// Normalized (trimmed + lowercased) login — an e-mail works as one. Stored
+  /// already normalized so "Admin" and "admin" cannot become two accounts.
+  login        String       @unique
+  /// scrypt hash with its own salt and parameters — see auth/password.util.ts.
+  /// Never selected into anything the API returns.
+  passwordHash String
+  role         UserRole     @default(CUSTOMER)
+  customerType CustomerType @default(INDIVIDUAL)
+  name         String?
+  email        String?
+  phone        String?
+  /// Required for COMPANY accounts (checked in the service, not the schema, so
+  /// an admin can still fix a half-filled row).
+  companyName  String?
+  /// УНП / ИНН.
+  taxId        String?
+  /// Deactivated accounts keep their orders and sessions history but cannot
+  /// log in, and every live session is dropped the moment the flag goes off.
+  isActive     Boolean      @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  sessions     UserSession[]
+  orders       Order[]
+  cartItems    CartItem[]
+  listItems    UserListItem[]
+  reviews      Review[]
+  adminActions AdminActionLog[]
+
+  @@index([role])
+}
+
+/// One login = one row. Tokens are opaque random strings; only their SHA-256
+/// is stored, so a database dump cannot be replayed as a session, and deleting
+/// the row logs that device out immediately (which a JWT could not do).
+model UserSession {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  tokenHash  String   @unique
+  userAgent  String?
+  expiresAt  DateTime
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Server-side copy of a signed-in customer's cart, so it survives a new
+/// device, a cleared browser or a phone/desktop switch. The client cart in
+/// localStorage stays the thing the UI renders (and the only cart a guest
+/// has) — this is the backup that is merged into it on sign-in and overwritten
+/// from it on every change, i.e. last write wins. Prices are deliberately NOT
+/// stored: a line is a product plus a quantity, and the price is read from
+/// `Product` every time the cart is served.
+model CartItem {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  /// Cascade: a product an admin deletes cannot stay in anyone's cart.
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+/// Favourites and comparison are the same thing in storage: a set of products
+/// an account picked. They differ only in how many fit (comparison caps at 4,
+/// see COMPARE_LIMIT on the storefront) and where they are rendered, so one
+/// table with a kind beats two identical ones.
+enum UserListKind {
+  WISHLIST
+  COMPARE
+}
+
+model UserListItem {
+  id        String       @id @default(uuid())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  /// Cascade: a product an admin deletes cannot stay in anyone's list.
+  product   Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  kind      UserListKind
+  createdAt DateTime     @default(now())
+
+  @@unique([userId, kind, productId])
+  @@index([userId, kind])
+  @@index([createdAt])
+}
+
+/// Who changed what in the admin panel.
+///
+/// Worth having only now that admins are accounts: under the shared
+/// `ADMIN_TOKEN` there was no "who" to record. Mutating requests are logged by
+/// `AdminActionLogInterceptor` — reads are not, or the log would be mostly
+/// dashboard polling.
+model AdminActionLog {
+  id         String   @id @default(uuid())
+  /// Null for a call that authenticated with the `x-admin-token` service
+  /// header (runbook curl, CI), which has no account behind it.
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  /// The login as it was at the time, so a deleted or renamed account still
+  /// reads correctly here. "x-admin-token" for the service path.
+  actorLabel String
+  method     String
+  path       String
+  statusCode Int
+  /// Request body, with secrets redacted and the whole thing truncated — it is
+  /// evidence of what changed, not a replayable payload.
+  payload    Json?
+  /// Stored in the clear, unlike `Review.ipHash`: the actor is already
+  /// identified by name, so "from where" is the only thing an audit adds, and
+  /// a hash would answer nothing.
+  ip         String?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([path])
 }

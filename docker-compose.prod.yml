@@ -37,6 +37,18 @@ services:
       PORT: 8000
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      # Начальная учётка администратора создаётся на первом старте, если
+      # активных админов нет. Пароль — ADMIN_PASSWORD, а если он пуст —
+      # зашитый начальный: admin / test-111 (сменить сразу после входа).
+      ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Срок жизни сессии аккаунта (Authorization: Bearer), в сутках.
+      AUTH_SESSION_TTL_DAYS: ${AUTH_SESSION_TTL_DAYS:-30}
+      # Сколько суток хранить корзину аккаунта без изменений.
+      CART_TTL_DAYS: ${CART_TTL_DAYS:-90}
+      # Сколько хранить избранное/сравнение и журнал действий админов, в сутках.
+      LIST_TTL_DAYS: ${LIST_TTL_DAYS:-365}
+      ADMIN_LOG_TTL_DAYS: ${ADMIN_LOG_TTL_DAYS:-180}
       CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
       # Both must be set for new-order Telegram notifications; empty = disabled.

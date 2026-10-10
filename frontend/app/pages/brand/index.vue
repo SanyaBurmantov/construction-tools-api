@@ -144,7 +144,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
 
         <span class="tile-body">
           <span class="tile-name">{{ brand.name }}</span>
-          <span class="tile-count">{{ brand._count?.products || 0 }} товаров</span>
+          <span class="tile-count">{{ pluralize(brand._count?.products || 0, 'product') }}</span>
         </span>
       </NuxtLink>
     </section>
