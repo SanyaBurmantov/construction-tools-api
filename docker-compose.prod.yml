@@ -35,7 +35,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8000
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public
+      # connection_limit: Prisma's default is CPU*2+1 — on this 2-core box that
+      # is 5, which the app outgrew: /admin/stats alone fires 17 aggregates in
+      # one Promise.all, and the parser crons hold connections in transactions
+      # meanwhile, so ordinary queries started timing out waiting for the pool
+      # ("Timed out fetching a new connection"). Postgres allows 100 by
+      # default and this is the only client, so 20 is comfortable.
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${DB_CONNECTION_LIMIT:-20}&pool_timeout=${DB_POOL_TIMEOUT:-20}
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
       # Начальная учётка администратора создаётся на первом старте, если
       # активных админов нет. Пароль — ADMIN_PASSWORD, а если он пуст —

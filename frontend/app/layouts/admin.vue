@@ -71,19 +71,28 @@ const ICONS: Record<string, string> = {
   log: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
 }
 
-/** Confirms the stored session still belongs to an admin. */
-async function verify() {
-  if (!isAdmin.value) {
-    authorized.value = false
-    return false
-  }
+/**
+ * Who may enter is decided by the session alone: `/auth/me` is server-side
+ * validated, so an ADMIN role there is proof enough.
+ *
+ * It used to also require `GET /admin/stats` to succeed — which coupled
+ * "can I open the admin panel" to the heaviest query in the app (17 aggregates
+ * in one Promise.all). On a saturated connection pool that endpoint times out
+ * and nobody could get in at all, with a valid session and the right password.
+ * The counters are now loaded separately: they are decoration, not a gate.
+ */
+function verify() {
+  authorized.value = isAdmin.value
+  if (authorized.value) void loadBadges()
+  return authorized.value
+}
+
+/** Sidebar counters. A failure here must not cost anyone access. */
+async function loadBadges() {
   try {
     badges.value = await adminFetch<Stats>('/stats')
-    authorized.value = true
-    return true
   } catch {
-    authorized.value = false
-    return false
+    badges.value = null
   }
 }
 
@@ -100,7 +109,7 @@ async function signIn() {
       return
     }
     credentials.password = ''
-    await verify()
+    verify()
   } catch (error) {
     signInError.value = errorMessage(error, 'Неверный логин или пароль')
   } finally {
@@ -114,16 +123,22 @@ async function signOut() {
 }
 
 onMounted(async () => {
-  await refresh()
-  await verify()
-  checking.value = false
+  try {
+    await refresh()
+    verify()
+  } finally {
+    // Whatever happened, stop showing the loading skeleton: a gate stuck in
+    // "checking" is indistinguishable from a hung page.
+    checking.value = false
+  }
 })
 
 const route = useRoute()
 watch(() => route.fullPath, () => {
   sidebarOpen.value = false
-  // Keep the sidebar counters fresh as the admin moves around.
-  if (authorized.value) void verify()
+  // Keep the sidebar counters fresh as the admin moves around. Counters only —
+  // a page change must not re-run the access check against a heavy endpoint.
+  if (authorized.value) void loadBadges()
 })
 
 useHead({

@@ -5,6 +5,12 @@ import {
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  countProducts,
+  fromSource,
+  NO_IMAGES,
+  PUBLISHED,
+} from './product-gaps';
 import { AdminCreateBrandDto } from './dto/admin-create-brand.dto';
 import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
 import { AdminCreateProductDto } from './dto/admin-create-product.dto';
@@ -78,9 +84,7 @@ export class AdminService {
       this.prisma.product.count({ where: { priceReviewNeeded: true } }),
       // The single biggest driver of "this shop looks cheap": a grid of grey
       // boxes where product photos should be.
-      this.prisma.product.count({
-        where: { status: 'PUBLISHED', images: { none: {} } },
-      }),
+      countProducts(this.prisma, PUBLISHED, NO_IMAGES),
       this.prisma.user.count(),
       this.prisma.user.count({ where: { role: 'ADMIN', isActive: true } }),
       this.prisma.order.aggregate({
@@ -364,9 +368,7 @@ export class AdminService {
           this.prisma.product.count({
             where: { ...where, OR: [{ priceValue: null }, { priceValue: 0 }] },
           }),
-          this.prisma.product.count({
-            where: { ...where, images: { none: {} } },
-          }),
+          countProducts(this.prisma, fromSource(source.id), NO_IMAGES),
           this.prisma.product.count({
             where: { ...where, OR: [{ sku: null }, { sku: '' }] },
           }),

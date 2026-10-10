@@ -50,9 +50,21 @@ export function useAuth() {
   const isAuthenticated = computed(() => Boolean(user.value))
   const isAdmin = computed(() => user.value?.role === 'ADMIN')
 
+  /**
+   * Every localStorage access is guarded: `getItem` throws outright when site
+   * data is blocked (private windows, embedded browsers, some corporate
+   * policies), and an exception escaping here used to take the whole admin
+   * gate down with it — the page sat on its loading skeleton forever, which
+   * reads as "it just hangs". The session simply does not persist in that
+   * case, which is the right degradation.
+   */
   function readStoredToken() {
     if (import.meta.client && !token.value) {
-      token.value = localStorage.getItem(STORAGE_KEY) || ''
+      try {
+        token.value = localStorage.getItem(STORAGE_KEY) || ''
+      } catch {
+        token.value = ''
+      }
     }
     return token.value
   }
@@ -60,13 +72,25 @@ export function useAuth() {
   function persist(session: Session) {
     token.value = session.token
     user.value = session.user
-    if (import.meta.client) localStorage.setItem(STORAGE_KEY, session.token)
+    if (import.meta.client) {
+      try {
+        localStorage.setItem(STORAGE_KEY, session.token)
+      } catch {
+        // Blocked or full storage: the session lives for this tab only.
+      }
+    }
   }
 
   function clear() {
     token.value = ''
     user.value = null
-    if (import.meta.client) localStorage.removeItem(STORAGE_KEY)
+    if (import.meta.client) {
+      try {
+        localStorage.removeItem(STORAGE_KEY)
+      } catch {
+        // Nothing to clean up if storage was never writable.
+      }
+    }
   }
 
   /** $fetch against the API with the session header attached when we have one. */

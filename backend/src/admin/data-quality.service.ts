@@ -1,5 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  countProducts,
+  sampleProducts,
+  staleOffers,
+  NO_IMAGES,
+  NO_SPECS,
+  PUBLISHED,
+} from './product-gaps';
 import { normalizeName } from '../common/utils/normalize-name';
 import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
 
@@ -28,19 +36,15 @@ export class DataQualityService {
     const published = { status: 'PUBLISHED' as const };
 
     const sample = { select: { id: true, name: true, slug: true } };
-    const noImages = { ...published, images: { none: {} } };
     const noPrice = {
       ...published,
       OR: [{ priceValue: null }, { priceValue: { lte: 0 } }],
     };
-    const noSpecs = { ...published, productSpecs: { none: {} } };
     const noBrand = { ...published, brandId: null };
-    // has supplier links, but none of them synced recently
-    const stale = {
-      ...published,
-      sourceProducts: { some: {} },
-      NOT: { sourceProducts: { some: { lastSync: { gte: staleCutoff } } } },
-    };
+    // "Published products with no images / no specifications / no recent
+    // supplier sync" are asked as SQL anti-joins — see ./product-gaps for why
+    // Prisma's `{ none: {} }` cannot be used here.
+    const stale = staleOffers(staleCutoff);
 
     const fallbackCategory = await this.prisma.category.findUnique({
       where: { slug: FALLBACK_CATEGORY_SLUG },
@@ -64,38 +68,26 @@ export class DataQualityService {
     ] = await Promise.all([
       this.prisma.product.count({ where: published }),
       this.prisma.product.count(),
-      this.prisma.product.count({ where: noImages }),
+      countProducts(this.prisma, PUBLISHED, NO_IMAGES),
       this.prisma.product.count({ where: noPrice }),
-      this.prisma.product.count({ where: noSpecs }),
+      countProducts(this.prisma, PUBLISHED, NO_SPECS),
       this.prisma.product.count({ where: noBrand }),
       this.prisma.product.count({ where: inFallback }),
-      this.prisma.product.count({ where: stale }),
+      countProducts(this.prisma, PUBLISHED, stale),
       Promise.all([
-        this.prisma.product.findMany({
-          where: noImages,
-          ...sample,
-          take: SAMPLE_LIMIT,
-        }),
+        sampleProducts(this.prisma, SAMPLE_LIMIT, PUBLISHED, NO_IMAGES),
         this.prisma.product.findMany({
           where: noPrice,
           ...sample,
           take: SAMPLE_LIMIT,
         }),
-        this.prisma.product.findMany({
-          where: noSpecs,
-          ...sample,
-          take: SAMPLE_LIMIT,
-        }),
+        sampleProducts(this.prisma, SAMPLE_LIMIT, PUBLISHED, NO_SPECS),
         this.prisma.product.findMany({
           where: inFallback,
           ...sample,
           take: SAMPLE_LIMIT,
         }),
-        this.prisma.product.findMany({
-          where: stale,
-          ...sample,
-          take: SAMPLE_LIMIT,
-        }),
+        sampleProducts(this.prisma, SAMPLE_LIMIT, PUBLISHED, stale),
       ]),
       this.prisma.product.findMany({
         where: published,
