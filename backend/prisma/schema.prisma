@@ -198,6 +198,8 @@ model ProductImage {
   order     Int
   product   Product @relation(fields: [productId], references: [id])
   productId String
+
+  @@index([productId])
 }
 
 model Source {
@@ -254,6 +256,7 @@ model SourceProduct {
   lastSync         DateTime        @default(now())
 
   @@unique([sourceId, url])
+  @@index([productId])
 }
 
 model SitemapsThTools {
