@@ -57,6 +57,8 @@ export class AdminService {
       activePromoCodes,
       priceReviewNeeded,
       productsWithoutImages,
+      users,
+      admins,
       revenue,
       ordersByStatus,
       recentOrders,
@@ -79,6 +81,8 @@ export class AdminService {
       this.prisma.product.count({
         where: { status: 'PUBLISHED', images: { none: {} } },
       }),
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { role: 'ADMIN', isActive: true } }),
       this.prisma.order.aggregate({
         where: revenueWhere,
         _sum: { total: true },
@@ -144,6 +148,8 @@ export class AdminService {
       activePromoCodes,
       priceReviewNeeded,
       productsWithoutImages,
+      users,
+      admins,
       revenueTotal: Math.round((revenue._sum.total ?? 0) * 100) / 100,
       averageOrder: Math.round((revenue._avg.total ?? 0) * 100) / 100,
       ordersByStatus: Object.fromEntries(

@@ -14,6 +14,7 @@ type PromoCode = {
   endsAt: string | null
   isActive: boolean
   freeDelivery: boolean
+  isPublic: boolean
   createdAt: string
   _count?: { orders: number }
 }
@@ -58,6 +59,7 @@ const blankForm = () => ({
   endsAt: '',
   isActive: true,
   freeDelivery: false,
+  isPublic: true,
 })
 
 const form = reactive(blankForm())
@@ -86,6 +88,7 @@ function openEdit(code: PromoCode) {
     endsAt: toLocalInput(code.endsAt),
     isActive: code.isActive,
     freeDelivery: code.freeDelivery,
+    isPublic: code.isPublic,
   })
   formError.value = ''
   editorOpen.value = true
@@ -125,6 +128,7 @@ async function save() {
     endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : undefined,
     isActive: form.isActive,
     freeDelivery: form.freeDelivery,
+    isPublic: form.isPublic,
   }
 
   saving.value = true
@@ -252,6 +256,10 @@ function inactiveReason(code: PromoCode) {
             <dt>Доставка</dt>
             <dd>бесплатно</dd>
           </div>
+          <div>
+            <dt>В кабинете</dt>
+            <dd>{{ code.isPublic ? 'показан' : 'скрыт' }}</dd>
+          </div>
         </dl>
 
         <div class="promo-actions">
@@ -330,6 +338,10 @@ function inactiveReason(code: PromoCode) {
 
         <UiCheckbox v-model="form.isActive" label="Активен" />
         <UiCheckbox v-model="form.freeDelivery" label="Бесплатная доставка" />
+        <UiCheckbox
+          v-model="form.isPublic"
+          label="Показывать в личном кабинете покупателей"
+        />
       </div>
 
       <template #footer>

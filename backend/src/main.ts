@@ -69,6 +69,13 @@ async function bootstrap() {
     const config = new DocumentBuilder()
       .setTitle('Construction Tools API')
       .setVersion('1.0')
+      // Both ways in: an account session for /auth and /admin, and the
+      // x-admin-token service header for /admin.
+      .addBearerAuth()
+      .addApiKey(
+        { type: 'apiKey', name: 'x-admin-token', in: 'header' },
+        'admin-token',
+      )
       .build();
 
     const document = SwaggerModule.createDocument(app, config);

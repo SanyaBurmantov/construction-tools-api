@@ -52,6 +52,9 @@ watch(image, () => { imageFailed.value = false })
 <template>
   <article class="product-card" :class="{ 'is-compact': compact }">
     <div class="media">
+      <!-- Admins only; renders nothing for a regular visitor, and overlays
+           the photo so the card layout is identical for everyone. -->
+      <AdminProductSourceNote :product-id="product.id" class="source-badge" />
       <NuxtLink :to="link" class="image-link" :aria-label="product.name">
         <NuxtImg
           v-if="image && !imageFailed"
@@ -166,6 +169,13 @@ watch(image, () => { imageFailed.value = false })
 </template>
 
 <style scoped>
+.source-badge {
+  position: absolute;
+  z-index: 1;
+  bottom: var(--space-2);
+  left: var(--space-2);
+}
+
 .product-card {
   display: flex;
   height: 100%;

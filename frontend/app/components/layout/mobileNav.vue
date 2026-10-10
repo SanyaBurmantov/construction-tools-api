@@ -38,6 +38,15 @@ const items = computed(() => [
     active: route.path === '/cart',
     count: cart.count,
   },
+  {
+    // Always /account, never a session-dependent target: the session is
+    // client-side, so branching here would differ between the server render
+    // and hydration. /account sends a guest to the login screen itself.
+    to: '/account',
+    label: 'Кабинет',
+    icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0',
+    active: route.path === '/account',
+  },
 ])
 </script>
 

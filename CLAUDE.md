@@ -33,11 +33,47 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 
 ## Architecture notes
 
-- **Auth**: admin endpoints are guarded by `AdminGuard`, which checks the
-  `x-admin-token` header against `ADMIN_TOKEN`. There is **no JWT**: the
-  `src/auth` module, the `@nestjs/jwt` / `passport` / `bcrypt` deps and the
-  `JWT_SECRET` env have been removed. They referenced a `User` model the
-  schema does not have, so nothing in them ever ran.
+- **Auth = accounts + an opaque session token** (`auth/`). `User` has a
+  normalized unique `login` (an e-mail works as one), a `role`
+  (`CUSTOMER` | `ADMIN`) and a `customerType` (`INDIVIDUAL` | `COMPANY`, the
+  физ/юр лицо choice made at registration — a COMPANY must give
+  `companyName`). `POST /auth/register` always mints a **CUSTOMER**: an ADMIN
+  can only be created from `/admin/users`, so the storefront can never
+  self-promote. Login issues a random 256-bit token stored in `UserSession` as
+  a **SHA-256 hash** and sent back as `Authorization: Bearer` — a dump cannot
+  be replayed, and deleting the row logs that device out immediately, which a
+  JWT could not. That is why there is still no JWT and no `@nestjs/jwt`.
+  Passwords are **scrypt** from `node:crypto` (`auth/password.util.ts`,
+  parameters stored alongside each hash) — no native build step, so the
+  `node:22-slim` images need no toolchain; bcrypt would.
+  `AdminGuard` now accepts **either** an ADMIN session **or** the old
+  `x-admin-token: $ADMIN_TOKEN` header, which stays the service-to-service
+  path (the runbook/CI curl commands depend on it, and it is the rescue path
+  when nobody can log in). A valid non-admin session gets **403**, not 401, so
+  the UI keeps the login instead of bouncing to the sign-in screen.
+  Side effects worth keeping: a password change or an admin disabling an
+  account deletes that user's sessions on the spot; the last active admin
+  cannot be demoted, disabled or deleted, and nobody can do any of it to
+  themselves. `AuthModule` is `@Global()` on purpose — `AdminGuard` is
+  instantiated in five modules, and that beats re-registering `AuthService` in
+  each or importing AdminModule (circular).
+  **Guarding the public surface** (checked when roles landed): every mutating
+  endpoint outside `/auth` and `/account` is behind `AdminGuard`;
+  `POST /orders`, `POST /products/:slug/reviews`, `POST /cart/validate` and
+  `POST /promo-codes/validate` are public on purpose (guests order, review and
+  re-price carts) and carry their own `@Throttle` — the promo one is 20/min
+  because it answers "does this code exist". `GET /sources` returns
+  `{id, name, code}` only: the supplier's `url` is internal, the same rule as
+  supplier prices. The dead public `GET /source-products` (an in-memory array
+  that always answered `[]`, shaped to hand out supplier URLs and costs) was
+  removed rather than guarded. `GET /orders/:id` stays public by unguessable
+  UUID — a guest needs the confirmation page — and projects out PII.
+  **The first admin is created at boot** by `auth/admin-bootstrap.service.ts`
+  when no active ADMIN exists: login `ADMIN_LOGIN` (default `admin`), password
+  `ADMIN_PASSWORD` falling back to `ADMIN_TOKEN` so a deployment needs no new
+  secret. It never touches an existing account — a changed password stays
+  changed, and a deliberately deleted admin is not resurrected while another
+  one is active.
 - **API routing in prod**: Caddy serves `/api/*` → strips `/api` → `backend:8000`;
   everything else → `frontend:3000`. Client calls use base `/api`
   (`NUXT_PUBLIC_API_BASE`); SSR calls go through the Nuxt server route
@@ -138,7 +174,10 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   category" (`tile` / `row` / `chip`) — home grid, catalogue, brand page — and
   `composables/useCategoryTree.ts` is the single tree fetch (one shared
   `useAsyncData` key for header, home and catalogue).
-- **Storefront orders**: guest checkout (no accounts). The cart lives client-side
+- **Storefront orders**: the storefront now asks for an account before
+  checkout, while `POST /orders` itself still accepts a guest order (see
+  "Checkout requires an account" below) — so the API contract and the runbook
+  did not change. The cart lives client-side
   (Pinia `stores/cart.ts`, persisted to `localStorage`); `POST /orders`
   (`orders/` module) re-prices every line from the DB (never trusts the client),
   validates published/priced products, computes delivery cost, applies any promo
@@ -156,9 +195,28 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   when it no longer matches, so an order can never quietly cost more than the
   cart the customer saw. The frontend keys off the 409 status — the shared
   exception filter strips extra fields from the error body.
-  Note: a server-side cart was considered and rejected — without accounts it
-  buys no cross-device continuity, only a cookie, extra tables and a TTL cron.
-  Revisit it if/when accounts land.
+- **The account's cart is backed up server-side** (`CartItem`,
+  `cart/server-cart.service.ts`), while the **localStorage cart stays the one
+  the UI renders and checkout submits** — a guest has only that, and a failed
+  sync must cost nothing. Three rules keep the two from fighting:
+  only `productId` + `quantity` are stored (**never a price** — a line is
+  re-priced from `Product` on every read, so a stored row cannot resurrect an
+  old price); on **sign-in** the local cart is *merged* up and the merged cart
+  replaces the local lines (`POST /cart/merge`), which is what makes "pick
+  things as a guest, then log in" keep everything and what restores a cart on
+  a new device; on every **later change** the local cart is pushed up whole
+  (`PUT /cart`, debounced 800 ms — last write wins, because a cart is edited
+  on one device at a time). The merge keeps the **larger quantity, never the
+  sum**: summing looks right until the same cart syncs twice (two tabs, a
+  re-login, an offline edit) and every line silently doubles. Unpublished or
+  deleted products are dropped from the stored cart as it is served (and the
+  row deleted), `POST /orders` empties it once an order from that account is
+  committed, and `CartCleanupCron` drops carts untouched for `CART_TTL_DAYS`
+  (90). Frontend: `plugins/cart-sync.client.ts` + `composables/useServerCart.ts`;
+  `stores/cart.ts` gains only `applyServerCart()`.
+  `POST /cart/validate` stays **public** — a guest cart needs re-pricing too —
+  while `GET/PUT/DELETE /cart` and `POST /cart/merge` are `AuthGuard`-only and
+  always scoped to the session's `userId`.
 - **Order notifications**: `POST /orders` posts a summary to Telegram
   (`notifications/telegram.service.ts`). Enabled only when **both**
   `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set; otherwise it logs a
@@ -213,12 +271,23 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `PromoCode` (`promo/` module) is validated at `POST /promo-codes/validate` for
   the checkout preview and **re-evaluated** inside `POST /orders`, so an
   exhausted or expired code is still rejected at order time. Admin CRUD lives
-  under `/admin/promo-codes`.
+  under `/admin/promo-codes`. `listAvailable()` is what the account's
+  «Доступные промокоды» section lists: active, in-window, not exhausted and
+  `isPublic` — turn that flag off for a code meant for one person and it keeps
+  working while no longer being advertised to everyone who signs in. The
+  exhausted check is done in JS because Prisma cannot compare two columns
+  (`usedCount >= maxUses`) in a `where`, and `usedCount`/`maxUses` never leave
+  the admin API.
 - **Reviews**: guest reviews (`reviews/` module) via
   `POST /products/:slug/reviews` always land in `PENDING`; only approved ones are
   returned by `GET /products/:slug/reviews` and counted into the denormalized
   `Product.ratingAvg` / `ratingCount`, which is recomputed on every moderation
-  action. Moderation: `/admin/reviews`.
+  action. Moderation: `/admin/reviews`. The route runs under
+  `OptionalAuthGuard`: with a session the review is linked to the account and
+  gets `isVerifiedPurchase` when that account has a **non-cancelled order
+  containing the product** — a snapshot taken once at submission, never a live
+  lookup, so later order changes cannot rewrite history. The public projection
+  exposes the flag but never the account.
 - **Review spam defence**, cheapest check first:
   1. a `website` honeypot field (off-screen in the form, never shown);
   2. `@Throttle` on the POST route — 5/hour per IP, far stricter than the
@@ -232,7 +301,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `REVIEW_IP_SALT`, falling back to `ADMIN_TOKEN`) — never in the clear.
   Trade-off to keep in mind: behind carrier-grade NAT several customers share
   one address, so the per-IP-per-product rule can reject a genuine second
-  review. Loosen the constants in `reviews.service.ts` if that shows up.
+  review. Loosen the constants in `reviews.service.ts` if that shows up — and
+  note that a **signed-in** author sidesteps those rules entirely: an account
+  is a better identity than an IP, so for it the per-IP limits are replaced by
+  "one review per product per account" (no time window: a second one is an
+  edit, not a new opinion). Honeypot and duplicate-text still apply to
+  everyone.
 - **Frontend design system**: tokens in `app/assets/scss/tokens.scss` (semantic
   layer + dark mode); primitives in `app/components/ui/*` (`UiButton`, `UiInput`,
   `UiModal`, `UiTable`, `UiPrice`, `UiRating`, …). Components read tokens, never
@@ -241,10 +315,85 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 - **Guest lists**: cart, wishlist (`stores/wishlist.ts`) and comparison
   (`stores/compare.ts`, max 4 items) are all localStorage-backed and rehydrated
   by `plugins/cart.client.ts`. Pages `/favorites` and `/compare` are `ssr: false`.
-- **Admin UI**: one shell in `app/layouts/admin.vue` — a single auth gate
-  (validates `ADMIN_TOKEN` against `GET /admin/stats`) plus the sidebar. Admin
-  pages just set `definePageMeta({ layout: 'admin' })` and can assume the token
-  is valid; do **not** re-add per-page token forms.
+  For a signed-in account both lists are backed up server-side exactly like the
+  cart (`UserListItem` + `lists/`, one table with a `kind` because the two
+  features differ only in the cap): merge on sign-in, replace on change,
+  `plugins/lists-sync.client.ts`. Merging a **full** comparison keeps the four
+  already stored rather than the newly arrived ones — signing in must not
+  reshuffle the table someone is looking at. `LIST_TTL_DAYS` (365) bounds it.
+- **Admin UI**: one shell in `app/layouts/admin.vue` — a single auth gate plus
+  the sidebar. The gate is a **login + password form** for an ADMIN account
+  (`useAuth().login()`, then `GET /admin/stats`), not the old `ADMIN_TOKEN`
+  field; a signed-in non-admin gets the "нет прав" screen instead of the form.
+  Admin pages just set `definePageMeta({ layout: 'admin' })` and can assume the
+  session is valid; do **not** re-add per-page token forms. `useAdminApi()`
+  sends the session as `Authorization: Bearer` and is otherwise unchanged, so
+  every admin page kept working. Accounts live in `/admin/users`:
+  `users/index.vue` lists and creates them, `users/[id].vue` is one account —
+  profile, figures, **current orders with an inline status select** and the
+  finished ones in a table (`GET /admin/users/:id` returns all of it). The
+  admin order list and detail also show which account placed an order, linking
+  back to that page; a guest order says so.
+- **Admin audit trail** (`audit/`, `AdminActionLog`, `/admin/audit`). Worth
+  having only now that admins are accounts — under the shared token there was
+  no "who". `AdminActionLogInterceptor` is registered **globally** (admin
+  routes live in six controllers across four modules) and records a request
+  when it is mutating **and** in admin scope: an ADMIN session, the
+  `x-admin-token` header, or a path under `/admin` — that last one is what
+  also captures attempts the guard rejected, which is half the point of an
+  audit. Reads are not logged, or the log would be dashboard polling. Bodies
+  are stored with `password`/`token`/`secret`/`authorization` replaced by
+  `[redacted]`, long arrays summarised and the whole thing truncated at 4 KB:
+  it is evidence of what changed, not a replayable payload. A failed audit
+  write is logged and swallowed — it must never turn a successful admin action
+  into an error. `ADMIN_LOG_TTL_DAYS` (180) bounds the table.
+- **"Откуда спаршен" is admin-only, and visible everywhere a product is**
+  (`components/admin/productSourceNote.vue` + `composables/useProductSources.ts`):
+  the storefront product page (banner above everything), catalogue cards and
+  rows, the admin product list and an order's lines. The data comes from
+  `GET /admin/products/sources?ids=…` behind `AdminGuard`, so a regular
+  visitor cannot obtain supplier URLs or our costs even though the same
+  storefront component renders them for an admin — and for a non-admin the
+  request is never fired. Ids are **batched on a 50 ms tick** through one
+  shared cache, so a 24-card grid is one request, and a product with no offers
+  is cached as an empty answer instead of being re-requested forever.
+- **Storefront accounts**: `composables/useAuth.ts` is the single session
+  (token in localStorage next to the guest cart, restored by
+  `plugins/auth.client.ts`). Pages `/login`, `/register` and `/account` are
+  `ssr: false` — there is nothing to render on the server. The header shows the
+  account action (or "Войти") and, **for an ADMIN only, a link to the admin
+  panel**; both are inside `<ClientOnly>` because the session is client-side.
+- **Личный кабинет** (`/account`, four sections in one page, the open one kept
+  in `?tab=`): *общая информация* (figures + profile + last order), *история
+  заказов* (status filter, paging, expandable composition, «повторить заказ»),
+  *промокоды*, *настройки* (profile, password, "выйти на всех устройствах").
+  Settings also closes the account: `DELETE /auth/me` takes the password
+  (a session could be a borrowed laptop), cascades sessions / stored cart /
+  stored lists away and **keeps orders and reviews** with their link nulled —
+  the shop's records and other customers' reading material are not the
+  account's to erase. An ADMIN is refused there on purpose: removing an
+  administrator belongs in `/admin/users`, which already protects the last one.
+  Read side is `GET /account/summary|orders|orders/:id|promo-codes`
+  (`account/` module, `AuthGuard`, every query scoped to the session's
+  `userId` — the API never takes a user id from the client); writes stay on
+  `/auth/me`. Someone else's order id is a **404, not a 403** — a 403 would
+  confirm the order exists. «Повторить заказ» re-adds the order's lines from
+  the *snapshot* and the cart's own `POST /cart/validate` re-prices them, so an
+  old price can never come back silently.
+- **Checkout requires an account, browsing does not.** `POST /orders` runs
+  under `OptionalAuthGuard`: with a session it stamps `Order.userId` (that
+  link is the **only** thing that puts an order in «История заказов» — orders
+  are deliberately never matched to an account by phone or e-mail afterwards,
+  or anyone could register with someone else's phone and read their orders),
+  without one it is still a guest order, which is what keeps the runbook and
+  the existing API contract working. The gate is on the storefront:
+  `useCheckoutAuth().ensureAuthenticated()` sends a guest from the cart to
+  `/login?redirect=/checkout&reason=checkout`, and the login/register screens
+  render the reason from `AUTH_REASONS` and return to `redirect` afterwards.
+  The cart survives the detour because it lives in localStorage — nothing is
+  re-fetched or merged. Checkout prefills name/phone/e-mail from the profile,
+  but only into blank fields, so a different recipient typed for one order is
+  never overwritten.
 
 ## Database / migrations
 

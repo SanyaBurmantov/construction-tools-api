@@ -28,6 +28,9 @@ const config = useRuntimeConfig()
 const cart = useCartStore()
 const wishlist = useWishlistStore()
 const compare = useCompareStore()
+// Accounts are optional on the storefront: guests still check out. The header
+// only shows who is signed in — and, for an ADMIN, the way into /admin.
+const { user, isAdmin, isAuthenticated } = useAuth()
 const { formatPrice } = useFormatPrice()
 
 const { data: tree } = await useCategoryTree()
@@ -170,6 +173,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           <a :href="company.phoneHref" class="phone">{{ company.phone }}</a>
           <NuxtLink to="/delivery">Доставка и оплата</NuxtLink>
           <NuxtLink to="/contacts">Контакты</NuxtLink>
+          <!-- The session lives in localStorage, so this can only be decided
+               on the client. -->
+          <ClientOnly>
+            <NuxtLink v-if="isAdmin" to="/admin" class="admin-link">Админка</NuxtLink>
+          </ClientOnly>
         </div>
       </div>
     </div>
@@ -285,7 +293,22 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           </Transition>
         </div>
 
-        <nav class="actions" aria-label="Избранное, сравнение и корзина">
+        <nav class="actions" aria-label="Аккаунт, избранное, сравнение и корзина">
+          <ClientOnly>
+            <NuxtLink
+              :to="isAuthenticated ? '/account' : '/login'"
+              class="action"
+              :class="{ 'is-active': isAuthenticated }"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+              <span class="action-label is-account">
+                {{ isAuthenticated ? (user?.name || user?.login) : 'Войти' }}
+              </span>
+            </NuxtLink>
+          </ClientOnly>
+
           <NuxtLink to="/compare" class="action" :class="{ 'is-active': compare.count }">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M6 20V9m6 11V4m6 16v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
@@ -407,6 +430,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
         <NuxtLink v-for="link in navLinks" :key="link.to" :to="link.to" class="mobile-link">
           {{ link.label }}
         </NuxtLink>
+
+        <ClientOnly>
+          <NuxtLink :to="isAuthenticated ? '/account' : '/login'" class="mobile-link">
+            {{ isAuthenticated ? 'Личный кабинет' : 'Вход и регистрация' }}
+          </NuxtLink>
+          <NuxtLink v-if="isAdmin" to="/admin" class="mobile-link">Админка</NuxtLink>
+        </ClientOnly>
 
         <p class="mobile-heading">Категории</p>
         <div v-for="category in tree" :key="category.id" class="mobile-category">
@@ -707,6 +737,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   font-weight: 600;
 }
 
+/* A login can be an e-mail address — keep it from stretching the header. */
+.action-label.is-account {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .counter {
   position: absolute;
   top: 0;
@@ -902,6 +940,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+.admin-link {
+  color: var(--brand);
+  font-weight: 700;
 }
 
 .mobile-link {

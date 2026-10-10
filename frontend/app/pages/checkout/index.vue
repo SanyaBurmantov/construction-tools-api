@@ -12,6 +12,8 @@ interface OrderResponse {
 const cart = useCartStore()
 const config = useRuntimeConfig()
 const toast = useAppToast()
+const { ensureAuthenticated } = useCheckoutAuth()
+const { user, token } = useAuth()
 const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()
@@ -61,11 +63,28 @@ const promoInput = ref('')
 
 onMounted(async () => {
   cart.load()
+  // An account is required to order; a guest is sent to the login screen and
+  // comes straight back here with the cart intact.
+  if (!(await ensureAuthenticated('/checkout'))) return
+  prefillFromAccount()
   // Last chance to catch a stale price before the customer commits.
   await cartValidation.validate()
   await promo.restore()
   promoInput.value = promo.code.value
 })
+
+/**
+ * Saves retyping what the account already knows. Only fills blanks, so a
+ * different recipient typed for this order is never overwritten.
+ */
+function prefillFromAccount() {
+  const account = user.value
+  if (!account) return
+  if (!form.customerName.trim())
+    form.customerName = account.name || account.companyName || ''
+  if (!form.customerPhone.trim()) form.customerPhone = account.phone || ''
+  if (!form.customerEmail.trim()) form.customerEmail = account.email || ''
+}
 
 /** Blocking issues make the order impossible — the API would reject it. */
 const hasBlockingIssues = computed(() => cartValidation.unavailableItems.value.length > 0)
@@ -140,6 +159,9 @@ async function submit() {
   try {
     const order = await $fetch<OrderResponse>(`${config.public.apiBase}/orders`, {
       method: 'POST',
+      // The session is what links the order to the account, so it shows up in
+      // «История заказов». Without it the API treats the order as a guest one.
+      headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
       body: {
         items: cart.items.map((item) => ({
           productId: item.productId,

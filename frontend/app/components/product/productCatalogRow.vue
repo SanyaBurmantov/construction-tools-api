@@ -65,6 +65,9 @@ watch(image, () => { imageFailed.value = false })
     </NuxtLink>
 
     <div class="info">
+      <!-- Admins only; a regular visitor sees nothing and fires no request. -->
+      <AdminProductSourceNote :product-id="product.id" variant="line" />
+
       <NuxtLink :to="link" class="title">{{ product.name }}</NuxtLink>
 
       <div class="meta">

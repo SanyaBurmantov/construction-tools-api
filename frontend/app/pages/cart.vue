@@ -8,8 +8,24 @@ const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()
+const { ensureAuthenticated } = useCheckoutAuth()
+const { isAuthenticated } = useAuth()
 
 const promoInput = ref('')
+const goingToCheckout = ref(false)
+
+/**
+ * Checkout requires an account. The cart is in localStorage, so the detour to
+ * the login screen keeps every line — `redirect` brings them back here.
+ */
+async function goToCheckout() {
+  goingToCheckout.value = true
+  try {
+    if (await ensureAuthenticated('/checkout')) await navigateTo('/checkout')
+  } finally {
+    goingToCheckout.value = false
+  }
+}
 
 onMounted(async () => {
   cart.load()
@@ -175,7 +191,17 @@ useHead({
 
             <p class="note">Стоимость доставки рассчитывается на следующем шаге.</p>
 
-            <UiButton size="lg" block to="/checkout">Оформить заказ</UiButton>
+            <UiButton size="lg" block :loading="goingToCheckout" @click="goToCheckout">
+              Оформить заказ
+            </UiButton>
+            <p class="note auth-note">
+              <template v-if="isAuthenticated">
+                Корзина сохранена в аккаунте — она откроется и на другом устройстве.
+              </template>
+              <template v-else>
+                Для оформления заказа понадобится вход — товары в корзине сохранятся.
+              </template>
+            </p>
             <UiButton variant="ghost" block to="/catalog/">Продолжить покупки</UiButton>
           </div>
         </aside>
@@ -189,6 +215,10 @@ useHead({
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+}
+
+.auth-note {
+  text-align: center;
 }
 
 .layout {

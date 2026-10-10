@@ -14,8 +14,23 @@ import {
 } from './dto/admin-order-query.dto';
 import { PromoService } from '../promo/promo.service';
 import { TelegramService } from '../notifications/telegram.service';
+import { ServerCartService } from '../cart/server-cart.service';
 
 const DEFAULT_CURRENCY = 'BYN';
+
+/**
+ * Who placed the order, when it came from an account. Admin-only: the public
+ * confirmation and the customer's own history never need it.
+ */
+const ORDER_ACCOUNT_SELECT = {
+  select: {
+    id: true,
+    login: true,
+    name: true,
+    customerType: true,
+    companyName: true,
+  },
+} satisfies Prisma.OrderInclude['user'];
 
 @Injectable()
 export class OrdersService {
@@ -25,6 +40,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private promo: PromoService,
     private telegram: TelegramService,
+    private serverCart: ServerCartService,
   ) {}
 
   private deliveryCost(method: DeliveryMethod): number {
@@ -39,7 +55,11 @@ export class OrdersService {
     }
   }
 
-  async createOrder(dto: CreateOrderDto) {
+  /**
+   * `userId` is passed only when the checkout request carried a session; guest
+   * orders keep it null. It is the sole way an order joins «История заказов».
+   */
+  async createOrder(dto: CreateOrderDto, userId?: string) {
     // Collapse duplicate productIds into summed quantities.
     const quantities = new Map<string, number>();
     for (const item of dto.items) {
@@ -146,6 +166,7 @@ export class OrdersService {
     const order = await this.prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
         data: {
+          userId: userId ?? null,
           customerName: dto.customerName.trim(),
           customerPhone: dto.customerPhone.trim(),
           customerEmail: dto.customerEmail?.trim() || null,
@@ -174,6 +195,17 @@ export class OrdersService {
 
       return created;
     });
+
+    // The stored cart has served its purpose. Same rule as the notification
+    // below: the order is already committed, so a failure here is logged and
+    // swallowed rather than turned into an error the customer sees.
+    if (userId) {
+      await this.serverCart.clear(userId).catch((error) => {
+        this.logger.warn(
+          `Order #${order.number}: could not clear the stored cart: ${String(error)}`,
+        );
+      });
+    }
 
     // Fire-and-forget: the order is committed, so a failed or slow notification
     // must not delay the response or fail the request. The catch is load-bearing
@@ -255,7 +287,7 @@ export class OrdersService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: { items: true },
+        include: { items: true, user: ORDER_ACCOUNT_SELECT },
       }),
       this.prisma.order.count({ where }),
     ]);
@@ -269,7 +301,7 @@ export class OrdersService {
   async getOrder(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: true, user: ORDER_ACCOUNT_SELECT },
     });
     if (!order) throw new NotFoundException('Заказ не найден');
     return order;

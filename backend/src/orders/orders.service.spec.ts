@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PromoService } from '../promo/promo.service';
 import { TelegramService } from '../notifications/telegram.service';
+import { ServerCartService } from '../cart/server-cart.service';
 import { PromoCode, PromoCodeType } from '@prisma/client';
 
 function buildPromoCode(overrides: Partial<PromoCode> = {}): PromoCode {
@@ -20,6 +21,7 @@ function buildPromoCode(overrides: Partial<PromoCode> = {}): PromoCode {
     endsAt: null,
     isActive: true,
     freeDelivery: false,
+    isPublic: true,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -68,12 +70,19 @@ function buildService(products: ProductRow[], promoCode?: PromoCode) {
     enabled: true,
     notifyNewOrder: notifyMock,
   } as unknown as TelegramService;
+  const clearCartMock = jest.fn(() =>
+    Promise.resolve({ ok: true, removed: 0 }),
+  );
+  const serverCart = {
+    clear: clearCartMock,
+  } as unknown as ServerCartService;
 
   return {
-    service: new OrdersService(prisma, promo, telegram),
+    service: new OrdersService(prisma, promo, telegram, serverCart),
     createMock,
     promoUpdateMock,
     notifyMock,
+    clearCartMock,
   };
 }
 
@@ -450,6 +459,109 @@ describe('OrdersService.createOrder', () => {
     });
 
     expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stamps the order with the account when one placed it', async () => {
+    const { service, createMock } = buildService([
+      {
+        id: 'p1',
+        name: 'Дрель',
+        slug: 'drel',
+        status: 'PUBLISHED',
+        priceValue: 100,
+        priceCurrency: 'BYN',
+        images: [],
+      },
+    ]);
+
+    await service.createOrder(
+      {
+        ...baseCustomer,
+        deliveryMethod: 'PICKUP',
+        items: [{ productId: 'p1', quantity: 1 }],
+      },
+      'u1',
+    );
+
+    const data = createMock.mock.calls[0][0].data as { userId: string | null };
+    expect(data.userId).toBe('u1');
+  });
+
+  it('empties the stored cart of the account that ordered', async () => {
+    const { service, clearCartMock } = buildService([
+      {
+        id: 'p1',
+        name: 'Дрель',
+        slug: 'drel',
+        status: 'PUBLISHED',
+        priceValue: 100,
+        priceCurrency: 'BYN',
+        images: [],
+      },
+    ]);
+
+    await service.createOrder(
+      {
+        ...baseCustomer,
+        deliveryMethod: 'PICKUP',
+        items: [{ productId: 'p1', quantity: 1 }],
+      },
+      'u1',
+    );
+
+    expect(clearCartMock).toHaveBeenCalledWith('u1');
+  });
+
+  // The order is already committed when the cart is cleared, so a failure
+  // there must not reach the customer.
+  it('still returns the order when clearing the stored cart fails', async () => {
+    const { service, clearCartMock } = buildService([
+      {
+        id: 'p1',
+        name: 'Дрель',
+        slug: 'drel',
+        status: 'PUBLISHED',
+        priceValue: 100,
+        priceCurrency: 'BYN',
+        images: [],
+      },
+    ]);
+    clearCartMock.mockRejectedValueOnce(new Error('db is down'));
+
+    const order = await service.createOrder(
+      {
+        ...baseCustomer,
+        deliveryMethod: 'PICKUP',
+        items: [{ productId: 'p1', quantity: 1 }],
+      },
+      'u1',
+    );
+
+    expect(order.id).toBe('order-1');
+  });
+
+  // Guest checkout is still the default path: no account, no link.
+  it('leaves userId null for a guest order', async () => {
+    const { service, createMock } = buildService([
+      {
+        id: 'p1',
+        name: 'Дрель',
+        slug: 'drel',
+        status: 'PUBLISHED',
+        priceValue: 100,
+        priceCurrency: 'BYN',
+        images: [],
+      },
+    ]);
+
+    await service.createOrder({
+      ...baseCustomer,
+      deliveryMethod: 'PICKUP',
+      items: [{ productId: 'p1', quantity: 1 }],
+    });
+
+    const data = createMock.mock.calls[0][0].data as { userId: string | null };
+    expect(data.userId).toBeNull();
   });
 
   it('requires delivery address for courier', async () => {

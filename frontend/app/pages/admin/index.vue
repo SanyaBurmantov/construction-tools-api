@@ -13,6 +13,8 @@ type Stats = {
   pendingReviews: number
   activePromoCodes: number
   productsWithoutImages: number
+  users: number
+  admins: number
   revenueTotal: number
   averageOrder: number
   ordersByStatus: Record<string, number>
@@ -148,6 +150,12 @@ const formatDateTime = (iso: string) => dateTimeFormatter.format(new Date(iso))
           :value="stats.activePromoCodes"
           hint="активных"
           to="/admin/promo-codes"
+        />
+        <UiStat
+          label="Пользователи"
+          :value="stats.users"
+          :hint="`${stats.admins} с правами админа`"
+          to="/admin/users"
         />
       </section>
 

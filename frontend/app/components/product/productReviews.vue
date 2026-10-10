@@ -10,6 +10,8 @@ type Review = {
   rating: number
   title: string | null
   text: string
+  /** The author had a non-cancelled order with this product when they wrote it. */
+  isVerifiedPurchase: boolean
   createdAt: string
 }
 
@@ -25,6 +27,9 @@ type ReviewsResponse = {
 
 const config = useRuntimeConfig()
 const toast = useAppToast()
+// A signed-in author gets their name prefilled, the review linked to the
+// account, and the "подтверждённая покупка" badge when they actually bought it.
+const { user, isAuthenticated, token } = useAuth()
 
 const page = ref(1)
 const sort = ref<'createdAt' | 'rating'>('createdAt')
@@ -77,6 +82,19 @@ const form = reactive({
 })
 const errors = ref<Record<string, string>>({})
 
+/** Fills in what the account already knows, without overwriting typing. */
+function prefillFromAccount() {
+  const account = user.value
+  if (!account) return
+  if (!form.authorName.trim())
+    form.authorName = account.name || account.companyName || account.login
+  if (!form.authorEmail.trim()) form.authorEmail = account.email || ''
+}
+
+watch(formOpen, (open) => {
+  if (open) prefillFromAccount()
+})
+
 function validate() {
   const next: Record<string, string> = {}
   if (form.authorName.trim().length < 2) next.authorName = 'Укажите имя'
@@ -94,6 +112,9 @@ async function submit() {
   try {
     await $fetch(`${config.public.apiBase}/products/${props.slug}/reviews`, {
       method: 'POST',
+      // With a session the API links the review to the account and swaps the
+      // per-IP spam limits for "one review per product per account".
+      headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
       body: {
         authorName: form.authorName.trim(),
         authorEmail: form.authorEmail.trim() || undefined,
@@ -180,7 +201,12 @@ async function submit() {
         <div class="review-head">
           <div class="avatar" aria-hidden="true">{{ review.authorName.charAt(0) }}</div>
           <div>
-            <strong>{{ review.authorName }}</strong>
+            <span class="review-author">
+              <strong>{{ review.authorName }}</strong>
+              <UiBadge v-if="review.isVerifiedPurchase" tone="success" size="sm">
+                Подтверждённая покупка
+              </UiBadge>
+            </span>
             <time :datetime="review.createdAt">{{ formatDate(review.createdAt) }}</time>
           </div>
           <UiRating :value="review.rating" size="sm" />
@@ -199,6 +225,11 @@ async function submit() {
 
     <UiModal v-model:open="formOpen" title="Написать отзыв" size="md">
       <form class="review-form" @submit.prevent="submit">
+        <UiAlert v-if="!isAuthenticated" tone="info">
+          Войдите в аккаунт — отзыв на купленный товар получит отметку
+          «подтверждённая покупка».
+        </UiAlert>
+
         <UiField label="Ваша оценка" required>
           <UiRating v-model="form.rating" editable size="lg" />
         </UiField>
@@ -382,6 +413,13 @@ async function submit() {
   display: flex;
   flex: 1;
   flex-direction: column;
+}
+
+.review-author {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .review-head strong {

@@ -115,6 +115,11 @@ sh deploy-prod.sh
 ```
 Секреты: `openssl rand -hex 32` для `DB_PASSWORD` и `ADMIN_TOKEN`.
 
+Вход в админку — учётной записью: на первом старте бэкенд создаёт админа
+`ADMIN_LOGIN` (по умолчанию `admin`) с паролем `ADMIN_PASSWORD`, а если он не
+задан — со значением `ADMIN_TOKEN`. Пароль меняется в `/admin/users`, там же
+создаются остальные админы. `x-admin-token` остался для curl-команд ниже.
+
 В проде Caddy проксирует API под префиксом **`/api`**:
 ```bash
 # наполнить и запустить парсинг на бою
@@ -158,6 +163,9 @@ curl -X POST http://localhost:8000/admin/source-products/preview \
 
 - **Сборка/старт бэка падает с кучей ошибок про неизвестные поля Prisma** → не сгенерирован клиент: `npx prisma generate` (в Docker: `docker compose exec back npx prisma generate`).
 - **Фронт падает с `crypto.hash is not a function`** → Node < 22. Нужен Node ≥ 22.12 (в Docker уже `node:22`).
-- **`401` на `/admin/...`** → не задан или не совпадает `ADMIN_TOKEN` (заголовок `x-admin-token`).
+- **`401` на `/admin/...`** → истекла сессия аккаунта, либо не задан/не совпадает
+  `ADMIN_TOKEN` (заголовок `x-admin-token`). **`403`** → вошли покупателем, а не админом.
+- **Не пускает в админку** → активного админа нет: задай `ADMIN_LOGIN`/`ADMIN_PASSWORD`
+  (или `ADMIN_TOKEN`) и перезапусти бэкенд — он создаст учётку и напишет об этом в лог.
 - **Прод: бэк в рестарт-цикле, `P1000 Authentication failed`** → `DB_PASSWORD` не совпадает с тем, с которым Postgres инициализировал volume. Поправь пароль под существующий volume (или `down -v` на тестовом стеке — сотрёт данные).
 - **Парсинг включил, а товаров нет** → проверь `GET /health/parser` и `GET /admin/queue/<code>` (статусы `FAILED`/`SKIPPED`) и `GET /admin/queue/errors`.

@@ -17,6 +17,7 @@ import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
 import { AdminCreateProductDto } from './dto/admin-create-product.dto';
 import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminProductQueryDto } from './dto/admin-product-query.dto';
+import { AdminProductSourcesDto } from './dto/admin-product-sources.dto';
 import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
@@ -62,6 +63,15 @@ import {
   AdminCreatePromoCodeDto,
   AdminUpdatePromoCodeDto,
 } from '../promo/dto/promo-code.dto';
+import { UsersAdminService } from '../auth/users-admin.service';
+import {
+  AdminCreateUserDto,
+  AdminUpdateUserDto,
+  AdminUserQueryDto,
+} from '../auth/dto/admin-user.dto';
+import { ActingAdminId } from '../auth/current-user.decorator';
+import { AdminActionLogService } from '../audit/admin-action-log.service';
+import { AuditQueryDto } from '../audit/dto/audit-query.dto';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
@@ -79,6 +89,8 @@ export class AdminController {
     private readonly productMergeService: ProductMergeService,
     private readonly bannersService: BannersService,
     private readonly specsAdminService: SpecificationsAdminService,
+    private readonly usersAdminService: UsersAdminService,
+    private readonly adminActionLog: AdminActionLogService,
   ) {}
 
   @Get('stats')
@@ -94,6 +106,17 @@ export class AdminController {
   @Get('products')
   getProducts(@Query() query: AdminProductQueryDto) {
     return this.adminService.getProducts(query);
+  }
+
+  /**
+   * Supplier origin for a batch of products: "откуда спаршен", rendered on the
+   * admin screens (products list, order items, the storefront product page
+   * when an admin is signed in). Admin-only — supplier URLs and our costs
+   * never reach the storefront for anyone else.
+   */
+  @Get('products/sources')
+  getProductSources(@Query() query: AdminProductSourcesDto) {
+    return this.offersService.adminSourcesFor(query.ids);
   }
 
   @Post('products')
@@ -542,5 +565,54 @@ export class AdminController {
   @Get('pricing/history/:productId')
   getPriceHistory(@Param('productId') productId: string) {
     return this.pricingService.getHistory(productId);
+  }
+
+  /**
+   * Who changed what. Only mutating calls are recorded — a GET-heavy log would
+   * be mostly this page refreshing itself.
+   */
+  @Get('audit')
+  getAuditLog(@Query() query: AuditQueryDto) {
+    return this.adminActionLog.list(query);
+  }
+
+  /* ---- Accounts -------------------------------------------------------- */
+
+  @Get('users')
+  getUsers(@Query() query: AdminUserQueryDto) {
+    return this.usersAdminService.list(query);
+  }
+
+  /** One account with its figures and full order history. */
+  @Get('users/:id')
+  getUser(@Param('id') id: string) {
+    return this.usersAdminService.getOne(id);
+  }
+
+  /**
+   * The only way an ADMIN account is created — registration always produces a
+   * CUSTOMER.
+   */
+  @Post('users')
+  createUser(@Body() dto: AdminCreateUserDto) {
+    return this.usersAdminService.create(dto);
+  }
+
+  /**
+   * `ActingAdminId` is undefined for `x-admin-token` calls; with an account it
+   * is what stops an admin from demoting or disabling themselves.
+   */
+  @Patch('users/:id')
+  updateUser(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdateUserDto,
+    @ActingAdminId() actorId?: string,
+  ) {
+    return this.usersAdminService.update(id, dto, actorId);
+  }
+
+  @Delete('users/:id')
+  deleteUser(@Param('id') id: string, @ActingAdminId() actorId?: string) {
+    return this.usersAdminService.remove(id, actorId);
   }
 }

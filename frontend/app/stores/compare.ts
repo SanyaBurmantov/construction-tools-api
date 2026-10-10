@@ -73,5 +73,11 @@ export const useCompareStore = defineStore('compare', {
       this.items = []
       this.persist()
     },
+    /** The account's comparison as the server serves it — see the wishlist. */
+    applyServerList(items: CompareItem[]) {
+      this.items = items.slice(0, COMPARE_LIMIT)
+      this.loaded = true
+      this.persist()
+    },
   },
 })

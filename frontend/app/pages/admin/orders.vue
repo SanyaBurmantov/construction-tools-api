@@ -1,10 +1,24 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'admin' })
 
-type OrderStatus = 'NEW' | 'CONFIRMED' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED'
+/**
+ * Mirrors the Prisma `OrderStatus` enum exactly. It used to carry a
+ * `COMPLETED` that the database has never had: filtering by it or setting it
+ * was a 400 from the DTO, and the two statuses that do exist (`PROCESSING`,
+ * `DELIVERED`) rendered as an empty badge with no way to move an order on.
+ */
+type OrderStatus =
+  | 'NEW'
+  | 'CONFIRMED'
+  | 'PROCESSING'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'CANCELLED'
 
 type OrderItem = {
   id: string
+  /** Null once the product has been deleted from the catalogue. */
+  productId: string | null
   productName: string
   productSlug: string
   productSku: string | null
@@ -15,10 +29,20 @@ type OrderItem = {
   lineTotal: number
 }
 
+/** Present only when the order was placed from an account, not as a guest. */
+type OrderAccount = {
+  id: string
+  login: string
+  name: string | null
+  customerType: 'INDIVIDUAL' | 'COMPANY'
+  companyName: string | null
+}
+
 type Order = {
   id: string
   number: number
   status: OrderStatus
+  user: OrderAccount | null
   customerName: string
   customerPhone: string
   customerEmail: string | null
@@ -143,15 +167,17 @@ watch(search, () => {
 const STATUS_LABELS: Record<OrderStatus, string> = {
   NEW: 'Новый',
   CONFIRMED: 'Подтверждён',
+  PROCESSING: 'Собирается',
   SHIPPED: 'Отправлен',
-  COMPLETED: 'Завершён',
+  DELIVERED: 'Доставлен',
   CANCELLED: 'Отменён',
 }
 const STATUS_TONES: Record<OrderStatus, 'brand' | 'info' | 'warning' | 'success' | 'danger'> = {
   NEW: 'brand',
   CONFIRMED: 'info',
+  PROCESSING: 'warning',
   SHIPPED: 'warning',
-  COMPLETED: 'success',
+  DELIVERED: 'success',
   CANCELLED: 'danger',
 }
 const DELIVERY_LABELS: Record<string, string> = {
@@ -180,9 +206,12 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
     case 'NEW':
       return ['CONFIRMED', 'CANCELLED']
     case 'CONFIRMED':
+      return ['PROCESSING', 'CANCELLED']
+    case 'PROCESSING':
       return ['SHIPPED', 'CANCELLED']
     case 'SHIPPED':
-      return ['COMPLETED', 'CANCELLED']
+      return ['DELIVERED', 'CANCELLED']
+    // Delivered and cancelled are terminal.
     default:
       return []
   }
@@ -207,8 +236,9 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
         { value: '', label: 'Все' },
         { value: 'NEW', label: 'Новые' },
         { value: 'CONFIRMED', label: 'Подтверждённые' },
+        { value: 'PROCESSING', label: 'В сборке' },
         { value: 'SHIPPED', label: 'Отправленные' },
-        { value: 'COMPLETED', label: 'Завершённые' },
+        { value: 'DELIVERED', label: 'Доставленные' },
         { value: 'CANCELLED', label: 'Отменённые' }
       ]"
     />
@@ -250,6 +280,10 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
               <div class="customer">
                 <strong>{{ order.customerName }}</strong>
                 <span>{{ order.customerPhone }}</span>
+                <span v-if="order.user" class="account">
+                  аккаунт: {{ order.user.login }}
+                </span>
+                <span v-else class="account is-guest">без аккаунта</span>
               </div>
             </td>
             <td class="muted">{{ DELIVERY_LABELS[order.deliveryMethod] }}</td>
@@ -297,6 +331,19 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
         <div class="detail-grid">
           <UiCard title="Покупатель" flat>
             <dl class="facts">
+              <div>
+                <dt>Аккаунт</dt>
+                <dd>
+                  <NuxtLink v-if="detail.user" :to="`/admin/users/${detail.user.id}`">
+                    {{ detail.user.login }}
+                  </NuxtLink>
+                  <span v-else class="muted">гостевой заказ</span>
+                </dd>
+              </div>
+              <div v-if="detail.user?.companyName">
+                <dt>Организация</dt>
+                <dd>{{ detail.user.companyName }}</dd>
+              </div>
               <div>
                 <dt>Имя</dt>
                 <dd>{{ detail.customerName }}</dd>
@@ -348,6 +395,13 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
                   {{ item.productName }}
                 </NuxtLink>
                 <span v-if="item.productSku" class="item-sku">Арт. {{ item.productSku }}</span>
+                <!-- Откуда спаршен — удобно, когда заказ надо у кого-то купить. -->
+                <AdminProductSourceNote
+                  v-if="item.productId"
+                  :product-id="item.productId"
+                  variant="line"
+                  show-empty
+                />
               </div>
               <span class="item-qty">{{ item.quantity }} ×</span>
               <span class="item-price">
@@ -502,6 +556,14 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
 .customer span {
   color: var(--text-subtle);
   font-size: var(--text-xs);
+}
+
+.account {
+  color: var(--text-link);
+}
+
+.account.is-guest {
+  color: var(--text-subtle);
 }
 
 .total-cell {

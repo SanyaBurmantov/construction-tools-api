@@ -1,10 +1,15 @@
 <script setup lang="ts">
 /**
  * Admin shell: one auth gate and one navigation for every admin screen.
- * Pages render inside the slot and can assume the token is valid.
+ * Pages render inside the slot and can assume an ADMIN session is in place.
+ *
+ * The gate is a normal account login (the same session the storefront uses),
+ * not the `ADMIN_TOKEN` form it used to be — that token stayed a
+ * service-to-service header.
  */
-const { token, authorized, loadToken, saveToken, logout, adminFetch, errorMessage }
+const { authorized, adminFetch, errorMessage, refresh, logout, user, isAdmin }
   = useAdminApi()
+const { login: signInWithPassword } = useAuth()
 
 type Stats = {
   newOrders: number
@@ -18,6 +23,10 @@ const signingIn = ref(false)
 const signInError = ref('')
 const badges = ref<Stats | null>(null)
 const sidebarOpen = ref(false)
+const credentials = reactive({ login: '', password: '' })
+
+/** Signed in, but as a customer — a different problem from "not signed in". */
+const forbidden = computed(() => Boolean(user.value) && !isAdmin.value)
 
 const nav = computed(() => [
   { label: 'Дашборд', to: '/admin', icon: 'grid', exact: true },
@@ -40,6 +49,8 @@ const nav = computed(() => [
     badge: badges.value?.pendingReviews,
   },
   { label: 'Промокоды', to: '/admin/promo-codes', icon: 'ticket' },
+  { label: 'Пользователи', to: '/admin/users', icon: 'user' },
+  { label: 'Журнал', to: '/admin/audit', icon: 'log' },
   { label: 'Парсинг', to: '/admin/parsing', icon: 'refresh' },
   { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
@@ -56,11 +67,13 @@ const ICONS: Record<string, string> = {
   copy: 'M9 9h10v10H9zM5 15V5h10',
   image: 'M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4',
   book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5zM8 7h7M8 11h7',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0',
+  log: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
 }
 
-/** Validates whatever token we have by hitting a cheap admin endpoint. */
+/** Confirms the stored session still belongs to an admin. */
 async function verify() {
-  if (!token.value) {
+  if (!isAdmin.value) {
     authorized.value = false
     return false
   }
@@ -78,17 +91,30 @@ async function signIn() {
   signingIn.value = true
   signInError.value = ''
   try {
-    badges.value = await adminFetch<Stats>('/stats')
-    saveToken()
+    const account = await signInWithPassword({
+      login: credentials.login.trim(),
+      password: credentials.password,
+    })
+    if (account.role !== 'ADMIN') {
+      signInError.value = 'У этой учётной записи нет прав администратора'
+      return
+    }
+    credentials.password = ''
+    await verify()
   } catch (error) {
-    signInError.value = errorMessage(error, 'Неверный токен')
+    signInError.value = errorMessage(error, 'Неверный логин или пароль')
   } finally {
     signingIn.value = false
   }
 }
 
+async function signOut() {
+  await logout()
+  authorized.value = false
+}
+
 onMounted(async () => {
-  loadToken()
+  await refresh()
   await verify()
   checking.value = false
 })
@@ -113,20 +139,49 @@ useHead({
       <UiSkeleton width="320px" height="180px" radius="var(--radius-lg)" />
     </div>
 
+    <div v-else-if="forbidden" class="gate">
+      <div class="login">
+        <div class="login-brand">
+          <BrandLogo size="sm" />
+          <div>
+            <h1>Доступ закрыт</h1>
+            <p>Вы вошли как {{ user?.login }} — эта учётная запись не администратор</p>
+          </div>
+        </div>
+
+        <UiButton size="lg" block variant="secondary" @click="signOut">
+          Войти другой учётной записью
+        </UiButton>
+
+        <NuxtLink to="/" class="back">← Вернуться на сайт</NuxtLink>
+      </div>
+    </div>
+
     <div v-else-if="!authorized" class="gate">
       <form class="login" @submit.prevent="signIn">
         <div class="login-brand">
           <BrandLogo size="sm" />
           <div>
             <h1>Панель управления</h1>
-            <p>Введите ADMIN_TOKEN для доступа</p>
+            <p>Войдите учётной записью администратора</p>
           </div>
         </div>
 
-        <UiField label="ADMIN_TOKEN" :error="signInError" for="admin-token">
+        <UiField label="Логин" :error="signInError" for="admin-login">
           <UiInput
-            id="admin-token"
-            v-model="token"
+            id="admin-login"
+            v-model="credentials.login"
+            size="lg"
+            autocomplete="username"
+            placeholder="admin"
+            :invalid="Boolean(signInError)"
+          />
+        </UiField>
+
+        <UiField label="Пароль" for="admin-password">
+          <UiInput
+            id="admin-password"
+            v-model="credentials.password"
             type="password"
             size="lg"
             autocomplete="current-password"
@@ -173,7 +228,7 @@ useHead({
 
         <div class="sidebar-foot">
           <NuxtLink to="/" class="foot-link">Открыть сайт</NuxtLink>
-          <button type="button" class="foot-link is-danger" @click="logout">Выйти</button>
+          <button type="button" class="foot-link is-danger" @click="signOut">Выйти</button>
         </div>
       </aside>
 

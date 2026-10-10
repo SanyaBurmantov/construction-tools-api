@@ -1,31 +1,15 @@
-const STORAGE_KEY = 'admin-token'
-
 /**
- * Admin session. There are no accounts — auth is the `ADMIN_TOKEN` shared
- * secret sent as `x-admin-token`, kept in localStorage between visits.
+ * Admin API client.
+ *
+ * Auth is an **ADMIN account session** (`Authorization: Bearer <token>`),
+ * shared with the storefront through `useAuth` — one login for the whole site.
+ * The backend still accepts `x-admin-token` for service-to-service calls
+ * (runbook curl, CI), but the UI no longer asks a human for that secret.
  */
 export function useAdminApi() {
   const config = useRuntimeConfig()
-  const token = useState('admin-token', () => '')
+  const { token, user, isAdmin, readStoredToken, refresh, logout, errorMessage } = useAuth()
   const authorized = useState('admin-authorized', () => false)
-
-  function loadToken() {
-    if (import.meta.client && !token.value) {
-      token.value = localStorage.getItem(STORAGE_KEY) || ''
-    }
-    return token.value
-  }
-
-  function saveToken() {
-    if (import.meta.client) localStorage.setItem(STORAGE_KEY, token.value)
-    authorized.value = true
-  }
-
-  function logout() {
-    token.value = ''
-    authorized.value = false
-    if (import.meta.client) localStorage.removeItem(STORAGE_KEY)
-  }
 
   async function adminFetch<T>(path: string, options: Parameters<typeof $fetch>[1] = {}) {
     try {
@@ -33,12 +17,13 @@ export function useAdminApi() {
         ...options,
         headers: {
           ...(options.headers || {}),
-          'x-admin-token': token.value,
+          ...(token.value ? { Authorization: `Bearer ${token.value}` } : {}),
         },
       })
     } catch (error) {
-      // A rejected token means the stored secret is stale — drop the authorized
-      // flag so the login screen comes back instead of every request failing.
+      // 401 means the session is gone or expired — drop the authorized flag so
+      // the login screen comes back instead of every request failing. A 403 is
+      // a valid session without admin rights, which is a different screen.
       const status
         = (error as { statusCode?: number }).statusCode
           ?? (error as { status?: number }).status
@@ -47,12 +32,18 @@ export function useAdminApi() {
     }
   }
 
-  /** Unwraps the API's error envelope into a plain message. */
-  function errorMessage(error: unknown, fallback = 'Что-то пошло не так') {
-    const message = (error as { data?: { message?: string | string[] } }).data?.message
-    if (Array.isArray(message)) return message.join(', ')
-    return message || (error instanceof Error ? error.message : fallback)
+  return {
+    // `token` is the account session token; admin pages only ever check that
+    // there is one before firing a request. `loadToken` keeps its old name so
+    // the pages that call it did not have to change.
+    token,
+    loadToken: readStoredToken,
+    user,
+    isAdmin,
+    authorized,
+    refresh,
+    logout,
+    adminFetch,
+    errorMessage,
   }
-
-  return { token, authorized, loadToken, saveToken, logout, adminFetch, errorMessage }
 }

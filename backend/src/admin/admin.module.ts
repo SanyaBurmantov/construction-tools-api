@@ -9,6 +9,7 @@ import { PromoModule } from '../promo/promo.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { OffersModule } from '../offers/offers.module';
 import { BannersModule } from '../banners/banners.module';
+import { AuditModule } from '../audit/audit.module';
 import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
 import { SpecificationsAdminService } from './specifications-admin.service';
@@ -23,6 +24,8 @@ import { SpecificationsAdminService } from './specifications-admin.service';
     PricingModule,
     OffersModule,
     BannersModule,
+    // Serves GET /admin/audit; the interceptor that fills the log is global.
+    AuditModule,
   ],
   controllers: [AdminController],
   providers: [

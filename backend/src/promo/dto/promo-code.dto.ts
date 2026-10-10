@@ -84,6 +84,16 @@ export class AdminCreatePromoCodeDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   freeDelivery?: boolean;
+
+  @ApiProperty({
+    required: false,
+    default: true,
+    description: 'Показывать в личном кабинете покупателя',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  isPublic?: boolean;
 }
 
 export class AdminUpdatePromoCodeDto extends AdminCreatePromoCodeDto {

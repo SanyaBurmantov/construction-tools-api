@@ -97,6 +97,11 @@ export default defineNuxtConfig({
     // server. Both carry noindex meta of their own.
     '/favorites': { ssr: false },
     '/compare': { ssr: false },
+    // The account session lives in localStorage, so these pages have nothing
+    // to render on the server; they carry noindex meta of their own.
+    '/login': { ssr: false },
+    '/register': { ssr: false },
+    '/account': { ssr: false },
     '/admin': { ssr: false },
     '/admin/**': { ssr: false },
     '/sitemap.xml': { swr: 3600 }

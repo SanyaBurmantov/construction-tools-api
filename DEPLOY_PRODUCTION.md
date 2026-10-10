@@ -29,7 +29,11 @@ cp .env.prod.example .env.prod
 - `DOMAIN`: real domain pointed to the server.
 - `PUBLIC_ORIGIN`: `https://<DOMAIN>`.
 - `DB_PASSWORD`: long random password.
-- `ADMIN_TOKEN`: long random admin token.
+- `ADMIN_TOKEN`: long random admin token (service header `x-admin-token`, and
+  the fallback password for the first admin account).
+- `ADMIN_LOGIN` / `ADMIN_PASSWORD`: optional — the initial admin account the API
+  creates on first boot (default login `admin`). Sign in at `/admin` with it and
+  change the password in `/admin/users`.
 - Keep `PARSER_CRON_ENABLED=false` for the first deploy; enable only after manual parser checks.
 
 5. Start:

@@ -32,9 +32,16 @@ services:
       - /backend/node_modules
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/construction_tools?schema=public
-      # AdminGuard refuses every request when this is unset, so /admin can't be
-      # opened at all in the dev stack without it.
+      # The x-admin-token service header (runbook curl, CI) compares against
+      # this, and it is also the fallback password for the admin account the
+      # API creates on first boot when ADMIN_PASSWORD is unset.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      AUTH_SESSION_TTL_DAYS: ${AUTH_SESSION_TTL_DAYS:-30}
+      CART_TTL_DAYS: ${CART_TTL_DAYS:-90}
+      LIST_TTL_DAYS: ${LIST_TTL_DAYS:-365}
+      ADMIN_LOG_TTL_DAYS: ${ADMIN_LOG_TTL_DAYS:-180}
     depends_on:
       db:
         condition: service_healthy

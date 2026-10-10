@@ -206,6 +206,9 @@ useHead(() => {
     </div>
 
     <template v-else-if="product">
+      <!-- Admins only: which supplier this card was parsed from. -->
+      <AdminProductSourceNote :product-id="product.id" variant="banner" show-empty />
+
       <UiBreadcrumbs :items="breadcrumbs" />
 
       <div class="layout">
