@@ -32,9 +32,8 @@ services:
       - /backend/node_modules
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/construction_tools?schema=public
-      # The x-admin-token service header (runbook curl, CI) compares against
-      # this, and it is also the fallback password for the admin account the
-      # API creates on first boot when ADMIN_PASSWORD is unset.
+      # Service header only (runbook curl, CI). The admin *account* password is
+      # ADMIN_PASSWORD, or the committed default admin / test-111.
       ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
       ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

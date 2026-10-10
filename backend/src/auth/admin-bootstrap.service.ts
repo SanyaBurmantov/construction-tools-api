@@ -7,12 +7,22 @@ import { normalizeLogin } from './login.util';
 const DEFAULT_ADMIN_LOGIN = 'admin';
 
 /**
+ * The password the first admin account is created with when `ADMIN_PASSWORD`
+ * is not set. Committed and known on purpose: a fresh install — local, dev
+ * stack or a new server — has a usable `/admin` immediately, and the password
+ * is changed from inside the panel right after the first sign-in.
+ *
+ * Set `ADMIN_PASSWORD` to start from something else instead.
+ */
+const INITIAL_ADMIN_PASSWORD = 'test-111';
+
+/**
  * Makes sure there is always a way into the admin panel.
  *
- * On boot, if no active ADMIN account exists, one is created from
- * `ADMIN_LOGIN` (default `admin`) and `ADMIN_PASSWORD`, falling back to
- * `ADMIN_TOKEN` so a deployment that already has the shared token needs no new
- * secret — the first login is then `admin` + the value of `ADMIN_TOKEN`.
+ * On boot, if no active ADMIN account exists, one is created with
+ * `ADMIN_LOGIN` (default `admin`) and `ADMIN_PASSWORD` — or, when that is not
+ * set, `INITIAL_ADMIN_PASSWORD`. So the first login is always known in
+ * advance: `admin` / `test-111` on a fresh install.
  *
  * It never touches an existing account: a password an admin changed stays
  * changed, and an admin deleted on purpose is not resurrected while another
@@ -45,15 +55,13 @@ export class AdminBootstrapService implements OnModuleInit {
     const login = normalizeLogin(
       process.env.ADMIN_LOGIN || DEFAULT_ADMIN_LOGIN,
     );
-    const password = process.env.ADMIN_PASSWORD || process.env.ADMIN_TOKEN;
-
-    if (!password) {
-      this.logger.warn(
-        'No admin account and neither ADMIN_PASSWORD nor ADMIN_TOKEN is set — ' +
-          'nobody can sign in to /admin. Set one and restart.',
-      );
-      return;
-    }
+    // `ADMIN_PASSWORD` wins; otherwise the committed initial password, so an
+    // admin always exists and the first sign-in never has to be looked up.
+    // `ADMIN_TOKEN` is deliberately not consulted here any more: it is the
+    // service-to-service header, and reusing it as a password made the first
+    // login differ per deployment.
+    const configured = process.env.ADMIN_PASSWORD;
+    const password = configured || INITIAL_ADMIN_PASSWORD;
 
     const taken = await this.prisma.user.findUnique({
       where: { login },
@@ -79,9 +87,12 @@ export class AdminBootstrapService implements OnModuleInit {
     });
 
     this.logger.warn(
-      `Created the initial admin account "${login}" with the password from ` +
-        `${process.env.ADMIN_PASSWORD ? 'ADMIN_PASSWORD' : 'ADMIN_TOKEN'}. ` +
-        'Change it in /admin/users after signing in.',
+      configured
+        ? `Created the initial admin account "${login}" with the password from ` +
+            'ADMIN_PASSWORD. Change it in /admin/users after signing in.'
+        : `Created the initial admin account "${login}" / ` +
+            `"${INITIAL_ADMIN_PASSWORD}" — the committed initial password. ` +
+            'Sign in and change it in /admin/users.',
     );
   }
 }

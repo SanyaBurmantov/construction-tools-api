@@ -70,10 +70,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   UUID — a guest needs the confirmation page — and projects out PII.
   **The first admin is created at boot** by `auth/admin-bootstrap.service.ts`
   when no active ADMIN exists: login `ADMIN_LOGIN` (default `admin`), password
-  `ADMIN_PASSWORD` falling back to `ADMIN_TOKEN` so a deployment needs no new
-  secret. It never touches an existing account — a changed password stays
-  changed, and a deliberately deleted admin is not resurrected while another
-  one is active.
+  `ADMIN_PASSWORD` or, when that is unset, the committed
+  `INITIAL_ADMIN_PASSWORD` (`test-111`) — so the first sign-in is known in
+  advance instead of having to be looked up in `.env.prod`. That is the
+  trade-off on purpose: a known initial password, changed from inside
+  `/admin/users` after the first login. `ADMIN_TOKEN` is **not** a password
+  fallback any more; it is only the service header. The bootstrap never
+  touches an existing account — a changed password stays changed, and a
+  deliberately deleted admin is not resurrected while another one is active.
 - **API routing in prod**: Caddy serves `/api/*` → strips `/api` → `backend:8000`;
   everything else → `frontend:3000`. Client calls use base `/api`
   (`NUXT_PUBLIC_API_BASE`); SSR calls go through the Nuxt server route

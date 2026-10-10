@@ -42,8 +42,10 @@ Important env vars:
   `x-admin-token` (runbook curl, CI). Humans sign in with an ADMIN account
   instead — see `AuthModule`.
 - `ADMIN_LOGIN` / `ADMIN_PASSWORD`: the initial admin account, created on boot
-  only when no active ADMIN exists. `ADMIN_LOGIN` defaults to `admin` and the
-  password falls back to `ADMIN_TOKEN`.
+  only when no active ADMIN exists. Defaults: login `admin`, password
+  `test-111` (committed in `auth/admin-bootstrap.service.ts`) — change it in
+  `/admin/users` after the first sign-in, or set `ADMIN_PASSWORD` to start
+  from your own.
 - `AUTH_SESSION_TTL_DAYS`: account session lifetime, default `30`.
 - `CART_TTL_DAYS`: how long an untouched account cart is kept, default `90`.
 - `LIST_TTL_DAYS`: same for favourites/comparison, default `365`.

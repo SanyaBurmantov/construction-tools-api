@@ -38,7 +38,8 @@ services:
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
       # Начальная учётка администратора создаётся на первом старте, если
-      # активных админов нет. Пароль — ADMIN_PASSWORD, иначе ADMIN_TOKEN.
+      # активных админов нет. Пароль — ADMIN_PASSWORD, а если он пуст —
+      # зашитый начальный: admin / test-111 (сменить сразу после входа).
       ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Срок жизни сессии аккаунта (Authorization: Bearer), в сутках.
