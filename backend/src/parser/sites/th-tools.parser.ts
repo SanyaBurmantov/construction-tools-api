@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { TParsedProduct } from '../types/parsed-product.type';
+import { isPlaceholderImageUrl } from '../../common/utils/product-images';
 
 const TH_TOOLS_BASE_URL = 'https://th-tool.by';
 
@@ -256,14 +257,12 @@ function isProductImage(url: string) {
   const normalized = url.toLowerCase();
   return (
     !normalized.startsWith('data:') &&
-    !normalized.includes('no_photo') &&
     !normalized.includes('favicon') &&
     !normalized.includes('sprite') &&
-    // Photo-less products still render a gallery, filled with the theme's
+    // A photo-less product still renders a gallery, filled with the theme's
     // `/themes/<name>/img/default.png`. Storing it would give the product a
     // fake picture and hide it from the "без фото" data-quality report.
-    !normalized.includes('/themes/') &&
-    !/\/default\.(png|jpe?g|webp)/.test(normalized) &&
+    !isPlaceholderImageUrl(normalized) &&
     /\.(jpe?g|png|webp)(?:\?|$)/.test(normalized)
   );
 }

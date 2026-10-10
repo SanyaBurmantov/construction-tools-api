@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminCreateBrandDto } from './dto/admin-create-brand.dto';
 import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
@@ -503,9 +503,20 @@ export class AdminService {
     });
   }
 
+  /**
+   * Flat category list for the admin tree.
+   *
+   * Counts come along because the page needs them to decide anything: whether
+   * a branch is safe to hide, which "Прочее" is the real one, whether a row is
+   * deletable. It rendered `row._count.products` already — the payload just
+   * never carried it, so the column was always blank.
+   */
   getCategories() {
     return this.prisma.category.findMany({
-      orderBy: [{ level: 'asc' }, { name: 'asc' }],
+      orderBy: [{ level: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+      include: {
+        _count: { select: { products: true, children: true } },
+      },
     });
   }
 
@@ -528,47 +539,229 @@ export class AdminService {
   }
 
   async createCategory(dto: AdminCreateCategoryDto) {
+    const slug = dto.slug.trim();
     const parent = dto.parentId
       ? await this.prisma.category.findUnique({ where: { id: dto.parentId } })
       : null;
+    if (dto.parentId && !parent) {
+      throw new NotFoundException('Parent category not found');
+    }
+    await this.ensureSlugFree(slug);
 
     return this.prisma.category.create({
       data: {
-        name: dto.name,
-        slug: dto.slug,
+        name: dto.name.trim(),
+        slug,
         parentId: dto.parentId,
         description: dto.description,
+        image: dto.image,
         level: parent ? parent.level + 1 : 0,
-        path: parent ? [...parent.path, dto.slug] : [dto.slug],
+        path: parent ? [...parent.path, slug] : [slug],
         // Identity must match what the parsers build, or a hand-made category
         // and a parsed one at the same place in the tree become two rows.
-        pathKey: parent ? `${parent.pathKey}/${dto.slug}` : dto.slug,
-        seoTitle: dto.name,
-        seoDescription: dto.description || dto.name,
+        pathKey: parent ? `${parent.pathKey}/${slug}` : slug,
+        seoTitle: dto.seoTitle?.trim() || dto.name.trim(),
+        seoDescription:
+          dto.seoDescription?.trim() || dto.description || dto.name.trim(),
+        sortOrder: dto.sortOrder ?? 0,
+        isVisible: dto.isVisible ?? true,
+        isFeatured: dto.isFeatured ?? false,
       },
     });
   }
 
+  /**
+   * Edit one category. Everything the storefront reads is editable here,
+   * including the display settings (`sortOrder` / `isVisible` / `isFeatured`)
+   * that decide where it appears in the menu.
+   *
+   * Two things make this more than a `category.update`:
+   *
+   * - **Moving or renaming rewrites identity.** `pathKey` is the full slug
+   *   chain and is what the parsers upsert on, so a move that only changed
+   *   `parentId` left the row keyed at its old position and the next parse
+   *   recreated it there — the category came back where the admin moved it
+   *   from. `path`, `level` and `pathKey` are rebuilt for the whole subtree,
+   *   the same way `CategoryMergeService` does it.
+   * - **A renamed slug keeps its old URL.** The old slug becomes a
+   *   `CategoryRedirect`, which `GET /categories/:slug` and the `categorySlug`
+   *   product filter already follow, so indexed links and anything a customer
+   *   bookmarked keep resolving instead of 404ing.
+   */
   async updateCategory(id: string, dto: AdminUpdateCategoryDto) {
     const current = await this.ensureCategoryExists(id);
-    const parent = dto.parentId
-      ? await this.prisma.category.findUnique({ where: { id: dto.parentId } })
-      : null;
-    const slug = dto.slug || current.slug;
 
-    return this.prisma.category.update({
-      where: { id },
-      data: {
-        name: dto.name,
-        slug: dto.slug,
-        parentId: dto.parentId,
-        description: dto.description,
-        level: dto.parentId ? (parent?.level ?? 0) + 1 : current.level,
-        path: dto.parentId ? [...(parent?.path || []), slug] : current.path,
-        seoTitle: dto.name,
-        seoDescription: dto.description,
-      },
+    const categories = await this.prisma.category.findMany({
+      select: { id: true, parentId: true, slug: true, level: true, path: true },
     });
+    const descendants = this.collectSubtree(id, categories);
+
+    const parentId =
+      dto.parentId === undefined ? current.parentId : dto.parentId || null;
+    if (parentId === id) {
+      throw new BadRequestException('Category cannot be its own parent');
+    }
+    if (parentId && descendants.some((row) => row.id === parentId)) {
+      throw new BadRequestException(
+        'Cannot move a category into its own subcategory',
+      );
+    }
+    const parent = parentId
+      ? categories.find((row) => row.id === parentId)
+      : null;
+    if (parentId && !parent) {
+      throw new NotFoundException('Parent category not found');
+    }
+
+    const slug = dto.slug?.trim() || current.slug;
+    if (slug !== current.slug) await this.ensureSlugFree(slug, id);
+
+    const parentPath = parent?.path ?? [];
+    const path = [...parentPath, slug];
+    const moved =
+      parentId !== current.parentId ||
+      path.join('/') !== current.path.join('/');
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.category.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+          ...(dto.slug !== undefined ? { slug } : {}),
+          ...(dto.parentId !== undefined ? { parentId } : {}),
+          ...(dto.description !== undefined
+            ? { description: dto.description }
+            : {}),
+          ...(dto.image !== undefined ? { image: dto.image || null } : {}),
+          ...(dto.seoTitle !== undefined
+            ? {
+                seoTitle:
+                  dto.seoTitle.trim() || dto.name?.trim() || current.name,
+              }
+            : {}),
+          ...(dto.seoDescription !== undefined
+            ? { seoDescription: dto.seoDescription }
+            : {}),
+          ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+          ...(dto.isVisible !== undefined ? { isVisible: dto.isVisible } : {}),
+          ...(dto.isFeatured !== undefined
+            ? { isFeatured: dto.isFeatured }
+            : {}),
+          ...(moved
+            ? { path, level: parentPath.length, pathKey: path.join('/') }
+            : {}),
+        },
+      });
+
+      if (slug !== current.slug) {
+        // The new slug may itself be an alias left behind by an earlier
+        // rename; a row cannot be both a category and a redirect.
+        await tx.categoryRedirect.deleteMany({ where: { slug } });
+        await tx.categoryRedirect.upsert({
+          where: { slug: current.slug },
+          create: { slug: current.slug, categoryId: id },
+          update: { categoryId: id },
+        });
+      }
+
+      if (moved) {
+        await this.rebuildSubtreePaths(tx, id, path, categories);
+      }
+
+      return updated;
+    });
+  }
+
+  /** Every category below `id`, breadth-first. */
+  private collectSubtree<T extends { id: string; parentId: string | null }>(
+    id: string,
+    categories: T[],
+  ): T[] {
+    const childrenByParent = new Map<string, T[]>();
+    for (const row of categories) {
+      if (!row.parentId) continue;
+      const list = childrenByParent.get(row.parentId) ?? [];
+      list.push(row);
+      childrenByParent.set(row.parentId, list);
+    }
+
+    const result: T[] = [];
+    const queue = [...(childrenByParent.get(id) ?? [])];
+    while (queue.length) {
+      const current = queue.shift() as T;
+      result.push(current);
+      queue.push(...(childrenByParent.get(current.id) ?? []));
+    }
+    return result;
+  }
+
+  /**
+   * Rewrites `path` / `level` / `pathKey` under a category that just moved.
+   * Each row keeps its own slug; only the chain above it changes.
+   */
+  private async rebuildSubtreePaths(
+    tx: Prisma.TransactionClient,
+    rootId: string,
+    rootPath: string[],
+    categories: Array<{ id: string; parentId: string | null; slug: string }>,
+  ) {
+    const childrenByParent = new Map<string, typeof categories>();
+    for (const row of categories) {
+      if (!row.parentId) continue;
+      const list = childrenByParent.get(row.parentId) ?? [];
+      list.push(row);
+      childrenByParent.set(row.parentId, list);
+    }
+
+    const walk = async (parentId: string, parentPath: string[]) => {
+      for (const child of childrenByParent.get(parentId) ?? []) {
+        const path = [...parentPath, child.slug];
+        await tx.category.update({
+          where: { id: child.id },
+          data: { path, level: parentPath.length, pathKey: path.join('/') },
+        });
+        await walk(child.id, path);
+      }
+    };
+
+    await walk(rootId, rootPath);
+  }
+
+  /** A slug is a public URL and is unique across categories and aliases. */
+  private async ensureSlugFree(slug: string, exceptId?: string) {
+    const taken = await this.prisma.category.findUnique({
+      where: { slug },
+      select: { id: true, name: true },
+    });
+    if (taken && taken.id !== exceptId) {
+      throw new BadRequestException(
+        `Slug "${slug}" is already used by category "${taken.name}"`,
+      );
+    }
+  }
+
+  /**
+   * Renumber a row of sibling categories. Positions start at 1, so 0 keeps
+   * meaning "never curated" and those rows stay sorted by product count.
+   */
+  async reorderCategories(ids: string[]) {
+    const found = await this.prisma.category.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
+    if (found.length !== ids.length) {
+      throw new NotFoundException('Some categories no longer exist');
+    }
+
+    await this.prisma.$transaction(
+      ids.map((id, index) =>
+        this.prisma.category.update({
+          where: { id },
+          data: { sortOrder: index + 1 },
+        }),
+      ),
+    );
+    return { ok: true, updated: ids.length };
   }
 
   async deleteCategory(id: string) {

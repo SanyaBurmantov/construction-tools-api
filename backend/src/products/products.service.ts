@@ -6,12 +6,45 @@ import { ProductFilterDto } from './dto/product-filter-dto';
 import { SpecSelection, parseSpecFilter } from './spec-filter';
 import { searchVariants } from '../common/utils/transliterate';
 import { shouldBeFilterable } from '../parser/spec-filterable';
+import { withoutPlaceholderImages } from '../common/utils/product-images';
 
-const SEARCH_CANDIDATE_LIMIT = 1000;
+/**
+ * How many products deep the relevance ranking goes.
+ *
+ * This is an *ordering* budget, not a membership one. It used to be both: the
+ * ranked id list was fed into `where: { id: { in: … } }`, so a search for
+ * "ключ", "набор" or "масло" answered `total: 1000` exactly — the cap, not the
+ * truth — and the facets, the price range and the sort were all computed over
+ * an arbitrary thousand rows. Membership is now a relational clause, so counts
+ * and facets cover every match; this only decides how far the "most relevant
+ * first" order extends before falling back to alphabetical.
+ */
+const SEARCH_RANK_LIMIT = 2000;
+
+/**
+ * Trigram similarity is the one part of the match that cannot be written as a
+ * Prisma filter, so typo-tolerant hits still arrive as an id list and are
+ * OR'ed into the clause. Bounded because, unlike a substring match, this one
+ * can touch a large slice of the catalogue at a low threshold.
+ */
+const FUZZY_MATCH_LIMIT = 2000;
 /** How many characteristics a category page offers as filters. */
 const SPEC_FACET_LIMIT = 40;
 /** How many options one characteristic offers. */
 const SPEC_FACET_VALUE_LIMIT = 30;
+/**
+ * An option has to narrow the list to be worth offering.
+ *
+ * Supplier feeds carry free-text measurements, so a characteristic often has
+ * one distinct value per product: on `santehnika-2` the "Вес" facet offered 17
+ * options — `0.0733`, `1.28`, `6.5` … — each matching a single product. That
+ * is a list of products wearing a filter's clothes. Values below this count
+ * are dropped, and a characteristic needs at least two that survive, which is
+ * the same "a filter with one option filters nothing" rule applied to options
+ * that actually do something.
+ */
+const MIN_FACET_VALUE_COUNT = 2;
+const MIN_FACET_VALUES = 2;
 /** word_similarity threshold: below this trigram matches are noise */
 const SIMILARITY_THRESHOLD = 0.45;
 /** trigram matching needs a few characters to mean anything */
@@ -32,6 +65,37 @@ const LIST_INCLUDE = {
 type ListProduct = Prisma.ProductGetPayload<{
   include: typeof LIST_INCLUDE;
 }>;
+
+/**
+ * Columns that must never leave the admin surface.
+ *
+ * `include` hands back every scalar on `Product`, and the storefront payload
+ * used to be the whole row spread into the response — so `costPrice` (what we
+ * pay the supplier) and the pricing bookkeeping beside it were readable in the
+ * catalogue JSON and, through the SSR payload, in the page source of every
+ * product card. Counting `sourceProducts` instead of returning them was only
+ * half the guarantee; this is the other half.
+ */
+const ADMIN_ONLY_PRODUCT_FIELDS = [
+  'costPrice',
+  'pricingMode',
+  'appliedRuleId',
+  'priceReviewNeeded',
+  'matchBarcode',
+  'matchSku',
+  'matchModel',
+] as const;
+
+type AdminOnlyProductField = (typeof ADMIN_ONLY_PRODUCT_FIELDS)[number];
+
+/** Drops the admin-only columns from a row headed for a public response. */
+function toPublicProduct<
+  T extends Partial<Record<AdminOnlyProductField, unknown>>,
+>(product: T): Omit<T, AdminOnlyProductField> {
+  const rest = { ...product };
+  for (const field of ADMIN_ONLY_PRODUCT_FIELDS) delete rest[field];
+  return rest as Omit<T, AdminOnlyProductField>;
+}
 
 @Injectable()
 export class ProductService {
@@ -95,7 +159,11 @@ export class ProductService {
     void sourceProducts;
 
     return {
-      ...rest,
+      ...toPublicProduct(rest),
+      // The gallery feeds `og:image` and the product JSON-LD as well as the
+      // page, so a supplier's "нет фото" asset would be what we hand Google
+      // as the product photo.
+      images: withoutPlaceholderImages(product.images),
       productSpecs: product.productSpecs.map((productSpec) => ({
         name: productSpec.specification.name,
         value: productSpec.value,
@@ -173,6 +241,12 @@ export class ProductService {
 
     const labels = this.pickSpecLabels(labelRows);
     const selectedKeys = new Set(selections.map((s) => s.specKey));
+    const selectedValues = new Map(
+      selections.map((selection) => [
+        selection.specKey,
+        new Set(selection.values),
+      ]),
+    );
 
     // The relation filter is what makes grouping by canonical key possible
     // without listing thousands of specification ids in an IN clause.
@@ -232,6 +306,14 @@ export class ProductService {
             group: null,
             values: [...(counts.get(key) ?? new Map<string, number>())]
               .map(([value, count]) => ({ value, count }))
+              // A value the visitor has already ticked stays, whatever its
+              // count — otherwise an active filter would vanish from the
+              // sidebar and could not be cleared.
+              .filter(
+                ({ value, count }) =>
+                  count >= MIN_FACET_VALUE_COUNT ||
+                  selectedValues.get(key)?.has(value),
+              )
               // Most-common values first: the long tail of one-off values from
               // supplier feeds shouldn't push the useful options out of sight.
               .sort(
@@ -243,8 +325,8 @@ export class ProductService {
         })
         // Old imports may still have enabled identity fields such as Артикул.
         .filter((spec) => shouldBeFilterable(spec.name))
-        // A filter with one option filters nothing.
-        .filter((spec) => spec.values.length > 1)
+        // A filter with fewer than two usable options filters nothing.
+        .filter((spec) => spec.values.length >= MIN_FACET_VALUES)
         .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
     );
   }
@@ -295,28 +377,13 @@ export class ProductService {
     });
   }
 
-  async findAll() {
-    return this.prisma.product.findMany({
-      include: {
-        brand: true,
-        category: true,
-        productSpecs: {
-          include: {
-            specification: true,
-          },
-        },
-        images: true,
-        sourceProducts: true,
-      },
-    });
-  }
-
   async findAllFiltered(filter: ProductFilterDto) {
     const page = filter.page ?? 1;
     const limit = Math.min(filter.limit ?? 20, 100);
     const skip = (page - 1) * limit;
 
-    const categoryIds = await this.resolveCategoryIds(filter);
+    const { filterIds: categoryIds, facetScope } =
+      await this.loadCategoryScope(filter);
     const brandIds = filter.brandId
       ? filter.brandId
           .split(',')
@@ -324,11 +391,11 @@ export class ProductService {
           .filter(Boolean)
       : undefined;
 
-    // Search resolves to a ranked id list first (trigram + transliteration);
-    // the relational where then just narrows to those ids.
+    // Membership is a relational clause, so every count below covers the whole
+    // match; the ranked id list that follows only decides the order.
     const searchTerm = filter.search?.trim();
-    const searchIds = searchTerm
-      ? await this.searchProductIds(searchTerm)
+    const searchWhere = searchTerm
+      ? await this.buildSearchWhere(searchTerm)
       : undefined;
 
     const specSelections = parseSpecFilter(filter.specs);
@@ -341,9 +408,10 @@ export class ProductService {
       omitSpecKey?: string,
     ): Prisma.ProductWhereInput => {
       const where: Prisma.ProductWhereInput = { status: 'PUBLISHED' };
-      if (searchIds) {
-        where.id = { in: searchIds };
-      }
+      // Collected and applied as one AND below, because the spec filters want
+      // `AND` too and the last writer would otherwise win.
+      const and: Prisma.ProductWhereInput[] = [];
+      if (searchWhere) and.push(searchWhere);
       if (filter.inStock) where.stockStatus = 'in_stock';
       // A product counts as discounted only when oldPrice really exceeds the
       // current price — parsers sometimes leave a stale oldPrice behind.
@@ -383,18 +451,19 @@ export class ProductService {
         const applicable = specSelections.filter(
           (selection) => selection.specKey !== omitSpecKey,
         );
-        if (applicable.length) {
-          where.AND = applicable.map((selection) => ({
+        for (const selection of applicable) {
+          and.push({
             productSpecs: {
               some: {
                 specification: { canonicalKey: selection.specKey },
                 valueNorm: { in: selection.values },
               },
             },
-          }));
+          });
         }
       }
 
+      if (and.length) where.AND = and;
       return where;
     };
     const where = buildWhere();
@@ -425,7 +494,7 @@ export class ProductService {
       } as Prisma.ProductOrderByWithRelationInput;
     })();
     // no explicit sort + active search → keep the relevance ranking
-    const useRelevance = !filter.sortBy && searchIds !== undefined;
+    const useRelevance = !filter.sortBy && searchTerm !== undefined;
 
     const specFacets = await this.buildSpecFacets(
       categoryIds,
@@ -436,8 +505,8 @@ export class ProductService {
     const [total, products, categoryCounts, brandCounts, sourceCounts, price] =
       await Promise.all([
         this.prisma.product.count({ where }),
-        useRelevance
-          ? this.findPageByRelevance(where, searchIds, skip, limit)
+        useRelevance && searchTerm
+          ? this.findPageByRelevance(where, searchTerm, skip, limit)
           : this.prisma.product.findMany({
               where,
               skip,
@@ -467,9 +536,30 @@ export class ProductService {
         }),
       ]);
 
+    // Per-leaf counts, folded into one subtree total per category the sidebar
+    // renders. The frontend used to do this fold itself, which is why the map
+    // had to carry every category in the catalogue.
+    const leafCounts = new Map(
+      categoryCounts.map((item) => [item.categoryId, item._count._all]),
+    );
     const facets = {
+      // Categories that match nothing in the current context are left out
+      // entirely rather than reported as `0`. A zero is not a filter the
+      // visitor can use: the storefront rendered those rows as "Дрели 0",
+      // links to a grid guaranteed to be empty.
       categories: Object.fromEntries(
-        categoryCounts.map((item) => [item.categoryId, item._count._all]),
+        facetScope
+          .map(
+            (node) =>
+              [
+                node.id,
+                node.descendants.reduce(
+                  (sum, id) => sum + (leafCounts.get(id) ?? 0),
+                  0,
+                ),
+              ] as const,
+          )
+          .filter(([, count]) => count > 0),
       ),
       brands: Object.fromEntries(
         brandCounts
@@ -492,7 +582,8 @@ export class ProductService {
     const data = products.map((product) => {
       const { _count, ...rest } = product;
       return {
-        ...rest,
+        ...toPublicProduct(rest),
+        images: withoutPlaceholderImages(product.images),
         productSpecs: product.productSpecs.map((productSpec) => ({
           name: productSpec.specification.name,
           value: productSpec.value,
@@ -520,23 +611,49 @@ export class ProductService {
    */
   private async findPageByRelevance(
     where: Prisma.ProductWhereInput,
-    rankedIds: string[],
+    term: string,
     skip: number,
     limit: number,
   ): Promise<ListProduct[]> {
-    const matching = await this.prisma.product.findMany({
-      where,
-      select: { id: true },
-    });
+    const rankedIds = await this.searchProductIds(term);
     const position = new Map(rankedIds.map((id, index) => [id, index]));
-    const pageIds = matching
-      .map((row) => row.id)
-      .sort(
-        (a, b) =>
-          (position.get(a) ?? Number.MAX_SAFE_INTEGER) -
-          (position.get(b) ?? Number.MAX_SAFE_INTEGER),
-      )
-      .slice(skip, skip + limit);
+
+    // The ranked window, narrowed by the active filters and kept in rank
+    // order. Bounded by SEARCH_RANK_LIMIT, so this list stays small even when
+    // the term matches most of the catalogue — which is the whole point of
+    // separating it from membership.
+    const ranked = rankedIds.length
+      ? (
+          await this.prisma.product.findMany({
+            where: { AND: [where, { id: { in: rankedIds } }] },
+            select: { id: true },
+          })
+        )
+          .map((row) => row.id)
+          .sort(
+            (a, b) =>
+              (position.get(a) ?? Number.MAX_SAFE_INTEGER) -
+              (position.get(b) ?? Number.MAX_SAFE_INTEGER),
+          )
+      : [];
+
+    const pageIds = ranked.slice(skip, skip + limit);
+
+    // Matches the ranking never reached still have to be reachable: they come
+    // after everything ranked, alphabetically, and Postgres paginates them
+    // rather than this process holding every id in memory.
+    if (pageIds.length < limit) {
+      const tail = await this.prisma.product.findMany({
+        where: rankedIds.length
+          ? { AND: [where, { id: { notIn: rankedIds } }] }
+          : where,
+        select: { id: true },
+        orderBy: { name: 'asc' },
+        skip: Math.max(0, skip - ranked.length),
+        take: limit - pageIds.length,
+      });
+      pageIds.push(...tail.map((row) => row.id));
+    }
 
     const rows = await this.prisma.product.findMany({
       where: { id: { in: pageIds } },
@@ -549,13 +666,77 @@ export class ProductService {
   }
 
   /**
+   * Which products a term matches, as a Prisma filter.
+   *
+   * Everything except trigram similarity is expressible relationally, so the
+   * match becomes part of `where` and Postgres counts it with its own indexes.
+   * That is what makes `total`, the facets and the price range describe the
+   * real result set rather than the first page of a ranked id list.
+   *
+   * Typo tolerance is the exception — `word_similarity` has no Prisma
+   * equivalent — so those ids are fetched separately and OR'ed in.
+   */
+  private async buildSearchWhere(
+    term: string,
+  ): Promise<Prisma.ProductWhereInput | undefined> {
+    const variants = searchVariants(term);
+    // No usable variants means the term was punctuation: match nothing rather
+    // than silently dropping the filter and returning the whole catalogue.
+    if (!variants.length) return { id: { in: [] } };
+
+    const substring: Prisma.ProductWhereInput[] = variants.flatMap(
+      (variant) => {
+        const contains = { contains: variant, mode: 'insensitive' as const };
+        return [
+          { name: contains },
+          { sku: contains },
+          { model: contains },
+          { brand: { name: contains } },
+        ];
+      },
+    );
+
+    const fuzzyIds = await this.fuzzyMatchIds(variants);
+    return {
+      OR: fuzzyIds.length
+        ? [...substring, { id: { in: fuzzyIds } }]
+        : substring,
+    };
+  }
+
+  /** Trigram-similar product ids — the typo-tolerant half of the match. */
+  private async fuzzyMatchIds(variants: string[]): Promise<string[]> {
+    const fuzzable = variants.filter(
+      (variant) => variant.length >= MIN_FUZZY_LENGTH,
+    );
+    if (!fuzzable.length) return [];
+
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT p."id"
+      FROM "Product" p
+      WHERE p."status" = 'PUBLISHED'
+        AND (${Prisma.join(
+          fuzzable.map(
+            (variant) =>
+              Prisma.sql`word_similarity(${variant}, p."name") > ${SIMILARITY_THRESHOLD}`,
+          ),
+          ' OR ',
+        )})
+      LIMIT ${FUZZY_MATCH_LIMIT}
+    `);
+    return rows.map((row) => row.id);
+  }
+
+  /**
    * Ranked full-text-ish search: exact/prefix SKU first, then name prefix,
    * substring matches, model/brand hits, and finally pg_trgm word similarity
    * for typo tolerance. Matches the term and its transliterations.
+   *
+   * Used only to order results now — see `SEARCH_RANK_LIMIT`.
    */
   private async searchProductIds(
     term: string,
-    limit = SEARCH_CANDIDATE_LIMIT,
+    limit = SEARCH_RANK_LIMIT,
   ): Promise<string[]> {
     const variants = searchVariants(term);
     if (!variants.length) return [];
@@ -629,11 +810,17 @@ export class ProductService {
           sku: true,
           priceValue: true,
           priceCurrency: true,
-          images: { orderBy: { order: 'asc' }, take: 1, select: { url: true } },
+          images: { orderBy: { order: 'asc' }, select: { url: true } },
         },
       }),
       this.prisma.category.findMany({
-        where: { ...nameMatch, products: { some: { status: 'PUBLISHED' } } },
+        // `isVisible` is an admin decision to keep a branch out of navigation;
+        // a search suggestion is navigation.
+        where: {
+          ...nameMatch,
+          isVisible: true,
+          products: { some: { status: 'PUBLISHED' } },
+        },
         select: { id: true, name: true, slug: true },
         take: 4,
         orderBy: { name: 'asc' },
@@ -650,47 +837,117 @@ export class ProductService {
     const products = ids
       .map((id) => byId.get(id))
       .filter((row): row is NonNullable<typeof row> => Boolean(row))
-      .map(({ images, ...row }) => ({ ...row, image: images[0]?.url ?? null }));
+      .map(({ images, ...row }) => ({
+        ...row,
+        image: withoutPlaceholderImages(images)[0]?.url ?? null,
+      }));
 
     return { products, categories, brands };
   }
 
   /**
-   * Category filter covers the whole subtree: products live on leaf
-   * categories, so picking a parent must include its descendants.
-   * Returns undefined when no category filter is set, [] for unknown ones.
+   * The category context for one request: which ids the filter covers, and
+   * which categories the sidebar will render counts for.
+   *
+   * Both come from the same single read of the category table — the filter
+   * needs the target's whole subtree (products hang off leaves, so picking a
+   * parent must include its descendants) and the facet needs one aggregated
+   * number per rendered node.
    */
-  private async resolveCategoryIds(
-    filter: ProductFilterDto,
-  ): Promise<string[] | undefined> {
-    if (!filter.categoryId && !filter.categorySlug) return undefined;
-
+  private async loadCategoryScope(filter: ProductFilterDto): Promise<{
+    /** Subtree of the filtered category; undefined when nothing is filtered. */
+    filterIds: string[] | undefined;
+    /** Categories the facet reports on, each with its descendants. */
+    facetScope: Array<{ id: string; descendants: string[] }>;
+  }> {
     const categories = await this.prisma.category.findMany({
-      select: { id: true, parentId: true, slug: true },
+      select: { id: true, parentId: true, slug: true, isVisible: true },
     });
+
+    const childrenByParent = new Map<string, string[]>();
+    for (const category of categories) {
+      const key = category.parentId ?? '';
+      const list = childrenByParent.get(key) ?? [];
+      list.push(category.id);
+      childrenByParent.set(key, list);
+    }
+    const descendantsOf = (id: string) => {
+      const ids: string[] = [];
+      const queue = [id];
+      while (queue.length) {
+        const current = queue.shift() as string;
+        ids.push(current);
+        queue.push(...(childrenByParent.get(current) ?? []));
+      }
+      return ids;
+    };
+
+    const target =
+      filter.categoryId || filter.categorySlug
+        ? ((await this.resolveTargetCategory(filter, categories)) ?? null)
+        : undefined;
+
+    // `undefined` target → no filter; `null` → a filter nobody matches.
+    const filterIds =
+      target === undefined
+        ? undefined
+        : target === null
+          ? []
+          : descendantsOf(target.id);
+
+    // The storefront lists the current category's children, or the roots at
+    // the top level, and shows a subtree total beside each. Reporting every
+    // category instead sent the whole 1500-row map on every request — half the
+    // response — for a sidebar that renders a few dozen rows.
+    const scopeParents = target
+      ? (childrenByParent.get(target.id) ?? [])
+      : target === null
+        ? []
+        : (childrenByParent.get('') ?? []);
+
+    // A branch an admin switched off is not a navigable option, so it must not
+    // be offered as one — the storefront renders this facet as the
+    // subcategory links beside the grid.
+    const visible = new Set(
+      categories.filter((category) => category.isVisible).map((c) => c.id),
+    );
+
+    return {
+      filterIds,
+      facetScope: scopeParents
+        .filter((id) => visible.has(id))
+        .map((id) => ({
+          id,
+          descendants: descendantsOf(id),
+        })),
+    };
+  }
+
+  /** The category a `categoryId` / `categorySlug` filter points at. */
+  private async resolveTargetCategory(
+    filter: ProductFilterDto,
+    categories: Array<{ id: string; parentId: string | null; slug: string }>,
+  ) {
     const target = categories.find(
       (category) =>
         (filter.categoryId && category.id === filter.categoryId) ||
         (filter.categorySlug && category.slug === filter.categorySlug),
     );
-    if (!target) return [];
-
-    const childrenByParent = new Map<string, string[]>();
-    for (const category of categories) {
-      if (!category.parentId) continue;
-      const list = childrenByParent.get(category.parentId) ?? [];
-      list.push(category.id);
-      childrenByParent.set(category.parentId, list);
+    if (target) return target;
+    // A slug collision or a merge leaves the old slug behind as a
+    // `CategoryRedirect`. `GET /categories/:slug` follows those, so the
+    // category page resolved while this filter returned an empty list — the
+    // header claimed 9609 products above an empty grid.
+    if (filter.categorySlug) {
+      const alias = await this.prisma.categoryRedirect.findUnique({
+        where: { slug: filter.categorySlug },
+        select: { categoryId: true },
+      });
+      if (alias) {
+        return categories.find((category) => category.id === alias.categoryId);
+      }
     }
-
-    const ids: string[] = [];
-    const queue = [target.id];
-    while (queue.length) {
-      const id = queue.shift() as string;
-      ids.push(id);
-      queue.push(...(childrenByParent.get(id) ?? []));
-    }
-    return ids;
+    return undefined;
   }
 }
 

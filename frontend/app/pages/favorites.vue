@@ -55,7 +55,7 @@ useHead({
         <h1>Избранное</h1>
         <ClientOnly>
           <p v-if="!wishlist.isEmpty" class="subtitle">
-            {{ wishlist.count }} товаров в списке
+            {{ pluralize(wishlist.count, 'product') }} в списке
           </p>
         </ClientOnly>
       </div>

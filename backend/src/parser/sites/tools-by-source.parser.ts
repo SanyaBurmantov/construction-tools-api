@@ -47,6 +47,22 @@ type CatalogCrawlState = {
 type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 
 const SOURCE_CODE = 'tools-by';
+/**
+ * Pages between crawl-state checkpoints.
+ *
+ * The state is one JSON blob holding every URL visited so far in the pass plus
+ * the queue, and each queued paginating category carries its signed Livewire
+ * snapshot — ~4 KB apiece. A pass across tools.by's 22 top-level departments
+ * therefore grows a blob of a few MB, and it used to be re-serialised and
+ * upserted after *every* page fetch, up to `maxPages` (2000) times per run —
+ * gigabytes of writes per run, growing as the pass progressed.
+ *
+ * Checkpointing is only crash insurance, and replay is already safe:
+ * `enqueueUrls` upserts idempotently. So the cost of a coarser interval is
+ * re-fetching at most this many pages after a crash.
+ */
+const CRAWL_CHECKPOINT_PAGES = 25;
+
 const SOURCE_NAME = 'Tools.by';
 const SOURCE_BASE_URL = 'https://tools.by';
 /** Skipped, not failed: the page parsed fine, we just don't want the product. */
@@ -73,6 +89,15 @@ export class ToolsByParserService {
   async refreshSitemaps() {
     await this.upsertSource();
     const result = await this.discoverCatalogUrls();
+    // An individual category can legitimately be empty, but a whole run that
+    // fetched pages and extracted not one product URL means the markup moved
+    // under us. Without this the run finishes, records SUCCESS, and the only
+    // symptom is a catalogue that stops growing.
+    if (result.visitedPages > 0 && !result.discoveredProducts) {
+      throw new Error(
+        `Tools.by catalog crawl walked ${result.visitedPages} pages and found no product links`,
+      );
+    }
     return { ...(await this.getQueueStats()), ...result };
   }
 
@@ -101,89 +126,103 @@ export class ToolsByParserService {
     const productUrls = new Set<string>();
     let fetchedPages = 0;
     const renewedSessions = new Set<string>();
+    const checkpoint = async () => {
+      if (fetchedPages % CRAWL_CHECKPOINT_PAGES === 0) {
+        await this.saveCatalogCrawl(visitedPages, pageQueue);
+      }
+    };
 
-    while (pageQueue.length && fetchedPages < maxPages) {
-      const entry = pageQueue[0];
-      if (!entry) continue;
-      let html: string;
-      let snapshot: string | undefined;
-      let session: CatalogSession;
-      if (entry.snapshot && entry.session) {
-        let result: { html: string; snapshot: string };
-        try {
-          result = await this.loadMore(
-            entry.url,
-            entry.snapshot,
-            entry.session,
-          );
-        } catch (error) {
-          if (
-            error instanceof ParserHttpError &&
-            error.status === 419 &&
-            !renewedSessions.has(entry.url)
-          ) {
-            // CSRF sessions can expire between daily runs. Keep the signed
-            // pagination snapshot and get fresh cookies on the next request.
-            entry.session = undefined;
+    try {
+      while (pageQueue.length && fetchedPages < maxPages) {
+        const entry = pageQueue[0];
+        if (!entry) continue;
+        let html: string;
+        let snapshot: string | undefined;
+        let session: CatalogSession;
+        if (entry.snapshot && entry.session) {
+          let result: { html: string; snapshot: string };
+          try {
+            result = await this.loadMore(
+              entry.url,
+              entry.snapshot,
+              entry.session,
+            );
+          } catch (error) {
+            if (
+              error instanceof ParserHttpError &&
+              error.status === 419 &&
+              !renewedSessions.has(entry.url)
+            ) {
+              // CSRF sessions can expire between daily runs. Keep the signed
+              // pagination snapshot and get fresh cookies on the next request.
+              entry.session = undefined;
+              fetchedPages += 1;
+              await checkpoint();
+              await this.sleep(delayMs);
+              continue;
+            }
+            throw error;
+          }
+          html = result.html;
+          snapshot = result.snapshot;
+          session = entry.session;
+        } else {
+          const result = await this.fetchCatalogPage(entry.url);
+          if (entry.snapshot) {
+            entry.session = result.session;
+            renewedSessions.add(entry.url);
             fetchedPages += 1;
-            await this.saveCatalogCrawl(visitedPages, pageQueue);
+            await checkpoint();
             await this.sleep(delayMs);
             continue;
           }
-          throw error;
+          html = result.html;
+          session = result.session;
+          snapshot = this.catalogSnapshot(cheerio.load(html));
         }
-        html = result.html;
-        snapshot = result.snapshot;
-        session = entry.session;
-      } else {
-        const result = await this.fetchCatalogPage(entry.url);
-        if (entry.snapshot) {
-          entry.session = result.session;
-          renewedSessions.add(entry.url);
-          fetchedPages += 1;
-          await this.saveCatalogCrawl(visitedPages, pageQueue);
-          await this.sleep(delayMs);
-          continue;
-        }
-        html = result.html;
-        session = result.session;
-        snapshot = this.catalogSnapshot(cheerio.load(html));
-      }
-      fetchedPages += 1;
-      const $ = cheerio.load(html);
-      const pageProductUrls = this.parseProductLinks($);
-      pageProductUrls.forEach((url) => productUrls.add(url));
-      await this.enqueueUrls(pageProductUrls);
+        fetchedPages += 1;
+        const $ = cheerio.load(html);
+        const pageProductUrls = this.parseProductLinks($);
+        pageProductUrls.forEach((url) => productUrls.add(url));
+        await this.enqueueUrls(pageProductUrls);
 
-      // Advance only after the product URLs are saved. Replaying a page after
-      // a crash is safe: enqueueUrls uses idempotent upserts.
-      pageQueue.shift();
-      visitedPages.add(entry.url);
-      for (const catalogUrl of this.parseCatalogLinks($)) {
-        if (!visitedPages.has(catalogUrl) && !queuedPages.has(catalogUrl)) {
-          queuedPages.add(catalogUrl);
-          pageQueue.push({ url: catalogUrl });
+        // Advance only after the product URLs are saved. Replaying a page after
+        // a crash is safe: enqueueUrls uses idempotent upserts.
+        pageQueue.shift();
+        visitedPages.add(entry.url);
+        for (const catalogUrl of this.parseCatalogLinks($)) {
+          if (!visitedPages.has(catalogUrl) && !queuedPages.has(catalogUrl)) {
+            queuedPages.add(catalogUrl);
+            pageQueue.push({ url: catalogUrl });
+          }
         }
-      }
-      if (snapshot && this.readSnapshot(snapshot)?.data.show_more_button) {
-        // Round-robin: visit other categories before loading the next 25 items.
-        const previousLoaded = entry.snapshot
-          ? this.readSnapshot(entry.snapshot)?.data.loaded
-          : undefined;
-        const loaded = this.readSnapshot(snapshot)?.data.loaded;
-        if (
-          previousLoaded !== undefined &&
-          loaded !== undefined &&
-          loaded <= previousLoaded
-        ) {
-          throw new Error(
-            `Tools.by loadMore did not advance the catalog: ${entry.url}`,
-          );
+        if (snapshot && this.readSnapshot(snapshot)?.data.show_more_button) {
+          // Round-robin: visit other categories before loading the next 25 items.
+          const previousLoaded = entry.snapshot
+            ? this.readSnapshot(entry.snapshot)?.data.loaded
+            : undefined;
+          const loaded = this.readSnapshot(snapshot)?.data.loaded;
+          if (
+            previousLoaded !== undefined &&
+            loaded !== undefined &&
+            loaded <= previousLoaded
+          ) {
+            throw new Error(
+              `Tools.by loadMore did not advance the catalog: ${entry.url}`,
+            );
+          }
+          pageQueue.push({ url: entry.url, snapshot, session });
         }
-        pageQueue.push({ url: entry.url, snapshot, session });
+        await checkpoint();
+        await this.sleep(delayMs);
       }
+    } finally {
+      // This write is the one that must land, on every exit path. A thrown
+      // request has to leave its queue entry on disk — that is what makes the
+      // pass resumable — and a drained queue has to clear the row so the next
+      // run starts a fresh pass. A periodic checkpoint alone guarantees
+      // neither, which is why the save used to sit inside the loop.
       await this.saveCatalogCrawl(visitedPages, pageQueue);
-      await this.sleep(delayMs);
     }
 
     return {
@@ -410,10 +449,14 @@ export class ToolsByParserService {
   async parseProductUrl(url: string) {
     const canonicalUrl = this.absoluteUrl(url);
     const parsed = parseTools(await this.fetchText(canonicalUrl));
-    if (!parsed.name) throw new Error('Product name was not parsed');
+    // Order matters: a catalogue or landing page has no product name either, so
+    // checking the name first classified it FAILED instead of SKIPPED — which
+    // put it in the error log and, because the watchdog requeues FAILED rows,
+    // had it refetched every retry window forever.
     if (!parsed.isProductPage) {
       throw new SkippedToolsByProductError('URL is not a product page');
     }
+    if (!parsed.name) throw new Error('Product name was not parsed');
     await this.ensureAllowedCategory(parsed.breadcrumbs);
 
     const source = await this.upsertSource();

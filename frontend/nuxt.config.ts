@@ -4,6 +4,27 @@ export default defineNuxtConfig({
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
   modules: ['@nuxt/ui', '@pinia/nuxt', '@nuxt/eslint', '@nuxt/image'],
   ui: { colorMode: false },
+  /**
+   * `@nuxt/image` was in `modules` but unused — every product photo was
+   * hot-linked straight from the supplier. Measured on one catalogue page:
+   * 1.6 MB over 24 images, averaging 68 KB, served at 750x750 / 970x970 /
+   * 1200x900 into a box that is ~230px wide on desktop and ~290px on a phone,
+   * and with no `Cache-Control` on any of them, so every visit re-downloaded
+   * the lot. Resizing the same photos through IPX gives 22 KB and 9 KB.
+   *
+   * `domains` is the allowlist IPX needs to fetch a remote original; without an
+   * entry here the module refuses the URL and the image does not render.
+   * Keep it in step with the hosts the parsers store: th-tool.by,
+   * content.tools.by (tools.by's media host) and dukon.by.
+   */
+  image: {
+    domains: ['th-tool.by', 'content.tools.by', 'dukon.by'],
+    // The catalogue grid tops out at ~300px per card and the gallery at 480px;
+    // these are the only widths worth generating.
+    screens: { card: 300, cardx2: 600, gallery: 480, galleryx2: 960 },
+    format: ['webp'],
+    quality: 80,
+  },
   css: ['@/assets/scss/main.scss'],
   ssr: true,
   app: {
@@ -42,6 +63,25 @@ export default defineNuxtConfig({
     }
   },
   routeRules: {
+    /**
+     * IPX answers with `max-age=300` by default, which defeats the point: the
+     * whole win is the browser not re-fetching the photo. A week is safe
+     * because a replaced photo almost always lands on a new supplier URL (both
+     * th-tool.by and content.tools.by put an image id in the path), and it is
+     * deliberately not `immutable` for the cases where it does not.
+     */
+    '/_ipx/**': {
+      headers: {
+        'cache-control': 'public, max-age=604800, stale-while-revalidate=86400',
+      },
+      /**
+       * Deliberately NOT `cache: { … }`. Nitro's response cache serialises the
+       * body as text: a 14 842-byte WebP came back as 53 088 bytes of invalid
+       * data — the hit was 1600x faster and the image was broken. Caching
+       * these server-side belongs in a CDN or a caching proxy in front of
+       * Nitro, not in a route rule.
+       */
+    },
     '/': { swr: 60 },
     '/catalog': { swr: 30 },
     '/catalog/**': { swr: 30 },

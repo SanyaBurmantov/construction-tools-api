@@ -13,6 +13,9 @@ type CategoryRow = {
   description: string | null;
   seoTitle: string;
   seoDescription: string;
+  sortOrder: number;
+  isVisible: boolean;
+  isFeatured: boolean;
 };
 
 function category(
@@ -20,6 +23,9 @@ function category(
   name: string,
   parentId: string | null,
   path: string[],
+  display: Partial<
+    Pick<CategoryRow, 'sortOrder' | 'isVisible' | 'isFeatured'>
+  > = {},
 ): CategoryRow {
   return {
     id,
@@ -32,6 +38,10 @@ function category(
     description: null,
     seoTitle: name,
     seoDescription: name,
+    sortOrder: 0,
+    isVisible: true,
+    isFeatured: false,
+    ...display,
   };
 }
 
@@ -47,6 +57,22 @@ const counts = [
   { categoryId: 'c2', _count: { _all: 5 } },
   { categoryId: 'c3', _count: { _all: 3 } },
 ];
+
+function buildServiceWith(rowsOverride: CategoryRow[]) {
+  const prisma = {
+    category: {
+      findMany: jest.fn(() => Promise.resolve(rowsOverride)),
+      findUnique: jest.fn((args: { where: { slug: string } }) =>
+        Promise.resolve(
+          rowsOverride.find((row) => row.slug === args.where.slug) ?? null,
+        ),
+      ),
+    },
+    categoryRedirect: { findUnique: jest.fn(() => Promise.resolve(null)) },
+    product: { groupBy: jest.fn(() => Promise.resolve(counts)) },
+  } as unknown as PrismaService;
+  return new CategoriesService(prisma);
+}
 
 function buildService() {
   const prisma = {
@@ -92,6 +118,47 @@ describe('CategoriesService.getTree', () => {
   });
 });
 
+describe('CategoriesService.getTree display settings', () => {
+  // A branch an admin switched off must disappear from navigation whole:
+  // listing its children would leave links into a category the shop has
+  // decided not to sell from.
+  it('prunes a hidden branch and its children', async () => {
+    const hidden = rows.map((row) =>
+      row.id === 'c1' ? { ...row, isVisible: false } : row,
+    );
+    expect(await buildServiceWith(hidden).getTree()).toEqual([]);
+  });
+
+  it('prunes a hidden child but keeps its parent and the parent count', async () => {
+    const hidden = rows.map((row) =>
+      row.id === 'c2' ? { ...row, isVisible: false } : row,
+    );
+    const tree = await buildServiceWith(hidden).getTree();
+
+    expect(tree[0].children.map((child) => child.slug)).toEqual([
+      'perforatory',
+    ]);
+    // The products are still in the catalogue and still reachable through the
+    // parent, so the parent total keeps counting them.
+    expect(tree[0].productCount).toBe(8);
+  });
+
+  // Default ordering is biggest-first; `sortOrder` is how an admin overrides
+  // that without having to game the product counts. 0 means "not placed", so
+  // a single pinned category leads and the rest keep their own order.
+  it('puts a curated sortOrder ahead of the product count', async () => {
+    const pinned = rows.map((row) =>
+      row.id === 'c3' ? { ...row, sortOrder: 1 } : row,
+    );
+    const tree = await buildServiceWith(pinned).getTree();
+
+    expect(tree[0].children.map((child) => child.slug)).toEqual([
+      'perforatory',
+      'dreli',
+    ]);
+  });
+});
+
 describe('CategoriesService.getBySlug', () => {
   it('returns ancestors in path order and children with counts', async () => {
     const page = await buildService().getBySlug('dreli');
@@ -112,6 +179,15 @@ describe('CategoriesService.getBySlug', () => {
       'dreli',
       'perforatory',
     ]);
+  });
+
+  it('leaves a hidden child out of the children list', async () => {
+    const hidden = rows.map((row) =>
+      row.id === 'c3' ? { ...row, isVisible: false } : row,
+    );
+    const page = await buildServiceWith(hidden).getBySlug('elektro');
+
+    expect(page.children.map((child) => child.slug)).toEqual(['dreli']);
   });
 
   it('throws 404 for an unknown slug', async () => {

@@ -7,6 +7,10 @@ export class BrandsService {
 
   findAll() {
     return this.prisma.brand.findMany({
+      // A brand whose slug is empty has no landing page and no usable filter
+      // value — production carries one such row (supplier name ","), created
+      // before `upsertBrand` started rejecting names that slugify to nothing.
+      where: { slug: { not: '' } },
       include: {
         _count: {
           select: { products: { where: { status: 'PUBLISHED' } } },

@@ -29,6 +29,18 @@ model Category {
   seoTitle       String
   seoDescription String
 
+  /// Storefront ordering, lowest first. Ties fall back to product count, so
+  /// the default 0 keeps the "biggest category first" behaviour until an admin
+  /// pins something.
+  sortOrder      Int      @default(0)
+  /// Hidden categories disappear from every storefront listing (menu, tree,
+  /// facets) but stay reachable by URL, so an existing link keeps working
+  /// while the branch is being curated.
+  isVisible      Boolean  @default(true)
+  /// Pinned into the home page category grid. With none pinned the grid falls
+  /// back to the largest root categories.
+  isFeatured     Boolean  @default(false)
+
   parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id])
   children Category[] @relation("CategoryChildren")
 
@@ -39,6 +51,7 @@ model Category {
   pricingRules           PricingRule[]
 
   @@index([parentId])
+  @@index([isVisible, sortOrder])
 }
 
 model Brand {

@@ -94,7 +94,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
       </div>
       <div class="hero-stat">
         <strong>{{ data.pagination.total }}</strong>
-        <span>товаров по акции</span>
+        <span>{{ plural(data.pagination.total, 'товар', 'товара', 'товаров') }} по акции</span>
       </div>
     </section>
 

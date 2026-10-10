@@ -84,6 +84,20 @@ export class DukonParserService {
     const discovered = await this.discoverCatalogUrls();
     if (sitemapError && !discovered.discoveredProducts) throw sitemapError;
 
+    // Both legs of the crawl key off the shop's theme classes — `.prod-list__item`
+    // for the listing, `a.psection` / `.catmenu a` for the navigation — because
+    // dukon's product and category URLs share one shape (`/catalog/<a>/<b>/`),
+    // so unlike th-tool.by there is nothing in the URL itself to tell them
+    // apart. A re-theme therefore looks like a crawl that walks pages and
+    // extracts nothing; and because the sitemap leg keeps answering, the run
+    // would record SUCCESS while the catalogue quietly stopped growing. That is
+    // the silent parser death this project reports on everywhere else.
+    if (discovered.visitedPages > 0 && !discovered.discoveredProducts) {
+      throw new Error(
+        `Dukon catalog crawl walked ${discovered.visitedPages} pages and found no product links — the listing selectors no longer match the shop's markup`,
+      );
+    }
+
     return this.getQueueStats();
   }
 

@@ -265,6 +265,42 @@ describe('Tools.by catalog discovery', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([catalogUrl]);
   });
 
+  // The state is a single JSON blob: every URL visited so far in the pass plus
+  // the queue, each paginating entry carrying its ~4 KB Livewire snapshot. It
+  // used to be re-serialised and upserted after every page, so a 2000-page run
+  // rewrote a multi-megabyte blob 2000 times, growing as the pass progressed.
+  it('does not rewrite the crawl state once per fetched page', async () => {
+    const manyCategories = `<div wire:snapshot="${escapeAttr(
+      JSON.stringify({
+        memo: { name: 'catalog.filters' },
+        data: {
+          availableCategories: [
+            Object.fromEntries(
+              ['65', '26', '98', '4199', '920359'].map((id) => [
+                id,
+                [{ name: id }, { s: 'arr' }],
+              ]),
+            ),
+            { s: 'arr' },
+          ],
+        },
+      }),
+    )}"></div>`;
+    // A fresh Response per call: a body can only be read once.
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response(listing(false))),
+    );
+    fetchMock.mockResolvedValueOnce(new Response(manyCategories));
+
+    // 4 pages fetched, and the queue still holds the categories not reached.
+    const result = await createService(4).discoverCatalogUrls();
+    expect(result.visitedPages).toBe(4);
+    expect(result.remainingPages).toBeGreaterThan(0);
+
+    // One write before the first fetch and one on the way out — not four.
+    expect(crawl.upsert).toHaveBeenCalledTimes(2);
+  });
+
   it('replays the page if saving its URLs fails before committing the checkpoint', async () => {
     fetchMock
       .mockResolvedValueOnce(new Response(root))
@@ -365,5 +401,88 @@ describe('Tools.by catalog discovery', () => {
         delete process.env.TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS;
       else process.env.TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS = old;
     }
+  });
+});
+
+describe('Tools.by refresh guards', () => {
+  const upsertSource = jest.fn(() => Promise.resolve({ id: 'src' }));
+  const createService = () => {
+    const service = new ToolsByParserService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    jest
+      .spyOn(
+        service as unknown as { upsertSource: () => Promise<unknown> },
+        'upsertSource',
+      )
+      .mockImplementation(upsertSource);
+    return service;
+  };
+
+  afterEach(() => jest.restoreAllMocks());
+
+  // A single empty category is normal; a whole run that fetched pages and
+  // extracted nothing means the markup moved under us. Without this the run
+  // records SUCCESS and the only symptom is a catalogue that stops growing.
+  it('fails the refresh when a run walks pages but extracts no products', async () => {
+    const service = createService();
+    jest.spyOn(service, 'discoverCatalogUrls').mockResolvedValue({
+      visitedPages: 12,
+      maxPages: 2000,
+      discoveredProducts: 0,
+      remainingPages: 5,
+    });
+
+    await expect(service.refreshSitemaps()).rejects.toThrow(
+      'walked 12 pages and found no product links',
+    );
+  });
+
+  it('does not fail a run that had no pages left to fetch', async () => {
+    const service = createService();
+    jest.spyOn(service, 'discoverCatalogUrls').mockResolvedValue({
+      visitedPages: 0,
+      maxPages: 2000,
+      discoveredProducts: 0,
+      remainingPages: 0,
+    });
+    const stats = { queued: 0, visited: 9, failed: 0, skipped: 0, total: 9 };
+    jest.spyOn(service, 'getQueueStats').mockResolvedValue(stats);
+
+    await expect(service.refreshSitemaps()).resolves.toMatchObject(stats);
+  });
+});
+
+describe('Tools.by product URL classification', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  // A catalogue or landing page has no product name either, so checking the
+  // name first classified it FAILED rather than SKIPPED — which put it in the
+  // error log and, because the watchdog requeues FAILED rows, had it refetched
+  // every retry window indefinitely.
+  it('skips a non-product page instead of failing it, even with no name', async () => {
+    const service = new ToolsByParserService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    jest
+      .spyOn(
+        service as unknown as { fetchText: (u: string) => Promise<string> },
+        'fetchText',
+      )
+      .mockResolvedValue('<html><body><h2>Каталог</h2></body></html>');
+
+    await expect(
+      service.parseProductUrl('https://tools.by/catalog/65'),
+    ).rejects.toMatchObject({ name: 'SkippedToolsByProductError' });
   });
 });

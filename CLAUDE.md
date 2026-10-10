@@ -114,6 +114,30 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/catalog` + `/catalog/<category-slug>` pages share
   `components/catalog/CatalogView.vue`; filters live in query params
   (`brands`, `source`, `priceMin/Max`, `inStock`, `onSale`, `sort`, `page`).
+- **A listed category always has something in it.** Nothing in the storefront
+  may render a category whose count is 0 — it is a link to the "ничего не
+  найдено" screen, not a choice. Two layers enforce it: `pruneUnlistable()`
+  drops empty *and* admin-hidden branches from the tree and from a category
+  page's children, and `GET /products` leaves a category out of
+  `facets.categories` entirely instead of reporting `0`, so the subcategory
+  strip beside the grid stays filter-aware (switch on `onSale` at the top level
+  and only categories that actually have a discounted product remain).
+- **Categories are curatable, identity is not.** `Category.sortOrder` /
+  `isVisible` / `isFeatured` are admin presentation settings, editable per row
+  in `/admin/categories` (plus `PATCH /admin/categories/order`, which renumbers
+  a whole row of siblings in one transaction so two can't claim one slot).
+  `sortOrder = 0` means "never placed" and sorts *after* curated rows, which
+  keeps the old biggest-first order for the thousand categories no one has
+  touched; `isVisible: false` hides a branch from the menu, the tree, the
+  facets and search suggestions while leaving its URL working;
+  `isFeatured` pins it into the home page grid. None of this touches `pathKey`,
+  so the parsers keep upserting the same rows. Admin edits that *do* move a
+  category (`parentId`, `slug`) rebuild `path`/`level`/`pathKey` for the whole
+  subtree and leave the old slug behind as a `CategoryRedirect`.
+  Frontend: one `components/ui/UiCategoryCard.vue` renders every "link to a
+  category" (`tile` / `row` / `chip`) — home grid, catalogue, brand page — and
+  `composables/useCategoryTree.ts` is the single tree fetch (one shared
+  `useAsyncData` key for header, home and catalogue).
 - **Storefront orders**: guest checkout (no accounts). The cart lives client-side
   (Pinia `stores/cart.ts`, persisted to `localStorage`); `POST /orders`
   (`orders/` module) re-prices every line from the DB (never trusts the client),

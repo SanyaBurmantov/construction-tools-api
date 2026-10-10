@@ -137,7 +137,7 @@ async function submit() {
       <div class="summary-score">
         <strong>{{ summary.average?.toFixed(1) }}</strong>
         <UiRating :value="summary.average" size="md" />
-        <span>{{ summary.count }} отзывов</span>
+        <span>{{ pluralize(summary.count, 'review') }}</span>
       </div>
 
       <div class="summary-bars">

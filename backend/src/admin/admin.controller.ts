@@ -22,6 +22,7 @@ import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { AdminMergeBrandDto } from './dto/admin-merge-brand.dto';
 import { AdminMergeCategoryDto } from './dto/admin-merge-category.dto';
+import { AdminCategoryOrderDto } from './dto/admin-category-order.dto';
 import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
@@ -325,6 +326,12 @@ export class AdminController {
   @Post('categories')
   createCategory(@Body() dto: AdminCreateCategoryDto) {
     return this.adminService.createCategory(dto);
+  }
+
+  // Must precede 'categories/:id' or the literal path is matched as an id.
+  @Patch('categories/order')
+  reorderCategories(@Body() dto: AdminCategoryOrderDto) {
+    return this.adminService.reorderCategories(dto.ids);
   }
 
   @Patch('categories/:id')

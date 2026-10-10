@@ -29,6 +29,32 @@ export type PriceFreshness = {
   health: 'OK' | 'STALE' | 'EMPTY';
 };
 
+/**
+ * Depth of a source's product-URL queue.
+ *
+ * Exposed because an exhausted queue and a broken one look identical from the
+ * outside: a batch job that finds nothing to do finishes in milliseconds and
+ * records SUCCESS, so `health` stays OK while the catalogue silently stops
+ * growing. `pending` is the number that answers "is this source still
+ * importing?", and it was only reachable by querying the database directly.
+ */
+export type QueueDepth = {
+  sourceCode: string;
+  pending: number;
+  done: number;
+  failed: number;
+  skipped: number;
+  total: number;
+};
+
+type QueueDepthRow = {
+  sourceCode: string;
+  pending: bigint;
+  done: bigint;
+  failed: bigint;
+  skipped: bigint;
+};
+
 type FreshnessRow = {
   sourceCode: string;
   total: bigint;
@@ -222,9 +248,10 @@ export class ParserRuntimeStatusService {
       positiveSetting(process.env.PARSER_PRICE_STALE_PERCENT, 10),
       100,
     );
-    const [statuses, priceFreshness] = await Promise.all([
+    const [statuses, priceFreshness, queues] = await Promise.all([
       this.getAll(),
       this.getPriceFreshness(priceMaxAgeHours, priceStalePercent),
+      this.getQueueDepth(),
     ]);
     const now = Date.now();
     const jobs = statuses.map((status) => {
@@ -276,8 +303,58 @@ export class ParserRuntimeStatusService {
       priceMaxAgeHours,
       priceStalePercent,
       priceFreshness,
+      queues,
       jobs,
     };
+  }
+
+  /**
+   * Queue depth per source, in one round trip.
+   *
+   * The three queues are separate tables (`Sitemaps<Source>`), so this is a
+   * UNION rather than a `groupBy`; `7745` is left out for the same reason it
+   * is switched off — it is a reference implementation, not a supplier.
+   */
+  private async getQueueDepth(): Promise<QueueDepth[]> {
+    const rows = await this.prisma.$queryRaw<QueueDepthRow[]>`
+      SELECT 'th-tools' AS "sourceCode",
+        count(*) FILTER (WHERE status = 'PENDING') AS pending,
+        count(*) FILTER (WHERE status = 'DONE')    AS done,
+        count(*) FILTER (WHERE status = 'FAILED')  AS failed,
+        count(*) FILTER (WHERE status = 'SKIPPED') AS skipped
+      FROM "SitemapsThTools"
+      UNION ALL
+      SELECT 'tools-by',
+        count(*) FILTER (WHERE status = 'PENDING'),
+        count(*) FILTER (WHERE status = 'DONE'),
+        count(*) FILTER (WHERE status = 'FAILED'),
+        count(*) FILTER (WHERE status = 'SKIPPED')
+      FROM "SitemapsToolsBy"
+      UNION ALL
+      SELECT 'dukon',
+        count(*) FILTER (WHERE status = 'PENDING'),
+        count(*) FILTER (WHERE status = 'DONE'),
+        count(*) FILTER (WHERE status = 'FAILED'),
+        count(*) FILTER (WHERE status = 'SKIPPED')
+      FROM "SitemapsDukon"
+    `;
+
+    return rows
+      .map((row) => {
+        const pending = Number(row.pending);
+        const done = Number(row.done);
+        const failed = Number(row.failed);
+        const skipped = Number(row.skipped);
+        return {
+          sourceCode: row.sourceCode,
+          pending,
+          done,
+          failed,
+          skipped,
+          total: pending + done + failed + skipped,
+        };
+      })
+      .sort((a, b) => a.sourceCode.localeCompare(b.sourceCode));
   }
 
   /** Published, priced, in-stock offers are the prices customers can buy at. */

@@ -6,8 +6,14 @@ const props = withDefaults(
     product: CatalogProduct
     /** Compact cards drop the spec preview — used in carousels and sidebars. */
     compact?: boolean
+    /**
+     * Above-the-fold cards load their photo eagerly. Everything was `lazy`,
+     * including the first row, which made the LCP image wait for the lazy
+     * loader instead of starting with the document.
+     */
+    priority?: boolean
   }>(),
-  { compact: false }
+  { compact: false, priority: false }
 )
 
 const {
@@ -32,9 +38,12 @@ const specs = computed(() =>
 )
 const link = computed(() => `/product/${props.product.slug}`)
 const imageFailed = ref(false)
-const imageElement = ref<HTMLImageElement | null>(null)
+// NuxtImg renders an <img>, but the template ref points at the component, so
+// the cached-and-broken check has to reach through to the element itself.
+const imageElement = ref<{ $el?: HTMLImageElement } | HTMLImageElement | null>(null)
 onMounted(() => {
-  const element = imageElement.value
+  const ref_ = imageElement.value
+  const element = (ref_ && '$el' in ref_ ? ref_.$el : ref_) as HTMLImageElement | undefined
   if (element?.complete && !element.naturalWidth) imageFailed.value = true
 })
 watch(image, () => { imageFailed.value = false })
@@ -44,14 +53,20 @@ watch(image, () => { imageFailed.value = false })
   <article class="product-card" :class="{ 'is-compact': compact }">
     <div class="media">
       <NuxtLink :to="link" class="image-link" :aria-label="product.name">
-        <img
+        <NuxtImg
           v-if="image && !imageFailed"
-          ref="imageElement" :src="image"
+          ref="imageElement"
+          :src="image"
           :alt="product.images?.[0]?.alt || product.name"
-          loading="lazy"
+          sizes="300px"
+          format="webp"
+          densities="x1 x2"
+          :loading="priority ? 'eager' : 'lazy'"
+          :fetchpriority="priority ? 'high' : 'auto'"
+          :preload="priority || undefined"
           decoding="async"
           @error="imageFailed = true"
-        >
+        />
         <span v-else class="placeholder" aria-hidden="true">
           <svg viewBox="0 0 24 24">
             <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
@@ -129,7 +144,7 @@ watch(image, () => { imageFailed.value = false })
             {{ availabilityLabel }}
           </span>
           <span v-if="hasMultipleOffers" class="offers">
-            {{ offerCount }} предложения поставщиков
+            {{ pluralize(offerCount, 'offer') }} поставщиков
           </span>
         </div>
 
@@ -177,6 +192,13 @@ watch(image, () => { imageFailed.value = false })
   background: var(--surface-card);
 }
 
+/**
+ * 4/3 matches the largest share of the catalogue: every content.tools.by photo
+ * is 1200x900, and th-tool.by's own mix is 38% square / 18% 4:3 / 44% a long
+ * tail that runs from 0.55 to 5.3. No single ratio fits, so `contain` always
+ * leaves some photos smaller than their panel — making them genuinely uniform
+ * needs a padded canvas from the image pipeline, not a different box here.
+ */
 .image-link {
   display: block;
   aspect-ratio: 4 / 3;
@@ -184,9 +206,11 @@ watch(image, () => { imageFailed.value = false })
 }
 
 .image-link img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: center;
   mix-blend-mode: var(--image-blend);
 }
 

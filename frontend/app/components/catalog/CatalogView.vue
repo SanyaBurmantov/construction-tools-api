@@ -9,14 +9,6 @@ type FacetItem = {
   _count?: { products: number }
 }
 
-type CategoryTreeNode = {
-  id: string
-  name: string
-  slug: string
-  productCount: number
-  children: CategoryTreeNode[]
-}
-
 type CategoryPage = {
   id: string
   name: string
@@ -26,7 +18,13 @@ type CategoryPage = {
   seoDescription?: string | null
   productCount: number
   ancestors: Array<{ id: string, name: string, slug: string }>
-  children: Array<{ id: string, name: string, slug: string, productCount: number }>
+  children: Array<{
+    id: string
+    name: string
+    slug: string
+    image?: string | null
+    productCount: number
+  }>
 }
 
 type SpecFacet = {
@@ -71,6 +69,12 @@ type ProductResponse = {
 const props = defineProps<{ categorySlug?: string }>()
 
 const PAGE_SIZE = 24
+/**
+ * Cards whose photo loads eagerly. The grid is `minmax(228px, 1fr)`, so the
+ * widest common layout fits four per row — enough to cover what is actually
+ * above the fold without pulling the whole page in at once.
+ */
+const LCP_CARD_COUNT = 4
 // 'default' не шлёт sortBy: при активном поиске бэкенд сортирует по
 // релевантности, без поиска — по названию
 const SORT_OPTIONS = [
@@ -123,11 +127,27 @@ const selectedBrandIds = computed(() => {
 const selectedSource = computed(
   () => queryValue(route.query.source) || queryValue(route.query.sourceCode) || ''
 )
-const priceMin = computed(() => queryValue(route.query.priceMin) || '')
-const priceMax = computed(() => queryValue(route.query.priceMax) || '')
+/** Same reasoning as `sort`: a non-numeric bound is dropped, not forwarded. */
+function priceParam(value: unknown) {
+  const raw = queryValue(value)
+  if (!raw) return ''
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed >= 0 ? raw : ''
+}
+const priceMin = computed(() => priceParam(route.query.priceMin))
+const priceMax = computed(() => priceParam(route.query.priceMax))
 const inStock = computed(() => queryValue(route.query.inStock) === '1')
 const onSale = computed(() => queryValue(route.query.onSale) === '1')
-const sort = computed(() => queryValue(route.query.sort) || 'default')
+/**
+ * Unknown values fall back to 'default' instead of reaching the API. `sortBy`
+ * is an enum there, so a stale or hand-typed `?sort=` answered 400 and the
+ * whole catalogue rendered the "не удалось получить товары" alert over a
+ * perfectly valid category.
+ */
+const sort = computed(() => {
+  const raw = queryValue(route.query.sort) || 'default'
+  return SORT_OPTIONS.some(option => option.value === raw) ? raw : 'default'
+})
 
 /**
  * Specification filters live in one query parameter as
@@ -231,11 +251,7 @@ const { data: products, pending, error } = await useAsyncData<ProductResponse>(
   }
 )
 
-const { data: tree } = await useAsyncData<CategoryTreeNode[]>(
-  'catalog-tree',
-  () => $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`).catch(() => []),
-  { default: () => [] }
-)
+const { data: tree } = await useCategoryTree()
 
 const { data: brands } = await useAsyncData<FacetItem[]>(
   'catalog-brands',
@@ -255,40 +271,44 @@ const sourceCounts = computed(() => products.value?.facets?.sources || {})
 const categoryFacet = computed(() => products.value?.facets?.categories || {})
 const priceRange = computed(() => products.value?.facets?.priceRange || null)
 
-const treeNodeBySlug = computed(() => {
-  const map = new Map<string, CategoryTreeNode>()
-  const walk = (nodes: CategoryTreeNode[]) => {
-    for (const node of nodes) {
-      map.set(node.slug, node)
-      walk(node.children)
-    }
-  }
-  walk(tree.value || [])
-  return map
-})
-
-/** Subtree product count within the current filter context (facet counts are per leaf category). */
-function contextCount(slug: string) {
-  const node = treeNodeBySlug.value.get(slug)
-  if (!node) return 0
-  let sum = 0
-  const walk = (item: CategoryTreeNode) => {
-    sum += categoryFacet.value[item.id] || 0
-    item.children.forEach(walk)
-  }
-  walk(node)
-  return sum
+/**
+ * Product count for a sidebar category within the current filter context.
+ *
+ * The API already folds each rendered category's subtree into one number —
+ * it used to send a count per leaf category and leave the fold to us, which
+ * meant shipping the whole 1500-entry map on every request just so this
+ * function could walk it. Categories that match nothing are absent from the
+ * map rather than present as `0`.
+ */
+function contextCount(id: string) {
+  return categoryFacet.value[id] || 0
 }
 
+/**
+ * Subcategories worth offering: the children of the current category (or the
+ * roots at the top level), each with the count it would yield *under the
+ * filters currently applied*.
+ *
+ * Empty ones are dropped. A category whose count is 0 is not a choice — it is
+ * a link to the "ничего не найдено" screen — and the catalogue used to render
+ * a row of them: switch on "только со скидкой" at the top level and every
+ * category without a discounted product stayed in the list reading "0".
+ */
 const categoryLinks = computed(() => {
   const items = category.value
     ? category.value.children
-    : (tree.value || []).map(node => ({ id: node.id, name: node.name, slug: node.slug, productCount: node.productCount }))
-  return items.map(item => ({
-    ...item,
-    count: contextCount(item.slug)
-  }))
+    : (tree.value || []).map(node => ({
+        id: node.id,
+        name: node.name,
+        slug: node.slug,
+        image: node.image,
+        productCount: node.productCount
+      }))
+  return items
+    .map(item => ({ ...item, count: contextCount(item.id) }))
+    .filter(item => item.count > 0)
 })
+
 
 const parentLink = computed(() => {
   if (!category.value) return null
@@ -381,6 +401,16 @@ const activeFiltersCount = computed(() =>
   + Object.keys(selectedSpecs.value).length
 )
 
+/**
+ * `/catalog` with nothing applied is the "browse by category" page, so the
+ * categories are the content there, not a shortcut strip above it. Once a
+ * filter, a search or a subcategory narrows the view the visitor is looking
+ * for products, and the same links go back to being a compact strip.
+ */
+const showCategoryTiles = computed(
+  () => !category.value && !activeFiltersCount.value && categoryLinks.value.length > 0
+)
+
 type Chip = { key: string, label: string, remove: () => void }
 const filterChips = computed<Chip[]>(() => {
   const chips: Chip[] = []
@@ -451,7 +481,7 @@ const pageTitle = computed(() => category.value
   ? `${category.value.name} — купить в каталоге | Мультитул`
   : 'Каталог инструмента и крепежа | Мультитул')
 const pageDescription = computed(() => category.value
-  ? (category.value.seoDescription || `${category.value.name}: ${category.value.productCount} товаров в каталоге Мультитул. Фильтры по брендам и цене, доставка по Беларуси.`)
+  ? (category.value.seoDescription || `${category.value.name}: ${pluralize(category.value.productCount, 'product')} в каталоге Мультитул. Фильтры по брендам и цене, доставка по Беларуси.`)
   : 'Каталог инструментов, крепежа и расходников с фильтрами по категориям, брендам и цене.')
 const canonicalUrl = computed(() => category.value
   ? `${siteUrl}/catalog/${category.value.slug}`
@@ -502,23 +532,50 @@ useHead(() => ({
     <UiBreadcrumbs :items="breadcrumbItems" />
 
     <header class="catalog-head">
-      <h1>{{ category?.name || 'Каталог товаров' }}</h1>
-      <p v-if="category?.description">{{ category.description }}</p>
+      <div>
+        <h1>{{ category?.name || 'Каталог товаров' }}</h1>
+        <p v-if="category?.description">{{ category.description }}</p>
+      </div>
+      <NuxtLink v-if="parentLink" :to="parentLink.to" class="up-link">
+        ← {{ parentLink.label }}
+      </NuxtLink>
     </header>
 
-    <!-- Subcategory shortcuts: the fastest way to narrow down, so they sit
-         above the fold rather than only inside the filter panel. -->
-    <nav v-if="categoryLinks.length" class="subcategories" aria-label="Подкатегории">
-      <NuxtLink
+    <!-- Browsing the catalogue: at the top level the categories *are* the
+         page, so they get the room. -->
+    <section v-if="showCategoryTiles" class="category-browse" aria-label="Категории каталога">
+      <div class="category-grid">
+        <UiCategoryCard
+          v-for="item in categoryLinks"
+          :key="item.id"
+          :name="item.name"
+          :to="categoryTo(item.slug)"
+          :count="item.count"
+          :image="item.image"
+          variant="tile"
+        />
+      </div>
+    </section>
+
+    <!-- Narrowed view: the same links as a compact strip, so the product grid
+         stays in sight. -->
+    <!-- `fade` is off on purpose: the edge gradient is painted in
+         `--surface-card` and this strip sits on the page background. -->
+    <UiScroller
+      v-else-if="categoryLinks.length"
+      class="subcategories"
+      label="Подкатегории"
+      :fade="false"
+    >
+      <UiCategoryCard
         v-for="item in categoryLinks"
         :key="item.id"
+        :name="item.name"
         :to="categoryTo(item.slug)"
-        class="subcategory"
-      >
-        {{ item.name }}
-        <small>{{ item.count }}</small>
-      </NuxtLink>
-    </nav>
+        :count="item.count"
+        variant="chip"
+      />
+    </UiScroller>
 
     <div class="layout">
       <UiDrawer v-model:open="filtersOpen" title="Фильтры">
@@ -528,6 +585,7 @@ useHead(() => ({
           v-model:price-max="priceDraft.max"
           :category="category"
           :category-links="categoryLinks"
+          :category-has-children="Boolean(category?.children.length)"
           :parent-link="parentLink"
           :in-stock="inStock"
           :on-sale="onSale"
@@ -565,6 +623,7 @@ useHead(() => ({
           v-model:price-max="priceDraft.max"
           :category="category"
           :category-links="categoryLinks"
+          :category-has-children="Boolean(category?.children.length)"
           :parent-link="parentLink"
           :in-stock="inStock"
           :on-sale="onSale"
@@ -591,6 +650,8 @@ useHead(() => ({
       </aside>
 
       <div class="content">
+        <h2 v-if="showCategoryTiles" class="content-title">Все товары каталога</h2>
+
         <div class="toolbar">
           <span class="total" aria-live="polite">
             Найдено <strong>{{ products?.pagination.total || 0 }}</strong>
@@ -682,9 +743,10 @@ useHead(() => ({
         <template v-else>
           <div v-if="viewMode === 'grid'" class="grid">
             <ProductCatalogCard
-              v-for="product in products.data"
+              v-for="(product, index) in products.data"
               :key="product.id"
               :product="product"
+              :priority="index < LCP_CARD_COUNT"
             />
           </div>
           <div v-else class="list">
@@ -714,6 +776,14 @@ useHead(() => ({
   gap: var(--space-4);
 }
 
+.catalog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
 .catalog-head h1 {
   font-size: var(--text-2xl);
 }
@@ -725,33 +795,31 @@ useHead(() => ({
   font-size: var(--text-sm);
 }
 
-/* ---- Subcategories ---- */
-.subcategories {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.subcategory {
-  display: inline-flex;
-  align-items: center;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--surface-card);
-  color: var(--text-default);
+/* Second way out of a category, for visitors who never look at the sidebar
+   or the breadcrumbs. */
+.up-link {
+  color: var(--text-muted);
   font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.up-link:hover {
+  color: var(--text-link);
+}
+
+/* ---- Categories ---- */
+.category-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+}
+
+.subcategories :deep(.viewport) {
   gap: var(--space-2);
 }
 
-.subcategory:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
-.subcategory small {
-  color: var(--text-subtle);
-  font-size: var(--text-xs);
+.content-title {
+  font-size: var(--text-lg);
 }
 
 /* ---- Layout ---- */
@@ -801,12 +869,19 @@ useHead(() => ({
 
 .toolbar-actions {
   display: flex;
+  /* Without this the row cannot break and its last child — the view switch —
+     is pushed straight out through the card's right edge on a phone. */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
 
 .sort {
   width: 210px;
+  /* A flex item defaults to `min-width: auto`, and a <select>'s min-content is
+     its longest option ("По названию (А-Я)"), so the select refused to shrink
+     and pushed the row ~70px wider than the toolbar. */
+  min-width: 0;
 }
 
 .filters-toggle {
@@ -815,6 +890,8 @@ useHead(() => ({
 
 .view-switch {
   display: flex;
+  /* 2x34px of icon button: it should never be the thing that gives way. */
+  flex-shrink: 0;
   overflow: hidden;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
@@ -885,7 +962,9 @@ useHead(() => ({
 /* ---- Results ---- */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  /* `min()` keeps the track from being wider than its own container: a bare
+     `minmax(228px, …)` overflows once the viewport drops under ~260px. */
+  grid-template-columns: repeat(auto-fill, minmax(min(228px, 100%), 1fr));
   gap: var(--space-4);
 }
 
@@ -920,8 +999,16 @@ useHead(() => ({
     justify-content: space-between;
   }
 
+  /* The select is the widest control of the three and cannot be squeezed, so
+     it takes a row of its own and the two small controls share the next one. */
   .sort {
-    flex: 1;
+    order: -1;
+    width: auto;
+    flex: 1 0 100%;
+  }
+
+  .filters-toggle {
+    flex-shrink: 0;
   }
 }
 </style>

@@ -46,6 +46,9 @@ export class AppController {
       priceMaxAgeHours: health.priceMaxAgeHours,
       priceStalePercent: health.priceStalePercent,
       priceFreshness: health.priceFreshness,
+      // Without this an exhausted queue is indistinguishable from a healthy
+      // one: the batch job still runs, finds nothing and reports SUCCESS.
+      queues: health.queues,
       jobs: health.jobs.map((job) => ({
         key: job.key,
         label: job.label,

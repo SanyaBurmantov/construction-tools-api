@@ -90,7 +90,7 @@ useHead({
 
         <section class="items">
           <header class="items-head">
-            <span>{{ cart.distinctCount }} позиций · {{ cart.count }} шт.</span>
+            <span>{{ pluralize(cart.distinctCount, 'position') }} · {{ cart.count }} шт.</span>
             <UiButton variant="ghost" size="sm" @click="cart.clear()">Очистить корзину</UiButton>
           </header>
 
