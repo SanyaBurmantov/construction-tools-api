@@ -1,9 +1,15 @@
 import { ErrorLogService, type ErrorEntry } from './error-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+type CreateArgs = { data: Record<string, unknown> };
+
 function buildService() {
-  const create = jest.fn(() => Promise.resolve({ id: 'row-1' }));
-  const update = jest.fn(() => Promise.resolve({}));
+  // Typed arguments, so the assertions below can read `mock.calls[0][0].data`
+  // instead of casting at every use.
+  const create = jest.fn((_args: CreateArgs) =>
+    Promise.resolve({ id: 'row-1' }),
+  );
+  const update = jest.fn((_args: unknown) => Promise.resolve({}));
   const prisma = {
     errorLog: { create, update },
   } as unknown as PrismaService;

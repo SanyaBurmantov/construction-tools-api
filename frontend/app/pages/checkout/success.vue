@@ -139,17 +139,17 @@ useHead({
 }
 
 .state {
-  color: var(--color-muted);
+  color: var(--text-muted);
   font-weight: 700;
 }
 
 .card {
   display: grid;
   gap: 22px;
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--border-subtle);
   border-radius: 24px;
   background: white;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-sm);
   padding: clamp(24px, 4vw, 40px);
 
   &.narrow {
@@ -170,7 +170,7 @@ useHead({
 
 .sub {
   margin-top: 6px;
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 .mark {
@@ -191,8 +191,8 @@ useHead({
   gap: 12px;
   margin: 0;
   padding: 18px 0;
-  border-top: 1px solid var(--color-line);
-  border-bottom: 1px solid var(--color-line);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
   list-style: none;
 }
 
@@ -221,7 +221,7 @@ useHead({
 }
 
 .thumb-empty {
-  color: var(--color-subtle);
+  color: var(--text-subtle);
   font-size: 11px;
 }
 
@@ -237,18 +237,18 @@ useHead({
   text-decoration: none;
 
   &:hover {
-    color: var(--color-primary);
+    color: var(--brand);
   }
 }
 
 .item-sku {
-  color: var(--color-subtle);
+  color: var(--text-subtle);
   font-size: 12px;
   font-weight: 700;
 }
 
 .item-qty {
-  color: var(--color-muted);
+  color: var(--text-muted);
   font-size: 13px;
 }
 
@@ -265,11 +265,11 @@ useHead({
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    color: var(--color-muted);
+    color: var(--text-muted);
   }
 
   dt {
-    color: var(--color-muted);
+    color: var(--text-muted);
   }
 
   dd {
@@ -282,7 +282,7 @@ useHead({
   .total {
     margin-top: 4px;
     padding-top: 10px;
-    border-top: 1px solid var(--color-line);
+    border-top: 1px solid var(--border-subtle);
     font-size: 18px;
 
     dd {
@@ -296,7 +296,7 @@ useHead({
   justify-content: center;
   justify-self: start;
   border-radius: 12px;
-  background: var(--color-primary);
+  background: var(--brand);
   color: white;
   font-weight: 800;
   padding: 13px 20px;
