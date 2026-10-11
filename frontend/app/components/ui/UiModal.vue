@@ -40,7 +40,7 @@ useModalA11y(open, dialog, close)
             </button>
           </header>
 
-          <div class="dialog-body">
+          <div class="dialog-body u-scroll u-scroll--fade">
             <slot />
           </div>
 

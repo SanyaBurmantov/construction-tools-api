@@ -351,6 +351,26 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   it is evidence of what changed, not a replayable payload. A failed audit
   write is logged and swallowed — it must never turn a successful admin action
   into an error. `ADMIN_LOG_TTL_DAYS` (180) bounds the table.
+- **Error log** (`errors/`, `ErrorLog`, `/admin/errors`). The audit says who
+  changed what; this says what *broke*. `HttpExceptionFilter` is now registered
+  through `APP_FILTER` in `AppModule` (not `useGlobalFilters` in `main.ts`) so
+  it can be given `ErrorLogService` by DI — the response it sends is unchanged.
+  What it keeps: **every 5xx**, plus the client errors an **admin-scope**
+  request was answered with (400/405/409/413/415/422 — not 401/403/404, which
+  are the normal noise of a public API and are already in the audit trail).
+  Bodies go through the audit's own redaction, so a password cannot land in a
+  table an admin reads, and a stack is kept for 5xx only. Two bounds, both
+  deliberate: a repeat of the same `status+method+path+message` inside 60 s
+  bumps `occurrences` on the row it already wrote instead of inserting (one
+  broken endpoint under load must not write a row per request), and
+  `ERROR_LOG_TTL_DAYS` (30) prunes the rest. `GET /admin/stats` carries
+  `recentErrors` (5xx in the last 24 h) for the sidebar badge.
+  **Blank optional fields**: an untouched form input arrives as `''`, which
+  `@IsOptional()` does *not* skip — so every optional text field with a minimum
+  length rejected a valid blank form ("companyName must be longer than or equal
+  to 2 characters" when creating an admin). Create DTOs run
+  `@Transform(emptyToUndefined)` (`common/dto/`); update DTOs keep accepting
+  `''`, because there it is the only way to clear a value.
 - **"Откуда спаршен" is admin-only, and visible everywhere a product is**
   (`components/admin/productSourceNote.vue` + `composables/useProductSources.ts`):
   the storefront product page (banner above everything), catalogue cards and

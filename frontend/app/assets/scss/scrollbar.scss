@@ -1,0 +1,219 @@
+/**
+ * Scrollbars.
+ *
+ * Every scrollable box in the app — the page, the mega menu, a modal body, an
+ * admin table — gets the same treatment instead of the browser default, which
+ * is a grey system widget that belongs to nobody's design system.
+ *
+ * Two layers:
+ *   1. a global baseline on every scroll container;
+ *   2. `.u-scroll`, an opt-in "panel" treatment for boxes that scroll *inside*
+ *      the page (dropdowns, dialogs, sidebars) — slimmer, track-less, with the
+ *      thumb lighting up in brand colour while the pointer is in the panel,
+ *      scroll chaining contained, and a soft fade on whichever edge still has
+ *      content behind it.
+ *
+ * Browser split, and why it is written this way: Chrome 121+ understands the
+ * standard `scrollbar-width` / `scrollbar-color`, and the moment either one is
+ * set on an element it *ignores* every `::-webkit-scrollbar` rule for it. So
+ * the standard properties are served only to engines without the WebKit
+ * pseudo-elements (Firefox), and WebKit/Blink get the richer pseudo-element
+ * version. Setting both on one element would silently downgrade Chrome.
+ */
+
+:root {
+  --scrollbar-size: 12px;
+  --scrollbar-size-panel: 10px;
+  --scrollbar-track: var(--gray-100);
+  --scrollbar-thumb: var(--gray-300);
+  --scrollbar-thumb-hover: var(--brand);
+  /* Height of the "there is more below" fade inside `.u-scroll` panels. */
+  --scroll-fade-size: 28px;
+}
+
+:root.theme-dark {
+  --scrollbar-track: rgb(255 255 255 / 4%);
+  --scrollbar-thumb: rgb(255 255 255 / 16%);
+}
+
+/* ---------------------------------------------------------------------------
+   1. Baseline — Firefox and friends
+--------------------------------------------------------------------------- */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  html {
+    scrollbar-color: var(--brand) var(--scrollbar-track);
+  }
+
+  .u-scroll:hover,
+  .u-scroll:focus-within {
+    scrollbar-color: var(--scrollbar-thumb-hover) transparent;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   1. Baseline — WebKit / Blink
+--------------------------------------------------------------------------- */
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The transparent border + `padding-box` clip is what gives the thumb its
+   breathing room: the track stays full width, the pill does not. */
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  border-width: 2px;
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: var(--brand-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* The page's own scrollbar is the one visitors see on every screen, so it
+   carries the brand rather than hiding. */
+html::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+html::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--brand), var(--brand-hover));
+  background-clip: padding-box;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-hover);
+  background-clip: padding-box;
+}
+
+/* ---------------------------------------------------------------------------
+   2. `.u-scroll` — in-page panels
+--------------------------------------------------------------------------- */
+.u-scroll {
+  /* A dropdown or dialog that hits its end must not start scrolling the page
+     behind it. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.u-scroll::-webkit-scrollbar {
+  width: var(--scrollbar-size-panel);
+  height: var(--scrollbar-size-panel);
+}
+
+.u-scroll::-webkit-scrollbar-track {
+  border-radius: var(--radius-full);
+  background: transparent;
+}
+
+.u-scroll::-webkit-scrollbar-thumb {
+  border-width: 2px;
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+/* Hovering anywhere in the panel is the signal that the list is being read —
+   the thumb picks up the brand colour then, not only under the pointer. */
+.u-scroll:hover::-webkit-scrollbar-thumb,
+.u-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: var(--brand);
+  background-clip: padding-box;
+}
+
+.u-scroll:hover::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-hover);
+  background-clip: padding-box;
+}
+
+/* Touch devices draw their own overlay scrollbar; the panel treatment there is
+   just the contained scroll chaining above. */
+@media (hover: none) {
+  .u-scroll::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Edge fades
+   Progressive enhancement: where scroll-driven animations exist the panel
+   fades out whichever edge has content behind it, which reads as "there is
+   more" far better than a scrollbar does. Everywhere else the mask is simply
+   never applied and the panel looks exactly as it did.
+--------------------------------------------------------------------------- */
+@property --scroll-fade-top {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-bottom {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@supports (animation-timeline: scroll(self)) {
+  .u-scroll--fade {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--scroll-fade-top),
+      #000 calc(100% - var(--scroll-fade-bottom)),
+      transparent 100%
+    );
+    animation: u-scroll-fade linear both;
+    animation-timeline: scroll(self);
+  }
+
+  /* An unscrollable panel has an inactive timeline, so both lengths stay at
+     their initial 0 and the mask is fully opaque. */
+  @keyframes u-scroll-fade {
+    0% {
+      --scroll-fade-top: 0px;
+      --scroll-fade-bottom: var(--scroll-fade-size);
+    }
+
+    8% {
+      --scroll-fade-top: var(--scroll-fade-size);
+    }
+
+    92% {
+      --scroll-fade-bottom: var(--scroll-fade-size);
+    }
+
+    100% {
+      --scroll-fade-top: var(--scroll-fade-size);
+      --scroll-fade-bottom: 0px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .u-scroll--fade {
+      mask-image: none;
+      animation: none;
+    }
+  }
+}

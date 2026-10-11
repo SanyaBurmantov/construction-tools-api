@@ -66,6 +66,13 @@ type ListResponse = {
   pagination: { page: number, limit: number, total: number, pages: number }
 }
 
+/**
+ * Lines printed in the list's «Состав» column before the rest is summarised.
+ * The point of the column is answering "что заказали и где это купить" without
+ * opening every order; a ten-line order would turn the table into a wall.
+ */
+const COMPOSITION_PREVIEW = 3
+
 const route = useRoute()
 const router = useRouter()
 const { adminFetch, errorMessage } = useAdminApi()
@@ -249,6 +256,7 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
           <tr>
             <th>№</th>
             <th>Покупатель</th>
+            <th>Состав</th>
             <th>Доставка</th>
             <th>Дата</th>
             <th class="num">Сумма</th>
@@ -257,10 +265,10 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td colspan="6"><UiSkeleton :lines="5" height="18px" /></td>
+            <td colspan="7"><UiSkeleton :lines="5" height="18px" /></td>
           </tr>
           <tr v-else-if="!orders.length">
-            <td colspan="6">
+            <td colspan="7">
               <UiEmpty
                 icon="cart"
                 title="Заказов не найдено"
@@ -285,6 +293,39 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
                 </span>
                 <span v-else class="account is-guest">без аккаунта</span>
               </div>
+            </td>
+            <!-- Everything in here is a link, and the row itself opens the
+                 order — so the cell keeps its own clicks. -->
+            <td class="composition" @click.stop>
+              <div
+                v-for="item in order.items.slice(0, COMPOSITION_PREVIEW)"
+                :key="item.id"
+                class="composition-item"
+              >
+                <span class="composition-line">
+                  <span class="composition-qty">{{ item.quantity }} ×</span>
+                  <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">
+                    {{ item.productName }}
+                  </NuxtLink>
+                </span>
+                <!-- `line`, not `order`: three repetitions of the
+                     «первоисточник» label would be noise in a table. One link
+                     per supplier is enough to click through and buy; the full
+                     list of pages is one click away in the order itself. -->
+                <AdminProductSourceNote
+                  v-if="item.productId"
+                  :product-id="item.productId"
+                  variant="line"
+                />
+              </div>
+              <button
+                v-if="order.items.length > COMPOSITION_PREVIEW"
+                type="button"
+                class="composition-rest"
+                @click="openDetail(order.id)"
+              >
+                +{{ order.items.length - COMPOSITION_PREVIEW }} позиц. →
+              </button>
             </td>
             <td class="muted">{{ DELIVERY_LABELS[order.deliveryMethod] }}</td>
             <td class="muted nowrap">{{ formatDate(order.createdAt) }}</td>
@@ -395,13 +436,16 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
                   {{ item.productName }}
                 </NuxtLink>
                 <span v-if="item.productSku" class="item-sku">Арт. {{ item.productSku }}</span>
-                <!-- Откуда спаршен — удобно, когда заказ надо у кого-то купить. -->
+                <!-- Первоисточник: по этим ссылкам заказ и закупается. -->
                 <AdminProductSourceNote
                   v-if="item.productId"
                   :product-id="item.productId"
-                  variant="line"
+                  variant="order"
                   show-empty
                 />
+                <!-- Without a product there is nothing to look up — say so
+                     instead of leaving the line looking unparsed. -->
+                <span v-else class="item-gone">товар удалён из каталога</span>
               </div>
               <span class="item-qty">{{ item.quantity }} ×</span>
               <span class="item-price">
@@ -652,6 +696,49 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
   gap: var(--space-3);
   grid-template-columns: 40px 1fr auto auto auto;
   font-size: var(--text-sm);
+}
+
+.composition {
+  min-width: 260px;
+  max-width: 420px;
+  font-size: var(--text-sm);
+}
+
+.composition-item + .composition-item {
+  margin-top: var(--space-2);
+}
+
+.composition-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.composition-qty {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.composition-line a {
+  color: var(--text-strong);
+}
+
+.composition-line a:hover {
+  color: var(--text-link);
+  text-decoration: underline;
+}
+
+.composition-rest {
+  margin-top: var(--space-1);
+  color: var(--text-link);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.item-gone {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
 }
 
 .items img,

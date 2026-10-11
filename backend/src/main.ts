@@ -6,7 +6,6 @@ import helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import { PrismaService } from './prisma/prisma.service';
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 // Safety net: a stray rejected promise from a background job (e.g. a parser
 // cron) must not take the whole API process down. Errors are handled where they
@@ -41,7 +40,8 @@ async function bootstrap() {
       ? corsOrigin.split(',').map((origin) => origin.trim())
       : true,
   });
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // The global exception filter is registered in AppModule (APP_FILTER) so it
+  // can inject the error log.
   app.enableShutdownHooks();
 
   // Global validation pipe

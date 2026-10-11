@@ -50,6 +50,7 @@ Important env vars:
 - `CART_TTL_DAYS`: how long an untouched account cart is kept, default `90`.
 - `LIST_TTL_DAYS`: same for favourites/comparison, default `365`.
 - `ADMIN_LOG_TTL_DAYS`: how long the admin action log is kept, default `180`.
+- `ERROR_LOG_TTL_DAYS`: how long the API error log (`/admin/errors`) is kept, default `30`.
 - `PARSER_CRON_ENABLED`: set `true` to enable parser cron jobs.
 - `DUKON_CRON_BATCH_LIMIT`: default `30`.
 - `TH_TOOLS_CRON_BATCH_LIMIT`: default `30`.

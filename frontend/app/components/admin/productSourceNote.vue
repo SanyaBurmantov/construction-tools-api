@@ -14,22 +14,31 @@ const props = withDefaults(
     /**
      * `banner` — full box above a product page.
      * `badge` — one chip for a catalogue card.
-     * `line` — compact text for a table cell or an order line.
+     * `line` — compact text for a table cell.
+     * `order` — an order's line: «первоисточник» spelled out, with a link to
+     *   every supplier page carrying the item, because this is the view an
+     *   admin works from when the order has to be bought somewhere.
      */
-    variant?: 'banner' | 'badge' | 'line'
+    variant?: 'banner' | 'badge' | 'line' | 'order'
     /** Say so when there are no supplier offers at all. */
     showEmpty?: boolean
   }>(),
   { variant: 'badge', showEmpty: false }
 )
 
-const { isAdmin, queue, sourcesFor } = useProductSources()
+const { isAdmin, queue, groupedFor, labelFor } = useProductSources()
 const { formatPrice } = useFormatPrice()
 
 onMounted(() => queue([props.productId]))
 watch(() => props.productId, id => queue([id]))
 
-const sources = computed(() => sourcesFor(props.productId))
+/**
+ * Folded by supplier, never one entry per offer: a product that a supplier
+ * lists on two pages (merged into one card by its barcode) used to print that
+ * supplier's name twice, which reads as a data error rather than as two pages.
+ */
+const groups = computed(() => groupedFor(props.productId))
+const label = computed(() => labelFor(props.productId))
 
 const relativeFormatter = new Intl.RelativeTimeFormat('ru-BY', { numeric: 'auto' })
 
@@ -45,42 +54,72 @@ function lastSyncLabel(iso: string) {
 <template>
   <ClientOnly>
     <template v-if="isAdmin">
-      <!-- Product page: the first thing an admin sees. -->
-      <div v-if="variant === 'banner' && (sources.length || showEmpty)" class="banner">
+      <!-- Product page: the first thing an admin sees. One block per supplier,
+           with every page of theirs that feeds this card under it. -->
+      <div v-if="variant === 'banner' && (groups.length || showEmpty)" class="banner">
         <span class="banner-label">Источник парсинга</span>
-        <ul v-if="sources.length" class="banner-list">
-          <li v-for="source in sources" :key="source.sourceId + source.url">
-            <strong>{{ source.sourceName }}</strong>
-            <span class="muted">закупка {{ formatPrice(source.price, source.currency) }}</span>
-            <span :class="source.stock ? 'in-stock' : 'out-of-stock'">
-              {{ source.stock ? 'в наличии' : 'нет у поставщика' }}
+        <ul v-if="groups.length" class="banner-list">
+          <li v-for="group in groups" :key="group.sourceId" class="banner-source">
+            <span class="banner-source-head">
+              <strong>{{ group.sourceName }}</strong>
+              <span v-if="group.offers.length > 1" class="banner-count">
+                {{ pluralize(group.offers.length, 'supplierPage') }} на одной карточке
+              </span>
             </span>
-            <span class="muted">обновлено {{ lastSyncLabel(source.lastSync) }}</span>
-            <a :href="source.url" target="_blank" rel="noopener noreferrer">
-              страница поставщика ↗
-            </a>
+            <span v-for="offer in group.offers" :key="offer.url" class="banner-offer">
+              <span class="muted">закупка {{ formatPrice(offer.price, offer.currency) }}</span>
+              <span :class="offer.stock ? 'in-stock' : 'out-of-stock'">
+                {{ offer.stock ? 'в наличии' : 'нет у поставщика' }}
+              </span>
+              <span class="muted">обновлено {{ lastSyncLabel(offer.lastSync) }}</span>
+              <a :href="offer.url" target="_blank" rel="noopener noreferrer">
+                страница поставщика ↗
+              </a>
+            </span>
           </li>
         </ul>
         <span v-else class="muted">нет предложений поставщиков — товар добавлен вручную</span>
       </div>
 
       <!-- Catalogue card. -->
-      <span v-else-if="variant === 'badge' && sources.length" class="badge">
-        {{ sources.map(source => source.sourceName).join(', ') }}
+      <span v-else-if="variant === 'badge' && groups.length" class="badge">
+        {{ label }}
       </span>
 
-      <!-- Table cell / order line. -->
-      <span v-else-if="variant === 'line' && (sources.length || showEmpty)" class="line">
-        <template v-if="sources.length">
-          <span
-            v-for="source in sources"
-            :key="source.sourceId + source.url"
-            class="line-item"
-          >
-            <a :href="source.url" target="_blank" rel="noopener noreferrer">
-              {{ source.sourceName }}
+      <!-- Order composition: the link an admin clicks to go and buy the
+           item, one per supplier page, with the purchase price next to it. -->
+      <span v-else-if="variant === 'order' && (groups.length || showEmpty)" class="order-source">
+        <span class="order-source-label">Первоисточник</span>
+        <template v-if="groups.length">
+          <template v-for="group in groups" :key="group.sourceId">
+            <a
+              v-for="offer in group.offers"
+              :key="offer.url"
+              :href="offer.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="order-source-link"
+            >
+              <span>{{ group.sourceName }} ↗</span>
+              <span class="muted">{{ formatPrice(offer.price, offer.currency) }}</span>
+              <span v-if="!offer.stock" class="out-of-stock">нет у поставщика</span>
             </a>
-            <span class="muted">{{ formatPrice(source.price, source.currency) }}</span>
+          </template>
+        </template>
+        <span v-else class="muted">нет предложений поставщиков — товар добавлен вручную</span>
+      </span>
+
+      <!-- Table cell. -->
+      <span v-else-if="variant === 'line' && (groups.length || showEmpty)" class="line">
+        <template v-if="groups.length">
+          <span v-for="group in groups" :key="group.sourceId" class="line-item">
+            <a :href="group.offers[0]!.url" target="_blank" rel="noopener noreferrer">
+              {{ group.sourceName }}
+            </a>
+            <span v-if="group.offers.length > 1" class="muted">×{{ group.offers.length }}</span>
+            <span class="muted">
+              {{ formatPrice(group.offers[0]!.price, group.offers[0]!.currency) }}
+            </span>
           </span>
         </template>
         <span v-else class="muted">вручную</span>
@@ -119,11 +158,35 @@ function lastSyncLabel(iso: string) {
   list-style: none;
 }
 
-.banner-list li {
+.banner-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.banner-source-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.banner-count {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.banner-offer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
+}
+
+/* A supplier with several pages indents them under its name. */
+.banner-source:has(.banner-count) .banner-offer {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-subtle);
 }
 
 .badge {
@@ -137,6 +200,38 @@ function lastSyncLabel(iso: string) {
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.order-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.order-source-label {
+  color: var(--text-subtle);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.order-source-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-link);
+  font-weight: 600;
+  gap: var(--space-2);
+}
+
+.order-source-link:hover {
+  border-color: var(--brand);
+  text-decoration: none;
 }
 
 .line {

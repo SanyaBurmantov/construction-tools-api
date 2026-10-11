@@ -447,8 +447,21 @@ export class ToolsByParserService {
   }
 
   async parseProductUrl(url: string) {
-    const canonicalUrl = this.absoluteUrl(url);
-    const parsed = parseTools(await this.fetchText(canonicalUrl));
+    /**
+     * The offer's identity, and it has to be the *canonical* URL.
+     *
+     * The queue is filled with `canonicalUrl()` output and `processSitemapUrl`
+     * withdraws a 404'd offer under `canonicalUrl(url)` too — but this used to
+     * save under `absoluteUrl(url)`, which keeps the query string. Any row
+     * reaching here with one (an admin pasting a link with `?utm_…`, a legacy
+     * queue row) was therefore stored under a key nothing else ever looks up:
+     * the supplier could delete the product and the dead offer would keep its
+     * price on the storefront, and the same page re-read without the query
+     * became a second offer rather than an update. One spelling, used by
+     * everything that touches the offer.
+     */
+    const offerUrl = this.canonicalUrl(url);
+    const parsed = parseTools(await this.fetchText(offerUrl));
     // Order matters: a catalogue or landing page has no product name either, so
     // checking the name first classified it FAILED instead of SKIPPED — which
     // put it in the error log and, because the watchdog requeues FAILED rows,
@@ -476,7 +489,7 @@ export class ToolsByParserService {
     // could republish an unrelated product that merely shares the name.
     const existingProductId = await this.identity.findByOffer(
       source.id,
-      canonicalUrl,
+      offerUrl,
     );
     const existingProduct = existingProductId
       ? await this.prisma.product.findUnique({
@@ -504,7 +517,7 @@ export class ToolsByParserService {
     // ProductIdentityService for why upserting on slug lost products.
     const product = await this.identity.save({
       sourceId: source.id,
-      url: canonicalUrl,
+      url: offerUrl,
       baseSlug: slug,
       data: {
         update: {
@@ -551,7 +564,7 @@ export class ToolsByParserService {
       product.id,
       categoryId,
     );
-    await this.saveSourceProduct(canonicalUrl, product.id, source.id, {
+    await this.saveSourceProduct(offerUrl, product.id, source.id, {
       sourceCategoryId,
       name: parsed.name,
       sku,

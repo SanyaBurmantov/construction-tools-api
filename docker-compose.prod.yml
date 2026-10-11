@@ -55,6 +55,7 @@ services:
       # Сколько хранить избранное/сравнение и журнал действий админов, в сутках.
       LIST_TTL_DAYS: ${LIST_TTL_DAYS:-365}
       ADMIN_LOG_TTL_DAYS: ${ADMIN_LOG_TTL_DAYS:-180}
+      ERROR_LOG_TTL_DAYS: ${ERROR_LOG_TTL_DAYS:-30}
       CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
       # Both must be set for new-order Telegram notifications; empty = disabled.

@@ -162,10 +162,52 @@ function onKeydown(event: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+
+/* ---- Compact header ----------------------------------------------------
+ * The header is sticky, and at full height it keeps three rows on screen for
+ * the whole page. Past the fold only the working row is worth that space:
+ * logo, «Каталог», search and the account/cart actions. The promo strip and
+ * the category row fold away and come back at the top of the page.
+ *
+ * Two thresholds rather than one: collapsing shortens the document, and a
+ * single threshold sitting exactly at the boundary flips back and forth as a
+ * result. 140 down / 60 up is wider than anything the collapse itself can
+ * shift.
+ */
+const COMPACT_FROM = 140
+const COMPACT_UNTIL = 60
+const compact = ref(false)
+let scrollQueued = false
+
+function syncCompact() {
+  const offset = window.scrollY
+  if (compact.value) {
+    if (offset < COMPACT_UNTIL) compact.value = false
+  } else if (offset > COMPACT_FROM) {
+    compact.value = true
+  }
+}
+
+function onScroll() {
+  if (scrollQueued) return
+  scrollQueued = true
+  requestAnimationFrame(() => {
+    scrollQueued = false
+    syncCompact()
+  })
+}
+
+onMounted(() => {
+  // A reload halfway down a product page must not start expanded and then
+  // jump on the first wheel tick.
+  syncCompact()
+  window.addEventListener('scroll', onScroll, { passive: true })
+})
+onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 </script>
 
 <template>
-  <header class="site-header">
+  <header class="site-header" :class="{ 'is-compact': compact }">
     <div class="topbar">
       <div class="container topbar-inner">
         <span class="topbar-note">Каталог инструмента от поставщиков — обновляется ежедневно</span>
@@ -236,7 +278,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           </form>
 
           <Transition name="fade">
-            <div v-if="suggestOpen && hasSuggestions" class="suggest">
+            <div v-if="suggestOpen && hasSuggestions" class="suggest u-scroll u-scroll--fade">
               <div v-if="suggest?.products.length" class="suggest-group">
                 <p class="suggest-title">Товары</p>
                 <NuxtLink
@@ -375,7 +417,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           </div>
 
           <template v-else>
-            <nav class="mega-roots" aria-label="Категории каталога">
+            <nav class="mega-roots u-scroll u-scroll--fade" aria-label="Категории каталога">
               <NuxtLink
                 v-for="category in tree"
                 :key="category.id"
@@ -390,7 +432,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               </NuxtLink>
             </nav>
 
-            <div v-if="activeRoot" class="mega-panel">
+            <div v-if="activeRoot" class="mega-panel u-scroll u-scroll--fade">
               <NuxtLink :to="`/catalog/${activeRoot.slug}`" class="mega-panel-head">
                 <strong>{{ activeRoot.name }}</strong>
                 <span>{{ pluralize(activeRoot.productCount, 'product') }} →</span>
@@ -496,6 +538,41 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   top: 0;
   background: var(--surface-card);
   border-bottom: 1px solid var(--border-subtle);
+  transition: box-shadow var(--duration-base) var(--ease-out);
+}
+
+/* Scrolled state: the folded rows are gone, so the header needs an edge of
+   its own against the content sliding under it. */
+.site-header.is-compact {
+  box-shadow: var(--shadow-md);
+}
+
+/* The two collapsible rows. `max-height` is the only property that animates a
+   row of unknown height; the values are generous caps, not real heights. */
+.topbar,
+.navbar {
+  overflow: hidden;
+  max-height: 80px;
+  transition:
+    max-height var(--duration-base) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s;
+}
+
+.is-compact .topbar,
+.is-compact .navbar {
+  max-height: 0;
+  border-width: 0;
+  opacity: 0;
+  /* A folded row is still in the DOM — `visibility` keeps it out of the tab
+     order and away from the pointer, switched only once the row has finished
+     folding so the fold itself still animates. */
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    max-height var(--duration-base) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out),
+    visibility 0s linear var(--duration-base);
 }
 
 .icon {

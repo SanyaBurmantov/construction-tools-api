@@ -58,6 +58,29 @@ const counts = [
   { categoryId: 'c3', _count: { _all: 3 } },
 ];
 
+/**
+ * Artwork fixtures: the dearest published product carrying a photo, per
+ * category that owns products. `p-perf` is the dearest of the two, so the root
+ * is expected to inherit *its* photo and not the drill's.
+ */
+const showcaseWinners = [
+  { categoryId: 'c2', productId: 'p-drill', price: 100 },
+  { categoryId: 'c3', productId: 'p-perf', price: 900 },
+];
+const showcaseImages = [
+  { productId: 'p-drill', url: 'https://cdn/drill.jpg' },
+  { productId: 'p-perf', url: 'https://cdn/perf.jpg' },
+];
+
+function artworkMocks() {
+  return {
+    $queryRaw: jest.fn(() => Promise.resolve(showcaseWinners)),
+    productImage: {
+      findMany: jest.fn(() => Promise.resolve(showcaseImages)),
+    },
+  };
+}
+
 function buildServiceWith(rowsOverride: CategoryRow[]) {
   const prisma = {
     category: {
@@ -70,6 +93,7 @@ function buildServiceWith(rowsOverride: CategoryRow[]) {
     },
     categoryRedirect: { findUnique: jest.fn(() => Promise.resolve(null)) },
     product: { groupBy: jest.fn(() => Promise.resolve(counts)) },
+    ...artworkMocks(),
   } as unknown as PrismaService;
   return new CategoriesService(prisma);
 }
@@ -98,6 +122,7 @@ function buildService() {
     product: {
       groupBy: jest.fn(() => Promise.resolve(counts)),
     },
+    ...artworkMocks(),
   } as unknown as PrismaService;
   return new CategoriesService(prisma);
 }
@@ -209,6 +234,7 @@ describe('CategoriesService category redirects', () => {
         findUnique: findRedirect,
       },
       product: { groupBy: jest.fn().mockResolvedValue(counts) },
+      ...artworkMocks(),
     } as unknown as PrismaService;
     const result = await new CategoriesService(prisma).getBySlug(
       'legacy-dreli',
@@ -229,10 +255,52 @@ describe('CategoriesService category redirects', () => {
         findMany: jest.fn().mockResolvedValue(renamed),
       },
       product: { groupBy: jest.fn().mockResolvedValue(counts) },
+      ...artworkMocks(),
     } as unknown as PrismaService;
     const result = await new CategoriesService(prisma).getBySlug('dreli');
     expect(result.ancestors).toEqual([
       { id: 'c1', name: 'Электроинструмент', slug: 'tools-elektro' },
     ]);
+  });
+});
+
+describe('CategoriesService category artwork', () => {
+  it('fills a category without a picture from its dearest product', async () => {
+    const tree = await buildService().getTree();
+    const [drills, perforators] = tree[0].children;
+
+    expect(drills.image).toBe('https://cdn/drill.jpg');
+    expect(perforators.image).toBe('https://cdn/perf.jpg');
+  });
+
+  // A root holds no products of its own: its tile borrows the dearest photo
+  // from anywhere below it, which is the perforator, not the cheaper drill.
+  it('inherits the dearest photo in the subtree onto the parent', async () => {
+    const tree = await buildService().getTree();
+    expect(tree[0].image).toBe('https://cdn/perf.jpg');
+  });
+
+  it('never overwrites a picture an admin set', async () => {
+    const curated = rows.map((row) =>
+      row.id === 'c1' ? { ...row, image: 'https://cdn/by-hand.jpg' } : row,
+    );
+    const tree = await buildServiceWith(curated).getTree();
+    expect(tree[0].image).toBe('https://cdn/by-hand.jpg');
+  });
+
+  // Artwork is decoration; the menu is not. A failing artwork query leaves
+  // every tile on its letter plate instead of taking navigation down.
+  it('still returns the tree when the artwork query fails', async () => {
+    const prisma = {
+      category: { findMany: jest.fn(() => Promise.resolve(rows)) },
+      categoryRedirect: { findUnique: jest.fn(() => Promise.resolve(null)) },
+      product: { groupBy: jest.fn(() => Promise.resolve(counts)) },
+      $queryRaw: jest.fn(() => Promise.reject(new Error('timeout'))),
+      productImage: { findMany: jest.fn() },
+    } as unknown as PrismaService;
+
+    const tree = await new CategoriesService(prisma).getTree();
+    expect(tree[0].image).toBeNull();
+    expect(tree[0].productCount).toBe(8);
   });
 });

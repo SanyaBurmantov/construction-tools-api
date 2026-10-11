@@ -78,31 +78,12 @@ const HOME_CATEGORY_COUNT = 8
 const topCategories = computed(() => featuredCategories(tree.value, HOME_CATEGORY_COUNT))
 
 /**
- * Tiles want a picture. A category only has artwork once an admin sets it, so
- * the rest borrow the first product image found in their subtree — one extra
- * request, and it turns a wall of text boxes into a browsable grid.
+ * Tile artwork now arrives with the tree itself: `GET /categories/tree` falls
+ * back to the photo of the dearest product in a category's subtree when no
+ * admin set one. This page used to ask `/products?limit=1` once per tile for
+ * that — a dozen extra requests per render, and it took whatever product came
+ * first rather than the one worth showing.
  */
-const { data: categoryImages } = await useAsyncData<Record<string, string>>(
-  'home-category-images',
-  async () => {
-    const pairs = await Promise.all(
-      topCategories.value
-        .filter((category) => !category.image)
-        .map(async (category) => {
-          const response = await $fetch<ProductsResponse>(`${apiBase}/products`, {
-            params: { categorySlug: category.slug, limit: 1 },
-          }).catch(() => emptyPage)
-          return [category.slug, response.data[0]?.images?.[0]?.url ?? ''] as const
-        })
-    )
-    return Object.fromEntries(pairs.filter(([, url]) => url))
-  },
-  { watch: [topCategories], default: () => ({}) }
-)
-
-function categoryImage(category: CategoryNode) {
-  return category.image || categoryImages.value[category.slug] || null
-}
 const topBrands = computed(() => (brands.value || []).slice(0, 14))
 const popularProducts = computed(() =>
   popular.value.data.filter((product) => product.ratingCount)
@@ -255,7 +236,7 @@ useHead({
           :name="category.name"
           :to="`/catalog/${category.slug}`"
           :count="category.productCount"
-          :image="categoryImage(category)"
+          :image="category.image"
           variant="tile"
         />
       </div>

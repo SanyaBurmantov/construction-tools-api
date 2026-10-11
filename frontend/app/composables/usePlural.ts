@@ -47,6 +47,7 @@ export const PLURALS = {
   position: ['позиция', 'позиции', 'позиций'],
   subcategory: ['подкатегория', 'подкатегории', 'подкатегорий'],
   difference: ['отличие', 'отличия', 'отличий'],
+  supplierPage: ['страница поставщика', 'страницы поставщика', 'страниц поставщика'],
 } as const satisfies Record<string, readonly [string, string, string]>
 
 export type PluralNoun = keyof typeof PLURALS

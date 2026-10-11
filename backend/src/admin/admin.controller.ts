@@ -72,6 +72,8 @@ import {
 import { ActingAdminId } from '../auth/current-user.decorator';
 import { AdminActionLogService } from '../audit/admin-action-log.service';
 import { AuditQueryDto } from '../audit/dto/audit-query.dto';
+import { ErrorLogService } from '../errors/error-log.service';
+import { ErrorLogQueryDto } from '../errors/dto/error-log-query.dto';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
@@ -91,6 +93,7 @@ export class AdminController {
     private readonly specsAdminService: SpecificationsAdminService,
     private readonly usersAdminService: UsersAdminService,
     private readonly adminActionLog: AdminActionLogService,
+    private readonly errorLog: ErrorLogService,
   ) {}
 
   @Get('stats')
@@ -574,6 +577,22 @@ export class AdminController {
   @Get('audit')
   getAuditLog(@Query() query: AuditQueryDto) {
     return this.adminActionLog.list(query);
+  }
+
+  /**
+   * What broke. Every 5xx, plus the client errors an admin screen was answered
+   * with — the container log has the same lines, but it scrolls away and is not
+   * reachable from the panel, which is where someone notices.
+   */
+  @Get('errors')
+  getErrorLog(@Query() query: ErrorLogQueryDto) {
+    return this.errorLog.list(query);
+  }
+
+  /** Empties the log once an incident has been dealt with. */
+  @Delete('errors')
+  clearErrorLog() {
+    return this.errorLog.clear();
   }
 
   /* ---- Accounts -------------------------------------------------------- */

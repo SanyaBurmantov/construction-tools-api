@@ -1,4 +1,5 @@
 @use 'tokens';
+@use 'scrollbar';
 
 /* Self-hosting would be better for LCP, but the project already pulls this
    from Google Fonts; `display=swap` keeps text visible during the fetch. */

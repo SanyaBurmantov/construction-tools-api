@@ -1,12 +1,26 @@
 import { CreateCategoryDto } from './dto/create-category.dto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CategoryPage, CategoryTreeNode } from './types/category-tree.type';
 import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
 
+/** The dearest product with a photo in a category — see `showcaseImages()`. */
+type CategoryShowcase = { price: number; url: string };
+
+/** How long a built artwork map is reused. Supplier prices move daily. */
+const SHOWCASE_TTL_MS = 15 * 60 * 1000;
+
 @Injectable()
 export class CategoriesService {
+  private readonly logger = new Logger(CategoriesService.name);
+  private showcases: {
+    at: number;
+    value: Map<string, CategoryShowcase>;
+  } | null = null;
+  private showcasesInFlight: Promise<Map<string, CategoryShowcase>> | null =
+    null;
+
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreateCategoryDto) {
@@ -99,7 +113,9 @@ export class CategoriesService {
       name: category.name,
       slug: category.slug,
       description: category.description,
-      image: category.image,
+      // The node carries the inherited artwork; the row only has what an admin
+      // typed in.
+      image: node?.image ?? category.image,
       level: category.level,
       seoTitle: category.seoTitle,
       seoDescription: category.seoDescription,
@@ -107,6 +123,81 @@ export class CategoriesService {
       ancestors,
       children,
     };
+  }
+
+  /**
+   * Tile artwork a category has not been given by hand: the photo of the most
+   * expensive published product in it, its own or any descendant's.
+   *
+   * Why the most expensive: a category tile is a shop window, and the dearest
+   * item is the one that looks like the category rather than like a consumable.
+   * Products without a photo are skipped outright, so the picture is never a
+   * placeholder — a category where nothing has a photo keeps its letter plate.
+   *
+   * The shape of the query matters on this box (2 cores, `work_mem` 4 MB).
+   * It is deliberately two cheap steps instead of one join of `Product` to the
+   * 147k-row image table: pick the winning product per category from a narrow
+   * `EXISTS` filter (a hash semi join, and the sort carries three columns, not
+   * a URL), then read the first image of those ~1.5k winners by primary-key
+   * index. Over a 15-minute cache, since prices move once a day at most.
+   */
+  private async showcaseImages(): Promise<Map<string, CategoryShowcase>> {
+    const fresh = this.showcases;
+    if (fresh && Date.now() - fresh.at < SHOWCASE_TTL_MS) return fresh.value;
+    // One request fills the cache; the rest of a burst waits for that one.
+    this.showcasesInFlight ??= this.loadShowcaseImages().finally(() => {
+      this.showcasesInFlight = null;
+    });
+    return this.showcasesInFlight;
+  }
+
+  private async loadShowcaseImages(): Promise<Map<string, CategoryShowcase>> {
+    try {
+      const winners = await this.prisma.$queryRaw<
+        Array<{ categoryId: string; productId: string; price: number }>
+      >`
+        SELECT DISTINCT ON (p."categoryId")
+          p."categoryId" AS "categoryId",
+          p."id"         AS "productId",
+          p."priceValue" AS "price"
+        FROM "Product" p
+        WHERE p."status" = 'PUBLISHED'
+          AND p."priceValue" IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM "ProductImage" i WHERE i."productId" = p."id"
+          )
+        ORDER BY p."categoryId", p."priceValue" DESC, p."id"
+      `;
+
+      const images = winners.length
+        ? await this.prisma.productImage.findMany({
+            where: { productId: { in: winners.map((row) => row.productId) } },
+            orderBy: [{ productId: 'asc' }, { order: 'asc' }],
+            select: { productId: true, url: true },
+          })
+        : [];
+
+      const firstImage = new Map<string, string>();
+      for (const image of images) {
+        if (!firstImage.has(image.productId)) {
+          firstImage.set(image.productId, image.url);
+        }
+      }
+
+      const byCategory = new Map<string, CategoryShowcase>();
+      for (const row of winners) {
+        const url = firstImage.get(row.productId);
+        if (url) byCategory.set(row.categoryId, { price: row.price, url });
+      }
+
+      this.showcases = { at: Date.now(), value: byCategory };
+      return byCategory;
+    } catch (error) {
+      // Artwork is decoration; navigation is not. A failure here leaves every
+      // tile on its letter plate instead of taking the menu down with it.
+      this.logger.warn(`Could not build category artwork: ${String(error)}`);
+      return new Map();
+    }
   }
 
   private async buildCountedTree(): Promise<{
@@ -166,6 +257,23 @@ export class CategoriesService {
       return node.productCount;
     };
     roots.forEach(aggregate);
+
+    // Artwork rolls up the same way counts do: a root category holds no
+    // products of its own, so its tile borrows the dearest photo in its
+    // subtree. An image an admin set is never overwritten.
+    const showcases = await this.showcaseImages();
+    const inherit = (node: CategoryTreeNode): CategoryShowcase | null => {
+      let best = showcases.get(node.id) ?? null;
+      for (const child of node.children) {
+        const fromChild = inherit(child);
+        if (fromChild && (!best || fromChild.price > best.price)) {
+          best = fromChild;
+        }
+      }
+      if (!node.image && best) node.image = best.url;
+      return best;
+    };
+    roots.forEach(inherit);
 
     // Curated order first, then the catalogue's own gravity.
     //

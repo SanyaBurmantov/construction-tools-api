@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -17,6 +17,8 @@ import { AuthModule } from './auth/auth.module';
 import { AccountModule } from './account/account.module';
 import { ListsModule } from './lists/lists.module';
 import { AuditModule } from './audit/audit.module';
+import { ErrorsModule } from './errors/errors.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AdminActionLogInterceptor } from './audit/admin-action-log.interceptor';
 import { OrdersModule } from './orders/orders.module';
 import { CartModule } from './cart/cart.module';
@@ -46,6 +48,7 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     AccountModule,
     ListsModule,
     AuditModule,
+    ErrorsModule,
     ProductsModule,
     CategoriesModule,
     SpecificationsModule,
@@ -71,6 +74,10 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     // it logs only mutating calls in admin scope, so the cost on the public
     // storefront is one Set lookup per request.
     { provide: APP_INTERCEPTOR, useClass: AdminActionLogInterceptor },
+    // Registered here rather than with `useGlobalFilters(new …)` in main.ts so
+    // it can be given the error log through DI. The response it sends is
+    // unchanged; it now also keeps a copy of what went wrong.
+    { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],
 })
 export class AppModule {}
