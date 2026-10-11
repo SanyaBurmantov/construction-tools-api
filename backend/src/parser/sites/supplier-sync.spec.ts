@@ -25,6 +25,12 @@ function deps() {
     productSpecification: { upsert: jest.fn(() => Promise.resolve({})) },
     sourceProduct: { upsert: jest.fn(() => Promise.resolve({})) },
     sitemapsDukon: { updateMany: jest.fn(() => Promise.resolve({ count: 1 })) },
+    sitemapsToolsBy: {
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    sitemaps7745: {
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
   };
   const offers = {
     onProductParsed: jest.fn(() => Promise.resolve()),
@@ -186,3 +192,92 @@ describe('Dukon offer lifecycle', () => {
     expect(d.identity.save).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * One spelling of a supplier URL, everywhere.
+ *
+ * The queue is filled with `canonicalUrl()` output and a 404 withdraws the
+ * offer under `canonicalUrl(url)`, but these two parsers used to key the saved
+ * offer on `absoluteUrl(url)` — which keeps whatever the caller passed. A URL
+ * that reached the parser with a query string or an anchor (an admin pasting a
+ * tracked link, a legacy queue row) was stored under a key nothing else looks
+ * up: the offer could never be withdrawn, so a product the supplier deleted
+ * kept its price on the storefront, and the same page read again from the
+ * queue became a second offer instead of an update.
+ *
+ * Each parser canonicalises its own way — tools.by drops the query and the
+ * hash, 7745 drops the hash — so the fixtures below carry what that parser is
+ * expected to strip.
+ */
+describe.each([
+  {
+    name: 'Tools.by',
+    Parser: ToolsByParserService,
+    fixture: 'tools-by-product.html',
+    queueUrl: 'https://tools.by/product/1?utm_source=mail#gallery',
+    canonical: 'https://tools.by/product/1',
+    queueTable: 'sitemapsToolsBy' as const,
+  },
+  {
+    name: '7745',
+    Parser: Supplier7745ParserService,
+    fixture: '7745-product.html',
+    queueUrl: 'https://7745.by/product/item/#reviews',
+    canonical: 'https://7745.by/product/item/',
+    queueTable: 'sitemaps7745' as const,
+  },
+])(
+  '$name offer identity',
+  ({ Parser, fixture, queueUrl, canonical, queueTable }) => {
+    beforeEach(() => fetchMock.mockReset());
+
+    function build(d: ReturnType<typeof deps>) {
+      return new Parser(
+        d.prisma as never,
+        d.logs as never,
+        d.offers as never,
+        d.categoryTree as never,
+        d.settings as never,
+        d.identity as never,
+      );
+    }
+
+    it('saves the offer under the canonical URL, not the queue spelling', async () => {
+      const d = deps();
+      fetchMock.mockResolvedValue(
+        new Response(
+          readFileSync(join(__dirname, 'fixtures', fixture), 'utf8'),
+        ),
+      );
+
+      await build(d).parseProductUrl(queueUrl);
+
+      expect(d.identity.findByOffer).toHaveBeenCalledWith('source', canonical);
+      const save = d.identity.save.mock.calls[0] as unknown as [
+        { url: string },
+      ];
+      expect(save[0].url).toBe(canonical);
+      const sourceWrite = d.prisma.sourceProduct.upsert.mock
+        .calls[0] as unknown as [
+        { where: { sourceId_url: { url: string } }; create: { url: string } },
+      ];
+      expect(sourceWrite[0].where.sourceId_url.url).toBe(canonical);
+      expect(sourceWrite[0].create.url).toBe(canonical);
+    });
+
+    it.each([404, 410])(
+      'withdraws a deleted offer under that same key on HTTP %i',
+      async (status) => {
+        const d = deps();
+        fetchMock.mockResolvedValue(new Response(null, { status }));
+
+        expect(await build(d).processSitemapUrl(queueUrl)).toBe('DELISTED');
+        expect(d.offers.delistOffer).toHaveBeenCalledWith('source', canonical);
+        // The queue row keeps its own spelling — that is its primary key.
+        expect(d.prisma[queueTable].updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { url: queueUrl } }),
+        );
+      },
+    );
+  },
+);

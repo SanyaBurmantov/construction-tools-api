@@ -168,7 +168,7 @@ useHead({
           Войти другой учётной записью
         </UiButton>
 
-        <NuxtLink to="/" class="back">← Вернуться на сайт</NuxtLink>
+        <a href="/" class="back">← Вернуться на сайт</a>
       </div>
     </div>
 
@@ -207,7 +207,7 @@ useHead({
 
         <UiButton type="submit" size="lg" block :loading="signingIn">Войти</UiButton>
 
-        <NuxtLink to="/" class="back">← Вернуться на сайт</NuxtLink>
+        <a href="/" class="back">← Вернуться на сайт</a>
       </form>
     </div>
 
@@ -225,7 +225,7 @@ useHead({
           </button>
         </div>
 
-        <nav class="sidebar-nav">
+        <nav class="sidebar-nav u-scroll">
           <NuxtLink
             v-for="item in nav"
             :key="item.to"
@@ -242,7 +242,14 @@ useHead({
         </nav>
 
         <div class="sidebar-foot">
-          <NuxtLink to="/" class="foot-link">Открыть сайт</NuxtLink>
+          <!--
+            A real document load, not a router push: `/admin/**` is `ssr: false`,
+            so the panel runs as a SPA, and the client-side hop to `/` changed
+            the address bar without ever painting the storefront. An anchor also
+            makes the button do what it says — the shop opens in its own tab and
+            the panel stays where it was.
+          -->
+          <a href="/" target="_blank" rel="noopener" class="foot-link">Открыть сайт</a>
           <button type="button" class="foot-link is-danger" @click="signOut">Выйти</button>
         </div>
       </aside>

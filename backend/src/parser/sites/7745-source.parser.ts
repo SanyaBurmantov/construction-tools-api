@@ -242,8 +242,18 @@ export class Supplier7745ParserService {
   }
 
   async parseProductUrl(url: string) {
-    const canonicalUrl = this.absoluteUrl(url);
-    const html = await this.fetchText(canonicalUrl);
+    /**
+     * The offer's identity, and it has to be the same spelling everything else
+     * uses: `parseSitemapUrls()` queues `canonicalUrl()` output and
+     * `processSitemapUrl()` withdraws a 404'd offer under `canonicalUrl(url)`.
+     * Saving under `absoluteUrl(url)` instead kept whatever the caller passed —
+     * an admin pasting a link with a `#anchor` stored the offer under a key
+     * nothing looks up, so the supplier could delete the product and the dead
+     * price would stay on the storefront, and the same page read again from
+     * the queue became a second offer rather than an update.
+     */
+    const offerUrl = this.canonicalUrl(url);
+    const html = await this.fetchText(offerUrl);
     const $ = cheerio.load(html);
     const parsed = parse7745(html);
     if (!parsed.name) throw new Error('Product name was not parsed');
@@ -282,7 +292,7 @@ export class Supplier7745ParserService {
     // could republish an unrelated product that merely shares the name.
     const existingProductId = await this.identity.findByOffer(
       source.id,
-      canonicalUrl,
+      offerUrl,
     );
     const existingProduct = existingProductId
       ? await this.prisma.product.findUnique({
@@ -313,7 +323,7 @@ export class Supplier7745ParserService {
     // ProductIdentityService for why upserting on slug lost products.
     const product = await this.identity.save({
       sourceId: source.id,
-      url: canonicalUrl,
+      url: offerUrl,
       baseSlug: slug,
       data: {
         update: {
@@ -370,7 +380,7 @@ export class Supplier7745ParserService {
       product.id,
       categoryId,
     );
-    await this.saveSourceProduct(canonicalUrl, product.id, source.id, {
+    await this.saveSourceProduct(offerUrl, product.id, source.id, {
       sourceCategoryId,
       name: parsed.name,
       sku,
@@ -396,7 +406,7 @@ export class Supplier7745ParserService {
   }
 
   async previewProductUrl(url: string) {
-    const canonicalUrl = this.absoluteUrl(url);
+    const canonicalUrl = this.canonicalUrl(url);
     const html = await this.fetchText(canonicalUrl);
     const $ = cheerio.load(html);
     const parsed = parse7745(html);

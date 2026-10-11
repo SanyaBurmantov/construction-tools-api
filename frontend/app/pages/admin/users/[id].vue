@@ -382,9 +382,18 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
             <div v-if="expandedOrder === order.id" class="order-details">
               <ul class="order-items">
                 <li v-for="item in order.items" :key="item.id" class="order-item">
-                  <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">
-                    {{ item.productName }}
-                  </NuxtLink>
+                  <span class="order-item-name">
+                    <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">
+                      {{ item.productName }}
+                    </NuxtLink>
+                    <!-- Same «первоисточник» links as the order screen: this
+                         page is where an admin answers "где это купить". -->
+                    <AdminProductSourceNote
+                      v-if="item.productId"
+                      :product-id="item.productId"
+                      variant="order"
+                    />
+                  </span>
                   <span class="muted">
                     {{ item.quantity }} × {{ formatPrice(item.unitPrice, order.currency) }}
                   </span>
@@ -672,6 +681,14 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: var(--space-3);
   font-size: var(--text-sm);
+}
+
+/* Name over its supplier links, so the price columns stay on one line. */
+.order-item-name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .muted {

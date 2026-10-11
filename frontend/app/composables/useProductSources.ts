@@ -9,6 +9,14 @@ export type ProductSource = {
   lastSync: string
 }
 
+/** A supplier and every page of theirs that feeds this product. */
+export type ProductSourceGroup = {
+  sourceId: string
+  sourceName: string
+  sourceCode: string
+  offers: ProductSource[]
+}
+
 /** Shared cache: the catalogue, the product page and the order all ask again. */
 const CACHE_KEY = 'admin-product-sources'
 
@@ -80,14 +88,57 @@ export function useProductSources() {
 
   const sourcesFor = (productId: string) => cache.value[productId] ?? []
 
-  /** "th-tool.by, tools.by" — what the badge shows when space is tight. */
-  function labelFor(productId: string) {
-    const sources = sourcesFor(productId)
-    if (!sources.length) return ''
-    return [...new Set(sources.map(source => source.sourceName))].join(', ')
+  /**
+   * Offers folded by supplier.
+   *
+   * One product can legitimately carry several offers from the *same* source —
+   * the supplier lists the item on more than one page, and a barcode match then
+   * folds those pages' products into one card. Rendering the raw list printed
+   * the supplier once per offer («th-tool.by, th-tool.by, th-tool.by»), which
+   * reads as a bug in the data rather than as "three pages at one supplier".
+   * Everything that names a supplier goes through this, so a supplier is named
+   * once and its pages hang under it.
+   *
+   * Cheapest in-stock offer first inside a group — that is the one the price
+   * comes from, so it is the one worth reading first.
+   */
+  function groupedFor(productId: string): ProductSourceGroup[] {
+    const groups = new Map<string, ProductSourceGroup>()
+
+    for (const offer of sourcesFor(productId)) {
+      const group = groups.get(offer.sourceId)
+      if (group) group.offers.push(offer)
+      else {
+        groups.set(offer.sourceId, {
+          sourceId: offer.sourceId,
+          sourceName: offer.sourceName,
+          sourceCode: offer.sourceCode,
+          offers: [offer],
+        })
+      }
+    }
+
+    for (const group of groups.values()) {
+      group.offers.sort(
+        (a, b) =>
+          Number(b.stock) - Number(a.stock)
+          || (a.price ?? Infinity) - (b.price ?? Infinity)
+      )
+    }
+
+    return [...groups.values()]
   }
 
-  return { isAdmin, queue, load, sourcesFor, labelFor }
+  /** "th-tool.by ×2, tools.by" — what the badge shows when space is tight. */
+  function labelFor(productId: string) {
+    return groupedFor(productId)
+      .map(group => (group.offers.length > 1
+        ? `${group.sourceName} ×${group.offers.length}`
+        : group.sourceName))
+      .join(', ')
+  }
+
+  return { isAdmin, queue, load, sourcesFor, groupedFor, labelFor }
 }
 
 /**

@@ -271,7 +271,9 @@ async function save() {
     slug: form.slug.trim(),
     parentId: form.parentId || undefined,
     description: form.description.trim() || undefined,
-    image: form.image.trim() || undefined,
+    // `null`, not `undefined`: an omitted field leaves the old URL in place,
+    // so emptying the input could never remove a picture.
+    image: form.image.trim() || null,
     seoTitle: form.seoTitle.trim() || form.name.trim(),
     seoDescription: form.seoDescription.trim() || form.name.trim(),
     sortOrder: form.sortOrder ? Number(form.sortOrder) : 0,
@@ -388,6 +390,47 @@ function canMove(row: Category, direction: -1 | 1) {
   return index >= 0 && index + direction >= 0 && index + direction < siblings.length
 }
 
+/* ---- Card artwork ------------------------------------------------------
+ * A category tile falls back to the first letter of its name on a grey plate;
+ * a picture replaces it. The URL is in the editor modal too, but artwork is
+ * chosen while *looking* at the tree — so it gets the same treatment as
+ * visibility and order: a thumbnail on every row that opens one small dialog,
+ * with the real storefront tile as the preview.
+ */
+const imaging = ref<Category | null>(null)
+const imageDraft = ref('')
+const imageError = ref('')
+const imageBusy = computed(() => Boolean(imaging.value && busyRows.value.has(imaging.value.id)))
+
+function initialOf(name: string) {
+  return name.trim().charAt(0).toUpperCase()
+}
+
+function openImage(row: Category) {
+  imaging.value = row
+  imageDraft.value = row.image ?? ''
+  imageError.value = ''
+}
+
+/** Everything the tile can actually load: an absolute URL or a site path. */
+function imageUrlLooksValid(value: string) {
+  return /^https?:\/\//i.test(value) || value.startsWith('/')
+}
+
+async function saveImage(value: string | null) {
+  const row = imaging.value
+  if (!row) return
+  if (value && !imageUrlLooksValid(value)) {
+    imageError.value = 'Ссылка должна начинаться с https:// или с /'
+    return
+  }
+  imageError.value = ''
+  await patchDisplay(row, { image: value }, value ? 'Картинка сохранена' : 'Картинка убрана')
+  // `patchDisplay` reports its own failure as a toast; close either way, the
+  // row below shows what actually got saved.
+  imaging.value = null
+}
+
 /* ---- Merge & delete ---------------------------------------------------- */
 const merging = ref<Category | null>(null)
 const mergeTarget = ref('')
@@ -494,6 +537,21 @@ const mergeOptions = computed(() =>
           </svg>
         </button>
         <span v-else class="toggle-spacer" />
+
+        <!-- Artwork doubles as its own control: what the tile shows today,
+             click to change it. -->
+        <button
+          type="button"
+          class="row-thumb"
+          :class="{ 'has-image': row.image }"
+          :title="row.image ? 'Изменить картинку' : 'Добавить картинку'"
+          :disabled="busyRows.has(row.id)"
+          @click="openImage(row)"
+        >
+          <img v-if="row.image" :src="row.image" alt="" loading="lazy">
+          <span v-else class="row-thumb-plate" aria-hidden="true">{{ initialOf(row.name) }}</span>
+          <span class="sr-only">Картинка категории «{{ row.name }}»</span>
+        </button>
 
         <div class="row-main">
           <button type="button" class="row-name" @click="openEdit(row)">{{ row.name }}</button>
@@ -604,11 +662,18 @@ const mergeOptions = computed(() =>
 
         <UiField
           label="Картинка категории"
-          hint="URL. Без неё плитка берёт фото первого товара"
+          hint="Ссылка на изображение. Без неё плитка берёт фото самого дорогого товара категории, а если фото нет ни у кого — букву названия"
           for="c-image"
         >
           <UiInput id="c-image" v-model="form.image" placeholder="https://…" />
         </UiField>
+
+        <div v-if="form.image" class="form-preview">
+          <span class="form-preview-label">Так выглядит плитка в каталоге</span>
+          <div class="tile-preview">
+            <UiCategoryCard :name="form.name || 'Категория'" to="#" :image="form.image" :count="0" />
+          </div>
+        </div>
 
         <UiField
           label="Позиция в списке"
@@ -636,6 +701,58 @@ const mergeOptions = computed(() =>
         <UiButton variant="ghost" @click="editorOpen = false">Отмена</UiButton>
         <UiButton :loading="saving" @click="save">
           {{ editing ? 'Сохранить' : 'Создать' }}
+        </UiButton>
+      </template>
+    </UiModal>
+
+    <!-- Artwork -->
+    <UiModal
+      :open="Boolean(imaging)"
+      :title="`Картинка: ${imaging?.name ?? ''}`"
+      size="sm"
+      @update:open="imaging = null"
+    >
+      <div class="image-dialog">
+        <UiAlert v-if="imageError" tone="danger">{{ imageError }}</UiAlert>
+
+        <!-- The real storefront tile, so there is no guessing how the picture
+             will crop — and it shows the letter plate when the field is empty,
+             which is exactly what the catalogue will do. -->
+        <div class="tile-preview">
+          <UiCategoryCard
+            :name="imaging?.name ?? ''"
+            to="#"
+            :image="imageDraft.trim() || null"
+            :count="imaging?._count?.products ?? 0"
+          />
+        </div>
+
+        <UiField
+          label="Ссылка на картинку"
+          hint="https://… или путь на нашем сайте. Пусто — фото самого дорогого товара категории"
+          for="c-thumb"
+        >
+          <UiInput
+            id="c-thumb"
+            v-model="imageDraft"
+            placeholder="https://…/category.jpg"
+            @keyup.enter="saveImage(imageDraft.trim() || null)"
+          />
+        </UiField>
+      </div>
+
+      <template #footer>
+        <UiButton
+          v-if="imaging?.image"
+          variant="ghost"
+          :disabled="imageBusy"
+          @click="saveImage(null)"
+        >
+          Убрать картинку
+        </UiButton>
+        <UiButton variant="ghost" @click="imaging = null">Отмена</UiButton>
+        <UiButton :loading="imageBusy" @click="saveImage(imageDraft.trim() || null)">
+          Сохранить
         </UiButton>
       </template>
     </UiModal>
@@ -776,6 +893,73 @@ const mergeOptions = computed(() =>
 
 .toggle svg.is-collapsed {
   transform: rotate(-90deg);
+}
+
+/* ---- Artwork ---- */
+.row-thumb {
+  display: grid;
+  overflow: hidden;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  place-items: center;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.row-thumb:hover:not(:disabled),
+.row-thumb:focus-visible {
+  border-color: var(--brand);
+  box-shadow: var(--shadow-xs);
+}
+
+.row-thumb:disabled {
+  opacity: 0.5;
+}
+
+.row-thumb.has-image {
+  background: var(--surface-card);
+}
+
+.row-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: var(--image-blend);
+}
+
+.row-thumb-plate {
+  color: var(--text-subtle);
+  font-weight: 800;
+}
+
+/* The preview is the storefront tile itself — shown, not clickable. */
+.tile-preview {
+  width: 220px;
+  max-width: 100%;
+  margin-inline: auto;
+  pointer-events: none;
+}
+
+.image-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.form-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.form-preview-label {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .row-main {

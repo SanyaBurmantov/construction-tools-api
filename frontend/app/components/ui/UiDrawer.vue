@@ -39,7 +39,7 @@ useModalA11y(open, panel, close)
               </svg>
             </button>
           </header>
-          <div class="panel-body">
+          <div class="panel-body u-scroll u-scroll--fade">
             <slot />
           </div>
           <footer v-if="$slots.footer" class="panel-footer">
