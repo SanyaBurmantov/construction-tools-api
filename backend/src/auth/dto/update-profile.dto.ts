@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Length,
+  ValidateIf,
+} from 'class-validator';
 import { CustomerType } from '@prisma/client';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../password.util';
 
@@ -18,6 +25,9 @@ export class UpdateProfileDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  // An empty string is how the form clears the field — the service turns it
+  // into `null`. Without this, `@IsEmail()` made a saved e-mail permanent.
+  @ValidateIf((dto: { email?: string }) => dto.email !== '')
   @IsEmail()
   @Length(3, 200)
   email?: string;

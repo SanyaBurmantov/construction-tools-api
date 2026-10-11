@@ -16,6 +16,8 @@ type Stats = {
   pendingReviews: number
   queuedSitemaps: number
   priceReviewNeeded: number
+  /** Server errors of the last 24h — the badge on «Ошибки». */
+  recentErrors: number
 }
 
 const checking = ref(true)
@@ -51,6 +53,12 @@ const nav = computed(() => [
   { label: 'Промокоды', to: '/admin/promo-codes', icon: 'ticket' },
   { label: 'Пользователи', to: '/admin/users', icon: 'user' },
   { label: 'Журнал', to: '/admin/audit', icon: 'log' },
+  {
+    label: 'Ошибки',
+    to: '/admin/errors',
+    icon: 'alert',
+    badge: badges.value?.recentErrors,
+  },
   { label: 'Парсинг', to: '/admin/parsing', icon: 'refresh' },
   { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
@@ -69,6 +77,7 @@ const ICONS: Record<string, string> = {
   book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5zM8 7h7M8 11h7',
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0',
   log: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
+  alert: 'M12 4l9 16H3l9-16zm0 6v4m0 3h.01',
 }
 
 /**
@@ -157,11 +166,8 @@ useHead({
     <div v-else-if="forbidden" class="gate">
       <div class="login">
         <div class="login-brand">
-          <BrandLogo size="sm" />
-          <div>
-            <h1>Доступ закрыт</h1>
-            <p>Вы вошли как {{ user?.login }} — эта учётная запись не администратор</p>
-          </div>
+          <h1>Доступ закрыт</h1>
+          <p>Вы вошли как {{ user?.login }} — эта учётная запись не администратор</p>
         </div>
 
         <UiButton size="lg" block variant="secondary" @click="signOut">
@@ -174,12 +180,12 @@ useHead({
 
     <div v-else-if="!authorized" class="gate">
       <form class="login" @submit.prevent="signIn">
+        <!-- No logo here on purpose: this is the staff entrance, not a
+             storefront page, and the shop's mark on a password form reads like
+             a phishing screen. The sidebar carries it once you are in. -->
         <div class="login-brand">
-          <BrandLogo size="sm" />
-          <div>
-            <h1>Панель управления</h1>
-            <p>Войдите учётной записью администратора</p>
-          </div>
+          <h1>Панель управления</h1>
+          <p>Войдите учётной записью администратора</p>
         </div>
 
         <UiField label="Логин" :error="signInError" for="admin-login">
@@ -316,8 +322,8 @@ useHead({
 
 .login-brand {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .login-brand h1 {

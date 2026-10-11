@@ -10,10 +10,12 @@ import {
   Length,
   Max,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { CustomerType, UserRole } from '@prisma/client';
 import { MAX_LOGIN_LENGTH, MIN_LOGIN_LENGTH } from '../login.util';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../password.util';
+import { emptyToUndefined } from '../../common/dto/empty-to-undefined';
 
 /** Query strings arrive as 'true'/'false'; class-validator wants booleans. */
 const toBoolean = ({ value }: { value: unknown }) =>
@@ -84,30 +86,35 @@ export class AdminCreateUserDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsString()
   @Length(1, 200)
   name?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsEmail()
   @Length(3, 200)
   email?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsString()
   @Length(3, 40)
   phone?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsString()
   @Length(2, 200)
   companyName?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Transform(emptyToUndefined)
   @IsString()
   @Length(2, 40)
   taxId?: string;
@@ -147,6 +154,9 @@ export class AdminUpdateUserDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  // An empty string is how the form clears the field — the service turns it
+  // into `null`. Without this, `@IsEmail()` made a saved e-mail permanent.
+  @ValidateIf((dto: { email?: string }) => dto.email !== '')
   @IsEmail()
   @Length(3, 200)
   email?: string;

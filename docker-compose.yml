@@ -42,6 +42,7 @@ services:
       CART_TTL_DAYS: ${CART_TTL_DAYS:-90}
       LIST_TTL_DAYS: ${LIST_TTL_DAYS:-365}
       ADMIN_LOG_TTL_DAYS: ${ADMIN_LOG_TTL_DAYS:-180}
+      ERROR_LOG_TTL_DAYS: ${ERROR_LOG_TTL_DAYS:-30}
     depends_on:
       db:
         condition: service_healthy

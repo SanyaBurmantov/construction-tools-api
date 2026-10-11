@@ -70,6 +70,7 @@ export class AdminService {
       recentOrders,
       dailyOrders,
       topProducts,
+      recentErrors,
     ] = await Promise.all([
       this.prisma.product.count(),
       this.prisma.product.count({ where: { status: 'PUBLISHED' } }),
@@ -120,6 +121,15 @@ export class AdminService {
         orderBy: { _sum: { quantity: 'desc' } },
         take: 8,
       }),
+      // Drives the «Ошибки» badge in the admin sidebar: server errors of the
+      // last day. Indexed on (statusCode, createdAt), so it is a cheap count
+      // even when something is failing in a loop.
+      this.prisma.errorLog.count({
+        where: {
+          statusCode: { gte: 500 },
+          lastSeenAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
+      }),
     ]);
 
     // Bucket the last 14 days client-side; the row count here is small and it
@@ -154,6 +164,7 @@ export class AdminService {
       productsWithoutImages,
       users,
       admins,
+      recentErrors,
       revenueTotal: Math.round((revenue._sum.total ?? 0) * 100) / 100,
       averageOrder: Math.round((revenue._avg.total ?? 0) * 100) / 100,
       ordersByStatus: Object.fromEntries(
