@@ -231,10 +231,13 @@ export class Supplier7745ParserService {
           visitedAt: new Date(),
         },
       });
+      // Through the Logger, like every other parser: the container log has one
+      // format, and `console` also bypasses the error log behind /admin/errors.
+      const message = error instanceof Error ? error.message : String(error);
       if (isSkipped) {
-        console.warn(`Skipped 7745 URL: ${url}`);
+        this.logger.debug(`Skipped ${url}: ${message}`);
       } else {
-        console.error(`Error processing ${url}`, error);
+        this.logger.warn(`Failed ${url}: ${message}`);
       }
 
       return isSkipped ? 'SKIPPED' : 'FAILED';

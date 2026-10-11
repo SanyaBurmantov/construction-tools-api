@@ -45,9 +45,9 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
 
 <style scoped lang="scss">
 .site-footer {
-  border-top: 1px solid var(--color-line);
+  border-top: 1px solid var(--border-subtle);
   background: white;
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 .footer-shell,
@@ -84,7 +84,7 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
   }
 
   small {
-    color: var(--color-muted);
+    color: var(--text-muted);
     font-size: 12px;
   }
 }
@@ -95,7 +95,7 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
   height: 40px;
   place-items: center;
   border-radius: 12px;
-  background: var(--color-primary);
+  background: var(--brand);
   color: white;
   font-weight: 900;
 }
@@ -121,12 +121,12 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
 
   a,
   span {
-    color: var(--color-muted);
+    color: var(--text-muted);
     text-decoration: none;
   }
 
   a:hover {
-    color: var(--color-primary);
+    color: var(--brand);
   }
 }
 
@@ -135,7 +135,7 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
   flex-wrap: wrap;
   gap: 10px 18px;
   justify-content: space-between;
-  border-top: 1px solid var(--color-line);
+  border-top: 1px solid var(--border-subtle);
   padding: 16px 0 22px;
   font-size: 13px;
 }

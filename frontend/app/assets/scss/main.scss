@@ -6,38 +6,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 /* ---------------------------------------------------------------------------
-   Legacy aliases. Pages written before the token layer still reference these;
-   they now resolve to semantic tokens so both spellings stay in sync during
-   the migration. Prefer the token names in new code.
---------------------------------------------------------------------------- */
-:root {
-  --color-ink: var(--text-strong);
-  --color-muted: var(--text-muted);
-  --color-subtle: var(--text-subtle);
-  --color-cream: var(--surface-sunken);
-  --color-card: var(--surface-card);
-  --color-line: var(--border-subtle);
-  --color-accent: var(--brand);
-  --color-accent-strong: var(--brand-hover);
-  --color-accent-hover: var(--brand-hover);
-  --color-green: var(--success);
-  --color-bg-light: var(--surface-page);
-  --color-bg-dark: var(--surface-inverse);
-  --color-text: var(--text-default);
-  --color-text-light: var(--text-inverse);
-  --color-primary: var(--brand);
-  --color-primary-hover: var(--brand-hover);
-  --color-gray-dark: var(--gray-700);
-  --color-gray-medium: var(--gray-500);
-  --color-gray-light: var(--gray-400);
-  --color-gray-extra-light: var(--gray-100);
-  --shadow-card: var(--shadow-sm);
-  --ui-primary: var(--brand);
-  --ui-background: var(--surface-page);
-  --ui-text: var(--text-default);
-}
-
-/* ---------------------------------------------------------------------------
    Base
 --------------------------------------------------------------------------- */
 *,

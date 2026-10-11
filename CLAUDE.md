@@ -8,7 +8,9 @@ Construction-tools catalog. It continuously parses products from supplier sites,
 normalizes them into a shared catalog shape, and serves a public storefront.
 
 - **backend/** — NestJS 11 API (TypeScript), Prisma 5 + PostgreSQL, the parsers.
-- **frontend/** — Nuxt 4 (Vue 3, Vuetify + Nuxt UI), SSR with ISR/SWR route rules.
+- **frontend/** — Nuxt 4 (Vue 3), SSR with ISR/SWR route rules. No UI library:
+  the design system in `app/components/ui/*` + `assets/scss/tokens.scss` is the
+  whole of it (see «Frontend design system» below).
 - **deploy/**, `docker-compose*.yml`, `deploy-prod.sh` — Docker deploy (db + backend + frontend + Caddy).
 
 ## Hard requirements
@@ -314,7 +316,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 - **Frontend design system**: tokens in `app/assets/scss/tokens.scss` (semantic
   layer + dark mode); primitives in `app/components/ui/*` (`UiButton`, `UiInput`,
   `UiModal`, `UiTable`, `UiPrice`, `UiRating`, …). Components read tokens, never
-  raw hex. `app/assets/scss/main.scss` keeps aliases for the pre-token variable
+  raw hex. **It is the only UI layer** — Vuetify, Nuxt UI and Tailwind were all
+  installed and all unused (zero `<v-…>`, one `<UApp>` wrapper, no utility
+  classes) once these 24 primitives took over; removing the three cut the build
+  from 247 s to 140 s and the client bundle from 7.5 MB to 1.3 MB. Don't add a
+  component library back — add a primitive here. `app/assets/scss/main.scss` keeps aliases for the pre-token variable
   names. Toasts: `useToast()` + the single `<UiToaster>` in the layout.
 - **Guest lists**: cart, wishlist (`stores/wishlist.ts`) and comparison
   (`stores/compare.ts`, max 4 items) are all localStorage-backed and rehydrated

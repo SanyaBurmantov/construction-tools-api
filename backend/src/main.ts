@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -11,8 +11,10 @@ import { AppModule } from './app.module';
 // cron) must not take the whole API process down. Errors are handled where they
 // happen; this only guarantees uptime if one ever slips through, and logs it
 // loudly so it is still visible.
+const logger = new Logger('Bootstrap');
+
 process.on('unhandledRejection', (reason) => {
-  console.error('Unhandled promise rejection:', reason);
+  logger.error(`Unhandled promise rejection: ${String(reason)}`);
 });
 
 async function bootstrap() {
@@ -56,9 +58,9 @@ async function bootstrap() {
   const prismaService = app.get(PrismaService);
   try {
     await prismaService.$executeRawUnsafe('SELECT 1');
-    console.log('Database connection successful');
+    logger.log('Database connection successful');
   } catch (error) {
-    console.error('Database connection failed:', error);
+    logger.error(`Database connection failed: ${String(error)}`);
     process.exit(1);
   }
 
@@ -87,6 +89,6 @@ async function bootstrap() {
   }
 
   await app.listen(port, '0.0.0.0');
-  console.log(`Application is running on: http://localhost:${port}`);
+  logger.log(`Application is running on: http://localhost:${port}`);
 }
 void bootstrap();
