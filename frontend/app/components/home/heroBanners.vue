@@ -1,14 +1,5 @@
 <script setup lang="ts">
-export type Banner = {
-  id: string
-  title: string
-  subtitle: string | null
-  imageUrl: string
-  mobileUrl: string | null
-  linkUrl: string | null
-  buttonText: string | null
-  bgColor: string | null
-}
+import type { Banner } from '~/types/api'
 
 const props = defineProps<{ banners: Banner[] }>()
 

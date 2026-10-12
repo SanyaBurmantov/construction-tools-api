@@ -61,7 +61,6 @@ type ProductResponse = {
     specs?: SpecFacet[]
     categories?: Record<string, number>
     brands?: Record<string, number>
-    sources?: Record<string, number>
     priceRange?: { min: number, max: number } | null
   }
 }
@@ -124,8 +123,21 @@ const selectedBrandIds = computed(() => {
   const raw = queryValue(route.query.brands) || queryValue(route.query.brandId) || ''
   return raw.split(',').map(id => id.trim()).filter(Boolean)
 })
-const selectedSource = computed(
-  () => queryValue(route.query.source) || queryValue(route.query.sourceCode) || ''
+/**
+ * The supplier filter, and **only for an admin**. The facet itself is hidden
+ * from a customer, but the parameter kept filtering: `/catalog?source=tools-by`
+ * pasted into a chat, or left in a cached link, quietly showed one supplier's
+ * goods with nothing in the UI saying so — the chip that would have said it is
+ * hidden too. For everyone else the parameter is ignored and the catalogue is
+ * always the whole catalogue. `isAdmin` is false on the server (the session
+ * lives in localStorage), so SSR renders the full listing and the admin's own
+ * browser re-fetches with the filter after hydration.
+ */
+const { isAdmin, authFetch } = useAuth()
+const selectedSource = computed(() =>
+  isAdmin.value
+    ? queryValue(route.query.source) || queryValue(route.query.sourceCode) || ''
+    : ''
 )
 /** Same reasoning as `sort`: a non-numeric bound is dropped, not forwarded. */
 function priceParam(value: unknown) {
@@ -225,13 +237,28 @@ const queryParams = computed(() => cleanParams({
 }))
 
 // --- data ---
+/**
+ * A category that did not load is either a 404 (no such category) or the API
+ * being down — and those must not look the same, or an outage is reported to
+ * every visitor as «категория не найдена». The outage is kept on the side and
+ * turned into the maintenance page below.
+ */
+const categoryUnavailable = ref(false)
 const { data: category } = await useAsyncData<CategoryPage | null>(
   () => `catalog-category:${props.categorySlug || ''}`,
   () => props.categorySlug
-    ? $fetch<CategoryPage>(`${apiBase}/categories/${props.categorySlug}`)
+    ? $fetch<CategoryPage>(`${apiBase}/categories/${props.categorySlug}`).catch(error => {
+        if (isApiUnavailable(error)) {
+          categoryUnavailable.value = true
+          return null
+        }
+        throw error
+      })
     : Promise.resolve(null),
   { default: () => null }
 )
+
+if (categoryUnavailable.value) throw apiUnavailableError()
 
 if (props.categorySlug && !category.value) {
   throw createError({ statusCode: 404, statusMessage: 'Категория не найдена', fatal: true })
@@ -251,6 +278,14 @@ const { data: products, pending, error } = await useAsyncData<ProductResponse>(
   }
 )
 
+/**
+ * On the server an unreachable API means the technical-works page instead of
+ * an empty catalogue. On the client the inline alert below is the better
+ * answer: the page around it is already rendered and a transient blip must not
+ * throw the visitor out of it.
+ */
+if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
+
 const { data: tree } = await useCategoryTree()
 
 const { data: brands } = await useAsyncData<FacetItem[]>(
@@ -259,15 +294,27 @@ const { data: brands } = await useAsyncData<FacetItem[]>(
   { default: () => [] }
 )
 
-const { data: sources } = await useAsyncData<FacetItem[]>(
-  'catalog-sources',
-  () => $fetch<FacetItem[]>(`${apiBase}/sources`).catch(() => []),
-  { default: () => [] }
-)
+/**
+ * The «Поставщик» facet is **admin-only**: which supplier carries a product is
+ * internal, the same rule as supplier URLs and our costs. `GET /sources` sits
+ * behind `AdminGuard`, so the list is fetched only when an ADMIN session is
+ * present — and never on the server, because catalogue HTML is ISR-cached and
+ * served to every visitor alike. For everyone else `sources` stays empty, and
+ * the filter panel's own `v-if` drops the whole section.
+ */
+const sources = ref<FacetItem[]>([])
+
+watch(isAdmin, async admin => {
+  if (!import.meta.client || !admin || sources.value.length) return
+  try {
+    sources.value = await authFetch<FacetItem[]>('/sources')
+  } catch {
+    sources.value = []
+  }
+}, { immediate: true })
 
 // --- facet helpers ---
 const brandCounts = computed(() => products.value?.facets?.brands || {})
-const sourceCounts = computed(() => products.value?.facets?.sources || {})
 const categoryFacet = computed(() => products.value?.facets?.categories || {})
 const priceRange = computed(() => products.value?.facets?.priceRange || null)
 
@@ -424,6 +471,8 @@ const filterChips = computed<Chip[]>(() => {
       remove: () => toggleBrand(brand.id)
     })
   }
+  // `selectedSource` is empty for a customer, so the chip — whose fallback
+  // label is the supplier's own code — can never be built for one.
   if (selectedSource.value) {
     const source = (sources.value || []).find(item => item.code === selectedSource.value)
     chips.push({ key: 'source', label: `Поставщик: ${source?.name || selectedSource.value}`, remove: () => pushQuery({ source: undefined }) })
@@ -595,7 +644,6 @@ useHead(() => ({
           :brand-counts="brandCounts"
           :selected-brand-ids="selectedBrandIds"
           :sources="sources"
-          :source-counts="sourceCounts"
           :selected-source="selectedSource"
           :active-filters-count="activeFiltersCount"
           :spec-facets="specFacets"
@@ -633,7 +681,6 @@ useHead(() => ({
           :brand-counts="brandCounts"
           :selected-brand-ids="selectedBrandIds"
           :sources="sources"
-          :source-counts="sourceCounts"
           :selected-source="selectedSource"
           :active-filters-count="activeFiltersCount"
           :spec-facets="specFacets"

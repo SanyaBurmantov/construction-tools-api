@@ -1,9 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import axios from 'axios';
 import { DeliveryMethod, PaymentMethod } from '@prisma/client';
+import { fetchWithTimeout } from '../common/utils/fetch-with-timeout';
 
 const TELEGRAM_API = 'https://api.telegram.org';
 const SEND_TIMEOUT_MS = 8000;
+/** One retry is enough: a notification is not worth stalling a cron for. */
+const SEND_RETRIES = 1;
 /** Telegram rejects messages over 4096 chars. */
 const MAX_MESSAGE_LENGTH = 4000;
 
@@ -143,10 +145,6 @@ export class TelegramService implements OnModuleInit {
   }
 
   /**
-   * Fire-and-forget notification. Resolves to false instead of throwing when
-   * disabled or when Telegram is unreachable.
-   */
-  /**
    * Tells the operator a parser is broken, so "the catalogue stopped growing"
    * is noticed in half an hour instead of next week. Deduplicated by the caller:
    * an already-broken job must not re-alert every 30 minutes.
@@ -164,28 +162,52 @@ export class TelegramService implements OnModuleInit {
     const origin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
     if (origin) lines.push(`${origin}/admin/parsing`);
 
-    return this.send(lines.join('\n'));
+    return this.send(lines.join('\n'), `parser ${problem.key}`);
   }
 
-  /** Fire-and-forget POST shared by every notification. */
-  private async send(text: string): Promise<boolean> {
+  /**
+   * Fire-and-forget POST shared by every notification.
+   *
+   * Goes through `fetchWithTimeout` like every other outbound call in the
+   * backend, so a slow Telegram cannot hang the caller: a hard timeout per
+   * attempt, bounded retries with backoff and `Retry-After` on 429/5xx.
+   * Never throws — the order is already committed by the time we get here.
+   */
+  private async send(text: string, context?: string): Promise<boolean> {
     if (!this.enabled) return false;
 
+    const label = context ? ` (${context})` : '';
+
     try {
-      await axios.post(
+      const res = await fetchWithTimeout(
         `${TELEGRAM_API}/bot${this.botToken}/sendMessage`,
         {
-          chat_id: this.chatId,
-          text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: this.chatId,
+            text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+          }),
         },
-        { timeout: SEND_TIMEOUT_MS },
+        { timeoutMs: SEND_TIMEOUT_MS, retries: SEND_RETRIES },
       );
+
+      if (!res.ok) {
+        // Telegram explains a rejected message in the body (bad chat id,
+        // broken HTML) — that detail is the whole value of the log line.
+        const detail = await res.text().catch(() => '');
+        this.logger.error(
+          `Telegram send failed${label}: HTTP ${res.status} ${detail.slice(0, 500)}`,
+        );
+        return false;
+      }
+
       return true;
     } catch (error) {
-      this.logger.warn(
-        `Telegram send failed: ${error instanceof Error ? error.message : String(error)}`,
+      this.logger.error(
+        `Telegram send failed${label}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return false;
     }
@@ -197,28 +219,6 @@ export class TelegramService implements OnModuleInit {
     const publicOrigin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
     const message = this.buildMessage(order, publicOrigin);
 
-    try {
-      await axios.post(
-        `${TELEGRAM_API}/bot${this.botToken}/sendMessage`,
-        {
-          chat_id: this.chatId,
-          text: message,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-        },
-        { timeout: SEND_TIMEOUT_MS },
-      );
-      return true;
-    } catch (error) {
-      // The order is already committed — log and move on.
-      const detail =
-        axios.isAxiosError(error) && error.response
-          ? JSON.stringify(error.response.data)
-          : String(error);
-      this.logger.error(
-        `Failed to send Telegram notification for order #${order.number}: ${detail}`,
-      );
-      return false;
-    }
+    return this.send(message, `order #${order.number}`);
   }
 }

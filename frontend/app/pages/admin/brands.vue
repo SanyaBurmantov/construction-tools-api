@@ -1,22 +1,12 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'admin' })
+import type { AdminBrand } from '~/types/api'
 
-type Brand = {
-  id: string
-  name: string
-  slug: string
-  description: string | null
-  country: string | null
-  logo: string | null
-  seoTitle: string
-  seoDescription: string
-  _count?: { products: number }
-}
+definePageMeta({ layout: 'admin' })
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
 
-const brands = ref<Brand[]>([])
+const brands = ref<AdminBrand[]>([])
 const loading = ref(false)
 const loadError = ref('')
 const search = ref('')
@@ -25,7 +15,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    brands.value = await adminFetch<Brand[]>('/brands')
+    brands.value = await adminFetch<AdminBrand[]>('/brands')
   } catch (error) {
     loadError.value = errorMessage(error, 'Не удалось загрузить бренды')
   } finally {
@@ -48,7 +38,7 @@ const filtered = computed(() => {
 /* ---- Editor ------------------------------------------------------------ */
 const editorOpen = ref(false)
 const saving = ref(false)
-const editing = ref<Brand | null>(null)
+const editing = ref<AdminBrand | null>(null)
 const formError = ref('')
 
 const blankForm = () => ({
@@ -85,7 +75,7 @@ function openCreate() {
   editorOpen.value = true
 }
 
-function openEdit(brand: Brand) {
+function openEdit(brand: AdminBrand) {
   editing.value = brand
   Object.assign(form, {
     name: brand.name,
@@ -142,7 +132,7 @@ async function save() {
 }
 
 /* ---- Merge & delete ---------------------------------------------------- */
-const merging = ref<Brand | null>(null)
+const merging = ref<AdminBrand | null>(null)
 const mergeTarget = ref('')
 const mergeBusy = ref(false)
 
@@ -165,7 +155,7 @@ async function confirmMerge() {
   }
 }
 
-const deleting = ref<Brand | null>(null)
+const deleting = ref<AdminBrand | null>(null)
 const deletingBusy = ref(false)
 
 async function confirmDelete() {

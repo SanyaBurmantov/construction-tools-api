@@ -38,7 +38,6 @@ const props = defineProps<{
   brandCounts: Record<string, number>
   selectedBrandIds: string[]
   sources: FacetItem[]
-  sourceCounts: Record<string, number>
   selectedSource: string
   activeFiltersCount: number
   specFacets: SpecFacet[]
@@ -252,7 +251,6 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
           @click="emit('toggleSource', source.code)"
         >
           <span>{{ source.name }}</span>
-          <small>{{ sourceCounts[source.id] || 0 }}</small>
         </button>
       </div>
       <button

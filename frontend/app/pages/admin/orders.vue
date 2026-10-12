@@ -1,70 +1,9 @@
 <script setup lang="ts">
+import type { AdminOrder, OrderStatus, Paginated } from '~/types/api'
+
 definePageMeta({ layout: 'admin' })
 
-/**
- * Mirrors the Prisma `OrderStatus` enum exactly. It used to carry a
- * `COMPLETED` that the database has never had: filtering by it or setting it
- * was a 400 from the DTO, and the two statuses that do exist (`PROCESSING`,
- * `DELIVERED`) rendered as an empty badge with no way to move an order on.
- */
-type OrderStatus =
-  | 'NEW'
-  | 'CONFIRMED'
-  | 'PROCESSING'
-  | 'SHIPPED'
-  | 'DELIVERED'
-  | 'CANCELLED'
-
-type OrderItem = {
-  id: string
-  /** Null once the product has been deleted from the catalogue. */
-  productId: string | null
-  productName: string
-  productSlug: string
-  productSku: string | null
-  productImage: string | null
-  unitPrice: number
-  unitOldPrice: number | null
-  quantity: number
-  lineTotal: number
-}
-
-/** Present only when the order was placed from an account, not as a guest. */
-type OrderAccount = {
-  id: string
-  login: string
-  name: string | null
-  customerType: 'INDIVIDUAL' | 'COMPANY'
-  companyName: string | null
-}
-
-type Order = {
-  id: string
-  number: number
-  status: OrderStatus
-  user: OrderAccount | null
-  customerName: string
-  customerPhone: string
-  customerEmail: string | null
-  comment: string | null
-  deliveryMethod: 'PICKUP' | 'COURIER' | 'POST'
-  deliveryAddress: string | null
-  paymentMethod: string
-  currency: string
-  itemsTotal: number
-  deliveryCost: number
-  discountTotal: number
-  promoCodeLabel: string | null
-  total: number
-  items: OrderItem[]
-  createdAt: string
-  updatedAt: string
-}
-
-type ListResponse = {
-  data: Order[]
-  pagination: { page: number, limit: number, total: number, pages: number }
-}
+type ListResponse = Paginated<AdminOrder>
 
 /**
  * Lines printed in the list's «Состав» column before the rest is summarised.
@@ -79,7 +18,7 @@ const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 
-const orders = ref<Order[]>([])
+const orders = ref<AdminOrder[]>([])
 const pagination = ref({ page: 1, limit: 20, total: 0, pages: 0 })
 const loading = ref(false)
 const loadError = ref('')
@@ -110,14 +49,14 @@ async function load() {
 }
 
 /* ---- Detail ------------------------------------------------------------ */
-const detail = ref<Order | null>(null)
+const detail = ref<AdminOrder | null>(null)
 const detailLoading = ref(false)
 const statusBusy = ref(false)
 
 async function openDetail(id: string) {
   detailLoading.value = true
   try {
-    detail.value = await adminFetch<Order>(`/orders/${id}`)
+    detail.value = await adminFetch<AdminOrder>(`/orders/${id}`)
   } catch (error) {
     toast.error(errorMessage(error, 'Не удалось загрузить заказ'))
   } finally {
@@ -135,7 +74,7 @@ async function setStatus(status: OrderStatus) {
   if (!detail.value) return
   statusBusy.value = true
   try {
-    detail.value = await adminFetch<Order>(`/orders/${detail.value.id}/status`, {
+    detail.value = await adminFetch<AdminOrder>(`/orders/${detail.value.id}/status`, {
       method: 'PATCH',
       body: { status },
     })

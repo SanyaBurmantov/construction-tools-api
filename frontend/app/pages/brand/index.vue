@@ -1,23 +1,19 @@
 <script setup lang="ts">
-type Brand = {
-  id: string
-  name: string
-  slug?: string
-  logo?: string | null
-  country?: string | null
-  _count?: { products: number }
-}
+import type { Brand } from '~/types/api'
 
 const route = useRoute()
 const router = useRouter()
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
 
-const { data: brands, status } = await useAsyncData<Brand[]>(
+const { data: brands, status, error } = await useAsyncData<Brand[]>(
   'brand-list',
   () => $fetch<Brand[]>(`${apiBase}/brands`),
   { default: () => [] }
 )
+
+// An empty list and an unreachable API look the same on this page otherwise.
+if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
 
 /** The filter lives in the query so a filtered list stays shareable. */
 const search = computed(() => {

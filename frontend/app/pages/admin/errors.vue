@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// Seconds matter: a burst of the same error is read by its timestamps.
+import { formatDateTimeWithSeconds as formatDateTime } from '~/utils/format-datetime'
+
 definePageMeta({ layout: 'admin' })
 
 type ErrorEntry = {
@@ -107,15 +110,6 @@ async function clearLog() {
 
 /* ---- Display ----------------------------------------------------------- */
 const expanded = ref('')
-
-const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-})
-const formatDateTime = (iso: string) => dateTimeFormatter.format(new Date(iso))
 
 const statusTone = (code: number) => (code >= 500 ? 'danger' : 'warning')
 

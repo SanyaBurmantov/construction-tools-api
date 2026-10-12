@@ -28,14 +28,34 @@ export default defineEventHandler(async (event) => {
   const apiBase = String(config.apiBaseServer).replace(/\/$/, '')
   const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
 
+  /**
+   * A failed fetch must not be served as a valid sitemap.
+   *
+   * Both calls used to degrade to an empty list, so an API that was simply
+   * down produced a 200 listing the seven static pages — and this route is
+   * cached (`swr: 3600`), so that answer stuck for an hour and told crawlers
+   * the catalogue's 48k URLs had disappeared. A 5xx is never cached by Nitro
+   * and is exactly what a crawler is meant to retry, so an outage answers 503
+   * and the previous sitemap stays the truth.
+   */
+  let unavailable = false
+  const soft = <T>(request: Promise<T>, fallback: T) =>
+    request.catch(() => {
+      unavailable = true
+      return fallback
+    })
+
   const [products, categories] = await Promise.all([
-    $fetch<ProductEntry[]>(`${apiBase}/products/sitemap`).catch(
-      () => [] as ProductEntry[]
-    ),
-    $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`).catch(
-      () => [] as CategoryTreeNode[]
-    )
+    soft($fetch<ProductEntry[]>(`${apiBase}/products/sitemap`), [] as ProductEntry[]),
+    soft($fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`), [] as CategoryTreeNode[])
   ])
+
+  if (unavailable) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Sitemap temporarily unavailable'
+    })
+  }
 
   const urls: SitemapUrl[] = [
     { loc: `${siteUrl}/` },

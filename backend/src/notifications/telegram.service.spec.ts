@@ -109,6 +109,78 @@ describe('TelegramService', () => {
     expect(message).toContain('https://shop.by/admin/orders?order=order-uuid');
   });
 
+  // The send goes through `fetchWithTimeout`, like every other outbound call
+  // in the backend — axios had neither a retry nor a guaranteed timeout.
+  describe('sending', () => {
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      process.env.TELEGRAM_BOT_TOKEN = 'token';
+      process.env.TELEGRAM_CHAT_ID = '123';
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('posts the message to the bot API and resolves true', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await expect(
+        new TelegramService().notifyNewOrder(buildOrder()),
+      ).resolves.toBe(true);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0] as [
+        string,
+        { method?: string; body?: string },
+      ];
+      expect(url).toBe('https://api.telegram.org/bottoken/sendMessage');
+      expect(init.method).toBe('POST');
+      const body = JSON.parse(init.body ?? '{}') as {
+        chat_id: string;
+        text: string;
+        parse_mode: string;
+      };
+      expect(body.chat_id).toBe('123');
+      expect(body.parse_mode).toBe('HTML');
+      expect(body.text).toContain('Новый заказ №42');
+    });
+
+    // The order is already committed when this runs: a rejected message must
+    // be logged and swallowed, never thrown back at the request.
+    it('resolves false when Telegram rejects the message', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(
+          new Response('{"description":"chat not found"}', { status: 400 }),
+        ) as unknown as typeof fetch;
+
+      await expect(
+        new TelegramService().notifyNewOrder(buildOrder()),
+      ).resolves.toBe(false);
+    });
+
+    it('resolves false when the request fails outright, after a retry', async () => {
+      const fetchMock = jest.fn().mockRejectedValue(new Error('ECONNRESET'));
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await expect(
+        new TelegramService().notifyParserProblem({
+          key: 'th-tools',
+          label: 'th.by',
+          reason: 'нет успешных запусков',
+        }),
+      ).resolves.toBe(false);
+
+      // One retry: a notification is not worth stalling the caller for more.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('truncates messages that exceed the Telegram length limit', () => {
     const items = Array.from({ length: 400 }, (_, i) => ({
       productName: `Товар номер ${i} с очень длинным названием`,

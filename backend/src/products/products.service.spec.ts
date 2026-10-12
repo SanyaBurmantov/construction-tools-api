@@ -658,36 +658,20 @@ describe('ProductService spec facets', () => {
     expect(candidates).not.toHaveBeenCalled();
   });
 
-  // The supplier facet used to group `SourceProduct` rows, which counts offers
-  // rather than products: a card holding two TH-Tools offers scored two. On
-  // prod that read "TH-Tools 34256" against 18427 real products, and the three
-  // suppliers summed to 64242 beside "Найдено 48413".
-  it('counts products per supplier, not supplier offers', async () => {
-    const { service, prisma, productCount } = buildService();
-    jest
-      .spyOn(prisma.source, 'findMany')
-      .mockResolvedValue([{ id: 's1' }, { id: 's2' }, { id: 's3' }] as never);
-
-    const perSource: Record<string, number> = { s1: 18427, s2: 26068, s3: 0 };
-    productCount.mockImplementation(({ where }) => {
-      const parts = (where as { AND?: Array<Record<string, unknown>> }).AND;
-      const scoped = parts?.find((part) => 'sourceProducts' in part) as
-        | { sourceProducts: { some: { sourceId: string } } }
-        | undefined;
-      if (!scoped) return Promise.resolve(44495);
-      return Promise.resolve(perSource[scoped.sourceProducts.some.sourceId]);
-    });
+  // The supplier facet is admin-only — which supplier carries a product is
+  // internal — so the public listing neither exposes nor counts it. Counting
+  // cost one semi-join over `SourceProduct` per supplier on every request and
+  // every filter change, for numbers no visitor was ever shown. (It also used
+  // to group `SourceProduct` rows, i.e. offers rather than products: prod read
+  // "TH-Tools 34256" against 18427 real products.)
+  it('does not expose or count a supplier facet', async () => {
+    const { service, prisma } = buildService();
+    const sourceQuery = jest.spyOn(prisma.source, 'findMany');
 
     const result = await service.findAllFiltered({});
 
-    // s3 carries nothing here, so it is left out rather than offered as a
-    // filter that leads to an empty grid.
-    expect(result.facets.sources).toEqual({ s1: 18427, s2: 26068 });
-    const summed = Object.values(result.facets.sources).reduce(
-      (sum, count) => sum + count,
-      0,
-    );
-    expect(summed).toBe(result.pagination.total);
+    expect((result.facets as { sources?: unknown }).sources).toBeUndefined();
+    expect(sourceQuery).not.toHaveBeenCalled();
   });
 });
 

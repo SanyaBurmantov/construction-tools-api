@@ -108,6 +108,14 @@ Add source matching in `admin.service` `resolveParser` (the `is7745` pattern: ma
 `Source.code`, base URL, or the submitted URL) so `POST source-products/preview` and
 `/import` route to your `previewProductUrl` / `parseProductUrl`.
 
+Then register the source in `PARSER_SOURCES` (`parser/parser-settings.service.ts`)
+with its env keys, `host` and `queuePrefix: '/<code>'` — the same prefix the
+endpoints above live under. That list is the only place a supplier is declared:
+`/parser/overview` serves it, and `/admin/parsing` builds the switches **and the
+queue tab** from the answer. Miss it and the parser runs with no queue on
+screen, which looks exactly like «очередь не появилась». Nothing to edit on the
+frontend.
+
 ### 7. Env vars
 Add to `.env.example`, `.env.prod.example`, and `docker-compose.prod.yml` (backend
 `environment:`): `<CODE>_CRON_ENABLED` (default `false`), `<CODE>_CRON_BATCH_LIMIT`

@@ -25,11 +25,20 @@ const DEFAULT_CATEGORY_FILTERS: Record<
  * The sources an admin can drive from the UI. `envFlag` keeps the pre-existing
  * deploy-time switch working: a source with no `ParserSetting` row behaves
  * exactly as it did before this module existed.
+ *
+ * `host` and `queuePrefix` are here so this list is the only place a supplier
+ * is registered. `/admin/parsing` used to build its four queue tabs by hand,
+ * each with the endpoint prefix its queue lives under — a fifth supplier would
+ * have been parsed with no queue on screen, which in the UI looks exactly like
+ * "очередь не появилась". The prefix is what goes between `/admin/queue` and
+ * the action: `''` for the first source, `/<something>` for the rest.
  */
 export const PARSER_SOURCES = [
   {
     code: 'th-tools',
     name: 'TH-Tools (th-tool.by)',
+    host: 'th-tool.by',
+    queuePrefix: '',
     envFlag: 'TH_TOOLS_CRON_ENABLED',
     envBatchLimit: 'TH_TOOLS_CRON_BATCH_LIMIT',
     envRequestDelay: 'TH_TOOLS_REQUEST_DELAY_MS',
@@ -52,6 +61,8 @@ export const PARSER_SOURCES = [
   {
     code: 'tools-by',
     name: 'Tools.by',
+    host: 'tools.by',
+    queuePrefix: '/tools-by',
     envFlag: 'TOOLS_BY_CRON_ENABLED',
     envBatchLimit: 'TOOLS_BY_CRON_BATCH_LIMIT',
     envRequestDelay: 'TOOLS_BY_REQUEST_DELAY_MS',
@@ -67,6 +78,8 @@ export const PARSER_SOURCES = [
   {
     code: 'dukon',
     name: 'Dukon (dukon.by)',
+    host: 'dukon.by',
+    queuePrefix: '/dukon',
     envFlag: 'DUKON_CRON_ENABLED',
     envBatchLimit: 'DUKON_CRON_BATCH_LIMIT',
     envRequestDelay: 'DUKON_REQUEST_DELAY_MS',
@@ -81,6 +94,8 @@ export const PARSER_SOURCES = [
   {
     code: '7745',
     name: '7745.by (пример, не поставщик)',
+    host: '7745.by',
+    queuePrefix: '/7745',
     envFlag: 'SUPPLIER_7745_CRON_ENABLED',
     envBatchLimit: 'SUPPLIER_7745_CRON_BATCH_LIMIT',
     envRequestDelay: 'SUPPLIER_7745_REQUEST_DELAY_MS',
@@ -270,6 +285,9 @@ export class ParserSettingsService {
         return {
           code: source.code,
           name: source.name,
+          host: source.host,
+          /** Where this source's queue endpoints live under `/admin/queue`. */
+          queuePrefix: source.queuePrefix,
           hasCategoryQueue: source.hasCategoryQueue,
           cronEnabled: sourceEnabled,
           /** What actually decides whether the cron does anything. */

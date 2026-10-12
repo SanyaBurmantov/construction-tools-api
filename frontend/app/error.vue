@@ -1,14 +1,31 @@
 <script setup lang="ts">
 import type { NuxtError } from '#app'
 
-defineProps<{ error: NuxtError }>()
+const props = defineProps<{ error: NuxtError }>()
+
+/**
+ * 503 is the storefront saying «API не отвечает» (see `isApiUnavailable`):
+ * technical works, not a mistake the visitor made. Going to the home page
+ * would only land on the same outage, so the action here is «обновить».
+ */
+const isMaintenance = computed(() => props.error.statusCode === 503)
 
 const handleError = () => clearError({ redirect: '/' })
+const retry = () => reloadNuxtApp({ persistState: false })
 </script>
 
 <template>
   <div class="error-page">
-    <div class="error-card">
+    <div v-if="isMaintenance" class="error-card">
+      <span class="eyebrow">Технические работы</span>
+      <!-- Fixed copy: Nuxt may rewrite an error's `message` in production. -->
+      <h1>Магазин временно недоступен</h1>
+      <p>Мы уже чиним — обновите страницу через пару минут. Заказы и корзина
+        никуда не делись.</p>
+      <button type="button" @click="retry">Обновить страницу</button>
+    </div>
+
+    <div v-else class="error-card">
       <span class="eyebrow">Ошибка {{ error.statusCode || error.status }}</span>
       <h1>{{ error.statusMessage || 'Что-то пошло не так' }}</h1>
       <p>{{ error.message || 'Попробуйте обновить страницу или вернуться на главную.' }}</p>

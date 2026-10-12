@@ -1,48 +1,9 @@
 <script setup lang="ts">
 import type { AccountUser, CustomerType, UserRole } from '~/composables/useAuth'
+import type { Order, OrderItem, OrderStatus } from '~/types/api'
+import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
 
 definePageMeta({ layout: 'admin' })
-
-type OrderStatus =
-  | 'NEW'
-  | 'CONFIRMED'
-  | 'PROCESSING'
-  | 'SHIPPED'
-  | 'DELIVERED'
-  | 'CANCELLED'
-
-type OrderItem = {
-  id: string
-  productId: string | null
-  productName: string
-  productSlug: string
-  productSku: string | null
-  productImage: string | null
-  unitPrice: number
-  quantity: number
-  lineTotal: number
-}
-
-type Order = {
-  id: string
-  number: number
-  status: OrderStatus
-  currency: string
-  itemsTotal: number
-  deliveryCost: number
-  discountTotal: number
-  total: number
-  promoCodeLabel: string | null
-  deliveryMethod: 'PICKUP' | 'COURIER' | 'POST'
-  deliveryAddress: string | null
-  paymentMethod: 'CASH' | 'CARD' | 'INVOICE'
-  comment: string | null
-  customerName: string
-  customerPhone: string
-  customerEmail: string | null
-  createdAt: string
-  items: OrderItem[]
-}
 
 type Response = {
   user: AccountUser & { _count?: { sessions: number } }
@@ -190,16 +151,6 @@ async function resetPassword() {
   }
 }
 
-/* ---- Display ----------------------------------------------------------- */
-const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-const formatDateTime = (iso: string | null) =>
-  iso ? dateTimeFormatter.format(new Date(iso)) : '—'
 
 const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администратор' : 'Покупатель')
 </script>
