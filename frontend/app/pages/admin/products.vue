@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { Brand } from '~/types/api'
+
 definePageMeta({ layout: 'admin' })
 
 type AdminProduct = {
@@ -36,7 +38,6 @@ type ListResponse = {
 }
 
 type Category = { id: string, name: string, level: number }
-type Brand = { id: string, name: string }
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()

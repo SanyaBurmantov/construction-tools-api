@@ -12,6 +12,11 @@ normalizes them into a shared catalog shape, and serves a public storefront.
   the design system in `app/components/ui/*` + `assets/scss/tokens.scss` is the
   whole of it (see «Frontend design system» below).
 - **deploy/**, `docker-compose*.yml`, `deploy-prod.sh` — Docker deploy (db + backend + frontend + Caddy).
+  The prod box has 1.8 GB for all four containers, so backend/frontend/Caddy
+  carry a `mem_limit`: without one the kernel's OOM killer picks the biggest
+  resident process, which is Postgres — the one service whose death takes the
+  whole site down. Capped, a runaway run kills its own container and `restart`
+  brings it back with the database untouched.
 
 ## Hard requirements
 
@@ -64,9 +69,19 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `POST /orders`, `POST /products/:slug/reviews`, `POST /cart/validate` and
   `POST /promo-codes/validate` are public on purpose (guests order, review and
   re-price carts) and carry their own `@Throttle` — the promo one is 20/min
-  because it answers "does this code exist". `GET /sources` returns
-  `{id, name, code}` only: the supplier's `url` is internal, the same rule as
-  supplier prices. The dead public `GET /source-products` (an in-memory array
+  because it answers "does this code exist". `GET /sources` is **behind
+  `AdminGuard`** and returns `{id, name, code}` only — the supplier's `url` is
+  internal, the same rule as supplier prices, and *which supplier carries what*
+  is internal too: the «Поставщик» facet in the catalogue filters is rendered
+  for an ADMIN session alone (`CatalogView` fetches the list only then, never
+  on the server — storefront HTML is cached and shared), and `?source=` in the
+  URL is **ignored for everyone else** — hiding the facet while the parameter
+  still filtered meant an admin's link could quietly show a customer one
+  supplier's goods with nothing in the UI saying so. `GET /products` carries no
+  `facets.sources` at all: counting it was one semi-join over `SourceProduct`
+  per supplier on every listing *and* every client-side filter change (those
+  are not cached), for numbers only an admin would ever see — so the admin
+  facet lists the suppliers without counts. The dead public `GET /source-products` (an in-memory array
   that always answered `[]`, shaped to hand out supplier URLs and costs) was
   removed rather than guarded. `GET /orders/:id` stays public by unguessable
   UUID — a guest needs the confirmation page — and projects out PII.
@@ -226,10 +241,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 - **Order notifications**: `POST /orders` posts a summary to Telegram
   (`notifications/telegram.service.ts`). Enabled only when **both**
   `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set; otherwise it logs a
-  warning at startup and no-ops. The send is fire-and-forget **with an explicit
-  `.catch()`** — the order is already committed at that point, so a Telegram
-  outage must never fail the request or crash the process on an unhandled
-  rejection. Customer-supplied text is HTML-escaped (the message uses
+  warning at startup and no-ops. The send goes through `fetchWithTimeout` like
+  every other outbound call (hard timeout, one retry, `Retry-After`) and is
+  fire-and-forget **with an explicit `.catch()`** — the order is already
+  committed at that point, so a Telegram outage must never fail the request,
+  hang it, or crash the process on an unhandled rejection. `axios` is gone from
+  the backend entirely; don't bring it back for one POST. Customer-supplied text is HTML-escaped (the message uses
   `parse_mode: HTML`). `PUBLIC_ORIGIN` adds a deep link to the order in admin.
 - **One product, many supplier offers** (`offers/`). `Product` is the canonical
   card; `SourceProduct` rows hanging off it are competing supplier offers.
@@ -322,6 +339,37 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   from 247 s to 140 s and the client bundle from 7.5 MB to 1.3 MB. Don't add a
   component library back — add a primitive here. `app/assets/scss/main.scss` keeps aliases for the pre-token variable
   names. Toasts: `useToast()` + the single `<UiToaster>` in the layout.
+- **Dates are formatted in one place**, `app/utils/format-datetime.ts`
+  (`formatDate`, `formatDay`, `formatDateTime`, `…WithYear`, `…WithSeconds`).
+  Six screens each built their own `Intl.DateTimeFormat('ru-BY', …)`. A screen
+  that needs the year or seconds imports that variant under the local name
+  `formatDateTime`; everything else takes the default from auto-import.
+- **API shapes are declared once**, in `app/types/api.ts` (`Brand`/`AdminBrand`,
+  `Banner`/`AdminBanner`, `Order`/`AdminOrder`, `OrderItem`, `OrderStatus`,
+  `Paginated<T>`, `ProductsResponse`) and `app/types/parsing.ts` for the
+  admin parsing screens. They used to be re-declared in every page that fetched
+  them — five copies of `Brand` — so a new field had to be added in five files
+  and missing one was invisible to the linter and the build. Add the field
+  here; pages import it. `CatalogProduct` and `CategoryNode` stay in their
+  composables on purpose: they live next to the logic that consumes them.
+- **«Пусто» and «не ответило» are different screens.** The storefront fetches
+  softly (a failed rail degrades to an empty rail, so cached pages always
+  render), which is right for a legitimately empty result and wrong for an
+  outage — with the database down the customer was shown a shop with nothing
+  in it. `utils/api-availability.ts` tells the two apart (no answer at all, or
+  a 5xx; a 4xx is the API working and saying no), the home page and
+  `CatalogView` turn an outage into a **503**, and `error.vue` renders that as
+  the technical-works screen with a retry. The same rule covers the pages that
+  used to answer **404** for an outage — `/product/:slug` («Товар не найден»
+  for the whole catalogue while the DB is down is a lie to the visitor and a
+  signal to search engines to drop the pages), `/brand/:slug`, plus `/sales`
+  and `/brand`, which degraded to an empty page. `server/routes/sitemap.xml.ts`
+  answers 503 instead of a sitemap listing only its seven static URLs — that
+  route is cached for an hour, so a truncated one stuck around long enough to
+  be crawled. Nitro never caches a 4xx/5xx, so the
+  outage page cannot outlive the outage. On the client the catalogue keeps its
+  inline alert instead — the page is already rendered and a blip must not throw
+  the visitor out of it.
 - **Guest lists**: cart, wishlist (`stores/wishlist.ts`) and comparison
   (`stores/compare.ts`, max 4 items) are all localStorage-backed and rehydrated
   by `plugins/cart.client.ts`. Pages `/favorites` and `/compare` are `ssr: false`.
@@ -344,6 +392,22 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   finished ones in a table (`GET /admin/users/:id` returns all of it). The
   admin order list and detail also show which account placed an order, linking
   back to that page; a guest order says so.
+  `/admin/parsing` is the one screen split into components
+  (`components/admin/parsing/*`: `sourceControl`, `cronHealth`, `runHistory`,
+  `queuePanel`, `categoryQueuePanel`, `sourceSummary`, `dataQuality`,
+  `importProduct`, `errorLog`) — it was 2000 lines of five unrelated screens.
+  **State and every request stay on the page**; the panels take props and emit
+  intent, so there is still one place that knows what is loaded and one place
+  that reloads it after an action. A supplier queue is a controller object from
+  `composables/useParserQueue.ts` (one factory per source), and the **list of
+  them is built from `/parser/overview`** — which carries each source's `host`
+  and the `queuePrefix` its queue endpoints sit under. It used to be four
+  hard-coded lines, so a fifth supplier would have parsed with no queue on
+  screen; that is why `PARSER_SOURCES` is the only place a supplier is
+  declared. The
+  chrome the panels share (`.pad`, `.stat-row`, `.toolbar`, `.pagination` …) is
+  styled once on the page with `:deep()` rather than copied into nine scoped
+  stylesheets.
 - **Admin audit trail** (`audit/`, `AdminActionLog`, `/admin/audit`). Worth
   having only now that admins are accounts — under the shared token there was
   no "who". `AdminActionLogInterceptor` is registered **globally** (admin
@@ -472,7 +536,9 @@ which is what made the delay and the filters need a restart. Regexes are
 validated on write: a broken one would throw on every product. Code-level filter
 defaults live in `parser/parser-defaults.ts` (a dependency-free module, so the
 registry and the parsers can both import them). `PARSER_SOURCES` is the registry
-the admin UI iterates; a new supplier has to be added there too.
+the admin UI iterates — including `host` and `queuePrefix`, which is what lets
+`/admin/parsing` grow a queue tab for a new supplier without a frontend change;
+a new supplier has to be added there.
 
 **Throughput is the thing people mistake for a hang.** One run every 30 min
 means `batchLimit × 48` URLs a day. At the old default of 30 that is 1440/day

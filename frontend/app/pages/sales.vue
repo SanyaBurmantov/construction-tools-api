@@ -1,10 +1,5 @@
 <script setup lang="ts">
-import type { CatalogProduct } from '~/composables/useProductActions'
-
-type ProductsResponse = {
-  data: CatalogProduct[]
-  pagination: { page: number, limit: number, total: number, pages: number }
-}
+import type { ProductsResponse } from '~/types/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,7 +27,7 @@ const sortParams = computed<Record<string, string>>(() => {
   }
 })
 
-const { data, status } = await useAsyncData<ProductsResponse>(
+const { data, status, error } = await useAsyncData<ProductsResponse>(
   () => `sales-${page.value}-${sort.value}`,
   () =>
     $fetch<ProductsResponse>(`${apiBase}/products`, {
@@ -43,6 +38,11 @@ const { data, status } = await useAsyncData<ProductsResponse>(
     default: () => ({ data: [], pagination: { page: 1, limit: 24, total: 0, pages: 0 } }),
   }
 )
+
+// Without this the page falls back to its empty default and reads as «скидок
+// нет» while the API is simply down. Server-side only: on the client the page
+// is already rendered and a blip must not replace it.
+if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
 
 function setQuery(patch: Record<string, string | number | undefined>) {
   router.push({ query: { ...route.query, ...patch } })

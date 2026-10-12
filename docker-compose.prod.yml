@@ -32,6 +32,14 @@ services:
     container_name: construction-tools-api
     restart: unless-stopped
     logging: *default-logging
+    # Ceilings, not reservations. The box has 1.8 GB for four containers, and
+    # without a limit the kernel's OOM killer picks the biggest resident
+    # process — which is Postgres, the one service whose death takes the whole
+    # site down with it. Capped, a run that eats memory kills its own
+    # container instead, and `restart` brings it back in seconds with the
+    # database untouched.
+    mem_limit: 768m
+    mem_reservation: 256m
     environment:
       NODE_ENV: production
       PORT: 8000
@@ -128,6 +136,10 @@ services:
     container_name: construction-tools-front
     restart: unless-stopped
     logging: *default-logging
+    # SSR + the Nitro route cache; the memory-heavy `nuxt build` happens in the
+    # builder stage, not here.
+    mem_limit: 384m
+    mem_reservation: 128m
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -148,6 +160,7 @@ services:
     container_name: construction-tools-caddy
     restart: unless-stopped
     logging: *default-logging
+    mem_limit: 128m
     ports:
       - "80:80"
       - "443:443"

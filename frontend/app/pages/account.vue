@@ -1,48 +1,9 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
 import type { AccountUser, CustomerType } from '~/composables/useAuth'
-
-type OrderStatus =
-  | 'NEW'
-  | 'CONFIRMED'
-  | 'PROCESSING'
-  | 'SHIPPED'
-  | 'DELIVERED'
-  | 'CANCELLED'
-
-type AccountOrderItem = {
-  id: string
-  productId: string | null
-  productName: string
-  productSlug: string
-  productSku: string | null
-  productImage: string | null
-  unitPrice: number
-  unitOldPrice: number | null
-  quantity: number
-  lineTotal: number
-}
-
-type AccountOrder = {
-  id: string
-  number: number
-  status: OrderStatus
-  currency: string
-  itemsTotal: number
-  deliveryCost: number
-  discountTotal: number
-  total: number
-  promoCodeLabel: string | null
-  deliveryMethod: 'PICKUP' | 'COURIER' | 'POST'
-  deliveryAddress: string | null
-  paymentMethod: 'CASH' | 'CARD' | 'INVOICE'
-  comment: string | null
-  customerName: string
-  customerPhone: string
-  customerEmail: string | null
-  createdAt: string
-  items: AccountOrderItem[]
-}
+import type { Order, OrderStatus } from '~/types/api'
+// The year matters here: an order history spans them.
+import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
 
 type AccountPromoCode = {
   id: string
@@ -169,7 +130,7 @@ onMounted(async () => {
 })
 
 /* ---- Orders ------------------------------------------------------------ */
-const orders = ref<AccountOrder[]>([])
+const orders = ref<Order[]>([])
 const ordersLoading = ref(false)
 const ordersError = ref('')
 const ordersPage = ref(1)
@@ -196,13 +157,13 @@ const STATUS_TONE: Record<OrderStatus, 'neutral' | 'info' | 'warning' | 'success
   CANCELLED: 'danger',
 }
 
-const DELIVERY_LABEL: Record<AccountOrder['deliveryMethod'], string> = {
+const DELIVERY_LABEL: Record<Order['deliveryMethod'], string> = {
   PICKUP: 'Самовывоз',
   COURIER: 'Курьер',
   POST: 'Почта',
 }
 
-const PAYMENT_LABEL: Record<AccountOrder['paymentMethod'], string> = {
+const PAYMENT_LABEL: Record<Order['paymentMethod'], string> = {
   CASH: 'Наличными',
   CARD: 'Картой',
   INVOICE: 'По счёту',
@@ -218,7 +179,7 @@ async function loadOrders() {
   ordersError.value = ''
   try {
     const response = await authFetch<{
-      data: AccountOrder[]
+      data: Order[]
       pagination: { page: number, pages: number, total: number }
     }>('/account/orders', {
       params: {
@@ -253,7 +214,7 @@ function goToOrdersPage(page: number) {
  * through POST /cart/validate and flags whatever moved, so nothing here can
  * quietly resurrect an old price.
  */
-function repeatOrder(order: AccountOrder) {
+function repeatOrder(order: Order) {
   const items = order.items.filter(item => item.productId)
   if (!items.length) {
     toast.warning('Товары из этого заказа больше не доступны')
@@ -445,22 +406,6 @@ async function confirmDelete() {
   }
 }
 
-/* ---- Display ----------------------------------------------------------- */
-const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-})
-const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-const formatDate = (iso: string | null) => (iso ? dateFormatter.format(new Date(iso)) : '—')
-const formatDateTime = (iso: string | null) =>
-  iso ? dateTimeFormatter.format(new Date(iso)) : '—'
 
 const TYPE_LABEL: Record<CustomerType, string> = {
   INDIVIDUAL: 'Физическое лицо',

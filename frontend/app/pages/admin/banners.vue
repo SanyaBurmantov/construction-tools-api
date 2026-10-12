@@ -1,25 +1,12 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'admin' })
+import type { AdminBanner } from '~/types/api'
 
-type Banner = {
-  id: string
-  title: string
-  subtitle: string | null
-  imageUrl: string
-  mobileUrl: string | null
-  linkUrl: string | null
-  buttonText: string | null
-  bgColor: string | null
-  order: number
-  isActive: boolean
-  startsAt: string | null
-  endsAt: string | null
-}
+definePageMeta({ layout: 'admin' })
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
 
-const banners = ref<Banner[]>([])
+const banners = ref<AdminBanner[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const busy = ref(false)
@@ -28,7 +15,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    banners.value = await adminFetch<Banner[]>('/banners')
+    banners.value = await adminFetch<AdminBanner[]>('/banners')
   } catch (error) {
     loadError.value = errorMessage(error, 'Не удалось загрузить баннеры')
   } finally {
@@ -40,7 +27,7 @@ onMounted(load)
 
 /* ---- Editor ------------------------------------------------------------- */
 const editorOpen = ref(false)
-const editing = ref<Banner | null>(null)
+const editing = ref<AdminBanner | null>(null)
 const saving = ref(false)
 const formError = ref('')
 
@@ -69,7 +56,7 @@ function openCreate() {
   editorOpen.value = true
 }
 
-function openEdit(banner: Banner) {
+function openEdit(banner: AdminBanner) {
   editing.value = banner
   Object.assign(form, {
     ...blankForm(),
@@ -132,7 +119,7 @@ async function save() {
   }
 }
 
-async function toggleActive(banner: Banner) {
+async function toggleActive(banner: AdminBanner) {
   busy.value = true
   try {
     await adminFetch(`/banners/${banner.id}`, {
@@ -148,7 +135,7 @@ async function toggleActive(banner: Banner) {
 }
 
 /** Swaps `order` with the neighbour, so the slider sequence is editable. */
-async function move(banner: Banner, direction: -1 | 1) {
+async function move(banner: AdminBanner, direction: -1 | 1) {
   const sorted = [...banners.value].sort((a, b) => a.order - b.order)
   const index = sorted.findIndex((b) => b.id === banner.id)
   const neighbour = sorted[index + direction]
@@ -172,7 +159,7 @@ async function move(banner: Banner, direction: -1 | 1) {
   }
 }
 
-const deleting = ref<Banner | null>(null)
+const deleting = ref<AdminBanner | null>(null)
 
 async function confirmDelete() {
   if (!deleting.value) return
@@ -190,7 +177,7 @@ async function confirmDelete() {
 }
 
 /** Why a banner isn't on the site right now, or null when it is. */
-function hiddenReason(banner: Banner) {
+function hiddenReason(banner: AdminBanner) {
   if (!banner.isActive) return 'Выключен'
   const now = Date.now()
   if (banner.startsAt && new Date(banner.startsAt).getTime() > now) return 'Ещё не начался'

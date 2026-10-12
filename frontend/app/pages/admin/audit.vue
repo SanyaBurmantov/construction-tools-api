@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// Seconds matter: two admin actions a moment apart must be orderable.
+import { formatDateTimeWithSeconds as formatDateTime } from '~/utils/format-datetime'
+
 definePageMeta({ layout: 'admin' })
 
 type AuditEntry = {
@@ -82,15 +85,6 @@ function goToPage(next: number) {
 
 /* ---- Display ----------------------------------------------------------- */
 const expanded = ref('')
-
-const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-})
-const formatDateTime = (iso: string) => dateTimeFormatter.format(new Date(iso))
 
 const METHOD_TONE: Record<string, 'info' | 'warning' | 'danger' | 'neutral'> = {
   POST: 'info',

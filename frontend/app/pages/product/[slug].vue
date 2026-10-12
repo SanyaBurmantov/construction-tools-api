@@ -24,6 +24,11 @@ const { data: product, status, error } = await useAsyncData<Product>(
 )
 
 if (error.value) {
+  // An unreachable API is not a missing product: answering 404 for every URL
+  // in the catalogue while the database is down is both a lie to the visitor
+  // and a signal to search engines to drop the pages.
+  if (isApiUnavailable(error.value)) throw apiUnavailableError()
+
   // A product merged into another answers 404 with the survivor's slug, so the
   // old URL keeps its links and search ranking instead of dying.
   const redirectTo = (error.value as { data?: { redirectTo?: string } }).data?.redirectTo

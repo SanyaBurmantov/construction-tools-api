@@ -70,17 +70,6 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
 const maxRevenue = computed(() =>
   Math.max(1, ...(stats.value?.salesSeries ?? []).map((d) => d.revenue))
 )
-
-const dayFormatter = new Intl.DateTimeFormat('ru-BY', { day: 'numeric', month: 'short' })
-const formatDay = (iso: string) => dayFormatter.format(new Date(iso))
-
-const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-const formatDateTime = (iso: string) => dateTimeFormatter.format(new Date(iso))
 </script>
 
 <template>

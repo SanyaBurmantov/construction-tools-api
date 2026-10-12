@@ -1,4 +1,7 @@
-import { ParserSettingsService } from './parser-settings.service';
+import {
+  PARSER_SOURCES,
+  ParserSettingsService,
+} from './parser-settings.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Row = { key: string; value: string };
@@ -242,6 +245,29 @@ describe('ParserSettingsService — runtime knobs', () => {
 
       expect(thTools).toHaveProperty('categoryBatchLimit');
       expect(dukon).not.toHaveProperty('categoryBatchLimit');
+    });
+  });
+
+  describe('queue addressing', () => {
+    // `/admin/parsing` builds its queue tabs from this answer, so a source
+    // registered without a prefix would be parsed with no queue on screen —
+    // and in the UI that is indistinguishable from "очередь не появилась".
+    it('gives every source a host and a queue prefix', async () => {
+      const { service } = createService();
+      const overview = await service.getOverview();
+
+      expect(overview.sources).toHaveLength(PARSER_SOURCES.length);
+      for (const source of overview.sources) {
+        expect(source.host).toMatch(/\./);
+        expect(
+          source.queuePrefix === '' || source.queuePrefix.startsWith('/'),
+        ).toBe(true);
+      }
+
+      // Exactly one source answers on the bare `/admin/queue` endpoints; two
+      // sharing a prefix would silently drive the same queue.
+      const prefixes = overview.sources.map((source) => source.queuePrefix);
+      expect(new Set(prefixes).size).toBe(prefixes.length);
     });
   });
 });

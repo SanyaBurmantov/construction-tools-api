@@ -1,24 +1,6 @@
 <script setup lang="ts">
-import type { CatalogProduct } from '~/composables/useProductActions'
+import type { Banner, Brand, ProductsResponse } from '~/types/api'
 import { company } from '~/data/company'
-
-type ProductsResponse = {
-  data: CatalogProduct[]
-  pagination: { page: number, limit: number, total: number, pages: number }
-}
-
-type Brand = { id: string, name: string, slug: string, logo?: string | null }
-
-type Banner = {
-  id: string
-  title: string
-  subtitle: string | null
-  imageUrl: string
-  mobileUrl: string | null
-  linkUrl: string | null
-  buttonText: string | null
-  bgColor: string | null
-}
 
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
@@ -27,37 +9,62 @@ const search = ref('')
 
 const emptyPage = { data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } }
 
-// Each rail degrades to an empty list instead of failing the page — the home
-// page is ISR-cached and must always render.
+/**
+ * Each rail degrades to an empty list instead of failing the page — the home
+ * page is cached and must always render. An **outage** is the exception: it is
+ * remembered here and turned into the maintenance page below, because an empty
+ * storefront tells the customer the wrong thing (see `isApiUnavailable`).
+ * Only the product rails count: they are the shop.
+ */
+const unavailable = ref(false)
+
+function soft<T>(request: Promise<T>, fallback: T): Promise<T> {
+  return request.catch(error => {
+    if (isApiUnavailable(error)) unavailable.value = true
+    return fallback
+  })
+}
+
 const { data: sales } = await useAsyncData<ProductsResponse>(
   'home-sales',
   () =>
-    $fetch<ProductsResponse>(`${apiBase}/products`, {
-      params: { limit: 8, onSale: true, sortBy: 'createdAt', sortOrder: 'desc' },
-    }).catch(() => emptyPage),
+    soft(
+      $fetch<ProductsResponse>(`${apiBase}/products`, {
+        params: { limit: 8, onSale: true, sortBy: 'createdAt', sortOrder: 'desc' },
+      }),
+      emptyPage
+    ),
   { default: () => emptyPage }
 )
 
 const { data: popular } = await useAsyncData<ProductsResponse>(
   'home-popular',
   () =>
-    $fetch<ProductsResponse>(`${apiBase}/products`, {
-      params: { limit: 8, inStock: true, sortBy: 'rating', sortOrder: 'desc' },
-    }).catch(() => emptyPage),
+    soft(
+      $fetch<ProductsResponse>(`${apiBase}/products`, {
+        params: { limit: 8, inStock: true, sortBy: 'rating', sortOrder: 'desc' },
+      }),
+      emptyPage
+    ),
   { default: () => emptyPage }
 )
 
 const { data: newest } = await useAsyncData<ProductsResponse>(
   'home-newest',
   () =>
-    $fetch<ProductsResponse>(`${apiBase}/products`, {
-      params: { limit: 8, sortBy: 'createdAt', sortOrder: 'desc' },
-    }).catch(() => emptyPage),
+    soft(
+      $fetch<ProductsResponse>(`${apiBase}/products`, {
+        params: { limit: 8, sortBy: 'createdAt', sortOrder: 'desc' },
+      }),
+      emptyPage
+    ),
   { default: () => emptyPage }
 )
 
 const { data: banners } = await useAsyncData<{ data: Banner[] }>(
   'home-banners',
+  // Banners and brands are decoration: they degrade quietly even when they
+  // fail outright, and never on their own put the shop into maintenance.
   () => $fetch<{ data: Banner[] }>(`${apiBase}/banners`).catch(() => ({ data: [] })),
   { default: () => ({ data: [] }) }
 )
@@ -69,6 +76,11 @@ const { data: brands } = await useAsyncData<Brand[]>(
   () => $fetch<Brand[]>(`${apiBase}/brands`).catch(() => []),
   { default: () => [] }
 )
+
+// The catalogue did not answer: show the technical-works page rather than a
+// shop that looks sold out. Nitro never caches a 4xx/5xx response, so the
+// outage page cannot outlive the outage.
+if (unavailable.value) throw apiUnavailableError()
 
 /**
  * The grid an admin curates: categories pinned in `/admin/categories` lead,

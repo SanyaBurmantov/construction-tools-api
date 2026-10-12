@@ -64,8 +64,11 @@ If supplier requests fail through a proxy, bypass supplier domains, for example 
 - `ProductsModule`: public product list/detail API.
 - `CategoriesModule`: public category API.
 - `BrandsModule`: public brand API.
-- `SourcesModule`: public supplier list (`GET /sources`) — id, name and code
-  only, never the supplier URL.
+- `SourcesModule`: supplier list (`GET /sources`) — id, name and code only,
+  never the supplier URL, and **behind `AdminGuard`**: the «Поставщик» facet is
+  admin-only, so `GET /products` sends no `sources` facet and the catalogue
+  ignores `?source=` for a non-admin. Read-only; parsers upsert their own
+  `Source` rows.
 - `ParserModule`: parser services, cron jobs, parser logs.
 - `AdminModule`: guarded admin API, including `/admin/users`.
 - `AuthModule`: accounts and sessions (`/auth/*`), `AuthGuard`, and the

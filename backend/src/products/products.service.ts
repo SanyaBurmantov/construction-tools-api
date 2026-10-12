@@ -194,46 +194,6 @@ export class ProductService {
    * the user hasn't touched share one query; each selected one costs an extra
    * query, and there are rarely more than a few of those.
    */
-  /**
-   * The source facet, counted in **products** rather than in supplier offers.
-   *
-   * It used to be `sourceProduct.groupBy({ by: ['sourceId'] })`, which counts
-   * `SourceProduct` rows. One product can hold several rows from the same
-   * supplier — merging moves a duplicate's offers onto the survivor, and the
-   * same item can sit at more than one supplier URL — so the facet counted
-   * those twice: TH-Tools advertised 34256 against 18427 real products, and
-   * the three suppliers added up to 64242 next to a "Найдено 48413". Dukon and
-   * Tools.by are very nearly 1:1, which is why only one number looked wrong.
-   *
-   * One count per source instead of one grouped query: `some` renders as
-   * `id IN (subquery)`, which Postgres resolves as a semi-join, and the Source
-   * table holds a handful of rows — so this fans out over suppliers, not over
-   * anything that grows with the catalogue. Sources matching nothing are left
-   * out rather than reported as `0`, the same rule the category facet follows.
-   */
-  private async countProductsBySource(
-    where: Prisma.ProductWhereInput,
-  ): Promise<Record<string, number>> {
-    const sources = await this.prisma.source.findMany({
-      select: { id: true },
-    });
-    const counts = await Promise.all(
-      sources.map((source) =>
-        this.prisma.product.count({
-          where: {
-            AND: [where, { sourceProducts: { some: { sourceId: source.id } } }],
-          },
-        }),
-      ),
-    );
-
-    return Object.fromEntries(
-      sources
-        .map((source, index) => [source.id, counts[index]] as const)
-        .filter(([, count]) => count > 0),
-    );
-  }
-
   private async buildSpecFacets(
     categoryIds: string[] | undefined,
     selections: SpecSelection[],
@@ -542,7 +502,7 @@ export class ProductService {
       buildWhere,
     );
 
-    const [total, products, categoryCounts, brandCounts, sourceCounts, price] =
+    const [total, products, categoryCounts, brandCounts, price] =
       await Promise.all([
         this.prisma.product.count({ where }),
         useRelevance && searchTerm
@@ -564,7 +524,6 @@ export class ProductService {
           where: { ...buildWhere('brand'), brandId: { not: null } },
           _count: { _all: true },
         }),
-        this.countProductsBySource(buildWhere('source')),
         this.prisma.product.aggregate({
           where: { ...buildWhere('price'), priceValue: { gt: 0 } },
           _min: { priceValue: true },
@@ -602,7 +561,14 @@ export class ProductService {
           .filter((item) => item.brandId)
           .map((item) => [item.brandId as string, item._count._all]),
       ),
-      sources: sourceCounts,
+      /**
+       * No `sources` facet on purpose. The «Поставщик» filter is admin-only
+       * (which supplier carries what is internal), so counting it cost four
+       * semi-joins over `SourceProduct` on every listing — and on every filter
+       * change, which Nitro does not cache — to produce numbers nobody but an
+       * admin could ever see. The admin facet renders the supplier list from
+       * `GET /sources` without counts.
+       */
       priceRange:
         price._min.priceValue !== null
           ? {

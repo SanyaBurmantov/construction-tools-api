@@ -1,21 +1,5 @@
 <script setup lang="ts">
-type Brand = {
-  id: string
-  name: string
-  slug?: string | null
-}
-
-type BrandCategory = {
-  id: string
-  name: string
-  slug?: string | null
-  count: number
-}
-
-type BrandCategoriesResponse = {
-  brand: Brand
-  categories: BrandCategory[]
-}
+import type { BrandCategoriesResponse, BrandCategory } from '~/types/api'
 
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -29,6 +13,8 @@ const { data, status, error } = await useAsyncData<BrandCategoriesResponse>(
 )
 
 if (error.value) {
+  // «Не ответило» is not «нет такого бренда» — see the product page.
+  if (isApiUnavailable(error.value)) throw apiUnavailableError()
   throw createError({ statusCode: 404, statusMessage: 'Бренд не найден', fatal: true })
 }
 
