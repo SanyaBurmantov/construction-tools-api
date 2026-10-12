@@ -109,11 +109,19 @@ Product list supports filters in `ProductFilterDto`:
 
 ### Sources
 
-- `GET /sources`
-- `POST /sources`
-- `GET /source-products`
-
-Public source/source-product APIs are read-only. Supplier import and mutations should go through guarded admin endpoints.
+- `GET /sources` — **admin-only** (`AdminGuard`): id, name and code, never the
+  supplier URL. Which supplier carries what is internal, so the «Поставщик»
+  facet in the catalogue is rendered for an ADMIN session only — and `?source=`
+  in the catalogue URL is ignored for everyone else, or a shared admin link
+  would silently narrow a customer's catalogue with no sign of it in the UI.
+- `GET /products` therefore returns **no** `facets.sources`: the counts cost one
+  semi-join over `SourceProduct` per supplier on every listing and every filter
+  change, and only an admin could ever see them. The admin facet lists the
+  suppliers without counts.
+- Source rows are created by the parsers themselves (`source.upsert`); there is
+  no public or admin create endpoint, and `GET /source-products` (a dead
+  in-memory stub that handed out supplier URLs) has been removed.
+- Supplier import and every mutation go through `/admin/*`.
 
 ## Admin API
 
