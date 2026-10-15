@@ -60,6 +60,9 @@ const nav = computed(() => [
     badge: badges.value?.recentErrors,
   },
   { label: 'Парсинг', to: '/admin/parsing', icon: 'refresh' },
+  { label: 'ИИ · Товары', to: '/admin/ai/products', icon: 'spark' },
+  { label: 'ИИ · Категории', to: '/admin/ai/categories', icon: 'spark' },
+  { label: 'ИИ · Задачи', to: '/admin/ai/tasks', icon: 'spark' },
   { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
 
@@ -78,6 +81,7 @@ const ICONS: Record<string, string> = {
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0',
   log: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',
   alert: 'M12 4l9 16H3l9-16zm0 6v4m0 3h.01',
+  spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
 }
 
 /**

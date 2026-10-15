@@ -27,6 +27,7 @@ import { BannersModule } from './banners/banners.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { PromoModule } from './promo/promo.module';
 import { CatalogNormalizerModule } from './catalog-normalizer/catalog-normalizer.module';
+import { AiModule } from './ai/ai.module';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
 
 @Module({
@@ -63,6 +64,7 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     PromoModule,
     AdminModule,
     CatalogNormalizerModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [

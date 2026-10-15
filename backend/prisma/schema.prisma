@@ -153,6 +153,10 @@ model Product {
   matchSku          String?
   /// brand + model, normalized.
   matchModel        String?
+  /// Text fields an AI task rewrote (`ai/`). Re-parsing leaves these alone —
+  /// the daily refresh would otherwise put the supplier's text back within 24h.
+  /// Reverting the task item unlocks them again.
+  aiLockedFields    String[]               @default([])
 
   cartItems CartItem[]
 
@@ -876,4 +880,97 @@ model AdminActionLog {
   @@index([createdAt])
   @@index([actorId, createdAt])
   @@index([path])
+}
+
+enum AiEntity {
+  PRODUCT
+  CATEGORY
+}
+
+enum AiTaskStatus {
+  /// Waiting for `scheduledAt`; the runner picks it up then.
+  QUEUED
+  RUNNING
+  /// Stopped by an admin; resumes from the remaining PENDING items.
+  PAUSED
+  DONE
+  CANCELLED
+}
+
+enum AiTaskItemStatus {
+  PENDING
+  /// The answer changed at least one field and it was written.
+  APPLIED
+  /// The answer matched what was already there.
+  UNCHANGED
+  FAILED
+  /// An admin rolled the change back.
+  REVERTED
+}
+
+/// Reusable instruction for an AI task. The task keeps its own copy of the
+/// text, so editing a prompt never rewrites what an old task did.
+model AiPrompt {
+  id        String   @id @default(uuid())
+  name      String
+  entity    AiEntity
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tasks     AiTask[]
+
+  @@index([entity])
+}
+
+model AiTask {
+  id          String       @id @default(uuid())
+  name        String
+  entity      AiEntity
+  status      AiTaskStatus @default(QUEUED)
+  /// Field names the model may rewrite (see `ai/ai-fields.ts`).
+  fields      String[]
+  prompt      AiPrompt?    @relation(fields: [promptId], references: [id], onDelete: SetNull)
+  promptId    String?
+  /// Snapshot of the instruction at creation time.
+  promptText  String
+  model       String
+  /// Entities per model request — the free tier counts requests, not tokens.
+  batchSize   Int          @default(5)
+  scheduledAt DateTime     @default(now())
+  /// Set on a 429: the runner leaves the task alone until then.
+  pausedUntil DateTime?
+  lastError   String?
+  total       Int          @default(0)
+  processed   Int          @default(0)
+  applied     Int          @default(0)
+  failed      Int          @default(0)
+  createdBy   String?
+  createdAt   DateTime     @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  items       AiTaskItem[]
+
+  @@index([status, scheduledAt])
+  @@index([createdAt])
+}
+
+model AiTaskItem {
+  id         String           @id @default(uuid())
+  task       AiTask           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId     String
+  /// Product or category id — not a foreign key, so deleting a product keeps
+  /// the task history readable.
+  entityId   String
+  entityName String
+  status     AiTaskItemStatus @default(PENDING)
+  attempts   Int              @default(0)
+  /// `{ field: { old, new } }` for every field the answer changed.
+  changes    Json?
+  /// The model's raw answer for this entity, for debugging a prompt.
+  response   Json?
+  error      String?
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([taskId, entityId])
+  @@index([taskId, status])
 }

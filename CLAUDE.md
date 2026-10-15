@@ -572,6 +572,24 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   but only into blank fields, so a different recipient typed for one order is
   never overwritten.
 
+- **AI-задачи** (`ai/`, `/admin/ai/{products,categories,tasks}`). Админ
+  выбирает товары/категории (фильтры: категория с поддеревом, бренд,
+  поставщик, статус, наличие, пустое поле, «уже обработан ИИ» — или «все по
+  фильтру», который резолвится в id при создании), поля и промпт, и создаёт
+  `AiTask` с `AiTaskItem` на каждую запись. Планировщик — `AiRunnerCron`
+  (каждую минуту, одна задача, `AI_BATCHES_PER_TICK` пачек по `batchSize`
+  записей в **одном** запросе: бесплатный ключ OpenRouter считает *запросы* —
+  50 в сутки). 429 не валит записи, а ставит задаче `pausedUntil`; прочие
+  ошибки — до 3 попыток на запись. Меняются **только текстовые поля**
+  (`ai/ai-fields.ts`: name/описания/SEO) — цены принадлежат `PricingService`,
+  идентичность — парсерам. Каждый item хранит `{field: {old, new}}`, откат
+  возвращает старое значение только там, где поле всё ещё равно записанному ИИ.
+  **`Product.aiLockedFields`**: поля, переписанные ИИ, `ProductIdentityService.save()`
+  вырезает из `update` при перепарсинге — иначе суточный refresh вернул бы
+  текст поставщика. Откат снимает блокировку. Ключ — `OPENROUTER_API_KEY`
+  (пусто = выключено), модель по умолчанию `OPENROUTER_MODEL`, с цепочкой
+  запасных `:free`-моделей в `openrouter.client.ts`.
+
 ## Database / migrations
 
 - Schema is in `backend/prisma/schema.prisma`. Migrations in

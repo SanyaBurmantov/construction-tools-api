@@ -11,12 +11,16 @@ const uniqueViolation = (target: string[]) =>
 
 /** In-memory stand-in for the two tables the service touches. */
 function createService(
-  options: { offers?: Record<string, string>; slugs?: string[] } = {},
+  options: {
+    offers?: Record<string, string>;
+    slugs?: string[];
+    aiLocked?: Record<string, string[]>;
+  } = {},
 ) {
   const offers = new Map(Object.entries(options.offers ?? {}));
   const slugs = new Set(options.slugs ?? []);
   const created: { slug: string }[] = [];
-  const updated: { id: string }[] = [];
+  const updated: { id: string; data?: Record<string, unknown> }[] = [];
 
   const prisma = {
     sourceProduct: {
@@ -34,6 +38,11 @@ function createService(
       ),
     },
     product: {
+      findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+        Promise.resolve({
+          aiLockedFields: options.aiLocked?.[where.id] ?? [],
+        }),
+      ),
       create: jest.fn(({ data }: { data: { slug: string } }) => {
         if (slugs.has(data.slug))
           return Promise.reject(uniqueViolation(['slug']));
@@ -41,10 +50,18 @@ function createService(
         created.push({ slug: data.slug });
         return Promise.resolve({ id: `id-${data.slug}`, slug: data.slug });
       }),
-      update: jest.fn(({ where }: { where: { id: string } }) => {
-        updated.push({ id: where.id });
-        return Promise.resolve({ id: where.id });
-      }),
+      update: jest.fn(
+        ({
+          where,
+          data,
+        }: {
+          where: { id: string };
+          data: Record<string, unknown>;
+        }) => {
+          updated.push({ id: where.id, data });
+          return Promise.resolve({ id: where.id });
+        },
+      ),
     },
   } as unknown as PrismaService;
 
@@ -75,8 +92,31 @@ describe('ProductIdentityService.save', () => {
       data,
     });
 
-    expect(updated).toEqual([{ id: 'product-7' }]);
+    expect(updated).toEqual([{ id: 'product-7', data: { sku: 'X' } }]);
     expect(created).toHaveLength(0);
+  });
+
+  it('leaves text an AI task rewrote alone on re-parse', async () => {
+    const { service, updated } = createService({
+      offers: { 's1|https://x/1': 'product-7' },
+      aiLocked: { 'product-7': ['descriptionFull', 'seoTitle'] },
+    });
+
+    await service.save({
+      sourceId: 's1',
+      url: 'https://x/1',
+      baseSlug: 'molotok',
+      data: {
+        update: {
+          name: 'Молоток',
+          descriptionFull: 'Текст поставщика',
+          seoTitle: 'Молоток купить в Минске',
+        },
+        create: { name: 'Молоток', slug: 'x', priceCurrency: 'BYN' },
+      } as never,
+    });
+
+    expect(updated[0].data).toEqual({ name: 'Молоток' });
   });
 
   it('creates a new product when the offer is unknown', async () => {
