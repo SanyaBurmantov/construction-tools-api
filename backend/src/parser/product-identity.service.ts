@@ -72,11 +72,30 @@ export class ProductIdentityService {
       // whether to flip DRAFT→PUBLISHED and passes it in `update`.
       return this.prisma.product.update({
         where: { id: existingId },
-        data: params.data.update,
+        data: await this.withoutAiLockedFields(existingId, params.data.update),
       });
     }
 
     return this.createWithFreeSlug(params.baseSlug, params.data);
+  }
+
+  /**
+   * Text an AI task rewrote (`Product.aiLockedFields`) is ours now: the daily
+   * re-parse would otherwise put the supplier's version back within 24 hours.
+   */
+  private async withoutAiLockedFields(
+    productId: string,
+    update: ProductWriteData['update'],
+  ): Promise<ProductWriteData['update']> {
+    const row = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { aiLockedFields: true },
+    });
+    const locked = row?.aiLockedFields ?? [];
+    if (!locked.length) return update;
+    const fields = { ...(update as Record<string, unknown>) };
+    for (const key of locked) delete fields[key];
+    return fields as ProductWriteData['update'];
   }
 
   private withCleanTexts(data: ProductWriteData): ProductWriteData {
