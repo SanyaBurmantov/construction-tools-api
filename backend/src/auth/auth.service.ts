@@ -18,6 +18,7 @@ import {
 import { loginProblem, normalizeLogin } from './login.util';
 import { isUniqueViolation } from './prisma-errors';
 import { hashPassword, passwordProblem, verifyPassword } from './password.util';
+import { EmailVerificationService } from './email-verification.service';
 
 /** Fields safe to return — `passwordHash` is never selected. */
 export const USER_SELECT = {
@@ -27,6 +28,7 @@ export const USER_SELECT = {
   customerType: true,
   name: true,
   email: true,
+  emailVerifiedAt: true,
   phone: true,
   companyName: true,
   taxId: true,
@@ -48,6 +50,8 @@ export type SessionContext = {
 };
 
 const DEFAULT_TTL_DAYS = 30;
+/** Loose on purpose — `@IsEmail()` already guards the e-mail field itself. */
+const EMAIL_LIKE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** How stale `lastSeenAt` may get before a request refreshes it. */
 const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
 
@@ -55,7 +59,10 @@ const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private emailVerification: EmailVerificationService,
+  ) {}
 
   private ttlMs(): number {
     const days = Number(process.env.AUTH_SESSION_TTL_DAYS);
@@ -125,6 +132,15 @@ export class AuthService {
     const passwordIssue = passwordProblem(dto.password);
     if (passwordIssue) throw new BadRequestException(passwordIssue);
     this.assertCompanyComplete(dto.customerType, dto.companyName);
+    // The confirmation letter needs an address: the e-mail field, or the
+    // login itself when that is an e-mail.
+    const email =
+      dto.email?.trim().toLowerCase() ||
+      (EMAIL_LIKE.test(login) ? login : null);
+    if (!email)
+      throw new BadRequestException(
+        'Укажите e-mail — на него придёт письмо для подтверждения регистрации',
+      );
 
     const existing = await this.prisma.user.findUnique({
       where: { login },
@@ -140,7 +156,7 @@ export class AuthService {
       role: UserRole.CUSTOMER,
       customerType: dto.customerType,
       name: dto.name?.trim() || null,
-      email: dto.email?.trim().toLowerCase() || null,
+      email,
       phone: dto.phone?.trim() || null,
       companyName: dto.companyName?.trim() || null,
       taxId: dto.taxId?.trim() || null,
@@ -148,6 +164,9 @@ export class AuthService {
     });
 
     const session = await this.issueSession(user.id, userAgent);
+    // Not awaited: SMTP latency must not hold the sign-up, and `issue()`
+    // never rejects — a lost letter is re-requested from the account page.
+    void this.emailVerification.issue(user, email);
     return { ...session, user };
   }
 
@@ -255,15 +274,20 @@ export class AuthService {
       dto.companyName === undefined ? current.companyName : dto.companyName;
     this.assertCompanyComplete(customerType, companyName);
 
-    return this.prisma.user.update({
+    const email =
+      dto.email === undefined
+        ? undefined
+        : dto.email.trim().toLowerCase() || null;
+    // A new address is unproven until its own link is followed.
+    const emailChanged = email !== undefined && email !== current.email;
+
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
         customerType,
         name: dto.name === undefined ? undefined : dto.name.trim() || null,
-        email:
-          dto.email === undefined
-            ? undefined
-            : dto.email.trim().toLowerCase() || null,
+        email,
+        emailVerifiedAt: emailChanged ? null : undefined,
         phone: dto.phone === undefined ? undefined : dto.phone.trim() || null,
         companyName:
           dto.companyName === undefined
@@ -273,6 +297,9 @@ export class AuthService {
       },
       select: USER_SELECT,
     });
+    if (emailChanged && updated.email)
+      void this.emailVerification.issue(updated, updated.email);
+    return updated;
   }
 
   /**

@@ -60,11 +60,15 @@ onMounted(load)
 
 /**
  * The API returns a flat list; rebuild the tree so nesting is visible and
- * children stay under their parent.
+ * children stay under their parent. Every per-row question (siblings, can it
+ * move, has it children) is answered from the maps built here in one pass —
+ * asking `categories.find()` per row made each render O(n²), which at ~3k
+ * categories is millions of steps on every click.
  */
 type TreeNode = Category & { children: TreeNode[] }
+type Row = TreeNode & { depth: number }
 
-const tree = computed<TreeNode[]>(() => {
+const index = computed(() => {
   const byId = new Map<string, TreeNode>()
   for (const category of categories.value) {
     byId.set(category.id, { ...category, children: [] })
@@ -83,6 +87,7 @@ const tree = computed<TreeNode[]>(() => {
    * reorder buttons move rows to places the admin cannot see.
    */
   const rank = (node: TreeNode) => (node.sortOrder > 0 ? node.sortOrder : Number.MAX_SAFE_INTEGER)
+  const position = new Map<string, { siblings: TreeNode[], index: number }>()
   const sortRec = (nodes: TreeNode[]) => {
     nodes.sort(
       (a, b) =>
@@ -90,30 +95,43 @@ const tree = computed<TreeNode[]>(() => {
         || (b._count?.products ?? 0) - (a._count?.products ?? 0)
         || a.name.localeCompare(b.name, 'ru')
     )
-    nodes.forEach((n) => sortRec(n.children))
+    nodes.forEach((node, i) => {
+      position.set(node.id, { siblings: nodes, index: i })
+      sortRec(node.children)
+    })
   }
   sortRec(roots)
-  return roots
+  return { byId, roots, position }
 })
 
 /** Siblings of a category, in the order this page shows them. */
 function siblingsOf(row: Category): TreeNode[] {
-  if (!row.parentId) return tree.value
-  const find = (nodes: TreeNode[]): TreeNode[] | null => {
-    for (const node of nodes) {
-      if (node.id === row.parentId) return node.children
-      const found = find(node.children)
-      if (found) return found
-    }
-    return null
-  }
-  return find(tree.value) ?? []
+  return index.value.position.get(row.id)?.siblings ?? []
 }
 
 /**
- * Does this row match the view? A branch is still shown when a descendant
- * matches, so a hidden subcategory can be found through its parents.
+ * Search is debounced: the tree is re-walked per change, and re-walking it on
+ * every keystroke of a word is wasted work the admin feels as input lag.
  */
+const query = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, (value) => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    query.value = value.trim().toLowerCase()
+  }, 200)
+})
+
+/**
+ * Searching or picking a "find something" view shows every match with its
+ * ancestors, fully expanded. Otherwise the tree is browsed: roots first, a
+ * branch opens on click — rendering all ~3k rows up front is what made this
+ * page heavy.
+ */
+const filtering = computed(
+  () => Boolean(query.value) || ['hidden', 'featured', 'empty'].includes(view.value)
+)
+
 function matchesView(node: Category) {
   if (view.value === 'hidden') return !node.isVisible
   if (view.value === 'visible') return node.isVisible
@@ -122,68 +140,66 @@ function matchesView(node: Category) {
   return true
 }
 
-/** Flattened tree with depth, filtered by the search box and the view. */
-const rows = computed(() => {
-  const query = search.value.trim().toLowerCase()
-  const result: Array<TreeNode & { depth: number }> = []
+function matchesQuery(node: Category) {
+  const q = query.value
+  return !q || node.name.toLowerCase().includes(q) || node.slug.toLowerCase().includes(q)
+}
 
-  const walk = (nodes: TreeNode[], depth: number) => {
-    for (const node of nodes) {
-      const matchesQuery = !query || node.name.toLowerCase().includes(query)
-        || node.slug.toLowerCase().includes(query)
-      const matches = matchesQuery && matchesView(node)
-      // Keep a branch when it matches or any descendant does.
-      const childResult: Array<TreeNode & { depth: number }> = []
-      const before = result.length
-      walk(node.children, depth + 1)
-      childResult.push(...result.splice(before))
+const expanded = ref<Set<string>>(new Set())
 
-      if (matches || childResult.length) {
-        result.push({ ...node, depth })
-        result.push(...childResult)
+const rows = computed<Row[]>(() => {
+  if (filtering.value) {
+    // Keep a branch when it matches or any descendant does.
+    const collect = (nodes: TreeNode[], depth: number): Row[] => {
+      const out: Row[] = []
+      for (const node of nodes) {
+        const below = collect(node.children, depth + 1)
+        if ((matchesQuery(node) && matchesView(node)) || below.length) {
+          out.push({ ...node, depth })
+          for (const row of below) out.push(row)
+        }
       }
+      return out
     }
+    return collect(index.value.roots, 0)
   }
 
-  walk(tree.value, 0)
+  const result: Row[] = []
+  const walk = (nodes: TreeNode[], depth: number) => {
+    for (const node of nodes) {
+      if (!matchesView(node)) continue
+      result.push({ ...node, depth })
+      if (expanded.value.has(node.id)) walk(node.children, depth + 1)
+    }
+  }
+  walk(index.value.roots, 0)
   return result
 })
+
+/** Rows are drawn in pages, so even "expand everything" stays responsive. */
+const PAGE = 300
+const limit = ref(PAGE)
+watch([query, view], () => {
+  limit.value = PAGE
+})
+const visibleRows = computed(() => rows.value.slice(0, limit.value))
 
 const hiddenCount = computed(() => categories.value.filter((row) => !row.isVisible).length)
 const featuredCount = computed(() => categories.value.filter((row) => row.isFeatured).length)
 
-const collapsed = ref<Set<string>>(new Set())
-
-/** A row is hidden when any of its ancestors is collapsed. */
-const visibleRows = computed(() => {
-  const hiddenUnder: string[] = []
-  return rows.value.filter((row) => {
-    while (hiddenUnder.length && !isDescendant(row, hiddenUnder[hiddenUnder.length - 1]!)) {
-      hiddenUnder.pop()
-    }
-    const hidden = hiddenUnder.length > 0
-    if (!hidden && collapsed.value.has(row.id)) hiddenUnder.push(row.id)
-    return !hidden
-  })
-})
-
-function isDescendant(row: Category, ancestorId: string) {
-  const ancestor = categories.value.find((c) => c.id === ancestorId)
-  if (!ancestor) return false
-  // `path` holds the slug chain from the root, so containment means descent.
-  return row.path.length > ancestor.path.length
-    && ancestor.path.every((slug, index) => row.path[index] === slug)
-}
-
-function toggleCollapse(id: string) {
-  const next = new Set(collapsed.value)
+function toggleExpand(id: string) {
+  const next = new Set(expanded.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
-  collapsed.value = next
+  expanded.value = next
+}
+
+function collapseAll() {
+  expanded.value = new Set()
 }
 
 function hasChildren(id: string) {
-  return categories.value.some((c) => c.parentId === id)
+  return Boolean(index.value.byId.get(id)?.children.length)
 }
 
 /* ---- Editor ------------------------------------------------------------ */
@@ -291,6 +307,8 @@ async function save() {
     } else {
       await adminFetch('/categories', { method: 'POST', body })
       toast.success('Категория создана')
+      // Show the new subcategory where it landed.
+      if (body.parentId) expanded.value = new Set(expanded.value).add(body.parentId)
     }
     editorOpen.value = false
     await load()
@@ -387,9 +405,10 @@ async function move(row: Category, direction: -1 | 1) {
 }
 
 function canMove(row: Category, direction: -1 | 1) {
-  const siblings = siblingsOf(row)
-  const index = siblings.findIndex((item) => item.id === row.id)
-  return index >= 0 && index + direction >= 0 && index + direction < siblings.length
+  const place = index.value.position.get(row.id)
+  if (!place) return false
+  const to = place.index + direction
+  return to >= 0 && to < place.siblings.length
 }
 
 /* ---- Card artwork ------------------------------------------------------
@@ -500,6 +519,14 @@ const mergeOptions = computed(() =>
       <div class="head-actions">
         <UiSelect v-model="view" size="sm" class="view" :options="VIEWS" />
         <UiInput v-model="search" placeholder="Найти категорию" size="sm" class="search" />
+        <UiButton
+          v-if="!filtering && expanded.size"
+          variant="ghost"
+          size="sm"
+          @click="collapseAll"
+        >
+          Свернуть всё
+        </UiButton>
         <UiButton @click="openCreate()">Добавить</UiButton>
       </div>
     </header>
@@ -529,14 +556,14 @@ const mergeOptions = computed(() =>
         :style="{ paddingLeft: `${row.depth * 24 + 12}px` }"
       >
         <button
-          v-if="hasChildren(row.id)"
+          v-if="!filtering && hasChildren(row.id)"
           type="button"
           class="toggle"
-          :aria-expanded="!collapsed.has(row.id)"
-          :aria-label="collapsed.has(row.id) ? 'Развернуть' : 'Свернуть'"
-          @click="toggleCollapse(row.id)"
+          :aria-expanded="expanded.has(row.id)"
+          :aria-label="expanded.has(row.id) ? 'Свернуть' : 'Развернуть'"
+          @click="toggleExpand(row.id)"
         >
-          <svg viewBox="0 0 20 20" :class="{ 'is-collapsed': collapsed.has(row.id) }" aria-hidden="true">
+          <svg viewBox="0 0 20 20" :class="{ 'is-collapsed': !expanded.has(row.id) }" aria-hidden="true">
             <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
@@ -567,7 +594,10 @@ const mergeOptions = computed(() =>
           </UiBadge>
         </div>
 
-        <span v-if="row._count" class="row-count">{{ row._count.products }} тов.</span>
+        <span v-if="row._count" class="row-count">
+          {{ row._count.products }} тов.<template v-if="row.children.length && !filtering && !expanded.has(row.id)">
+            · {{ row.children.length }} подкат.</template>
+        </span>
 
         <!-- Order, visibility and pinning sit on the row: they are changed
              while looking at the tree, not inside the editor. -->
@@ -626,6 +656,11 @@ const mergeOptions = computed(() =>
         </div>
       </li>
     </ul>
+
+    <div v-if="!loading && view !== 'duplicates' && rows.length > visibleRows.length" class="more">
+      <span>Показано {{ visibleRows.length }} из {{ rows.length }}</span>
+      <UiButton variant="secondary" size="sm" @click="limit += PAGE">Показать ещё</UiButton>
+    </div>
 
     <!-- Editor -->
     <UiModal
@@ -1031,6 +1066,15 @@ const mergeOptions = computed(() =>
 
 .icon-btn.is-off {
   color: var(--danger);
+}
+
+.more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  gap: var(--space-3);
 }
 
 .form-switches {

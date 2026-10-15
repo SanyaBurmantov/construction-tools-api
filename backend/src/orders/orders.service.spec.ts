@@ -3,6 +3,7 @@ import { OrdersService } from './orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PromoService } from '../promo/promo.service';
+import { MailService } from '../notifications/mail.service';
 import { TelegramService } from '../notifications/telegram.service';
 import { ServerCartService } from '../cart/server-cart.service';
 import { PromoCode, PromoCodeType } from '@prisma/client';
@@ -40,11 +41,16 @@ type ProductRow = {
 };
 
 function buildService(products: ProductRow[], promoCode?: PromoCode) {
-  const createMock = jest.fn((args: { data: unknown }) => ({
-    id: 'order-1',
-    number: 1,
-    ...(args.data as object),
-  }));
+  const createMock = jest.fn((args: { data: unknown }) => {
+    const data = args.data as { items?: { create?: unknown[] } };
+    // `include: { items: true }` hands the created lines back as an array.
+    return {
+      id: 'order-1',
+      number: 1,
+      ...(args.data as object),
+      items: data.items?.create ?? [],
+    };
+  });
   const promoUpdateMock = jest.fn(() => Promise.resolve({}));
   const tx = {
     order: { create: createMock },
@@ -77,8 +83,12 @@ function buildService(products: ProductRow[], promoCode?: PromoCode) {
     clear: clearCartMock,
   } as unknown as ServerCartService;
 
+  const mailMock = jest.fn(() => Promise.resolve(true));
+  const mail = { sendToAdmins: mailMock } as unknown as MailService;
+
   return {
-    service: new OrdersService(prisma, promo, telegram, serverCart),
+    service: new OrdersService(prisma, promo, telegram, serverCart, mail),
+    mailMock,
     createMock,
     promoUpdateMock,
     notifyMock,
@@ -342,8 +352,8 @@ describe('OrdersService.createOrder', () => {
     expect(data.items.create[1].unitOldPrice).toBeNull();
   });
 
-  it('notifies Telegram about the created order', async () => {
-    const { service, notifyMock } = buildService([
+  it('notifies Telegram and the shop mailbox about the created order', async () => {
+    const { service, notifyMock, mailMock } = buildService([
       {
         id: 'p1',
         name: 'Дрель',
@@ -362,6 +372,14 @@ describe('OrdersService.createOrder', () => {
     });
 
     expect(notifyMock).toHaveBeenCalledTimes(1);
+    // The letter is composed on the next tick, off the request path.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mailMock).toHaveBeenCalledTimes(1);
+    const [letter] = mailMock.mock.calls[0] as unknown as [
+      { subject: string; text: string },
+    ];
+    expect(letter.text).toContain('Дрель');
+    expect(letter.subject).toContain('Новый заказ');
   });
 
   // The order is already committed by the time we notify, so a failing

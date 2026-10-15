@@ -14,6 +14,8 @@ import {
 } from './dto/admin-order-query.dto';
 import { PromoService } from '../promo/promo.service';
 import { TelegramService } from '../notifications/telegram.service';
+import { MailService } from '../notifications/mail.service';
+import { buildOrderMail } from '../notifications/order-mail';
 import { ServerCartService } from '../cart/server-cart.service';
 
 const DEFAULT_CURRENCY = 'BYN';
@@ -41,6 +43,7 @@ export class OrdersService {
     private promo: PromoService,
     private telegram: TelegramService,
     private serverCart: ServerCartService,
+    private mail: MailService,
   ) {}
 
   private deliveryCost(method: DeliveryMethod): number {
@@ -215,6 +218,21 @@ export class OrdersService {
         `Order #${order.number} notification failed: ${String(error)}`,
       );
     });
+    // Same rule for the letter to the shop's mailbox (MAIL_ADMIN_TO). Built
+    // inside the promise so even a throw while composing it is caught here.
+    const publicOrigin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
+    Promise.resolve()
+      .then(() =>
+        this.mail.sendToAdmins(
+          buildOrderMail(order, publicOrigin),
+          `order #${order.number}`,
+        ),
+      )
+      .catch((error) => {
+        this.logger.error(
+          `Order #${order.number} mail failed: ${String(error)}`,
+        );
+      });
 
     return order;
   }

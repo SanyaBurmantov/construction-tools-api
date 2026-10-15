@@ -690,38 +690,58 @@ enum CustomerType {
 /// Storefront account. Guest checkout stays the default — an account only adds
 /// a saved profile and, for ADMIN, access to /admin.
 model User {
-  id           String       @id @default(uuid())
+  id              String       @id @default(uuid())
   /// Normalized (trimmed + lowercased) login — an e-mail works as one. Stored
   /// already normalized so "Admin" and "admin" cannot become two accounts.
-  login        String       @unique
+  login           String       @unique
   /// scrypt hash with its own salt and parameters — see auth/password.util.ts.
   /// Never selected into anything the API returns.
-  passwordHash String
-  role         UserRole     @default(CUSTOMER)
-  customerType CustomerType @default(INDIVIDUAL)
-  name         String?
-  email        String?
-  phone        String?
+  passwordHash    String
+  role            UserRole     @default(CUSTOMER)
+  customerType    CustomerType @default(INDIVIDUAL)
+  name            String?
+  email           String?
+  /// When `email` was proven to belong to the account (link from the
+  /// confirmation letter). Reset to null whenever `email` changes.
+  emailVerifiedAt DateTime?
+  phone           String?
   /// Required for COMPANY accounts (checked in the service, not the schema, so
   /// an admin can still fix a half-filled row).
-  companyName  String?
+  companyName     String?
   /// УНП / ИНН.
-  taxId        String?
+  taxId           String?
   /// Deactivated accounts keep their orders and sessions history but cannot
   /// log in, and every live session is dropped the moment the flag goes off.
-  isActive     Boolean      @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  isActive        Boolean      @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
-  sessions     UserSession[]
-  orders       Order[]
-  cartItems    CartItem[]
-  listItems    UserListItem[]
-  reviews      Review[]
-  adminActions AdminActionLog[]
+  sessions           UserSession[]
+  orders             Order[]
+  cartItems          CartItem[]
+  listItems          UserListItem[]
+  reviews            Review[]
+  adminActions       AdminActionLog[]
+  emailVerifications EmailVerification[]
 
   @@index([role])
+}
+
+/// A confirmation link sent to `email`. Only the token's SHA-256 is stored, like
+/// sessions. Bound to the address it was sent to: if the account's e-mail has
+/// changed since, the link confirms nothing.
+model EmailVerification {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  email     String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 /// One login = one row. Tokens are opaque random strings; only their SHA-256

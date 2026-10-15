@@ -28,7 +28,11 @@ export class RegisterDto {
   @Length(1, 200)
   name?: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({
+    required: false,
+    description:
+      'E-mail для подтверждения регистрации; обязателен, если логин — не e-mail',
+  })
   @IsOptional()
   @Transform(emptyToUndefined)
   @IsEmail()
@@ -58,4 +62,11 @@ export class RegisterDto {
   @IsString()
   @Length(2, 40)
   taxId?: string;
+}
+
+export class VerifyEmailDto {
+  @ApiProperty({ description: 'Токен из ссылки в письме' })
+  @IsString()
+  @Length(1, 200)
+  token!: string;
 }

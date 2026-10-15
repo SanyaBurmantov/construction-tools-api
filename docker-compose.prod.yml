@@ -69,6 +69,16 @@ services:
       # Both must be set for new-order Telegram notifications; empty = disabled.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Почта хостера: письма о заказах на MAIL_ADMIN_TO и подтверждение
+      # регистрации. Пусто SMTP_HOST/USER/PASSWORD = отправка выключена.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_ADMIN_TO: ${MAIL_ADMIN_TO:-}
+      EMAIL_VERIFICATION_TTL_HOURS: ${EMAIL_VERIFICATION_TTL_HOURS:-48}
       # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
       REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
       # Скачок закупочной цены свыше N% уходит на ручную проверку, а не на витрину.

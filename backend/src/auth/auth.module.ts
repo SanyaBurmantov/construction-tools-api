@@ -6,6 +6,8 @@ import { OptionalAuthGuard } from './optional-auth.guard';
 import { UsersAdminService } from './users-admin.service';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { SessionCleanupCron } from './session-cleanup.cron';
+import { EmailVerificationService } from './email-verification.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 /**
  * Global on purpose: `AdminGuard` now resolves admin sessions through
@@ -16,6 +18,8 @@ import { SessionCleanupCron } from './session-cleanup.cron';
  */
 @Global()
 @Module({
+  // NotificationsModule: the registration confirmation letter.
+  imports: [NotificationsModule],
   controllers: [AuthController],
   providers: [
     AuthService,
@@ -24,6 +28,7 @@ import { SessionCleanupCron } from './session-cleanup.cron';
     UsersAdminService,
     AdminBootstrapService,
     SessionCleanupCron,
+    EmailVerificationService,
   ],
   exports: [AuthService, AuthGuard, OptionalAuthGuard, UsersAdminService],
 })

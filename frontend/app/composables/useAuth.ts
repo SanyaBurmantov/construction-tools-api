@@ -8,6 +8,8 @@ export type AccountUser = {
   customerType: CustomerType
   name: string | null
   email: string | null
+  /** When the e-mail was confirmed by the link in the letter; null = not yet. */
+  emailVerifiedAt: string | null
   phone: string | null
   companyName: string | null
   taxId: string | null
@@ -211,6 +213,24 @@ export function useAuth() {
     ready.value = true
   }
 
+  /** Follows the link from the confirmation letter; works without a session. */
+  async function verifyEmail(token: string) {
+    const result = await authFetch<{ ok: boolean, email: string }>('/auth/verify-email', {
+      method: 'POST',
+      body: { token },
+    })
+    if (user.value?.email === result.email)
+      user.value = { ...user.value, emailVerifiedAt: new Date().toISOString() }
+    return result
+  }
+
+  /** «Отправить письмо ещё раз». */
+  async function resendVerification() {
+    return authFetch<{ ok: boolean, alreadyVerified: boolean }>('/auth/verify-email/resend', {
+      method: 'POST',
+    })
+  }
+
   /** Drops every session of the account — this device included. */
   async function logoutEverywhere() {
     await authFetch('/auth/logout-all', { method: 'POST' })
@@ -239,6 +259,8 @@ export function useAuth() {
     changePassword,
     logoutEverywhere,
     deleteAccount,
+    verifyEmail,
+    resendVerification,
     errorMessage,
   }
 }

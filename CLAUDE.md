@@ -309,6 +309,21 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   hang it, or crash the process on an unhandled rejection. `axios` is gone from
   the backend entirely; don't bring it back for one POST. Customer-supplied text is HTML-escaped (the message uses
   `parse_mode: HTML`). `PUBLIC_ORIGIN` adds a deep link to the order in admin.
+- **E-mail** (`notifications/mail.service.ts`, nodemailer over the hosting
+  SMTP — hoster.by for gost.by). Enabled only when `SMTP_HOST`, `SMTP_USER`
+  and `SMTP_PASSWORD` are all set; like Telegram it **never throws** — a
+  committed order or a created account must not fail on a mail outage.
+  `POST /orders` also mails `MAIL_ADMIN_TO` (`notifications/order-mail.ts`,
+  Reply-To = the customer), composed inside the promise so even a builder
+  throw is caught. **Registration needs an e-mail** (the field, or a login
+  that is one) and sends a confirmation link
+  (`auth/email-verification.service.ts`, `/verify-email?token=…`). The token
+  is stored as SHA-256 in `EmailVerification`, bound to the address it was
+  sent to, and voided by a profile e-mail change (which also resets
+  `User.emailVerifiedAt`). Confirmation is **soft**: an unconfirmed account
+  still signs in and orders — a letter in spam must not cost a sale; the
+  account page nags and offers a resend (`POST /auth/verify-email/resend`,
+  3/h).
 - **One product, many supplier offers** (`offers/`). `Product` is the canonical
   card; `SourceProduct` rows hanging off it are competing supplier offers.
   Matching (`product-matching.ts`, pure and unit-tested) ranks signals
