@@ -38,12 +38,29 @@ const countLabel = computed(() =>
  * calmer than a grey box and keeps every tile the same height.
  */
 const initial = computed(() => props.name.trim().charAt(0).toUpperCase())
+
+/**
+ * Intrinsic size for the `<img>`: the box is sized by CSS (4:3 tile, 44px
+ * row thumb), but without attributes the browser cannot reserve it before
+ * the stylesheet and the image arrive, which shows up as layout shift.
+ */
+const imageSize = computed(() =>
+  props.variant === 'row' ? { width: 44, height: 44 } : { width: 400, height: 300 }
+)
 </script>
 
 <template>
   <NuxtLink :to="to" class="category" :class="`is-${variant}`">
     <span v-if="variant !== 'chip'" class="media" aria-hidden="true">
-      <img v-if="image" :src="image" alt="" loading="lazy">
+      <img
+        v-if="image"
+        :src="image"
+        :alt="name"
+        :width="imageSize.width"
+        :height="imageSize.height"
+        loading="lazy"
+        decoding="async"
+      >
       <span v-else class="plate">{{ initial }}</span>
     </span>
 

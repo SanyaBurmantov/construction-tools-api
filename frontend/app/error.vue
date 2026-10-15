@@ -10,6 +10,17 @@ const props = defineProps<{ error: NuxtError }>()
  */
 const isMaintenance = computed(() => props.error.statusCode === 503)
 
+// The error page used to have no <title> at all, so an outage answer or a 404
+// read in a crawler (or an audit) as «page without a title».
+useHead(() => ({
+  title: isMaintenance.value
+    ? 'Технические работы | Мультитул'
+    : props.error.statusCode === 404
+      ? 'Страница не найдена | Мультитул'
+      : 'Ошибка | Мультитул',
+  meta: [{ name: 'robots', content: 'noindex' }],
+}))
+
 const handleError = () => clearError({ redirect: '/' })
 const retry = () => reloadNuxtApp({ persistState: false })
 </script>

@@ -16,6 +16,8 @@ type CategoryPage = {
   description?: string | null
   seoTitle?: string | null
   seoDescription?: string | null
+  /** false for an admin-hidden branch: its URL works, but it is not indexed */
+  isVisible?: boolean
   productCount: number
   ancestors: Array<{ id: string, name: string, slug: string }>
   children: Array<{
@@ -288,10 +290,16 @@ if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableErr
 
 const { data: tree } = await useCategoryTree()
 
+// Only what the brand facet draws: `/brands` sends every column of every
+// brand, and the whole answer would otherwise ride along in the page payload.
 const { data: brands } = await useAsyncData<FacetItem[]>(
   'catalog-brands',
   () => $fetch<FacetItem[]>(`${apiBase}/brands`).catch(() => []),
-  { default: () => [] }
+  {
+    default: () => [],
+    transform: list => (Array.isArray(list) ? list : [])
+      .map(brand => ({ id: brand.id, name: brand.name, slug: brand.slug }))
+  }
 )
 
 /**
@@ -401,7 +409,7 @@ function pushQuery(overrides: Record<string, string | undefined>) {
 
 function categoryTo(slug: string | null) {
   return {
-    path: slug ? `/catalog/${slug}` : '/catalog/',
+    path: slug ? `/catalog/${slug}` : '/catalog',
     query: currentQuery({ page: undefined })
   }
 }
@@ -429,8 +437,17 @@ function setSort(value: string) {
   pushQuery({ sort: value === 'default' ? undefined : value, page: page.value > 1 ? String(page.value) : undefined })
 }
 
+function pageLocation(next: number) {
+  return { path: route.path, query: currentQuery({ page: next > 1 ? String(next) : undefined }) }
+}
+
+/** The pager renders these as real links — crawlers only follow an href. */
+function pageHref(next: number) {
+  return router.resolve(pageLocation(next)).href
+}
+
 function setPage(next: number) {
-  router.push({ path: route.path, query: currentQuery({ page: next > 1 ? String(next) : undefined }) })
+  router.push(pageLocation(next))
   if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -506,7 +523,7 @@ const breadcrumbItems = computed(() => {
     items.push({ label: 'Каталог' })
     return items
   }
-  items.push({ label: 'Каталог', to: '/catalog/' })
+  items.push({ label: 'Каталог', to: '/catalog' })
   for (const ancestor of category.value.ancestors) {
     items.push({ label: ancestor.name, to: `/catalog/${ancestor.slug}` })
   }
@@ -526,15 +543,29 @@ onUnmounted(() => {
 
 // --- SEO ---
 const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
-const pageTitle = computed(() => category.value
-  ? `${category.value.name} — купить в каталоге | Мультитул`
-  : 'Каталог инструмента и крепежа | Мультитул')
+/**
+ * `?page=N` of an unfiltered listing is its own page for a crawler: it is the
+ * only route to the products past the first 24, so it gets a self-referencing
+ * canonical (and a title of its own, or every page of a category would share
+ * one). Page 1 stays canonical without the parameter. Filtered or re-sorted
+ * views keep pointing at the plain category, as before.
+ */
+const canonicalPage = computed(() =>
+  page.value > 1 && !activeFiltersCount.value && sort.value === 'default' ? page.value : 1
+)
+const pageSuffix = computed(() => (page.value > 1 ? ` — страница ${page.value}` : ''))
+const pageTitle = computed(() => (category.value
+  ? `${category.value.name} — купить в каталоге`
+  : 'Каталог инструмента и крепежа') + `${pageSuffix.value} | Мультитул`)
 const pageDescription = computed(() => category.value
   ? (category.value.seoDescription || `${category.value.name}: ${pluralize(category.value.productCount, 'product')} в каталоге Мультитул. Фильтры по брендам и цене, доставка по Беларуси.`)
   : 'Каталог инструментов, крепежа и расходников с фильтрами по категориям, брендам и цене.')
-const canonicalUrl = computed(() => category.value
+const listingUrl = computed(() => category.value
   ? `${siteUrl}/catalog/${category.value.slug}`
   : `${siteUrl}/catalog`)
+const canonicalUrl = computed(() =>
+  canonicalPage.value > 1 ? `${listingUrl.value}?page=${canonicalPage.value}` : listingUrl.value
+)
 
 useSeoMeta({
   title: pageTitle,
@@ -543,7 +574,10 @@ useSeoMeta({
   ogDescription: pageDescription,
   ogType: 'website',
   ogUrl: canonicalUrl,
-  twitterCard: 'summary'
+  twitterCard: 'summary',
+  // A hidden branch (e.g. «Неразобранные товары поставщиков») stays reachable
+  // by URL but must not compete in search with the real departments.
+  robots: () => (category.value?.isVisible === false ? 'noindex, follow' : undefined)
 })
 
 useHead(() => ({
@@ -567,7 +601,7 @@ useHead(() => ({
               '@type': 'ListItem',
               'position': 3 + category.value.ancestors.length,
               'name': category.value.name,
-              'item': canonicalUrl.value
+              'item': listingUrl.value
             }
           ]
         })
@@ -809,6 +843,7 @@ useHead(() => ({
           :page="page"
           :pages="products?.pagination.pages || 0"
           :total="products?.pagination.total"
+          :href-for="pageHref"
           @change="setPage"
         />
       </div>

@@ -1,4 +1,6 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { fileURLToPath } from 'node:url'
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
@@ -37,6 +39,11 @@ export default defineNuxtConfig({
         { rel: 'shortcut icon', href: '/favicon.ico' },
         { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
         { rel: 'manifest', href: '/site.webmanifest' },
+        // Self-hosted Manrope (see assets/scss/main.scss). Only the cyrillic
+        // subset is preloaded: it is the one every page needs for its first
+        // paint, and the latin file follows from the stylesheet. `crossorigin`
+        // is required even same-origin, or the preload is fetched twice.
+        { rel: 'preload', as: 'font', type: 'font/woff2', href: '/fonts/manrope-cyrillic.woff2', crossorigin: '' },
       ],
       meta: [
         { name: 'color-scheme', content: 'light' },
@@ -81,6 +88,11 @@ export default defineNuxtConfig({
        * Nitro, not in a route rule.
        */
     },
+    // Self-hosted fonts: plain files, not hashed — rename the file if it is
+    // ever replaced, rather than shortening this.
+    '/fonts/**': {
+      headers: { 'cache-control': 'public, max-age=31536000' },
+    },
     '/': { swr: 60 },
     '/catalog': { swr: 30 },
     '/catalog/**': { swr: 30 },
@@ -96,14 +108,42 @@ export default defineNuxtConfig({
     // server. Both carry noindex meta of their own.
     '/favorites': { ssr: false },
     '/compare': { ssr: false },
-    // The account session lives in localStorage, so these pages have nothing
-    // to render on the server; they carry noindex meta of their own.
+    // The account session is an HttpOnly cookie scoped to /api, so SSR never
+    // sees it: these pages have nothing to render on the server (own noindex).
     '/login': { ssr: false },
     '/register': { ssr: false },
     '/account': { ssr: false },
+    // «Публичная оферта» переименована в «Условия продажи»: документ больше не
+    // оферта. Оба варианта ключом — route rules срабатывают раньше
+    // нормализующего middleware, так что редирект получается в один шаг.
+    '/oferta': { redirect: { to: '/usloviya', statusCode: 301 } },
+    '/oferta/': { redirect: { to: '/usloviya', statusCode: 301 } },
     '/admin': { ssr: false },
     '/admin/**': { ssr: false },
-    '/sitemap.xml': { swr: 3600 }
+    // `/sitemap.xml` and its child files carry no route cache on purpose: they
+    // are all cut from one in-process snapshot (server/utils/sitemap.ts), which
+    // is the expensive part and what keeps the index and children consistent.
+  },
+  nitro: {
+    /**
+     * Every `swr` response above is kept in Nitro's `cache` storage, and the
+     * default production driver is a memory store that never evicts — so the
+     * frontend's heap grew with every distinct URL a crawler fetched until the
+     * container hit its `mem_limit` and was killed (502s from Caddy while it
+     * restarted). This driver is the same in-memory cache with an LRU budget;
+     * see server/storage/bounded-memory.ts. `NUXT_CACHE_MAX_MB` overrides the
+     * size at runtime.
+     */
+    storage: {
+      cache: {
+        driver: fileURLToPath(new URL('./server/storage/bounded-memory.ts', import.meta.url)),
+        maxMb: 96,
+      },
+    },
+    // Dev (and the build step itself) keep the stock driver.
+    devStorage: {
+      cache: { driver: 'memory' },
+    },
   },
   runtimeConfig: {
     apiBaseServer: process.env.API_BASE_SERVER || process.env.API_BASE || 'http://localhost:8000',

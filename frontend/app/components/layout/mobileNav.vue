@@ -19,7 +19,7 @@ const items = computed(() => [
     active: route.path === '/',
   },
   {
-    to: '/catalog/',
+    to: '/catalog',
     label: 'Каталог',
     icon: 'M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z',
     active: route.path.startsWith('/catalog'),

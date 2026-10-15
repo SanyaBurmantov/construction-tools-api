@@ -119,3 +119,42 @@ are retained for three days. Restore a backup into an empty database with
 docker-compose.prod.yml exec -T db psql -U postgres -d construction_tools`.
 These backups are on the same server; configure an external backup destination
 when one is available.
+
+## Host watchdog (502s, OOM restarts)
+
+`construction-tools-watchdog.timer` runs `deploy/watchdog.sh` every two
+minutes. It checks `https://$DOMAIN/` and `https://$DOMAIN/api/health/ready`
+(expects 200) and, via `docker inspect`, each container's `State.Health`,
+`RestartCount` and `State.OOMKilled`. It sends to the same Telegram bot/chat as
+the backend (`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` from `.env.prod`) when
+the site or API fails two checks in a row, a container's `RestartCount` grew
+(saying whether it was OOM-killed by its `mem_limit`, with `docker stats`
+memory for frontend/backend), or a container is unhealthy/not running for two
+checks — once per incident, plus a "recovered" message. State lives in
+`/var/lib/construction-tools/watchdog.state`. Runs are skipped while
+`auto-deploy.sh` holds its lock, and a recreated container (new id) is
+re-baselined rather than reported as a restart. Without the Telegram variables
+it only logs to the journal.
+
+Install the units (same layout as the deploy and backup timers):
+
+```bash
+cd /opt/construction-tools/app
+install -m 755 deploy/auto-deploy.sh /usr/local/sbin/construction-tools-auto-deploy
+install -m 755 deploy/backup-db.sh   /usr/local/sbin/construction-tools-backup
+install -m 755 deploy/watchdog.sh    /usr/local/sbin/construction-tools-watchdog
+install -m 644 deploy/construction-tools-*.service deploy/construction-tools-*.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now construction-tools-deploy.timer construction-tools-backup.timer construction-tools-watchdog.timer
+
+systemctl start construction-tools-watchdog.service   # one run now
+journalctl -u construction-tools-watchdog.service -n 50 --no-pager
+cat /var/lib/construction-tools/watchdog.state
+```
+
+The units run the copies in `/usr/local/sbin`, so re-run the `install` lines
+after changing a script — auto-deploy updates the checkout, not those copies.
+
+The watchdog cannot report the host itself being down (or out of network). Keep
+an external uptime check as well — e.g. UptimeRobot on `https://$DOMAIN/` and
+`https://$DOMAIN/api/health/ready`.

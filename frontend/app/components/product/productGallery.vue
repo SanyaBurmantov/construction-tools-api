@@ -110,6 +110,8 @@
           :key="selectedImage.url"
           :src="selectedImage.url"
           :alt="selectedImage.alt || name"
+          width="480"
+          height="480"
           fetchpriority="high"
           draggable="false"
           @error="failedImages.add(selectedImage.url)"
@@ -158,7 +160,15 @@
         :aria-current="index === activeIndex ? 'true' : undefined"
         @click="selectImage(index)"
       >
-        <img :src="image.url" :alt="image.alt || name" loading="lazy" draggable="false" >
+        <img
+          :src="image.url"
+          :alt="image.alt || name"
+          width="56"
+          height="56"
+          loading="lazy"
+          decoding="async"
+          draggable="false"
+        >
       </button>
     </div>
 
@@ -174,6 +184,8 @@
           v-if="hasImage && selectedImage"
           :src="selectedImage.url"
           :alt="selectedImage.alt || name"
+          width="960"
+          height="960"
           class="zoom-image"
           draggable="false"
           @error="failedImages.add(selectedImage.url)"

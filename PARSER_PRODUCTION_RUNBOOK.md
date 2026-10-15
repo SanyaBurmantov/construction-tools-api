@@ -220,7 +220,7 @@ cd backend
 psql -X -v ON_ERROR_STOP=1 -d parser_repair_test -f test/sql/category-navigation-repair.sql
 ```
 
-`GET /health/parser` and the admin parsing screen now expose per-source freshness:
+`GET /health/parser` (admin-only: `x-admin-token` or an ADMIN session) and the admin parsing screen now expose per-source freshness:
 total purchasable offers, stale count/share, oldest/newest synchronization and
 `OK`/`STALE`/`EMPTY`. Only positive-priced, in-stock offers linked to published
 products are counted. Defaults are `PARSER_PRICE_MAX_AGE_HOURS=48` and

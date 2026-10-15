@@ -3,7 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { CategoriesModule } from './categories/categories.module';
@@ -67,7 +66,6 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
   ],
   controllers: [AppController],
   providers: [
-    AppService,
     ParserRuntimeStatusService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Global because admin routes live in six controllers across four modules;

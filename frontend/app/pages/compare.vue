@@ -191,7 +191,7 @@ useHead({
         title="Нечего сравнивать"
         description="Добавьте до четырёх товаров из каталога — и увидите их характеристики бок о бок."
       >
-        <UiButton to="/catalog/">Перейти в каталог</UiButton>
+        <UiButton to="/catalog">Перейти в каталог</UiButton>
       </UiEmpty>
 
       <div v-else class="table-scroll scroll-x">

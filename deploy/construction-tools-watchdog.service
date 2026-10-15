@@ -1,0 +1,10 @@
+[Unit]
+Description=Check construction tools site and containers, alert Telegram
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/construction-tools-watchdog
+TimeoutStartSec=120

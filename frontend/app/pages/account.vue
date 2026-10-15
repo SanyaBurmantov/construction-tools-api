@@ -528,7 +528,7 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
               title="Заказов пока нет"
               description="Оформленные заказы появятся здесь — вместе с составом и суммами."
             >
-              <UiButton to="/catalog/">Перейти в каталог</UiButton>
+              <UiButton to="/catalog">Перейти в каталог</UiButton>
             </UiEmpty>
           </UiCard>
         </div>
@@ -572,7 +572,7 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
           :title="statusFilter ? 'Заказов с таким статусом нет' : 'Заказов пока нет'"
           description="Оформите первый заказ — он появится здесь со всеми позициями и суммами."
         >
-          <UiButton to="/catalog/">Перейти в каталог</UiButton>
+          <UiButton to="/catalog">Перейти в каталог</UiButton>
         </UiEmpty>
 
         <ul v-else class="order-list">

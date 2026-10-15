@@ -3,6 +3,7 @@ import { company } from '~/data/company'
 
 // заглушки вида «[...]» в футер не выводим — там им не место
 const unp = company.unp.startsWith('[') ? '' : company.unp
+const currentYear = new Date().getFullYear()
 </script>
 
 <template>
@@ -20,25 +21,41 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
 
       <nav class="footer-nav" aria-label="Ссылки в подвале">
         <h2>Покупателям</h2>
-        <NuxtLink to="/catalog/">Все товары</NuxtLink>
-        <NuxtLink to="/brand/">Бренды</NuxtLink>
-        <NuxtLink to="/delivery/">Доставка и оплата</NuxtLink>
-        <NuxtLink to="/contacts/">Контакты</NuxtLink>
-        <NuxtLink to="/oferta/">Публичная оферта</NuxtLink>
-        <NuxtLink to="/privacy/">Политика обработки персональных данных</NuxtLink>
+        <NuxtLink to="/catalog">Все товары</NuxtLink>
+        <NuxtLink to="/brand">Бренды</NuxtLink>
+        <NuxtLink to="/delivery">Доставка и оплата</NuxtLink>
+        <NuxtLink to="/contacts">Контакты</NuxtLink>
+        <NuxtLink to="/about">О компании</NuxtLink>
+        <NuxtLink to="/garantiya">Гарантия и сервис</NuxtLink>
+        <NuxtLink to="/usloviya">Условия продажи</NuxtLink>
+        <NuxtLink to="/privacy">Политика обработки персональных данных</NuxtLink>
       </nav>
 
       <div class="footer-contact">
         <h2>Контакты</h2>
         <a :href="company.phoneHref">{{ company.phone }}</a>
+        <!-- номер текстом рядом: viber:// без установленного Viber не откроется -->
+        <span class="footer-messengers">
+          Viber, Telegram: {{ company.phone }}
+          <span>
+            <a :href="company.viberHref">Viber</a>
+            ·
+            <a :href="company.telegramHref" target="_blank" rel="noopener">Telegram</a>
+          </span>
+        </span>
         <a :href="company.emailHref">{{ company.email }}</a>
         <span>{{ company.storeAddress }}</span>
+        <span>{{ company.workingHours }}</span>
       </div>
     </div>
 
     <div class="footer-bottom">
-      <span>{{ company.name }}{{ unp ? `, УНП ${unp}` : '' }}</span>
+      <span>© {{ currentYear }} {{ company.name }}{{ unp ? `, УНП ${unp}` : '' }}</span>
       <span>Цены и наличие обновляются ежедневно.</span>
+      <span class="footer-disclaimer">
+        Информация на сайте, включая цены и наличие товаров, носит ознакомительный
+        характер и не является публичной офертой.
+      </span>
     </div>
   </footer>
 </template>
@@ -138,5 +155,16 @@ const unp = company.unp.startsWith('[') ? '' : company.unp
   border-top: 1px solid var(--border-subtle);
   padding: 16px 0 22px;
   font-size: 13px;
+}
+
+.footer-messengers {
+  display: grid;
+  gap: 2px;
+}
+
+// отдельной строкой во всю ширину, а не третьей колонкой между двумя короткими
+.footer-disclaimer {
+  flex-basis: 100%;
+  font-size: 12px;
 }
 </style>

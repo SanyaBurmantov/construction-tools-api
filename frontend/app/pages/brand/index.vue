@@ -6,10 +6,32 @@ const router = useRouter()
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
 
+/**
+ * `/brands` answers every brand with every column (`description`, `seoTitle`,
+ * `seoDescription` …), and whatever `useAsyncData` returns is serialised into
+ * the page. The list draws four fields, so only those are kept — and only
+ * brands that have something to show: a tile reading «0 товаров» is a link
+ * to an empty page (the same rule as categories).
+ *
+ * The timeout bounds SSR: without one a backend that accepts the connection
+ * and never answers holds the render (and its memory) open indefinitely. A
+ * timed-out fetch counts as «API unavailable» → the 503 technical-works page.
+ */
 const { data: brands, status, error } = await useAsyncData<Brand[]>(
   'brand-list',
-  () => $fetch<Brand[]>(`${apiBase}/brands`),
-  { default: () => [] }
+  () => $fetch<Brand[]>(`${apiBase}/brands`, { timeout: 15_000 }),
+  {
+    default: () => [],
+    transform: list => (Array.isArray(list) ? list : [])
+      .filter(brand => brand?.name && (brand._count?.products ?? 0) > 0)
+      .map(brand => ({
+        id: brand.id,
+        name: brand.name,
+        slug: brand.slug ?? null,
+        logo: brand.logo ?? null,
+        _count: { products: brand._count?.products ?? 0 },
+      })),
+  }
 )
 
 // An empty list and an unreachable API look the same on this page otherwise.
@@ -91,6 +113,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
         type="search"
         size="sm"
         placeholder="Поиск по названию бренда"
+        aria-label="Поиск по названию бренда"
         @update:model-value="applySearch(String($event ?? ''))"
       />
       <span class="toolbar-count">
@@ -108,7 +131,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
       title="Бренды пока не добавлены"
       description="Как только товары появятся в каталоге, здесь будут их производители."
     >
-      <UiButton to="/catalog/">Перейти в каталог</UiButton>
+      <UiButton to="/catalog">Перейти в каталог</UiButton>
     </UiEmpty>
 
     <UiEmpty

@@ -34,13 +34,17 @@ const { user, isAdmin, isAuthenticated } = useAuth()
 const { formatPrice } = useFormatPrice()
 
 const { data: tree } = await useCategoryTree()
+// The menu's subcategories are not in the SSR payload (see useCategoryTree):
+// they load once the page is idle, or sooner on any sign of intent.
+const { tree: menuTree, load: loadMenu } = useCategoryMenu()
+onNuxtReady(loadMenu)
 
 const topCategories = computed(() => (tree.value || []).slice(0, NAV_CATEGORY_LIMIT))
 
 const navLinks = computed(() => [
-  { label: 'Каталог', to: '/catalog/' },
+  { label: 'Каталог', to: '/catalog' },
   { label: 'Акции', to: '/sales' },
-  { label: 'Бренды', to: '/brand/' },
+  { label: 'Бренды', to: '/brand' },
   { label: 'Доставка', to: '/delivery' },
   { label: 'Контакты', to: '/contacts' },
 ])
@@ -68,7 +72,7 @@ function closeSuggest() {
 function submitSearch() {
   const query = search.value.trim()
   closeSuggest()
-  navigateTo({ path: '/catalog/', query: query ? { search: query } : undefined })
+  navigateTo({ path: '/catalog', query: query ? { search: query } : undefined })
 }
 
 watch(search, (value) => {
@@ -110,6 +114,9 @@ onBeforeUnmount(() => {
 
 /* ---- Menus ------------------------------------------------------------- */
 const mobileNavOpen = ref(false)
+watch(mobileNavOpen, (open) => {
+  if (open) loadMenu()
+})
 const catalogOpen = ref(false)
 
 /**
@@ -121,7 +128,7 @@ const catalogOpen = ref(false)
  */
 const activeRootId = ref<string | null>(null)
 const activeRoot = computed(() => {
-  const roots = tree.value || []
+  const roots = menuTree.value
   return roots.find(node => node.id === activeRootId.value) || roots[0] || null
 })
 
@@ -135,7 +142,10 @@ const megaChildrenRest = computed(
 
 function toggleCatalog() {
   catalogOpen.value = !catalogOpen.value
-  if (catalogOpen.value) activeRootId.value = (tree.value || [])[0]?.id ?? null
+  if (catalogOpen.value) {
+    loadMenu()
+    activeRootId.value = menuTree.value[0]?.id ?? null
+  }
 }
 
 /** Mobile menu: categories drill down in place rather than scrolling flat. */
@@ -246,6 +256,8 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
           class="catalog-trigger"
           variant="primary"
           :aria-expanded="catalogOpen"
+          @pointerenter="loadMenu"
+          @focus="loadMenu"
           @click="toggleCatalog"
         >
           <template #leading>
@@ -400,7 +412,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
         >
           {{ category.name }}
         </NuxtLink>
-        <NuxtLink v-if="tree.length > topCategories.length" to="/catalog/" class="nav-link is-more">
+        <NuxtLink v-if="tree.length > topCategories.length" to="/catalog" class="nav-link is-more">
           Все категории
         </NuxtLink>
         <NuxtLink to="/sales" class="nav-link is-sale">Акции</NuxtLink>
@@ -412,14 +424,14 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
     <Transition name="fade">
       <div v-if="catalogOpen" class="mega" @click.self="catalogOpen = false">
         <div class="container mega-inner">
-          <div v-if="!tree.length" class="mega-empty">
+          <div v-if="!menuTree.length" class="mega-empty">
             Каталог пока пуст.
           </div>
 
           <template v-else>
             <nav class="mega-roots u-scroll u-scroll--fade" aria-label="Категории каталога">
               <NuxtLink
-                v-for="category in tree"
+                v-for="category in menuTree"
                 :key="category.id"
                 :to="`/catalog/${category.slug}`"
                 class="mega-root"
@@ -481,7 +493,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
         </ClientOnly>
 
         <p class="mobile-heading">Категории</p>
-        <div v-for="category in tree" :key="category.id" class="mobile-category">
+        <div v-for="category in menuTree" :key="category.id" class="mobile-category">
           <div class="mobile-category-row">
             <NuxtLink :to="`/catalog/${category.slug}`" class="mobile-link is-sub">
               {{ category.name }}

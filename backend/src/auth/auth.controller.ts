@@ -7,8 +7,10 @@ import {
   Patch,
   Post,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -21,9 +23,35 @@ import {
   UpdateProfileDto,
 } from './dto/update-profile.dto';
 import { CurrentSessionId, CurrentUser } from './current-user.decorator';
-import { bearerToken } from './auth-request';
+import { readSessionToken } from './auth-request';
 import type { AuthenticatedRequest } from './auth-request';
 import type { AuthenticatedUser } from './auth.service';
+import {
+  assertNotCrossSite,
+  clearSessionCookie,
+  setSessionCookie,
+  wantsBearerTransport,
+} from './session-cookie';
+
+type IssuedSession = { token: string; expiresAt: Date };
+
+/**
+ * Hands a fresh session to the client. A browser gets it as the HttpOnly
+ * cookie and the body carries **no token** — page script never sees one. A
+ * script that asked with `X-Auth-Transport: bearer` gets the token in the
+ * body instead (and no cookie) to send as `Authorization: Bearer`.
+ */
+function deliverSession<T extends IssuedSession>(
+  session: T,
+  request: AuthenticatedRequest,
+  response: Response,
+) {
+  if (wantsBearerTransport(request)) return session;
+  setSessionCookie(response, session.token, session.expiresAt);
+  const { token: _token, ...rest } = session;
+  void _token;
+  return rest;
+}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -37,25 +65,44 @@ export class AuthController {
    */
   @Throttle({ default: { limit: 10, ttl: 60 * 60 * 1000 } })
   @Post('register')
-  register(@Body() dto: RegisterDto, @Req() request: AuthenticatedRequest) {
-    return this.auth.register(dto, request.header('user-agent'));
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    // Login CSRF: a foreign page must not plant an account in the visitor's
+    // browser. Lenient — curl names no origin and is fine.
+    assertNotCrossSite(request, false);
+    const session = await this.auth.register(dto, request.header('user-agent'));
+    return deliverSession(session, request, response);
   }
 
   /** 10 attempts per 5 minutes per IP — enough for a typo, not for a list. */
   @Throttle({ default: { limit: 10, ttl: 5 * 60 * 1000 } })
   @HttpCode(200)
   @Post('login')
-  login(@Body() dto: LoginDto, @Req() request: AuthenticatedRequest) {
-    return this.auth.login(dto, request.header('user-agent'));
+  async login(
+    @Body() dto: LoginDto,
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    assertNotCrossSite(request, false);
+    const session = await this.auth.login(dto, request.header('user-agent'));
+    return deliverSession(session, request, response);
   }
 
   @HttpCode(200)
   @Post('logout')
-  logout(@Req() request: AuthenticatedRequest) {
-    const token = bearerToken(request);
+  async logout(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const found = readSessionToken(request);
+    if (found?.source === 'cookie') assertNotCrossSite(request);
     // Idempotent on purpose: logging out twice, or with a stale token, is a
-    // success as far as the client is concerned.
-    return token ? this.auth.logout(token) : Promise.resolve({ ok: true });
+    // success as far as the client is concerned. The cookie goes either way.
+    clearSessionCookie(response);
+    return found ? this.auth.logout(found.token) : { ok: true };
   }
 
   /** Drops every session of the account, including this one. */
@@ -63,8 +110,13 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @HttpCode(200)
   @Post('logout-all')
-  logoutAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.auth.logoutEverywhere(user.id);
+  async logoutAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.logoutEverywhere(user.id);
+    clearSessionCookie(response);
+    return result;
   }
 
   @ApiBearerAuth()
@@ -93,11 +145,14 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60 * 60 * 1000 } })
   @HttpCode(200)
   @Delete('me')
-  deleteAccount(
+  async deleteAccount(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: DeleteAccountDto,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.auth.deleteOwnAccount(user.id, dto);
+    const result = await this.auth.deleteOwnAccount(user.id, dto);
+    clearSessionCookie(response);
+    return result;
   }
 
   @ApiBearerAuth()
@@ -105,6 +160,9 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60 * 60 * 1000 } })
   @HttpCode(200)
   @Post('password')
+  // The cookie is deliberately left alone: a password change ends every
+  // *other* session and keeps this one — the device that just proved the
+  // password stays signed in, as before.
   changePassword(
     @CurrentUser() user: AuthenticatedUser,
     @CurrentSessionId() sessionId: string,

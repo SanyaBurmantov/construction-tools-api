@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
 import { SpecSelection, parseSpecFilter } from './spec-filter';
 import { searchVariants } from '../common/utils/transliterate';
-import { shouldBeFilterable } from '../parser/spec-filterable';
+import { isIdentitySpec, publicSpecs } from '../parser/spec-filterable';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 
 /**
@@ -164,10 +164,15 @@ export class ProductService {
       // page, so a supplier's "нет фото" asset would be what we hand Google
       // as the product photo.
       images: withoutPlaceholderImages(product.images),
-      productSpecs: product.productSpecs.map((productSpec) => ({
-        name: productSpec.specification.name,
-        value: productSpec.value,
-      })),
+      // Supplier paperwork («Поставщик», «Импортер/Продавец», the supplier's
+      // «Код», a manufacturer's legal address) stays in the database and the
+      // admin API; the storefront gets consumer properties, those first.
+      productSpecs: publicSpecs(
+        product.productSpecs.map((productSpec) => ({
+          name: productSpec.specification.name,
+          value: productSpec.value,
+        })),
+      ),
       /** How many suppliers carry this item — no prices, no links. */
       offers: {
         count: priced.length,
@@ -324,7 +329,7 @@ export class ProductService {
           };
         })
         // Old imports may still have enabled identity fields such as Артикул.
-        .filter((spec) => shouldBeFilterable(spec.name))
+        .filter((spec) => !isIdentitySpec(spec.name))
         // A filter with fewer than two usable options filters nothing.
         .filter((spec) => spec.values.length >= MIN_FACET_VALUES)
         .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
@@ -584,10 +589,13 @@ export class ProductService {
       return {
         ...toPublicProduct(rest),
         images: withoutPlaceholderImages(product.images),
-        productSpecs: product.productSpecs.map((productSpec) => ({
-          name: productSpec.specification.name,
-          value: productSpec.value,
-        })),
+        // The card shows the first three — see `publicSpecs`.
+        productSpecs: publicSpecs(
+          product.productSpecs.map((productSpec) => ({
+            name: productSpec.specification.name,
+            value: productSpec.value,
+          })),
+        ),
         /** Drives the "от X · N предложений" treatment on the card. */
         offerCount: _count?.sourceProducts ?? 0,
       };

@@ -62,7 +62,7 @@ into the products queue; it never writes products itself.
 
 ## Monitoring
 ```bash
-curl https://$DOMAIN/health/parser                              # public health (ok + per-job status)
+curl -H "x-admin-token: $T" https://$DOMAIN/api/health/parser   # parser health (admin-only: names suppliers)
 curl -H "x-admin-token: $T" https://$DOMAIN/api/admin/queue/runtime-status   # last-state + counters per job
 curl -H "x-admin-token: $T" "https://$DOMAIN/api/admin/queue/runs?key=<code>-process&limit=20"  # run history (per-run duration/result/errorCount)
 curl -H "x-admin-token: $T" https://$DOMAIN/api/admin/queue/<code>           # queued/visited/failed/skipped counts

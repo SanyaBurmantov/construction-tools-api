@@ -6,7 +6,7 @@ import {
   inferUnitFromValues,
   normalizeSpecValue,
 } from '../parser/spec-canonical';
-import { shouldBeFilterable } from '../parser/spec-filterable';
+import { isIdentitySpec, isOffByDefaultSpec } from '../parser/spec-filterable';
 
 /**
  * Rows touched per statement. Large enough that 227k characteristic values are
@@ -453,23 +453,30 @@ export class SpecNormalizerService {
 
     const enable: string[] = [];
     const disable: string[] = [];
+    /** Off-by-default keys with usable data: left as an admin set them. */
+    const untouched: string[] = [];
 
     for (const row of stats) {
       const products = Number(row.products);
       const distinct = Number(row.distinctValues);
 
+      const name = row.canonicalName ?? row.canonicalKey;
       const useful =
-        shouldBeFilterable(row.canonicalName ?? row.canonicalKey) &&
+        !isIdentitySpec(name) &&
         distinct > 1 &&
         distinct <= MAX_DISTINCT_VALUES &&
         (products < MIN_PRODUCTS_FOR_SHARE ||
           distinct / products <= MAX_DISTINCT_SHARE);
 
-      (useful ? enable : disable).push(row.canonicalKey);
+      if (!useful) disable.push(row.canonicalKey);
+      // Weight and dimensions are off by default but an admin may switch one
+      // on: never enable them here, and do not undo an admin's choice either.
+      else if (isOffByDefaultSpec(name)) untouched.push(row.canonicalKey);
+      else enable.push(row.canonicalKey);
     }
 
     // Keys that exist but carry no usable value at all are not filters either.
-    const seen = new Set([...enable, ...disable]);
+    const seen = new Set([...enable, ...disable, ...untouched]);
     const orphans = (
       await this.prisma.specification.groupBy({
         by: ['canonicalKey'],

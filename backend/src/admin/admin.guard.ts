@@ -7,15 +7,20 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { AuthService } from '../auth/auth.service';
-import { bearerToken } from '../auth/auth-request';
+import { readSessionToken } from '../auth/auth-request';
 import type { AuthenticatedRequest } from '../auth/auth-request';
+import {
+  assertNotCrossSite,
+  clearStaleSessionCookie,
+} from '../auth/session-cookie';
 
 /**
  * Two ways into `/admin/*`:
  *
- * 1. **An ADMIN account** — `Authorization: Bearer <session token>`. This is
- *    what the admin UI uses now that accounts exist, so every action has a
- *    person behind it and access is revoked by disabling the account.
+ * 1. **An ADMIN account** — `Authorization: Bearer <session token>`, or the
+ *    HttpOnly session cookie the admin UI rides on (CSRF-checked on mutating
+ *    requests, see `session-cookie.ts`). Every action has a person behind it
+ *    and access is revoked by disabling the account.
  * 2. **`x-admin-token: $ADMIN_TOKEN`** — the service-to-service path. Kept
  *    deliberately: the runbook/CI curl commands depend on it, and it is the
  *    rescue path when nobody can log in.
@@ -38,10 +43,14 @@ export class AdminGuard implements CanActivate {
       return true;
     }
 
-    const token = bearerToken(request);
-    if (token) {
-      const session = await this.auth.resolveSession(token);
-      if (!session) throw new UnauthorizedException('Сессия истекла');
+    const found = readSessionToken(request);
+    if (found) {
+      if (found.source === 'cookie') assertNotCrossSite(request);
+      const session = await this.auth.resolveSession(found.token);
+      if (!session) {
+        if (found.source === 'cookie') clearStaleSessionCookie(context);
+        throw new UnauthorizedException('Сессия истекла');
+      }
       // 403, not 401: the session is valid, the account simply isn't an admin.
       // The UI keeps the login instead of bouncing to the login screen.
       if (session.user.role !== UserRole.ADMIN)

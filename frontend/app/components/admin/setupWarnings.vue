@@ -7,7 +7,7 @@ import {
 /**
  * Launch blockers that are invisible from the admin side but very visible to
  * customers. Company details in particular render in the footer — that is,
- * on every page — and in the offer and privacy pages, where placeholder text
+ * on every page — and in the terms-of-sale and privacy pages, where placeholder text
  * is not just ugly but legally meaningless.
  */
 const missing = computed(() =>
@@ -19,7 +19,7 @@ const missing = computed(() =>
   <UiAlert v-if="missing.length" tone="warning" title="Реквизиты не заполнены">
     <span>
       Покупатели видят вместо них текст в квадратных скобках — в футере на каждой
-      странице, в оферте, политике и контактах. Заполните
+      странице, в условиях продажи, политике и контактах. Заполните
       <code>frontend/app/data/company.ts</code>:
       <strong>{{ missing.join(', ') }}</strong>.
     </span>

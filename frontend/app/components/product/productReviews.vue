@@ -29,7 +29,7 @@ const config = useRuntimeConfig()
 const toast = useAppToast()
 // A signed-in author gets their name prefilled, the review linked to the
 // account, and the "подтверждённая покупка" badge when they actually bought it.
-const { user, isAuthenticated, token } = useAuth()
+const { user, isAuthenticated } = useAuth()
 
 const page = ref(1)
 const sort = ref<'createdAt' | 'rating'>('createdAt')
@@ -114,7 +114,9 @@ async function submit() {
       method: 'POST',
       // With a session the API links the review to the account and swaps the
       // per-IP spam limits for "one review per product per account".
-      headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
+      // The session cookie rides along by itself (same-origin /api); the
+      // header is the CSRF proof the API asks of a cookie session.
+      headers: API_REQUEST_HEADERS,
       body: {
         authorName: form.authorName.trim(),
         authorEmail: form.authorEmail.trim() || undefined,

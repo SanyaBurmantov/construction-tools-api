@@ -42,6 +42,8 @@ const form = reactive({
 })
 
 const isCompany = computed(() => form.customerType === 'COMPANY')
+// Отдельное явное согласие по Закону № 99-З; проверяется только на клиенте.
+const personalDataConsent = ref(false)
 const submitting = ref(false)
 const error = ref('')
 
@@ -59,6 +61,8 @@ function validate() {
   if (form.password !== form.passwordConfirm) return 'Пароли не совпадают'
   if (isCompany.value && !form.companyName.trim())
     return 'Для юридического лица укажите название организации'
+  if (!personalDataConsent.value)
+    return 'Дайте согласие на обработку персональных данных'
   return ''
 }
 
@@ -172,6 +176,11 @@ useSeoMeta({ title: 'Регистрация | Мультитул', robots: 'noin
           </UiField>
         </template>
 
+        <UiCheckbox v-model="personalDataConsent" class="consent">
+          Даю согласие на обработку персональных данных в соответствии с
+          <NuxtLink to="/privacy" target="_blank">Политикой обработки персональных данных</NuxtLink>
+        </UiCheckbox>
+
         <UiButton type="submit" size="lg" block :loading="submitting">
           Зарегистрироваться
         </UiButton>
@@ -271,6 +280,15 @@ useSeoMeta({ title: 'Регистрация | Мультитул', robots: 'noin
 .option-hint {
   color: var(--text-muted);
   font-size: var(--text-xs);
+}
+
+.form .consent {
+  align-items: flex-start;
+  font-size: var(--text-sm);
+}
+
+.consent a {
+  color: var(--text-link);
 }
 
 .switch {

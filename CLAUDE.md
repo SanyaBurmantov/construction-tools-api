@@ -47,9 +47,27 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `companyName`). `POST /auth/register` always mints a **CUSTOMER**: an ADMIN
   can only be created from `/admin/users`, so the storefront can never
   self-promote. Login issues a random 256-bit token stored in `UserSession` as
-  a **SHA-256 hash** and sent back as `Authorization: Bearer` — a dump cannot
-  be replayed, and deleting the row logs that device out immediately, which a
-  JWT could not. That is why there is still no JWT and no `@nestjs/jwt`.
+  a **SHA-256 hash** — a dump cannot be replayed, and deleting the row logs
+  that device out immediately, which a JWT could not. That is why there is
+  still no JWT and no `@nestjs/jwt`.
+  **The browser gets the token only as an HttpOnly cookie** (`sid`,
+  `auth/session-cookie.ts`; audit/security.md #3): `SameSite=Lax`, host-only
+  (no `Domain`), `Expires` = the `UserSession.expiresAt`, `Secure` in
+  production (`AUTH_COOKIE_SECURE=true|false` overrides), and **`Path=/api`**
+  — every browser API call is under `/api` (Caddy in prod, Nuxt's
+  `server/api/[...path].ts` proxy in dev) and no page request is, so SSR never
+  sees the cookie and cannot render per-user data into the cached, shared
+  HTML. Don't widen it to `/`. The login/register body carries no token; a
+  script that wants one sends `X-Auth-Transport: bearer` and gets it in the
+  body (no cookie). Guards read `Authorization: Bearer` first, then the cookie;
+  logout, logout-all and account deletion clear it, a dead cookie is cleared
+  on the 401, and a password change keeps this device's session (and cookie)
+  while ending the others. **CSRF**: a *cookie*-authenticated non-GET request
+  (and login/register from a foreign Origin) must carry `X-Requested-With`
+  or an Origin/Referer equal to `PUBLIC_ORIGIN`/`CORS_ORIGIN`/the request host
+  (`X-Forwarded-Host` first), else 403 — `assertNotCrossSite()`. Bearer and
+  `x-admin-token` callers are exempt: a browser never attaches those itself.
+  The frontend sends `API_REQUEST_HEADERS` (`useAuth.ts`) on every API call.
   Passwords are **scrypt** from `node:crypto` (`auth/password.util.ts`,
   parameters stored alongside each hash) — no native build step, so the
   `node:22-slim` images need no toolchain; bcrypt would.
@@ -105,6 +123,17 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   combination on `/catalog` and every `?search=` on `/brand` is its own cache
   entry. Cached HTML is served cheaply; runtime
   is light. The build is the memory-heavy step.
+- **One URL per page: lowercase, no trailing slash** (`/catalog`, not
+  `/catalog/`). `server/middleware/canonical-url.ts` 301s every other form
+  (query kept; `/api`, `/_*`, files with an extension untouched), matching the
+  canonicals and the sitemap — so write internal links without the slash.
+  Manrope is self-hosted from `public/fonts/` (no Google Fonts, and the CSP in
+  `deploy/Caddyfile` no longer allows it). That cache lives in the
+  frontend's heap, and Nitro's stock production driver never evicts — a crawl
+  over 52k products filled the 384 MB container until it was OOM-killed (502s
+  while it restarted). `nitro.storage.cache` is therefore a **bounded LRU**
+  (`server/storage/bounded-memory.ts`, 96 MB, `NUXT_CACHE_MAX_MB`); don't swap
+  it back for the plain memory driver.
 - **Data model**: products are stored in two layers — `Product` (normalized
   storefront card) and `SourceProduct` (raw supplier snapshot, identity
   `@@unique([sourceId, url])`). See the parsing docs below.
@@ -136,7 +165,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   address) into catalogue facets. Identity/paperwork names are blocked by list,
   and any value over 60 characters is treated as prose. It is only the default:
   admins flip specs in `/admin/specifications`, and `auto-select` still applies
-  the distinct-value heuristic over real data.
+  the distinct-value heuristic over real data. The same module has three tiers:
+  **supplier paperwork** (`isSupplierPaperworkSpec`: «Поставщик»,
+  «Импортер/Продавец», «Производитель», the supplier's «Код») is stripped from
+  every **public** product payload by `publicSpecs()` — it stays in the DB and
+  the admin API; **identity** (`isIdentitySpec`: + barcode, article, brand) can
+  never be a filter, not even by hand; **weight/dimensions**
+  (`isOffByDefaultSpec`) start out off and the nightly normalizer never turns
+  them on, but an admin may. `publicSpecs()` also orders consumer properties
+  first, because the card shows only the first three.
 - **Product identity is the supplier offer, not `Product.slug`.** Parsers must
   save through `ProductIdentityService.save()` (`parser/product-identity.service.ts`),
   which resolves the product via `SourceProduct(sourceId, url)` and only mints a
@@ -148,6 +185,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   one batch raced and the loser threw `Unique constraint failed … (slug)`. The
   same service wraps the `Brand` and `Specification` upserts, which raced for the
   same reason. Anything creating products from a parse goes through it.
+  `upsertBrand()` also refuses values that are not brands (`parser/brand-name.ts`:
+  «запчасти…», «без товарного знака», «Измерители», «-»…) — the product gets
+  no brand. `BrandCleanupService` removes such rows imported earlier (on boot
+  and `POST /admin/parser/clean-brands`); brand identity is the slug, so case
+  variants are already one row.
 - **Category identity is `Category.pathKey`, not `slug`.** `pathKey` is the full
   slug chain (`aksessuary/avtolampy/narva`); `slug` is only the public URL.
   Parsers must build the tree through `CategoryTreeService.upsertBranch()`
@@ -158,6 +200,19 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `parent-leaf` → full chain → numbered when another branch already holds it.
   Anything that re-parents a category must update `pathKey` too, or the next
   parse recreates the row at its old position — see `category-merge.service.ts`.
+  **Same-named siblings are one category.** The nightly root merge re-keys moved
+  children, so the parser kept re-creating the supplier branch and the next
+  merge parked it beside the canonical one — prod grew six «Двигатель» under one
+  parent (`…-dvigatel-2` … `-6`). Two guards now: `upsertBranch()` reuses an
+  existing same-named child of the parent (at the root, after resolving the
+  `taxonomy.ts` synonym) before creating anything, and `merge()` is **deep** —
+  a child the target already has by name is merged into it, not re-parented.
+  What was already duplicated is listed at `GET /admin/categories/duplicates`
+  and folded per reviewed group (`POST …/duplicates/merge`, «Дубли» view in
+  `/admin/categories`) — never automatically.
+  The parsers' fallback «Неразобранные товары поставщиков»
+  (`FALLBACK_CATEGORY_SLUG`) is created `isVisible: false`, so it is in no
+  storefront listing; its URL and its products' URLs still work.
 - **Catalog browsing**: categories are a tree (parsers build it from supplier
   breadcrumbs; products attach to leaves). Public API: `GET /categories/tree`
   (aggregated counts, empty branches pruned), `GET /categories/:slug`
@@ -194,7 +249,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   Frontend: one `components/ui/UiCategoryCard.vue` renders every "link to a
   category" (`tile` / `row` / `chip`) — home grid, catalogue, brand page — and
   `composables/useCategoryTree.ts` is the single tree fetch (one shared
-  `useAsyncData` key for header, home and catalogue).
+  `useAsyncData` key for header, home and catalogue). That SSR fetch is
+  **roots only** (`GET /categories/tree?depth=1`, trimmed to the fields drawn):
+  it is embedded in every page's `__NUXT_DATA__`, and the full ~3k-node tree
+  made /delivery 1.15 MB of HTML. The roots' children, drawn only in the closed
+  catalogue menu / mobile drawer, come client-side from `useCategoryMenu()`
+  (`depth=2`, on idle or intent). Counts are aggregated before the cut;
+  without `depth` the endpoint still returns the full tree (the sitemap uses it).
 - **Storefront orders**: the storefront now asks for an account before
   checkout, while `POST /orders` itself still accepts a guest order (see
   "Checkout requires an account" below) — so the API contract and the runbook
@@ -363,10 +424,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   used to answer **404** for an outage — `/product/:slug` («Товар не найден»
   for the whole catalogue while the DB is down is a lie to the visitor and a
   signal to search engines to drop the pages), `/brand/:slug`, plus `/sales`
-  and `/brand`, which degraded to an empty page. `server/routes/sitemap.xml.ts`
-  answers 503 instead of a sitemap listing only its seven static URLs — that
-  route is cached for an hour, so a truncated one stuck around long enough to
-  be crawled. Nitro never caches a 4xx/5xx, so the
+  and `/brand`, which degraded to an empty page. `/sitemap.xml` is a
+  **sitemap index** (one file was 55k URLs, over the protocol's 50k) pointing
+  at `/sitemap-static.xml`, `/sitemap-categories.xml` and
+  `/sitemap-products-N.xml` (10k each, served by
+  `server/middleware/sitemap-parts.ts` — the router cannot match a partial
+  segment, and children must sit at the root to list `/product/…`). All are
+  cut from one in-process snapshot (`server/utils/sitemap.ts`, 1 h): a failed
+  refresh keeps the previous snapshot, and with none they answer 503 instead
+  of a sitemap listing only the seven static URLs. Nitro never caches a 4xx/5xx, so the
   outage page cannot outlive the outage. On the client the catalogue keeps its
   inline alert instead — the page is already rendered and a blip must not throw
   the visitor out of it.
@@ -385,8 +451,8 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   field; a signed-in non-admin gets the "нет прав" screen instead of the form.
   Admin pages just set `definePageMeta({ layout: 'admin' })` and can assume the
   session is valid; do **not** re-add per-page token forms. `useAdminApi()`
-  sends the session as `Authorization: Bearer` and is otherwise unchanged, so
-  every admin page kept working. Accounts live in `/admin/users`:
+  rides on the session cookie (same-origin, plus `X-Requested-With`) and
+  exposes `hasSession` instead of a token; the UI never holds one. Accounts live in `/admin/users`:
   `users/index.vue` lists and creates them, `users/[id].vue` is one account —
   profile, figures, **current orders with an inline status select** and the
   finished ones in a table (`GET /admin/users/:id` returns all of it). The
@@ -452,8 +518,10 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   shared cache, so a 24-card grid is one request, and a product with no offers
   is cached as an empty answer instead of being re-requested forever.
 - **Storefront accounts**: `composables/useAuth.ts` is the single session
-  (token in localStorage next to the guest cart, restored by
-  `plugins/auth.client.ts`). Pages `/login`, `/register` and `/account` are
+  (HttpOnly cookie, so script never sees the token; "signed in" is learned
+  from `GET /auth/me` in `plugins/auth.client.ts`, skipped for guests by a
+  non-secret `auth-session` hint in localStorage; a leftover `auth-token`
+  from the Bearer era is deleted on load). Pages `/login`, `/register` and `/account` are
   `ssr: false` — there is nothing to render on the server. The header shows the
   account action (or "Войти") and, **for an ADMIN only, a link to the admin
   panel**; both are inside `<ClientOnly>` because the session is client-side.
@@ -513,7 +581,9 @@ fetches HTML, runs a pure `parse<Source>(html)` function (cheerio + JSON-LD),
 upserts `Product` + images + specs + `SourceProduct`, and marks the row
 `DONE` / `SKIPPED` / `FAILED`. Crons in `sites/<source>.cron.ts` drive this on a
 schedule, writing health to `ParserRuntimeStatus` (exposed at
-`GET /health/parser`).
+`GET /health/parser`, **behind `AdminGuard`** — it names suppliers, their
+offer counts and queue failures, so monitoring sends `x-admin-token`; the
+unauthenticated probes are `/health` and `/health/ready`).
 
 **All parser configuration is runtime, not deploy-time.** `ParserSettingsService`
 (`parser/parser-settings.service.ts`) resolves every knob as *DB row → env var →
@@ -577,6 +647,18 @@ belongs in the description, not the name; the last breadcrumb is a brand filter
 `Product.barcode` and is what merges a tools.by offer with the same product from
 th-tool.by. Photos come from `content.tools.by` at three sizes — deduplicated by
 the size-stripped URL, largest kept.
+
+**Supplier sales boilerplate never reaches our product text.** dukon.by's meta
+description is a template — «Купить … в Минске с гарантией и доставкой … ☎ +375
+(29) 668-00-11» — and its titles end in «купить в Минске»: a competitor's phone
+and the wrong city on our pages and in the JSON-LD. `parser/supplier-text.ts`
+(pure, unit-tested against the real production strings) drops those marketing
+sentences and phone numbers and leaves anything without its markers
+byte-for-byte alone; `ProductIdentityService.save()` applies it to every
+parser's `descriptionShort/Full` + `seoTitle/Description`. Rows imported before
+it are cleaned by `ProductTextCleanupService` a minute after boot (idempotent;
+`PRODUCT_TEXT_CLEANUP_ON_BOOT=false` to skip, `POST /admin/parser/clean-product-texts`
+to re-run) — the same tested function rather than a SQL copy of it.
 
 **Which sources are real.** `th-tool.by`, `dukon.by` and `tools.by` are actual
 suppliers.

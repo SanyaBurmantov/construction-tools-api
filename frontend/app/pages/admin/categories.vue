@@ -39,6 +39,8 @@ const VIEWS = [
   { value: 'hidden', label: 'Скрытые' },
   { value: 'featured', label: 'На главной' },
   { value: 'empty', label: 'Пустые (0 товаров)' },
+  // Not a filter of the tree: same-named siblings and a merge per group.
+  { value: 'duplicates', label: 'Дубли (одноимённые)' },
 ]
 const view = ref('all')
 
@@ -504,7 +506,9 @@ const mergeOptions = computed(() =>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
-    <div v-if="loading" class="list">
+    <AdminCategoryDuplicates v-if="view === 'duplicates'" @merged="load" />
+
+    <div v-else-if="loading" class="list">
       <UiSkeleton :lines="8" height="20px" />
     </div>
 

@@ -56,7 +56,7 @@ services:
       # зашитый начальный: admin / test-111 (сменить сразу после входа).
       ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      # Срок жизни сессии аккаунта (Authorization: Bearer), в сутках.
+      # Срок жизни сессии аккаунта (HttpOnly-cookie или Authorization: Bearer), в сутках.
       AUTH_SESSION_TTL_DAYS: ${AUTH_SESSION_TTL_DAYS:-30}
       # Сколько суток хранить корзину аккаунта без изменений.
       CART_TTL_DAYS: ${CART_TTL_DAYS:-90}

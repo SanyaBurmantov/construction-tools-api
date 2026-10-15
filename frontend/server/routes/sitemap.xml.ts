@@ -1,90 +1,40 @@
 import { setResponseHeader } from 'h3'
+import {
+  categoryUrls,
+  getSitemapSnapshot,
+  latestLastmod,
+  productChunkCount,
+  productUrls,
+  renderSitemapIndex,
+  siteOrigin,
+  type SitemapUrl,
+} from '../utils/sitemap'
 
-type ProductEntry = { slug: string, updatedAt?: string | null }
-type CategoryTreeNode = { slug: string, children: CategoryTreeNode[] }
-type SitemapUrl = { loc: string, lastmod?: string }
-
-function flattenCategories(nodes: CategoryTreeNode[]): string[] {
-  return nodes.flatMap((node) => [node.slug, ...flattenCategories(node.children)])
-}
-
-function escapeXml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-function toLastmod(value?: string | null) {
-  if (!value) return undefined
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
-}
-
+/**
+ * `/sitemap.xml` is a **sitemap index** — see `server/utils/sitemap.ts` for
+ * why, and `server/middleware/sitemap-parts.ts` for the files it lists.
+ * robots.txt keeps pointing here; crawlers follow the index on their own.
+ *
+ * An API outage with no earlier snapshot answers 503 (thrown by
+ * `getSitemapSnapshot`), never an index of the static pages alone.
+ */
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig()
-  const apiBase = String(config.apiBaseServer).replace(/\/$/, '')
-  const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
+  const data = await getSitemapSnapshot()
+  const origin = siteOrigin()
 
-  /**
-   * A failed fetch must not be served as a valid sitemap.
-   *
-   * Both calls used to degrade to an empty list, so an API that was simply
-   * down produced a 200 listing the seven static pages — and this route is
-   * cached (`swr: 3600`), so that answer stuck for an hour and told crawlers
-   * the catalogue's 48k URLs had disappeared. A 5xx is never cached by Nitro
-   * and is exactly what a crawler is meant to retry, so an outage answers 503
-   * and the previous sitemap stays the truth.
-   */
-  let unavailable = false
-  const soft = <T>(request: Promise<T>, fallback: T) =>
-    request.catch(() => {
-      unavailable = true
-      return fallback
-    })
-
-  const [products, categories] = await Promise.all([
-    soft($fetch<ProductEntry[]>(`${apiBase}/products/sitemap`), [] as ProductEntry[]),
-    soft($fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`), [] as CategoryTreeNode[])
-  ])
-
-  if (unavailable) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: 'Sitemap temporarily unavailable'
+  const sitemaps: SitemapUrl[] = [
+    { loc: `${origin}/sitemap-static.xml` },
+    ...(categoryUrls(origin, data).length ? [{ loc: `${origin}/sitemap-categories.xml` }] : []),
+  ]
+  const chunks = productChunkCount(data)
+  for (let page = 1; page <= chunks; page += 1) {
+    sitemaps.push({
+      loc: `${origin}/sitemap-products-${page}.xml`,
+      lastmod: latestLastmod(productUrls(origin, data, page)),
     })
   }
 
-  const urls: SitemapUrl[] = [
-    { loc: `${siteUrl}/` },
-    { loc: `${siteUrl}/catalog` },
-    { loc: `${siteUrl}/brand` },
-    { loc: `${siteUrl}/delivery` },
-    { loc: `${siteUrl}/contacts` },
-    { loc: `${siteUrl}/oferta` },
-    { loc: `${siteUrl}/privacy` },
-    ...flattenCategories(categories).map((slug) => ({
-      loc: `${siteUrl}/catalog/${slug}`
-    })),
-    ...products.map((product) => ({
-      loc: `${siteUrl}/product/${product.slug}`,
-      lastmod: toLastmod(product.updatedAt)
-    }))
-  ]
-
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls
-  .map((url) => {
-    const lastmod = url.lastmod ? `\n    <lastmod>${url.lastmod}</lastmod>` : ''
-    return `  <url>\n    <loc>${escapeXml(url.loc)}</loc>${lastmod}\n  </url>`
-  })
-  .join('\n')}
-</urlset>
-`
-
   setResponseHeader(event, 'content-type', 'application/xml; charset=utf-8')
-  return body
+  setResponseHeader(event, 'cache-control', 'public, max-age=3600')
+  return renderSitemapIndex(sitemaps)
 })

@@ -56,12 +56,19 @@ watch(image, () => { imageFailed.value = false })
            the photo so the card layout is identical for everyone. -->
       <AdminProductSourceNote :product-id="product.id" class="source-badge" />
       <NuxtLink :to="link" class="image-link" :aria-label="product.name">
+        <!-- width/height give the <img> an intrinsic size (no layout shift
+             before CSS); `fit="inside"` makes IPX scale *within* that box
+             instead of cropping to it, and also caps tall photos that a bare
+             `w_300` used to deliver at full height. -->
         <NuxtImg
           v-if="image && !imageFailed"
           ref="imageElement"
           :src="image"
           :alt="product.images?.[0]?.alt || product.name"
           sizes="300px"
+          :width="300"
+          :height="300"
+          fit="inside"
           format="webp"
           densities="x1 x2"
           :loading="priority ? 'eager' : 'lazy'"

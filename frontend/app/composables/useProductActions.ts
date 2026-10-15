@@ -161,3 +161,38 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
     toggleCompare,
   }
 }
+
+/**
+ * Cuts a `GET /products` row down to what a product card renders.
+ *
+ * The list endpoint returns every column of the product plus the whole brand
+ * and category rows (descriptions, SEO fields), every image and every spec —
+ * and whatever `useAsyncData` returns is serialised into `__NUXT_DATA__` of
+ * the cached HTML. Pages that only render cards (the home rails) pass their
+ * rows through this in `transform`. Keep it in step with `CatalogProduct`'s
+ * consumers: the card, `useProductActions` and the cart/wishlist/compare
+ * entries built from it.
+ */
+export function toCardProduct(product: CatalogProduct): CatalogProduct {
+  const relation = (value?: { id?: string, name: string, slug?: string } | null) =>
+    value ? { id: value.id, name: value.name, slug: value.slug } : null
+  return {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    sku: product.sku ?? null,
+    priceValue: product.priceValue ?? null,
+    oldPrice: product.oldPrice ?? null,
+    priceCurrency: product.priceCurrency ?? null,
+    stockStatus: product.stockStatus ?? null,
+    stockQuantity: product.stockQuantity ?? null,
+    ratingAvg: product.ratingAvg ?? null,
+    ratingCount: product.ratingCount ?? null,
+    brand: relation(product.brand),
+    category: relation(product.category),
+    images: (product.images ?? []).slice(0, 1).map(image => ({ url: image.url, alt: image.alt ?? null })),
+    productSpecs: (product.productSpecs ?? []).slice(0, 3).map(spec => ({ name: spec.name, value: spec.value })),
+    offerCount: product.offerCount,
+    offers: product.offers,
+  }
+}

@@ -29,13 +29,13 @@ const totalProducts = computed(() =>
  * so the landing page hands off into the normal catalog view already filtered.
  */
 function categoryLink(category: BrandCategory) {
-  if (!brand.value?.id) return '/catalog/'
+  if (!brand.value?.id) return '/catalog'
   if (category.slug) return `/catalog/${category.slug}?brands=${brand.value.id}`
-  return `/catalog/?brands=${brand.value.id}&categoryId=${category.id}`
+  return `/catalog?brands=${brand.value.id}&categoryId=${category.id}`
 }
 
 const allProductsLink = computed(() =>
-  brand.value?.id ? `/catalog/?brands=${brand.value.id}` : '/catalog/'
+  brand.value?.id ? `/catalog?brands=${brand.value.id}` : '/catalog'
 )
 
 const description = computed(() =>
@@ -64,7 +64,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
     <UiBreadcrumbs
       :items="[
         { label: 'Главная', to: '/' },
-        { label: 'Бренды', to: '/brand/' },
+        { label: 'Бренды', to: '/brand' },
         { label: brand?.name || 'Бренд' }
       ]"
     />
@@ -76,7 +76,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
         <p>Выберите категорию, чтобы открыть каталог с товарами этого бренда.</p>
         <div class="hero-actions">
           <UiButton :to="allProductsLink" size="sm">Все товары бренда</UiButton>
-          <UiButton to="/brand/" variant="secondary" size="sm">Все бренды</UiButton>
+          <UiButton to="/brand" variant="secondary" size="sm">Все бренды</UiButton>
         </div>
       </div>
 
@@ -102,7 +102,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
       title="У этого бренда пока нет товаров"
       description="Товары появятся здесь, как только они попадут в каталог."
     >
-      <UiButton to="/catalog/">Перейти в каталог</UiButton>
+      <UiButton to="/catalog">Перейти в каталог</UiButton>
     </UiEmpty>
 
     <section v-else class="grid">

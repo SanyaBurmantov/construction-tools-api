@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { generateSlug } from '../common/utils/generate-slug';
 import { shouldBeFilterable } from './spec-filterable';
 import { canonicalSpec, normalizeSpecValue } from './spec-canonical';
+import { cleanProductTexts } from './supplier-text';
+import { normalizeBrandName } from './brand-name';
 
 /** How many `-2`, `-3`… suffixes to try before giving up on a slug. */
 const MAX_SLUG_ATTEMPTS = 50;
@@ -59,6 +61,10 @@ export class ProductIdentityService {
     baseSlug: string;
     data: ProductWriteData;
   }) {
+    // Every parser saves through here, so this is the one place a supplier's
+    // sales boilerplate (their phone, «купить в Минске») is kept out of our
+    // product text, whichever parser forgot to clean it.
+    params = { ...params, data: this.withCleanTexts(params.data) };
     const existingId = await this.findByOffer(params.sourceId, params.url);
 
     if (existingId) {
@@ -71,6 +77,23 @@ export class ProductIdentityService {
     }
 
     return this.createWithFreeSlug(params.baseSlug, params.data);
+  }
+
+  private withCleanTexts(data: ProductWriteData): ProductWriteData {
+    const clean = <T extends object>(input: T): T => {
+      const fields = input as Record<string, unknown>;
+      const text = (key: string) =>
+        typeof fields[key] === 'string' ? fields[key] : undefined;
+      const patch = cleanProductTexts({
+        name: text('name'),
+        descriptionShort: text('descriptionShort'),
+        descriptionFull: text('descriptionFull'),
+        seoTitle: text('seoTitle'),
+        seoDescription: text('seoDescription'),
+      });
+      return Object.keys(patch).length ? { ...input, ...patch } : input;
+    };
+    return { update: clean(data.update), create: clean(data.create) };
   }
 
   private async createWithFreeSlug(baseSlug: string, data: ProductWriteData) {
@@ -104,9 +127,17 @@ export class ProductIdentityService {
 
   /**
    * Brand upsert that tolerates two workers creating the same brand at once.
-   * Returns undefined for names that slugify to nothing.
+   * Returns undefined for names that slugify to nothing, and for supplier
+   * values that are not a brand at all («без товарного знака», «запчасти…»,
+   * «Измерители» — see `brand-name.ts`): such a product gets no brand rather
+   * than a bogus brand page.
+   *
+   * Case-variant spellings («MAKITA» / «Makita») resolve to one row because
+   * the lookup is by slug, which is lowercase; the first spelling seen stays.
    */
-  async upsertBrand(name: string) {
+  async upsertBrand(rawName: string) {
+    const name = normalizeBrandName(rawName);
+    if (!name) return undefined;
     const slug = generateSlug(name);
     if (!slug) return undefined;
 

@@ -13,7 +13,7 @@ const cart = useCartStore()
 const config = useRuntimeConfig()
 const toast = useAppToast()
 const { ensureAuthenticated } = useCheckoutAuth()
-const { user, token } = useAuth()
+const { user } = useAuth()
 const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()
@@ -108,6 +108,12 @@ const estimatedTotal = computed(() =>
 // after a submit attempt — so the form doesn't shout at an untouched field.
 const touched = reactive<Record<string, boolean>>({})
 const submitAttempted = ref(false)
+/**
+ * Согласие на обработку ПДн по Закону № 99-З — отдельное и явное, поэтому
+ * чекбокс, не отмеченный заранее, а не «нажимая кнопку, вы соглашаетесь».
+ * Проверяется только здесь: API заказа его не принимает и не хранит.
+ */
+const personalDataConsent = ref(false)
 
 const errors = computed<Record<string, string>>(() => {
   const result: Record<string, string> = {}
@@ -136,6 +142,7 @@ const canSubmit = computed(
     && !submitting.value
     && !hasBlockingIssues.value
     && Object.keys(errors.value).length === 0
+    && personalDataConsent.value
 )
 
 /* ---- Promo -------------------------------------------------------------- */
@@ -161,7 +168,9 @@ async function submit() {
       method: 'POST',
       // The session is what links the order to the account, so it shows up in
       // «История заказов». Without it the API treats the order as a guest one.
-      headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
+      // The session cookie rides along by itself (same-origin /api); the
+      // header is the CSRF proof the API asks of a cookie session.
+      headers: API_REQUEST_HEADERS,
       body: {
         items: cart.items.map((item) => ({
           productId: item.productId,
@@ -235,7 +244,7 @@ useHead({
         title="Корзина пуста"
         description="Нечего оформлять — добавьте товары из каталога."
       >
-        <UiButton to="/catalog/">Перейти в каталог</UiButton>
+        <UiButton to="/catalog">Перейти в каталог</UiButton>
       </UiEmpty>
 
       <form v-else class="layout" novalidate @submit.prevent="submit">
@@ -433,19 +442,33 @@ useHead({
             <UiAlert v-else-if="hasBlockingIssues" tone="danger">
               Уберите недоступные товары, чтобы продолжить.
             </UiAlert>
-            <UiAlert v-else-if="submitAttempted && !canSubmit" tone="warning">
+            <UiAlert
+              v-else-if="submitAttempted && Object.keys(errors).length"
+              tone="warning"
+            >
               Заполните обязательные поля, отмеченные звёздочкой.
             </UiAlert>
+            <UiAlert v-else-if="submitAttempted && !personalDataConsent" tone="warning">
+              Чтобы оформить заказ, дайте согласие на обработку персональных данных.
+            </UiAlert>
+
+            <UiCheckbox v-model="personalDataConsent" class="consent-check">
+              <span class="consent">
+                Даю согласие на обработку персональных данных в соответствии с
+                <NuxtLink to="/privacy" target="_blank">Политикой обработки персональных данных</NuxtLink>,
+                в том числе на их трансграничную передачу для уведомления
+                сотрудников магазина о заказе через Telegram.
+              </span>
+            </UiCheckbox>
 
             <UiButton type="submit" size="lg" block :loading="submitting">
               Подтвердить заказ
             </UiButton>
 
             <p class="consent">
-              Нажимая «Подтвердить заказ», вы принимаете условия
-              <NuxtLink to="/oferta">публичной оферты</NuxtLink> и даёте согласие
-              на обработку персональных данных в соответствии с
-              <NuxtLink to="/privacy">политикой</NuxtLink>.
+              Заказ — это заявка: договор заключается, когда мы подтвердим
+              заказ по телефону или e-mail. Оформляя заказ, вы соглашаетесь с
+              <NuxtLink to="/usloviya" target="_blank">условиями продажи</NuxtLink>.
             </p>
 
             <UiButton variant="ghost" block to="/cart">Вернуться в корзину</UiButton>
@@ -707,6 +730,10 @@ useHead({
   color: var(--text-subtle);
   font-size: var(--text-xs);
   line-height: var(--leading-snug);
+}
+
+.layout .consent-check {
+  align-items: flex-start;
 }
 
 .consent a {
