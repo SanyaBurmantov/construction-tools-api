@@ -52,6 +52,8 @@ onMounted(async () => {
   if (isAuthenticated.value) await navigateTo(redirect.value || '/account')
 })
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 /** Mirrors the server's rules so a typo doesn't cost a round trip. */
 function validate() {
   if (form.login.trim().length < 3) return 'Логин должен быть не короче 3 символов'
@@ -61,6 +63,10 @@ function validate() {
   if (form.password !== form.passwordConfirm) return 'Пароли не совпадают'
   if (isCompany.value && !form.companyName.trim())
     return 'Для юридического лица укажите название организации'
+  if (!form.email.trim() && !EMAIL_RE.test(form.login.trim()))
+    return 'Укажите e-mail — на него придёт письмо для подтверждения регистрации'
+  if (form.email.trim() && !EMAIL_RE.test(form.email.trim()))
+    return 'Проверьте e-mail'
   if (!personalDataConsent.value)
     return 'Дайте согласие на обработку персональных данных'
   return ''
@@ -72,7 +78,7 @@ async function submit() {
 
   submitting.value = true
   try {
-    await register({
+    const created = await register({
       login: form.login.trim(),
       password: form.password,
       customerType: form.customerType,
@@ -82,7 +88,11 @@ async function submit() {
       companyName: isCompany.value ? form.companyName.trim() : undefined,
       taxId: isCompany.value ? form.taxId.trim() || undefined : undefined,
     })
-    toast.success('Аккаунт создан')
+    toast.success(
+      created.email
+        ? `Аккаунт создан. Письмо для подтверждения отправлено на ${created.email}`
+        : 'Аккаунт создан'
+    )
     // Straight back to what they were doing — the cart survived the detour.
     await navigateTo(redirect.value || '/account')
   } catch (err) {
@@ -157,7 +167,12 @@ useSeoMeta({ title: 'Регистрация | Мультитул', robots: 'noin
         </UiField>
 
         <div class="grid">
-          <UiField label="E-mail" for="reg-email">
+          <UiField
+            label="E-mail"
+            :required="!EMAIL_RE.test(form.login.trim())"
+            hint="Пришлём письмо для подтверждения"
+            for="reg-email"
+          >
             <UiInput id="reg-email" v-model="form.email" type="email" autocomplete="email" />
           </UiField>
 

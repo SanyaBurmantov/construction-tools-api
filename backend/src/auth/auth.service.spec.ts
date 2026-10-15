@@ -7,6 +7,7 @@ import { CustomerType, UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashPassword } from './password.util';
+import type { EmailVerificationService } from './email-verification.service';
 
 type UserRow = {
   id: string;
@@ -29,10 +30,11 @@ function buildService(options: { user?: UserRow | null } = {}) {
   const userUpdate = jest.fn(() => Promise.resolve({ id: 'u1' }));
 
   const userDelete = jest.fn(() => Promise.resolve({ id: 'u1' }));
+  const userFindUnique = jest.fn((): Promise<unknown> => Promise.resolve(user));
 
   const prisma = {
     user: {
-      findUnique: jest.fn(() => Promise.resolve(user)),
+      findUnique: userFindUnique,
       create: userCreate,
       update: userUpdate,
       delete: userDelete,
@@ -46,9 +48,17 @@ function buildService(options: { user?: UserRow | null } = {}) {
     },
   } as unknown as PrismaService;
 
+  const issueMock = jest.fn(() => Promise.resolve(true));
+  const emailVerification = {
+    issue: issueMock,
+  } as unknown as EmailVerificationService;
+
   return {
-    service: new AuthService(prisma),
+    service: new AuthService(prisma, emailVerification),
     prisma,
+    issueMock,
+    userUpdate,
+    userFindUnique,
     userCreate,
     sessionCreate,
     userDelete,
@@ -59,6 +69,7 @@ const baseRegistration = {
   login: 'Ivanov ',
   password: 'super-secret-1',
   customerType: CustomerType.INDIVIDUAL,
+  email: 'ivan@mail.by',
 };
 
 describe('AuthService.register', () => {
@@ -127,6 +138,32 @@ describe('AuthService.register', () => {
     const data = userCreate.mock.calls[0][0].data as Record<string, string>;
     expect(data.customerType).toBe(CustomerType.COMPANY);
     expect(data.companyName).toBe('ООО Ромашка');
+  });
+
+  // The confirmation letter needs somewhere to go.
+  it('requires an e-mail unless the login is one', async () => {
+    const { service, userCreate } = buildService();
+    await expect(
+      service.register({ ...baseRegistration, email: undefined }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(userCreate).not.toHaveBeenCalled();
+
+    await service.register({
+      ...baseRegistration,
+      login: 'Petrov@Mail.BY',
+      email: undefined,
+    });
+    const data = userCreate.mock.calls[0][0].data as Record<string, string>;
+    expect(data.email).toBe('petrov@mail.by');
+  });
+
+  it('sends the confirmation letter to the new account', async () => {
+    const { service, issueMock } = buildService();
+    await service.register(baseRegistration);
+    expect(issueMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u1' }),
+      'ivan@mail.by',
+    );
   });
 
   it('rejects a short password before touching the database', async () => {
@@ -199,7 +236,10 @@ describe('AuthService.resolveSession', () => {
         update: jest.fn(() => Promise.resolve({})),
       },
     } as unknown as PrismaService;
-    return { service: new AuthService(prisma), deleteMock };
+    return {
+      service: new AuthService(prisma, {} as EmailVerificationService),
+      deleteMock,
+    };
   }
 
   const user = {
@@ -296,5 +336,46 @@ describe('AuthService.deleteOwnAccount', () => {
       service.deleteOwnAccount('u1', { password: 'super-secret-1' }),
     ).rejects.toThrow('администратора');
     expect(userDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.updateProfile', () => {
+  function withProfile(email: string | null) {
+    const built = buildService();
+    built.userFindUnique.mockResolvedValue({
+      id: 'u1',
+      customerType: CustomerType.INDIVIDUAL,
+      companyName: null,
+      email,
+    });
+    built.userUpdate.mockImplementation(((args: {
+      data: Record<string, unknown>;
+    }) => Promise.resolve({ id: 'u1', name: null, ...args.data })) as never);
+    return built;
+  }
+
+  // A new address is unproven until its own link is followed.
+  it('drops the confirmation and sends a new link when the e-mail changes', async () => {
+    const { service, userUpdate, issueMock } = withProfile('old@mail.by');
+    await service.updateProfile('u1', { email: 'New@Mail.by' });
+    const data = (
+      userUpdate.mock.calls[0] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(data.email).toBe('new@mail.by');
+    expect(data.emailVerifiedAt).toBeNull();
+    expect(issueMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'u1' }),
+      'new@mail.by',
+    );
+  });
+
+  it('keeps the confirmation when the e-mail is unchanged', async () => {
+    const { service, userUpdate, issueMock } = withProfile('same@mail.by');
+    await service.updateProfile('u1', { email: 'same@mail.by', name: 'И' });
+    const data = (
+      userUpdate.mock.calls[0] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(data.emailVerifiedAt).toBeUndefined();
+    expect(issueMock).not.toHaveBeenCalled();
   });
 });

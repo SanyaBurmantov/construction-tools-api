@@ -9,13 +9,13 @@ const SEND_RETRIES = 1;
 /** Telegram rejects messages over 4096 chars. */
 const MAX_MESSAGE_LENGTH = 4000;
 
-const DELIVERY_LABELS: Record<DeliveryMethod, string> = {
+export const DELIVERY_LABELS: Record<DeliveryMethod, string> = {
   PICKUP: 'Самовывоз',
   COURIER: 'Курьер',
   POST: 'Почта',
 };
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   CASH: 'Наличными',
   CARD: 'Картой',
   INVOICE: 'По счёту',

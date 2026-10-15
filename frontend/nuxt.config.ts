@@ -113,6 +113,7 @@ export default defineNuxtConfig({
     '/login': { ssr: false },
     '/register': { ssr: false },
     '/account': { ssr: false },
+    '/verify-email': { ssr: false },
     // «Публичная оферта» переименована в «Условия продажи»: документ больше не
     // оферта. Оба варианта ключом — route rules срабатывают раньше
     // нормализующего middleware, так что редирект получается в один шаг.

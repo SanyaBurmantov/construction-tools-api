@@ -44,6 +44,7 @@ const {
   updateProfile,
   changePassword,
   deleteAccount,
+  resendVerification,
   errorMessage,
 } = useAuth()
 const cart = useCartStore()
@@ -282,6 +283,26 @@ async function copyCode(code: string) {
 const discountLabel = (code: AccountPromoCode) =>
   code.type === 'PERCENT' ? `−${code.value}%` : `−${formatPrice(code.value, 'BYN')}`
 
+/* ---- E-mail confirmation ------------------------------------------------ */
+const resending = ref(false)
+
+async function resend() {
+  resending.value = true
+  try {
+    const result = await resendVerification()
+    if (result.alreadyVerified) {
+      await refresh()
+      toast.success('E-mail уже подтверждён')
+    } else {
+      toast.success(`Письмо отправлено на ${user.value?.email}`)
+    }
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось отправить письмо'))
+  } finally {
+    resending.value = false
+  }
+}
+
 /* ---- Settings: profile ------------------------------------------------- */
 const profile = reactive({
   customerType: 'INDIVIDUAL' as CustomerType,
@@ -436,6 +457,20 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
+    <UiAlert
+      v-if="user?.email && !user.emailVerifiedAt"
+      tone="warning"
+      title="E-mail не подтверждён"
+    >
+      Мы отправили письмо со ссылкой на {{ user.email }}. Не пришло — проверьте «Спам»
+      или отправьте ещё раз.
+      <template #actions>
+        <UiButton size="sm" variant="secondary" :loading="resending" @click="resend">
+          Отправить ещё раз
+        </UiButton>
+      </template>
+    </UiAlert>
+
     <UiSkeleton v-if="loading" height="420px" radius="var(--radius-md)" />
 
     <template v-else>
@@ -492,7 +527,12 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
               </div>
               <div>
                 <dt>E-mail</dt>
-                <dd>{{ user?.email || '—' }}</dd>
+                <dd>
+                  {{ user?.email || '—' }}
+                  <UiBadge v-if="user?.email" size="sm" :tone="user.emailVerifiedAt ? 'success' : 'warning'">
+                    {{ user.emailVerifiedAt ? 'подтверждён' : 'не подтверждён' }}
+                  </UiBadge>
+                </dd>
               </div>
               <div>
                 <dt>Регистрация</dt>

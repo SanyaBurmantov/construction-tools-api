@@ -14,8 +14,9 @@ import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { EmailVerificationService } from './email-verification.service';
 import { AuthGuard } from './auth.guard';
-import { RegisterDto } from './dto/register.dto';
+import { RegisterDto, VerifyEmailDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import {
   ChangePasswordDto,
@@ -56,7 +57,10 @@ function deliverSession<T extends IssuedSession>(
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly emailVerification: EmailVerificationService,
+  ) {}
 
   /**
    * Registration always produces a CUSTOMER. Throttled far below the global
@@ -169,5 +173,27 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.auth.changePassword(user.id, sessionId, dto);
+  }
+
+  /**
+   * The link from the confirmation letter. Public: it is often opened on
+   * another device (the phone's mail app) where no session exists, and the
+   * 256-bit token is the proof.
+   */
+  @Throttle({ default: { limit: 20, ttl: 60 * 60 * 1000 } })
+  @HttpCode(200)
+  @Post('verify-email')
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.emailVerification.confirm(dto.token);
+  }
+
+  /** «Отправить письмо ещё раз». Throttled hard — every call sends a letter. */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 3, ttl: 60 * 60 * 1000 } })
+  @HttpCode(200)
+  @Post('verify-email/resend')
+  resendVerification(@CurrentUser() user: AuthenticatedUser) {
+    return this.emailVerification.resend(user.id);
   }
 }

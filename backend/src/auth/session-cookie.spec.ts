@@ -8,6 +8,7 @@ import type { Response } from 'express';
 import { AuthGuard } from './auth.guard';
 import { OptionalAuthGuard } from './optional-auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
+import type { EmailVerificationService } from './email-verification.service';
 import { AuthController } from './auth.controller';
 import type { AuthService, SessionContext } from './auth.service';
 import type { AuthenticatedRequest } from './auth-request';
@@ -327,7 +328,10 @@ describe('AuthController session delivery', () => {
   function controllerWith(
     overrides: Partial<Record<keyof AuthService, jest.Mock>>,
   ) {
-    return new AuthController(overrides as unknown as AuthService);
+    return new AuthController(
+      overrides as unknown as AuthService,
+      {} as EmailVerificationService,
+    );
   }
 
   beforeEach(() => {
