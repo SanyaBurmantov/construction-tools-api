@@ -37,16 +37,8 @@ const specs = computed(() =>
   props.compact ? [] : (props.product.productSpecs?.slice(0, 3) ?? [])
 )
 const link = computed(() => `/product/${props.product.slug}`)
-const imageFailed = ref(false)
-// NuxtImg renders an <img>, but the template ref points at the component, so
-// the cached-and-broken check has to reach through to the element itself.
-const imageElement = ref<{ $el?: HTMLImageElement } | HTMLImageElement | null>(null)
-onMounted(() => {
-  const ref_ = imageElement.value
-  const element = (ref_ && '$el' in ref_ ? ref_.$el : ref_) as HTMLImageElement | undefined
-  if (element?.complete && !element.naturalWidth) imageFailed.value = true
-})
-watch(image, () => { imageFailed.value = false })
+// IPX first, then the supplier's own URL, then the placeholder — see the composable.
+const { stage: imageStage, imageElement, onLoad: onImageLoad, onError: onImageError } = useResilientImage(image)
 </script>
 
 <template>
@@ -61,7 +53,7 @@ watch(image, () => { imageFailed.value = false })
              instead of cropping to it, and also caps tall photos that a bare
              `w_300` used to deliver at full height. -->
         <NuxtImg
-          v-if="image && !imageFailed"
+          v-if="image && imageStage === 'ipx'"
           ref="imageElement"
           :src="image"
           :alt="product.images?.[0]?.alt || product.name"
@@ -75,8 +67,20 @@ watch(image, () => { imageFailed.value = false })
           :fetchpriority="priority ? 'high' : 'auto'"
           :preload="priority || undefined"
           decoding="async"
-          @error="imageFailed = true"
+          @load="onImageLoad"
+          @error="onImageError"
         />
+        <!-- IPX could not fetch it: the browser can still load the original. -->
+        <img
+          v-else-if="image && imageStage === 'direct'"
+          :src="image"
+          :alt="product.images?.[0]?.alt || product.name"
+          width="300"
+          height="300"
+          :loading="priority ? 'eager' : 'lazy'"
+          decoding="async"
+          @error="onImageError"
+        >
         <span v-else class="placeholder" aria-hidden="true">
           <svg viewBox="0 0 24 24">
             <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
