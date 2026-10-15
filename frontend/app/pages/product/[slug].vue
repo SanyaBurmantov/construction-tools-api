@@ -121,7 +121,7 @@ const { data: related } = await useAsyncData(
 const breadcrumbs = computed(() => {
   const crumbs: Array<{ label: string, to?: string }> = [
     { label: 'Главная', to: '/' },
-    { label: 'Каталог', to: '/catalog/' },
+    { label: 'Каталог', to: '/catalog' },
   ]
   if (product.value?.category?.name) {
     crumbs.push({
@@ -138,9 +138,23 @@ const images = computed(() => product.value?.images ?? [])
 const siteBase = computed(() => String(config.public.siteUrl).replace(/\/$/, ''))
 const canonicalUrl = computed(() => `${siteBase.value}/product/${slug.value}`)
 const ogImage = computed(() => images.value[0]?.url || undefined)
-const metaDescription = computed(
-  () => product.value?.descriptionShort || product.value?.name || 'Карточка товара Мультитул'
-)
+/**
+ * Our own template, never the supplier's `descriptionShort` — on some sources
+ * that is their SEO blurb with their phone and «в Минске» in it. See
+ * utils/product-meta.ts.
+ */
+const metaDescription = computed(() => {
+  const p = product.value
+  if (!p?.name) return 'Карточка товара Мультитул'
+  return buildProductMetaDescription({
+    name: p.name,
+    brand: p.brand?.name,
+    price: p.priceValue,
+    currency: p.priceCurrency,
+    priceFrom: hasMultipleOffers.value,
+    stockStatus: p.stockStatus,
+  })
+})
 
 useSeoMeta({
   title: () => (product.value?.name ? `${product.value.name} | Мультитул` : 'Товар | Мультитул'),
@@ -167,9 +181,9 @@ useHead(() => {
     url: canonicalUrl.value,
   }
   if (p.sku) productLd.sku = p.sku
-  if (p.descriptionShort || p.descriptionFull) {
-    productLd.description = p.descriptionShort || p.descriptionFull
-  }
+  // The full description is the product text; `descriptionShort` may be the
+  // supplier's advert (see metaDescription), so it is not used here.
+  productLd.description = p.descriptionFull || metaDescription.value
   if (images.value.length) productLd.image = images.value.map((image) => image.url)
   if (p.brand?.name) productLd.brand = { '@type': 'Brand', name: p.brand.name }
   if (p.priceValue != null && p.priceValue > 0) {
@@ -227,7 +241,7 @@ useHead(() => {
           <div class="summary-head">
             <NuxtLink
               v-if="product.brand?.name"
-              :to="product.brand.slug ? `/brand/${product.brand.slug}` : '/brand/'"
+              :to="product.brand.slug ? `/brand/${product.brand.slug}` : '/brand'"
               class="brand"
             >
               {{ product.brand.name }}
@@ -331,7 +345,7 @@ useHead(() => {
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
-              Лучшая цена из {{ pluralize(product.offers!.count, 'offer') }} поставщиков
+              Лучшая цена из {{ pluralize(product.offers!.count, 'offerOf') }} поставщиков
             </p>
 
             <!-- Concrete terms, not adjectives: what it costs and where to collect. -->

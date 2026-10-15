@@ -123,7 +123,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
       description="Скидки появляются, когда поставщик снижает цену. Загляните в каталог — там больше
         товаров, или подпишитесь на обновления."
     >
-      <UiButton to="/catalog/">Перейти в каталог</UiButton>
+      <UiButton to="/catalog">Перейти в каталог</UiButton>
     </UiEmpty>
 
     <template v-else>

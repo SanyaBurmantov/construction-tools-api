@@ -143,6 +143,24 @@ describe('CategoriesService.getTree', () => {
   });
 });
 
+describe('CategoriesService.getTree depth', () => {
+  // The storefront SSR payload embeds the tree on every page; `depth` cuts it
+  // without changing the numbers a shallow consumer sees.
+  it('cuts the tree after N levels but keeps subtree counts and artwork', async () => {
+    const tree = await buildService().getTree(1);
+
+    expect(tree).toHaveLength(1);
+    expect(tree[0].children).toEqual([]);
+    expect(tree[0].productCount).toBe(8);
+    expect(tree[0].image).toBe('https://cdn/perf.jpg');
+  });
+
+  it('returns the full tree when depth covers it', async () => {
+    const full = await buildService().getTree();
+    expect(await buildService().getTree(2)).toEqual(full);
+  });
+});
+
 describe('CategoriesService.getTree display settings', () => {
   // A branch an admin switched off must disappear from navigation whole:
   // listing its children would leave links into a category the shop has

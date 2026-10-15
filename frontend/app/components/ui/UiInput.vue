@@ -12,6 +12,12 @@ withDefaults(
     max?: number | string
     step?: number | string
     autocomplete?: string
+    /**
+     * Accessible name for inputs without a visible `<label>` (search boxes).
+     * A declared prop because a plain `aria-label` attribute falls through to
+     * the wrapper `<div>`, where it names nothing a screen reader announces.
+     */
+    ariaLabel?: string
   }>(),
   { type: 'text', size: 'md' }
 )
@@ -37,6 +43,7 @@ const emit = defineEmits<{ blur: [FocusEvent], focus: [FocusEvent] }>()
       :max="max"
       :step="step"
       :autocomplete="autocomplete"
+      :aria-label="ariaLabel"
       :aria-invalid="invalid || undefined"
       @blur="emit('blur', $event)"
       @focus="emit('focus', $event)"

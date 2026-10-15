@@ -15,6 +15,11 @@ import { OffersService } from '../../offers/offers.service';
 import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
 import { ParserSettingsService } from '../parser-settings.service';
+import {
+  sanitizeSupplierText,
+  sanitizeSupplierTitle,
+  truncateAtWord,
+} from '../supplier-text';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 type DukonStockStatus = 'in_stock' | 'out_of_stock' | 'preorder' | 'unknown';
@@ -398,11 +403,12 @@ export class DukonParserService {
     const oldPrice = this.parseOldPrice($, priceValue);
     const stockStatus = this.parseStockStatus($, jsonLd?.availability);
     const descriptionFull =
-      this.parseDescription($) || this.clean(jsonLd?.description || '');
+      this.parseDescription($) ||
+      sanitizeSupplierText(this.clean(jsonLd?.description || ''));
     const descriptionShort = this.parseDescriptionShort($, descriptionFull);
-    const seoTitle = this.parseSeoTitle($) || name;
+    const seoTitle = sanitizeSupplierTitle(this.parseSeoTitle($)) || name;
     const seoDescription =
-      this.parseMeta($, 'description') ||
+      sanitizeSupplierText(this.parseMeta($, 'description')) ||
       descriptionShort ||
       descriptionFull ||
       name;
@@ -542,7 +548,8 @@ export class DukonParserService {
     const priceValue =
       this.parsePrice($('.price.gen').first().text()) || jsonLd?.price;
     const descriptionFull =
-      this.parseDescription($) || this.clean(jsonLd?.description || '');
+      this.parseDescription($) ||
+      sanitizeSupplierText(this.clean(jsonLd?.description || ''));
 
     return {
       source: 'dukon',
@@ -774,6 +781,8 @@ export class DukonParserService {
           name: 'Неразобранные товары поставщиков',
           slug: FALLBACK_CATEGORY_SLUG,
           pathKey: FALLBACK_CATEGORY_SLUG,
+          // Never listed on the storefront — see FALLBACK_CATEGORY_SLUG.
+          isVisible: false,
           level: 0,
           path: [FALLBACK_CATEGORY_SLUG],
           seoTitle: 'Неразобранные товары поставщиков',
@@ -1260,18 +1269,22 @@ export class DukonParserService {
         .first()
         .text(),
     );
-    return text.replace(/^Подробная информация\s*array\(0\) \{ \}\s*/, '');
+    return sanitizeSupplierText(
+      text.replace(/^Подробная информация\s*array\(0\) \{ \}\s*/, ''),
+    );
   }
 
   private parseDescriptionShort(
     $: cheerio.CheerioAPI,
     descriptionFull: string,
   ) {
-    const metaDescription = this.parseMeta($, 'description');
+    // dukon's meta description is a sales template with their phone and city
+    // («…в Минске с гарантией и доставкой ☎ +375…»); see supplier-text.ts.
+    const metaDescription = sanitizeSupplierText(
+      this.parseMeta($, 'description'),
+    );
     if (metaDescription) return metaDescription;
-    return descriptionFull.length > 240
-      ? `${descriptionFull.slice(0, 237).trim()}...`
-      : descriptionFull || undefined;
+    return descriptionFull ? truncateAtWord(descriptionFull, 240) : undefined;
   }
 
   private parseSeoTitle($: cheerio.CheerioAPI) {

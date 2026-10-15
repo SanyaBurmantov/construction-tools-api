@@ -21,6 +21,26 @@ www.{$DOMAIN} {
 {$DOMAIN} {
   encode zstd gzip
 
+  # Заголовки безопасности ставятся здесь, а не в Nuxt: так они попадают и в
+  # ISR/SWR-ответы из кэша Nitro, и в ответы бэкенда, одним списком.
+  # CSP держит 'unsafe-inline' для скриптов — Nuxt кладёт payload и
+  # гидратацию в инлайн-<script>; без nonce строже не сделать. Всё остальное
+  # (connect, frame-ancestors, base-uri, form-action, object) закрыто на себя,
+  # так что внедрённый скрипт не может ни отправить токен наружу, ни
+  # подгрузить чужой код. img-src открыт на https: — фото товаров и баннеры
+  # приходят с доменов поставщиков.
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+    Cross-Origin-Opener-Policy "same-origin"
+    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    -X-Powered-By
+    -Server
+  }
+
   handle /api/* {
     uri strip_prefix /api
     reverse_proxy backend:8000

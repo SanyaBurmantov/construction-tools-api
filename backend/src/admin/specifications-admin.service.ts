@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { shouldBeFilterable } from '../parser/spec-filterable';
+import { isIdentitySpec, shouldBeFilterable } from '../parser/spec-filterable';
 
 /**
  * A specification is only worth filtering by when it covers a decent share of a
@@ -80,7 +80,9 @@ export class SpecificationsAdminService {
       where: { id },
     });
     if (!existing) throw new NotFoundException('Характеристика не найдена');
-    if (filterable && !shouldBeFilterable(existing.name)) {
+    // Only identity/paperwork is refused. Weight and dimensions start out off
+    // (`isOffByDefaultSpec`) but are an admin's call to switch on.
+    if (filterable && isIdentitySpec(existing.name)) {
       throw new BadRequestException(
         'Служебные характеристики нельзя использовать как фильтры',
       );

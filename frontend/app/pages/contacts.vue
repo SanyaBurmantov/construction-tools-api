@@ -33,6 +33,14 @@ useHead({
         <dd><a :href="company.phoneHref">{{ company.phone }}</a></dd>
       </div>
       <div>
+        <dt>Viber, Telegram</dt>
+        <dd>
+          {{ company.phone }} —
+          <a :href="company.viberHref">Viber</a>,
+          <a :href="company.telegramHref" target="_blank" rel="noopener">Telegram</a>
+        </dd>
+      </div>
+      <div>
         <dt>E-mail</dt>
         <dd><a :href="company.emailHref">{{ company.email }}</a></dd>
       </div>
@@ -57,19 +65,15 @@ useHead({
         <dd>{{ company.unp }}</dd>
       </div>
       <div>
-        <dt>Регистрация в Торговом реестре</dt>
-        <dd>{{ company.tradeRegistry }}</dd>
-      </div>
-      <div>
         <dt>Юридический адрес</dt>
         <dd>{{ company.legalAddress }}</dd>
       </div>
     </dl>
 
     <p style="margin-top: 16px;">
-      Условия покупки — в <NuxtLink to="/oferta/">публичной оферте</NuxtLink>,
+      Условия покупки — в <NuxtLink to="/usloviya">условиях продажи</NuxtLink>,
       порядок работы с данными — в
-      <NuxtLink to="/privacy/">политике обработки персональных данных</NuxtLink>.
+      <NuxtLink to="/privacy">политике обработки персональных данных</NuxtLink>.
     </p>
   </section>
 </template>

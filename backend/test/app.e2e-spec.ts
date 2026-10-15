@@ -16,10 +16,15 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('/health (GET)', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/health')
       .expect(200)
-      .expect('Hello World!');
+      .expect({ status: 'ok' });
+  });
+
+  // The NestJS template route is gone: it only advertised the framework.
+  it('/ (GET) is not served', () => {
+    return request(app.getHttpServer()).get('/').expect(404);
   });
 });

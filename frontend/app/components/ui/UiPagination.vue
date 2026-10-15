@@ -1,9 +1,19 @@
 <script setup lang="ts">
+type PageHref = (page: number) => string // eslint-disable-line no-unused-vars
+
 const props = defineProps<{
   page: number
   pages: number
   /** Total items, shown as "N of M" context when provided. */
   total?: number
+  /**
+   * URL of a page. When given, every page is a real `<a href>` — what a
+   * crawler follows (a `<button>` pager left it the first page of every
+   * category and nothing else). A plain left click still goes through
+   * `change`, so the parent keeps owning navigation; a modified click (new
+   * tab, new window) is left to the browser and the href.
+   */
+  hrefFor?: PageHref
 }>()
 
 const emit = defineEmits<{ change: [page: number] }>()
@@ -29,11 +39,31 @@ function go(page: number) {
   if (page < 1 || page > props.pages || page === props.page) return
   emit('change', page)
 }
+
+function onLinkClick(event: MouseEvent, page: number) {
+  if (event.defaultPrevented || event.button !== 0) return
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  event.preventDefault()
+  go(page)
+}
 </script>
 
 <template>
   <nav v-if="pages > 1" class="ui-pagination" aria-label="Постраничная навигация">
+    <a
+      v-if="hrefFor && page > 1"
+      :href="hrefFor(page - 1)"
+      class="nav"
+      rel="prev"
+      aria-label="Предыдущая страница"
+      @click="onLinkClick($event, page - 1)"
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </a>
     <button
+      v-else
       type="button"
       class="nav"
       :disabled="page <= 1"
@@ -47,6 +77,21 @@ function go(page: number) {
 
     <template v-for="(item, index) in items" :key="`${item}-${index}`">
       <span v-if="item === '…'" class="gap" aria-hidden="true">…</span>
+      <a
+        v-else-if="hrefFor && item !== page"
+        :href="hrefFor(item)"
+        class="page"
+        @click="onLinkClick($event, item)"
+      >
+        {{ item }}
+      </a>
+      <span
+        v-else-if="hrefFor"
+        class="page is-current"
+        aria-current="page"
+      >
+        {{ item }}
+      </span>
       <button
         v-else
         type="button"
@@ -59,7 +104,20 @@ function go(page: number) {
       </button>
     </template>
 
+    <a
+      v-if="hrefFor && page < pages"
+      :href="hrefFor(page + 1)"
+      class="nav"
+      rel="next"
+      aria-label="Следующая страница"
+      @click="onLinkClick($event, page + 1)"
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M8 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </a>
     <button
+      v-else
       type="button"
       class="nav"
       :disabled="page >= pages"
@@ -96,6 +154,7 @@ function go(page: number) {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   place-items: center;
+  text-decoration: none;
   transition: background var(--duration-fast) var(--ease-out);
 }
 

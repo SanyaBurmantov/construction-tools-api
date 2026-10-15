@@ -115,7 +115,7 @@ useHead({
         </dl>
 
         <div class="actions">
-          <NuxtLink to="/catalog/" class="primary">Продолжить покупки</NuxtLink>
+          <NuxtLink to="/catalog" class="primary">Продолжить покупки</NuxtLink>
           <NuxtLink v-if="isAuthenticated" to="/account?tab=orders" class="secondary">
             Мои заказы
           </NuxtLink>
@@ -126,7 +126,7 @@ useHead({
         <div class="mark">✓</div>
         <h1>Спасибо за заказ!</h1>
         <p class="sub">{{ failed && orderId ? 'Не удалось загрузить детали заказа, но он принят. Мы свяжемся с вами для подтверждения.' : 'Ваш заказ принят. Мы свяжемся с вами для подтверждения.' }}</p>
-        <NuxtLink to="/catalog/" class="primary">Продолжить покупки</NuxtLink>
+        <NuxtLink to="/catalog" class="primary">Продолжить покупки</NuxtLink>
       </div>
     </ClientOnly>
   </section>

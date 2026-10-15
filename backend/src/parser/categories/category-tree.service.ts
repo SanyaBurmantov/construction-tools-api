@@ -7,6 +7,7 @@ import {
   categorySlugCandidates,
   numberedSlug,
 } from './category-slug';
+import { canonicalRootFor, normalizeCategoryName } from './taxonomy';
 
 /** Guard against an unbounded loop if a slug family is exhausted. */
 const MAX_SLUG_ATTEMPTS = 50;
@@ -87,7 +88,57 @@ export class CategoryTreeService {
       return { id: existing.id, slug: existing.slug, pathKey };
     }
 
+    // No row at this identity — but the parent may already have a child of
+    // this name. That happens whenever a branch has moved: the nightly
+    // normalizer merges a supplier root («Специальный инструмент») into its
+    // canonical one, which re-keys the moved children, so the next parse of
+    // the old breadcrumbs found nothing at the old `pathKey`, created the
+    // branch again, and the next merge put a second «Двигатель» beside the
+    // first. Six nights later prod had six of them (`…-dvigatel-2` … `-6`).
+    // A same-named child of the same parent *is* the same category, so use it.
+    const twin = await this.findSameNamedChild(name, parentId);
+    if (twin) return twin;
+
     return this.createWithFreeSlug(name, pathSlugs, parentId, pathKey);
+  }
+
+  /**
+   * The existing category named `name` directly under `parentId`, compared on
+   * the normalized name (case, `ё`, spacing). At the root a supplier synonym
+   * resolves to its canonical department first (see `taxonomy.ts`), so a
+   * supplier root the normalizer has already merged is not re-created.
+   * The oldest-looking (shortest) slug wins when there are several.
+   */
+  private async findSameNamedChild(
+    name: string,
+    parentId: string | null,
+  ): Promise<UpsertedCategory | null> {
+    const wanted = new Set([normalizeCategoryName(name)]);
+    if (parentId === null) {
+      const canonical = canonicalRootFor(name);
+      if (canonical) wanted.add(normalizeCategoryName(canonical));
+    }
+
+    const siblings = await this.prisma.category.findMany({
+      where: { parentId },
+      select: { id: true, name: true, slug: true, pathKey: true },
+    });
+    const matches = siblings.filter((row) =>
+      wanted.has(normalizeCategoryName(row.name)),
+    );
+    if (!matches.length) return null;
+
+    // Prefer an exact-name match over the synonym, then the shortest slug.
+    const exact = normalizeCategoryName(name);
+    matches.sort(
+      (a, b) =>
+        Number(normalizeCategoryName(b.name) === exact) -
+          Number(normalizeCategoryName(a.name) === exact) ||
+        a.slug.length - b.slug.length ||
+        a.slug.localeCompare(b.slug),
+    );
+    const [winner] = matches;
+    return { id: winner.id, slug: winner.slug, pathKey: winner.pathKey };
   }
 
   private async createWithFreeSlug(

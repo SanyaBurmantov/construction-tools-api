@@ -20,6 +20,8 @@ import { CategoryTreeService } from './categories/category-tree.service';
 import { QueueRecoveryService } from './queue-recovery.service';
 import { ParserJobsService } from './parser-jobs.service';
 import { ParserWatchdogCron } from './parser-watchdog.cron';
+import { ProductTextCleanupService } from './product-text-cleanup.service';
+import { BrandCleanupService } from './brand-cleanup.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminGuard } from '../admin/admin.guard';
 import { OffersModule } from '../offers/offers.module';
@@ -42,6 +44,8 @@ import { OffersModule } from '../offers/offers.module';
     QueueRecoveryService,
     ParserJobsService,
     ParserWatchdogCron,
+    ProductTextCleanupService,
+    BrandCleanupService,
     CategoryQueueService,
     CategoryTreeService,
     AdminGuard,

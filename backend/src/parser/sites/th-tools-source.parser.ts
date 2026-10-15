@@ -608,6 +608,8 @@ export class ThToolsParserService {
           name: 'Неразобранные товары поставщиков',
           slug: FALLBACK_CATEGORY_SLUG,
           pathKey: FALLBACK_CATEGORY_SLUG,
+          // Never listed on the storefront — see FALLBACK_CATEGORY_SLUG.
+          isVisible: false,
           level: 0,
           path: [FALLBACK_CATEGORY_SLUG],
           seoTitle: 'Неразобранные товары поставщиков',

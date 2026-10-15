@@ -54,11 +54,16 @@ export class CategoriesService {
    * branches without published products, and branches an admin switched off,
    * are pruned. The parser fallback category is unlisted (still reachable by
    * direct URL until curated).
+   *
+   * `depth` keeps that many levels (1 = roots only); nodes on the last kept
+   * level arrive with `children: []`. Counts and artwork are aggregated
+   * before the cut, so a shallow tree reports the same numbers as a full one.
    */
-  async getTree(): Promise<CategoryTreeNode[]> {
+  async getTree(depth?: number): Promise<CategoryTreeNode[]> {
     const { roots } = await this.buildCountedTree();
     return this.pruneUnlistable(
       roots.filter((node) => node.slug !== FALLBACK_CATEGORY_SLUG),
+      depth,
     );
   }
 
@@ -119,6 +124,7 @@ export class CategoriesService {
       level: category.level,
       seoTitle: category.seoTitle,
       seoDescription: category.seoDescription,
+      isVisible: category.isVisible,
       productCount: node?.productCount ?? 0,
       ancestors,
       children,
@@ -308,12 +314,16 @@ export class CategoriesService {
    * link to an empty grid. Hidden branches are pruned whole: a visible child
    * under a switched-off parent is unreachable through navigation anyway.
    */
-  private pruneUnlistable(list: CategoryTreeNode[]): CategoryTreeNode[] {
+  private pruneUnlistable(
+    list: CategoryTreeNode[],
+    depth = Number.POSITIVE_INFINITY,
+  ): CategoryTreeNode[] {
     return list
       .filter((node) => node.isVisible && node.productCount > 0)
       .map((node) => ({
         ...node,
-        children: this.pruneUnlistable(node.children),
+        children:
+          depth > 1 ? this.pruneUnlistable(node.children, depth - 1) : [],
       }));
   }
 }

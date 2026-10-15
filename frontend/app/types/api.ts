@@ -155,3 +155,29 @@ export interface AdminOrder extends Order {
   user: OrderAccount | null
   updatedAt: string
 }
+
+/** One category of a same-named sibling group (`GET /admin/categories/duplicates`). */
+export interface DuplicateCategory {
+  id: string
+  name: string
+  slug: string
+  isVisible: boolean
+  /** Published products in the category and its subtree. */
+  productCount: number
+  childCount: number
+}
+
+/** Same name, same parent: what `POST /admin/categories/duplicates/merge` folds. */
+export interface DuplicateCategoryGroup {
+  key: string
+  name: string
+  parent: { id: string, name: string, slug: string } | null
+  /** Suggested survivor: the biggest subtree. */
+  targetId: string
+  categories: DuplicateCategory[]
+}
+
+export interface DuplicateCategoriesResponse {
+  groups: DuplicateCategoryGroup[]
+  totals: { groups: number, redundantCategories: number }
+}

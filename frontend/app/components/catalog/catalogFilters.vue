@@ -181,6 +181,7 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
         type="search"
         size="sm"
         placeholder="Найти бренд"
+        aria-label="Найти бренд"
       />
       <div class="checks">
         <UiCheckbox

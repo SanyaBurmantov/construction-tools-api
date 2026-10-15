@@ -44,6 +44,24 @@ curl https://$DOMAIN/api/products?limit=1
 curl -H "x-admin-token: $ADMIN_TOKEN" https://$DOMAIN/api/admin/stats   # 200; wrong/no token -> 401
 ```
 
+## Monitoring (host watchdog)
+`deploy/watchdog.sh` + `construction-tools-watchdog.{service,timer}` (every
+2 min) alert Telegram — same `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` from
+`.env.prod` — when `/` or `/api/health/ready` fails twice in a row, a
+container's `RestartCount` grows (with `OOMKilled` and `docker stats` memory vs
+`mem_limit`), or a container is unhealthy; once per incident, plus "recovered".
+State: `/var/lib/construction-tools/watchdog.state`. Install like the other
+timers (full steps in `DEPLOY_PRODUCTION.md` → "Host watchdog"):
+```bash
+install -m 755 deploy/watchdog.sh /usr/local/sbin/construction-tools-watchdog
+install -m 644 deploy/construction-tools-watchdog.{service,timer} /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now construction-tools-watchdog.timer
+journalctl -u construction-tools-watchdog.service -n 50 --no-pager
+```
+It can't alert if the host itself is down — keep an external uptime check
+(e.g. UptimeRobot on `/` and `/api/health/ready`) too.
+Intermittent 502s: check `docker inspect -f '{{.RestartCount}} {{.State.OOMKilled}}' construction-tools-front`.
+
 ## Gotchas (seen in practice)
 - **Backend restart-loops with `P1000 Authentication failed`** → the `postgres_data`
   volume was created earlier with a different `DB_PASSWORD` (Postgres only applies

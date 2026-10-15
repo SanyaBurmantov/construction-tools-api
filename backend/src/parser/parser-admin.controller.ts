@@ -23,6 +23,8 @@ import { ThToolsParserService } from './sites/th-tools-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
 import { Supplier7745ParserService } from './sites/7745-source.parser';
+import { ProductTextCleanupService } from './product-text-cleanup.service';
+import { BrandCleanupService } from './brand-cleanup.service';
 import {
   CategoryQueueProcessDto,
   CategoryQueueQueryDto,
@@ -48,6 +50,8 @@ export class ParserAdminController {
     private readonly dukon: DukonParserService,
     private readonly toolsBy: ToolsByParserService,
     private readonly supplier7745: Supplier7745ParserService,
+    private readonly textCleanup: ProductTextCleanupService,
+    private readonly brandCleanup: BrandCleanupService,
   ) {}
 
   /* -------------------------------------------------------- overview ---- */
@@ -171,6 +175,27 @@ export class ParserAdminController {
     }
 
     return result;
+  }
+
+  /**
+   * Re-runs the boot-time pass that strips supplier sales boilerplate (their
+   * phone, «купить в Минске») from product text. Idempotent.
+   */
+  @Post('clean-product-texts')
+  @HttpCode(200)
+  cleanProductTexts() {
+    return this.textCleanup.run();
+  }
+
+  /**
+   * Re-runs the boot-time pass that removes `Brand` rows which are not brands
+   * («запчасти», «без товарного знака», «Измерители»…), detaching their
+   * products first. Idempotent.
+   */
+  @Post('clean-brands')
+  @HttpCode(200)
+  cleanBrands() {
+    return this.brandCleanup.run();
   }
 
   /* -------------------------------------------------- category queue ---- */

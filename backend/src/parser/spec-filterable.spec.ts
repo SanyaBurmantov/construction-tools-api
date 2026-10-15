@@ -1,4 +1,10 @@
-import { shouldBeFilterable } from './spec-filterable';
+import {
+  isIdentitySpec,
+  isOffByDefaultSpec,
+  isSupplierPaperworkSpec,
+  publicSpecs,
+  shouldBeFilterable,
+} from './spec-filterable';
 
 describe('shouldBeFilterable', () => {
   it('keeps characteristics that make sensible facets', () => {
@@ -38,5 +44,102 @@ describe('shouldBeFilterable', () => {
   it('handles a missing value and an empty name', () => {
     expect(shouldBeFilterable('Материал')).toBe(true);
     expect(shouldBeFilterable('')).toBe(false);
+  });
+});
+
+describe('isSupplierPaperworkSpec', () => {
+  it('flags the supplier rows the audit found on cards and product pages', () => {
+    expect(isSupplierPaperworkSpec('Поставщик')).toBe(true);
+    expect(isSupplierPaperworkSpec('Импортер/Продавец')).toBe(true);
+    expect(isSupplierPaperworkSpec('Импортёр')).toBe(true);
+    expect(isSupplierPaperworkSpec('Производитель')).toBe(true);
+    expect(isSupplierPaperworkSpec('Адрес производителя')).toBe(true);
+    expect(isSupplierPaperworkSpec('Изготовитель')).toBe(true);
+    expect(isSupplierPaperworkSpec('Код')).toBe(true);
+    expect(isSupplierPaperworkSpec('Код товара')).toBe(true);
+    expect(isSupplierPaperworkSpec('Код поставщика')).toBe(true);
+  });
+
+  it('keeps consumer properties that merely contain the same letters', () => {
+    expect(isSupplierPaperworkSpec('Страна производителя')).toBe(false);
+    expect(isSupplierPaperworkSpec('Страна-изготовитель')).toBe(false);
+    expect(isSupplierPaperworkSpec('Кодовый замок')).toBe(false);
+    expect(isSupplierPaperworkSpec('Количество секретных комбинаций')).toBe(
+      false,
+    );
+    expect(isSupplierPaperworkSpec('Штрихкод')).toBe(false);
+    expect(isSupplierPaperworkSpec('Мощность')).toBe(false);
+  });
+});
+
+describe('isIdentitySpec', () => {
+  it('covers paperwork plus barcode, article and brand', () => {
+    expect(isIdentitySpec('Поставщик')).toBe(true);
+    expect(isIdentitySpec('Штрихкод')).toBe(true);
+    expect(isIdentitySpec('Артикул')).toBe(true);
+    expect(isIdentitySpec('Бренд')).toBe(true);
+    expect(isIdentitySpec('Вес, кг')).toBe(false);
+    expect(isIdentitySpec('Страна изготовления')).toBe(false);
+  });
+});
+
+describe('isOffByDefaultSpec', () => {
+  it('catches every spelling of weight and overall dimensions', () => {
+    expect(isOffByDefaultSpec('Вес')).toBe(true);
+    expect(isOffByDefaultSpec('Вес, кг')).toBe(true);
+    expect(isOffByDefaultSpec('Вес с упаковкой, кг')).toBe(true);
+    expect(isOffByDefaultSpec('Масса нетто')).toBe(true);
+    expect(isOffByDefaultSpec('Габариты (ДхШхВ), см')).toBe(true);
+    expect(isOffByDefaultSpec('Габариты (ДхШхВ)')).toBe(true);
+    expect(isOffByDefaultSpec('Габариты ДxШxВ, см')).toBe(true);
+    expect(isOffByDefaultSpec('Размеры упаковки')).toBe(true);
+  });
+
+  it('does not match words that only contain «вес»', () => {
+    expect(isOffByDefaultSpec('Тип подвеса')).toBe(false);
+    expect(isOffByDefaultSpec('Весы')).toBe(false);
+    expect(isOffByDefaultSpec('Диаметр, мм')).toBe(false);
+    expect(isOffByDefaultSpec('Длина')).toBe(false);
+  });
+
+  it('makes weight start out as a non-filter', () => {
+    expect(shouldBeFilterable('Вес, кг', '1.2')).toBe(false);
+    expect(shouldBeFilterable('Габариты (ДхШхВ), см', '20 x 1 x 1')).toBe(
+      false,
+    );
+    expect(shouldBeFilterable('Страна изготовления', 'Китай')).toBe(true);
+  });
+});
+
+describe('publicSpecs', () => {
+  const spec = (name: string) => ({ name, value: 'x' });
+
+  it('drops supplier paperwork and puts consumer properties first', () => {
+    // A real dukon card: the first three used to be Бренд, Код, Вес.
+    const result = publicSpecs([
+      spec('Бренд'),
+      spec('Код'),
+      spec('Вес'),
+      spec('Поставщик'),
+      spec('Штрихкод'),
+      spec('Тип хвостовика'),
+      spec('Производитель'),
+      spec('Импортер/Продавец'),
+      spec('Диаметр, мм'),
+    ]).map((row) => row.name);
+
+    expect(result).toEqual([
+      'Тип хвостовика',
+      'Диаметр, мм',
+      'Вес',
+      'Бренд',
+      'Штрихкод',
+    ]);
+  });
+
+  it('keeps the supplier order within a rank and copies nothing extra', () => {
+    const rows = [spec('Материал'), spec('Цвет')];
+    expect(publicSpecs(rows)).toEqual(rows);
+    expect(publicSpecs([])).toEqual([]);
   });
 });

@@ -10,7 +10,14 @@ export class BrandsService {
       // A brand whose slug is empty has no landing page and no usable filter
       // value — production carries one such row (supplier name ","), created
       // before `upsertBrand` started rejecting names that slugify to nothing.
-      where: { slug: { not: '' } },
+      //
+      // A brand with nothing published is not listed either: its tile reads
+      // «0 товаров» and links to an empty page (the same rule as categories).
+      // Admin screens use `/admin/brands`, which still lists every row.
+      where: {
+        slug: { not: '' },
+        products: { some: { status: 'PUBLISHED' } },
+      },
       include: {
         _count: {
           select: { products: { where: { status: 'PUBLISHED' } } },
@@ -38,7 +45,13 @@ export class BrandsService {
 
     const categories = counts.length
       ? await this.prisma.category.findMany({
-          where: { id: { in: counts.map((item) => item.categoryId) } },
+          // A hidden category (the parsers' «Неразобранные товары
+          // поставщиков», or a branch an admin switched off) is not a link a
+          // brand page may offer — the same rule as the tree and the facets.
+          where: {
+            id: { in: counts.map((item) => item.categoryId) },
+            isVisible: true,
+          },
           select: { id: true, name: true, slug: true },
         })
       : [];

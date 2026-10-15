@@ -23,6 +23,7 @@ import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { AdminMergeBrandDto } from './dto/admin-merge-brand.dto';
 import { AdminMergeCategoryDto } from './dto/admin-merge-category.dto';
+import { AdminMergeDuplicateCategoriesDto } from './dto/admin-merge-duplicate-categories.dto';
 import { AdminCategoryOrderDto } from './dto/admin-category-order.dto';
 import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
@@ -363,6 +364,21 @@ export class AdminController {
   @Patch('categories/:id')
   updateCategory(@Param('id') id: string, @Body() dto: AdminUpdateCategoryDto) {
     return this.adminService.updateCategory(id, dto);
+  }
+
+  /** Same-named siblings left in the tree (`category-duplicates.ts`). */
+  @Get('categories/duplicates')
+  getDuplicateCategories() {
+    return this.categoryMergeService.findDuplicates();
+  }
+
+  // Must precede 'categories/:id/merge', which would read "duplicates" as an id.
+  @Post('categories/duplicates/merge')
+  mergeDuplicateCategories(@Body() dto: AdminMergeDuplicateCategoriesDto) {
+    return this.categoryMergeService.mergeDuplicates(
+      dto.targetId,
+      dto.sourceIds,
+    );
   }
 
   @Post('categories/:id/merge')

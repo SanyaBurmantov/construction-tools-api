@@ -97,7 +97,7 @@ useHead({
         title="Корзина пуста"
         description="Добавьте товары из каталога — сохранённое здесь не пропадёт при перезагрузке."
       >
-        <UiButton to="/catalog/">Перейти в каталог</UiButton>
+        <UiButton to="/catalog">Перейти в каталог</UiButton>
         <UiButton variant="secondary" to="/favorites">Открыть избранное</UiButton>
       </UiEmpty>
 
@@ -202,7 +202,7 @@ useHead({
                 Для оформления заказа понадобится вход — товары в корзине сохранятся.
               </template>
             </p>
-            <UiButton variant="ghost" block to="/catalog/">Продолжить покупки</UiButton>
+            <UiButton variant="ghost" block to="/catalog">Продолжить покупки</UiButton>
           </div>
         </aside>
       </div>

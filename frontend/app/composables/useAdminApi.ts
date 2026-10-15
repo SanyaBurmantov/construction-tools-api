@@ -1,23 +1,27 @@
 /**
  * Admin API client.
  *
- * Auth is an **ADMIN account session** (`Authorization: Bearer <token>`),
- * shared with the storefront through `useAuth` — one login for the whole site.
- * The backend still accepts `x-admin-token` for service-to-service calls
- * (runbook curl, CI), but the UI no longer asks a human for that secret.
+ * Auth is an **ADMIN account session** — the HttpOnly session cookie shared
+ * with the storefront through `useAuth`, one login for the whole site. Calls
+ * are same-origin `/api`, so the browser attaches the cookie; the
+ * `X-Requested-With` header is the CSRF proof the backend asks of a cookie
+ * session. The backend still accepts `x-admin-token` and
+ * `Authorization: Bearer` for service-to-service calls (runbook curl, CI), but
+ * the UI never holds a token.
  */
 export function useAdminApi() {
   const config = useRuntimeConfig()
-  const { token, user, isAdmin, readStoredToken, refresh, logout, errorMessage } = useAuth()
+  const { user, isAdmin, isAuthenticated, refresh, logout, errorMessage } = useAuth()
   const authorized = useState('admin-authorized', () => false)
 
   async function adminFetch<T>(path: string, options: Parameters<typeof $fetch>[1] = {}) {
     try {
       return await $fetch<T>(`${config.public.apiBase}/admin${path}`, {
         ...options,
+        credentials: 'same-origin',
         headers: {
-          ...(options.headers || {}),
-          ...(token.value ? { Authorization: `Bearer ${token.value}` } : {}),
+          ...API_REQUEST_HEADERS,
+          ...(options.headers as Record<string, string> | undefined),
         },
       })
     } catch (error) {
@@ -33,11 +37,9 @@ export function useAdminApi() {
   }
 
   return {
-    // `token` is the account session token; admin pages only ever check that
-    // there is one before firing a request. `loadToken` keeps its old name so
-    // the pages that call it did not have to change.
-    token,
-    loadToken: readStoredToken,
+    // True once the layout gate has loaded the account. Pages that poll check
+    // it before firing a request (they used to check for a stored token).
+    hasSession: isAuthenticated,
     user,
     isAdmin,
     authorized,

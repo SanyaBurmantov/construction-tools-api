@@ -82,7 +82,7 @@ Core Prisma models:
 
 ### Health
 
-- `GET /health/parser`: public/internal-safe parser cron health endpoint for uptime monitoring. It returns overall `ok`, max accepted job age, and sanitized job statuses without admin token or parser error details.
+- `GET /health/parser`: parser cron health for monitoring, behind `AdminGuard` (send `x-admin-token`). It names suppliers, queue sizes and failure counts, which is internal; container healthchecks use the public `GET /health/ready`.
 
 ### Products
 
@@ -272,7 +272,7 @@ Parser cron observability:
 - `ParserRuntimeStatus` stores last run state for cron jobs in DB, so status survives backend restarts.
 - Admin parsing UI shows runtime status and supplier catalog quality summary.
 - Admin health endpoint reports stale/error cron jobs for deployment checks.
-- Public/internal `GET /health/parser` can be used by external uptime monitoring without exposing admin endpoints.
+- `GET /health/parser` (with `x-admin-token`) can be used by external uptime monitoring; public `GET /health/ready` is the unauthenticated probe.
 - Supplier summary helps verify that imported products are visible and have core storefront data: price, image, SKU.
 - Public catalog supports `sourceCode`, for example `/catalog?sourceCode=dukon`, to inspect one supplier's storefront-visible products.
 

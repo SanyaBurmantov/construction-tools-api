@@ -26,7 +26,7 @@ definePageMeta({ layout: 'admin' })
  * loaded and one place that reloads it after an action. The split is purely
  * about size — the page was 2000 lines of five unrelated screens.
  */
-const { token, loadToken, adminFetch, errorMessage } = useAdminApi()
+const { hasSession, adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
 const nuxtApp = useNuxtApp()
 
@@ -39,7 +39,7 @@ const jobsBusy = ref('')
 let jobsTimer: ReturnType<typeof setInterval> | null = null
 
 async function loadJobs() {
-  if (!token.value || !expandedSource.value) return
+  if (!hasSession.value || !expandedSource.value) return
   try {
     jobs.value = await adminFetch<ParserJob[]>(`/parser/sources/${expandedSource.value}/jobs`)
   } catch (error) {
@@ -96,7 +96,7 @@ const drafts = reactive<Record<string, SourceDraft>>({})
 const expandedSource = ref('')
 
 async function loadControl() {
-  if (!token.value) return
+  if (!hasSession.value) return
   try {
     control.value = await adminFetch<ParserOverview>('/parser/overview')
     // Re-seed drafts from the server so a saved value stops looking edited.
@@ -251,7 +251,7 @@ const categoryStats = computed(() =>
 )
 
 async function loadCategories() {
-  if (!token.value) return
+  if (!hasSession.value) return
   categoryLoading.value = true
   try {
     const params = new URLSearchParams({ source: categorySource.value })
@@ -366,7 +366,7 @@ const sources = ref<Source[]>([])
 const overviewLoading = ref(false)
 
 async function loadOverview() {
-  if (!token.value) return
+  if (!hasSession.value) return
   overviewLoading.value = true
   try {
     const [nextHealth, nextRuns, nextErrors, nextSummary, nextSources] = await Promise.all([
@@ -431,7 +431,7 @@ const dataQualityLoading = ref(false)
 
 // Отчёт тяжёлый (скан имён всего каталога) — грузим отдельно от остального.
 async function loadDataQuality() {
-  if (!token.value) return
+  if (!hasSession.value) return
   dataQualityLoading.value = true
   try {
     dataQuality.value = await adminFetch<DataQualityReport>('/data-quality')
@@ -443,7 +443,6 @@ async function loadDataQuality() {
 }
 
 onMounted(async () => {
-  loadToken()
   // Control first: it is what lists the sources — which ones have a category
   // crawler, and which queues exist at all.
   await loadControl()

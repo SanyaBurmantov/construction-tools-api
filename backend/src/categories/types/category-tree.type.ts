@@ -25,6 +25,12 @@ export type CategoryPage = {
   level: number;
   seoTitle: string;
   seoDescription: string;
+  /**
+   * False for a branch hidden from navigation (including the parsers'
+   * unsorted category). The URL still answers; the storefront should mark
+   * such a page `noindex, follow`.
+   */
+  isVisible: boolean;
   productCount: number;
   ancestors: Array<{ id: string; name: string; slug: string }>;
   children: Array<{

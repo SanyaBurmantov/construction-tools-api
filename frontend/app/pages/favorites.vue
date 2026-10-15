@@ -80,7 +80,7 @@ useHead({
         title="В избранном пока пусто"
         description="Нажимайте на сердечко в карточке товара, чтобы сохранить его и вернуться позже."
       >
-        <UiButton to="/catalog/">Перейти в каталог</UiButton>
+        <UiButton to="/catalog">Перейти в каталог</UiButton>
       </UiEmpty>
 
       <ul v-else class="grid">

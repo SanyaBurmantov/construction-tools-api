@@ -27,21 +27,38 @@ export type RegisterPayload = {
   taxId?: string
 }
 
-type Session = { token: string, expiresAt: string, user: AccountUser }
+/** What login/register answer a browser with: the token itself stays in the cookie. */
+type Session = { expiresAt: string, user: AccountUser }
 
-const STORAGE_KEY = 'auth-token'
+/**
+ * Sent with every API call. A cross-site form cannot set a custom header, so
+ * the backend accepts it as proof that a cookie-authenticated mutating request
+ * came from our own page (its CSRF check also accepts a matching Origin).
+ */
+export const API_REQUEST_HEADERS: Record<string, string> = { 'X-Requested-With': 'XMLHttpRequest' }
+
+/** Where the token used to live. Removed on sight — see `forgetLegacyToken`. */
+const LEGACY_TOKEN_KEY = 'auth-token'
+/**
+ * A non-secret "there may be a session" marker. The cookie is HttpOnly, so
+ * script cannot see whether it exists; without this every guest page view
+ * would fire a `GET /auth/me` just to get a 401 back.
+ */
+const SESSION_HINT_KEY = 'auth-session'
 
 /**
  * Account session for the storefront and the admin panel.
  *
- * The session token is an opaque string issued by `POST /auth/login`; it lives
- * in localStorage next to the guest cart/wishlist and travels as
- * `Authorization: Bearer`. The server stores only its hash, so logging out
- * (or an admin disabling the account) kills it immediately.
+ * The session lives in an **HttpOnly cookie** set by `POST /auth/login` /
+ * `register` (path `/api`, so it only ever travels with API calls — never with
+ * a page request that SSR could render into shared, cached HTML). Page script
+ * never holds the token, so an XSS cannot walk away with it. Whether someone
+ * is signed in is learned from `GET /auth/me`; the server stores only the
+ * token's hash, so logging out (or an admin disabling the account) kills it
+ * immediately.
  */
 export function useAuth() {
   const config = useRuntimeConfig()
-  const token = useState<string>('auth-token', () => '')
   const user = useState<AccountUser | null>('auth-user', () => null)
   // Distinguishes "not logged in" from "haven't checked yet", so the header
   // doesn't flash a login link at an admin on every page load.
@@ -54,54 +71,69 @@ export function useAuth() {
    * Every localStorage access is guarded: `getItem` throws outright when site
    * data is blocked (private windows, embedded browsers, some corporate
    * policies), and an exception escaping here used to take the whole admin
-   * gate down with it — the page sat on its loading skeleton forever, which
-   * reads as "it just hangs". The session simply does not persist in that
-   * case, which is the right degradation.
+   * gate down with it — the page sat on its loading skeleton forever.
    */
-  function readStoredToken() {
-    if (import.meta.client && !token.value) {
-      try {
-        token.value = localStorage.getItem(STORAGE_KEY) || ''
-      } catch {
-        token.value = ''
-      }
+  function setHint(present: boolean) {
+    if (!import.meta.client) return
+    try {
+      if (present) localStorage.setItem(SESSION_HINT_KEY, '1')
+      else localStorage.removeItem(SESSION_HINT_KEY)
+    } catch {
+      // Unwritable storage: refresh() then simply always asks the server.
     }
-    return token.value
+  }
+
+  /** True when a session may exist; unknown (blocked storage) counts as yes. */
+  function mayHaveSession() {
+    if (!import.meta.client) return false
+    try {
+      return localStorage.getItem(SESSION_HINT_KEY) === '1'
+    } catch {
+      return true
+    }
+  }
+
+  /**
+   * Bearer tokens from before the cookie switch: dropped, never sent. Those
+   * sessions are simply signed in again once.
+   */
+  function forgetLegacyToken() {
+    if (!import.meta.client) return
+    try {
+      localStorage.removeItem(LEGACY_TOKEN_KEY)
+    } catch {
+      // Nothing to clean up if storage was never readable.
+    }
   }
 
   function persist(session: Session) {
-    token.value = session.token
     user.value = session.user
-    if (import.meta.client) {
-      try {
-        localStorage.setItem(STORAGE_KEY, session.token)
-      } catch {
-        // Blocked or full storage: the session lives for this tab only.
-      }
-    }
+    setHint(true)
   }
 
   function clear() {
-    token.value = ''
     user.value = null
-    if (import.meta.client) {
-      try {
-        localStorage.removeItem(STORAGE_KEY)
-      } catch {
-        // Nothing to clean up if storage was never writable.
-      }
-    }
+    setHint(false)
   }
 
-  /** $fetch against the API with the session header attached when we have one. */
+  /**
+   * $fetch against the API. Same-origin `/api`, so the browser attaches the
+   * session cookie by itself; the custom header is the CSRF proof.
+   */
   async function authFetch<T>(path: string, options: Parameters<typeof $fetch>[1] = {}) {
-    const headers: Record<string, string> = { ...(options.headers as Record<string, string>) }
-    if (token.value) headers.Authorization = `Bearer ${token.value}`
+    const headers: Record<string, string> = {
+      ...API_REQUEST_HEADERS,
+      ...(options.headers as Record<string, string>),
+    }
     try {
-      return await $fetch<T>(`${config.public.apiBase}${path}`, { ...options, headers })
+      return await $fetch<T>(`${config.public.apiBase}${path}`, {
+        ...options,
+        headers,
+        credentials: 'same-origin',
+      })
     } catch (error) {
-      // 401 means the stored token is gone or expired server-side — forget it
-      // instead of retrying every request with a dead session.
+      // 401 means the session is gone or expired server-side (the API drops
+      // the cookie with it) — forget it instead of retrying a dead session.
       const status
         = (error as { statusCode?: number }).statusCode ?? (error as { status?: number }).status
       if (status === 401) clear()
@@ -131,7 +163,9 @@ export function useAuth() {
 
   async function logout() {
     try {
-      if (token.value) await authFetch('/auth/logout', { method: 'POST' })
+      // Always asked, even with no user loaded: only the server can clear an
+      // HttpOnly cookie.
+      await authFetch('/auth/logout', { method: 'POST' })
     } catch {
       // Already invalid server-side — dropping it locally is the same result.
     }
@@ -139,15 +173,17 @@ export function useAuth() {
     ready.value = true
   }
 
-  /** Loads the account behind a stored token. Safe to call repeatedly. */
+  /** Loads the account behind the session cookie. Safe to call repeatedly. */
   async function refresh() {
-    if (!readStoredToken()) {
+    forgetLegacyToken()
+    if (!mayHaveSession()) {
       user.value = null
       ready.value = true
       return null
     }
     try {
       user.value = await authFetch<AccountUser>('/auth/me')
+      setHint(true)
     } catch {
       clear()
     } finally {
@@ -190,12 +226,10 @@ export function useAuth() {
   }
 
   return {
-    token,
     user,
     ready,
     isAuthenticated,
     isAdmin,
-    readStoredToken,
     authFetch,
     login,
     register,

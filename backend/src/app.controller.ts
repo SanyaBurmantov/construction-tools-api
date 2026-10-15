@@ -1,21 +1,20 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  ServiceUnavailableException,
+  UseGuards,
+} from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { AppService } from './app.service';
 import { PrismaService } from './prisma/prisma.service';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
+import { AdminGuard } from './admin/admin.guard';
 
 @Controller()
 export class AppController {
   constructor(
-    private readonly appService: AppService,
     private readonly prisma: PrismaService,
     private readonly parserRuntimeStatusService: ParserRuntimeStatusService,
   ) {}
-
-  @Get()
-  getHello(): string {
-    return this.appService.getHello();
-  }
 
   // Liveness: the process is up. Used by the container healthcheck.
   @SkipThrottle()
@@ -36,7 +35,11 @@ export class AppController {
     }
   }
 
+  // Admin-only: it names our suppliers, their offer counts, queue sizes and
+  // job failures — "which supplier carries what" is internal. Monitoring
+  // calls it with `x-admin-token`; container healthchecks use /health/ready.
   @SkipThrottle()
+  @UseGuards(AdminGuard)
   @Get('health/parser')
   async getParserHealth() {
     const health = await this.parserRuntimeStatusService.getHealth();

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Banner, Brand, ProductsResponse } from '~/types/api'
 import { company } from '~/data/company'
+import { toCardProduct } from '~/composables/useProductActions'
 
 const config = useRuntimeConfig()
 const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
@@ -8,6 +9,17 @@ const { formatPrice } = useFormatPrice()
 const search = ref('')
 
 const emptyPage = { data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } }
+
+/**
+ * Whatever these `useAsyncData` calls return is serialised into the cached
+ * HTML's `__NUXT_DATA__`, so each rail keeps only what a card renders: the
+ * list endpoint also sends full brand/category rows, every image and spec,
+ * and the catalogue-wide `facets` the home page never reads.
+ */
+const toRail = (page: ProductsResponse): ProductsResponse => ({
+  data: page.data.map(toCardProduct),
+  pagination: page.pagination,
+})
 
 /**
  * Each rail degrades to an empty list instead of failing the page — the home
@@ -34,7 +46,7 @@ const { data: sales } = await useAsyncData<ProductsResponse>(
       }),
       emptyPage
     ),
-  { default: () => emptyPage }
+  { default: () => emptyPage, transform: toRail }
 )
 
 const { data: popular } = await useAsyncData<ProductsResponse>(
@@ -46,7 +58,7 @@ const { data: popular } = await useAsyncData<ProductsResponse>(
       }),
       emptyPage
     ),
-  { default: () => emptyPage }
+  { default: () => emptyPage, transform: toRail }
 )
 
 const { data: newest } = await useAsyncData<ProductsResponse>(
@@ -58,7 +70,7 @@ const { data: newest } = await useAsyncData<ProductsResponse>(
       }),
       emptyPage
     ),
-  { default: () => emptyPage }
+  { default: () => emptyPage, transform: toRail }
 )
 
 const { data: banners } = await useAsyncData<{ data: Banner[] }>(
@@ -71,10 +83,23 @@ const { data: banners } = await useAsyncData<{ data: Banner[] }>(
 
 const { data: tree } = await useCategoryTree()
 
+/** How many brand tiles the home page shows. */
+const HOME_BRAND_COUNT = 14
+
+/**
+ * `GET /brands` answers with every brand and every column (~400 rows,
+ * descriptions and SEO fields included — ~93 KB in the page payload). The
+ * grid shows fourteen logos, so only those fourteen, and only what a tile
+ * renders, reach the payload.
+ */
 const { data: brands } = await useAsyncData<Brand[]>(
   'home-brands',
   () => $fetch<Brand[]>(`${apiBase}/brands`).catch(() => []),
-  { default: () => [] }
+  {
+    default: () => [],
+    transform: list =>
+      list.slice(0, HOME_BRAND_COUNT).map(({ id, name, slug, logo }) => ({ id, name, slug, logo })),
+  }
 )
 
 // The catalogue did not answer: show the technical-works page rather than a
@@ -96,7 +121,7 @@ const topCategories = computed(() => featuredCategories(tree.value, HOME_CATEGOR
  * that — a dozen extra requests per render, and it took whatever product came
  * first rather than the one worth showing.
  */
-const topBrands = computed(() => (brands.value || []).slice(0, 14))
+const topBrands = computed(() => brands.value || [])
 const popularProducts = computed(() =>
   popular.value.data.filter((product) => product.ratingCount)
 )
@@ -108,7 +133,7 @@ const postCost = computed(() => Number(config.public.deliveryPost))
 
 function submitSearch() {
   const query = search.value.trim()
-  navigateTo({ path: '/catalog/', query: query ? { search: query } : undefined })
+  navigateTo({ path: '/catalog', query: query ? { search: query } : undefined })
 }
 
 const description
@@ -225,12 +250,12 @@ useHead({
       <article>
         <h3>Возврат</h3>
         <p>14 дней на возврат товара надлежащего качества по закону о защите прав потребителей.</p>
-        <NuxtLink to="/oferta">Публичная оферта →</NuxtLink>
+        <NuxtLink to="/garantiya">Гарантия и возврат →</NuxtLink>
       </article>
       <article>
         <h3>Наличие</h3>
         <p>Цены и остатки обновляются каждый день — то, что видите в каталоге, актуально.</p>
-        <NuxtLink to="/catalog/?inStock=1">Товары в наличии →</NuxtLink>
+        <NuxtLink to="/catalog?inStock=1">Товары в наличии →</NuxtLink>
       </article>
     </section>
 
@@ -238,7 +263,7 @@ useHead({
     <section v-if="topCategories.length" class="block">
       <header class="block-head">
         <h2>Каталог</h2>
-        <UiButton variant="link" to="/catalog/">Все категории →</UiButton>
+        <UiButton variant="link" to="/catalog">Все категории →</UiButton>
       </header>
 
       <div class="category-grid">
@@ -269,7 +294,7 @@ useHead({
     <section v-if="popularProducts.length" class="block">
       <header class="block-head">
         <h2>Выбирают покупатели</h2>
-        <UiButton variant="link" to="/catalog/?sort=rating-desc">Смотреть все →</UiButton>
+        <UiButton variant="link" to="/catalog?sort=rating-desc">Смотреть все →</UiButton>
       </header>
       <div class="product-grid">
         <ProductCatalogCard
@@ -284,7 +309,7 @@ useHead({
     <section v-if="newest.data.length" class="block">
       <header class="block-head">
         <h2>Новинки</h2>
-        <UiButton variant="link" to="/catalog/?sort=new">Смотреть все →</UiButton>
+        <UiButton variant="link" to="/catalog?sort=new">Смотреть все →</UiButton>
       </header>
       <div class="product-grid">
         <ProductCatalogCard v-for="product in newest.data" :key="product.id" :product="product" />
@@ -325,7 +350,7 @@ useHead({
     <section v-if="topBrands.length" class="block">
       <header class="block-head">
         <h2>Бренды</h2>
-        <UiButton variant="link" to="/brand/">Все бренды →</UiButton>
+        <UiButton variant="link" to="/brand">Все бренды →</UiButton>
       </header>
       <div class="brand-grid">
         <NuxtLink
