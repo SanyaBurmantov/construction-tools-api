@@ -6,44 +6,34 @@
  */
 
 :root {
-  color-scheme: light;
-
   /* ---- Primitive scales ---------------------------------------------- */
-  --gray-25: #fcfcfd;
   --gray-50: #f9fafb;
   --gray-100: #f2f4f7;
   --gray-200: #e4e7ec;
   --gray-300: #d0d5dd;
   --gray-400: #98a2b3;
   --gray-500: #667085;
-  --gray-600: #475467;
-  --gray-700: #344054;
   --gray-800: #1d2939;
   --gray-900: #101828;
   --gray-950: #0c111d;
 
   --blue-50: #eff6ff;
-  --blue-100: #dbeafe;
-  --blue-200: #bfdbfe;
   --blue-500: #3b82f6;
   --blue-600: #2563eb;
   --blue-700: #1d4ed8;
   --blue-800: #1e40af;
 
   --green-50: #ecfdf3;
-  --green-100: #d1fadf;
   --green-500: #12b76a;
   --green-600: #039855;
   --green-700: #027a48;
 
   --amber-50: #fffaeb;
-  --amber-100: #fef0c7;
   --amber-400: #fdb022;
   --amber-500: #f79009;
   --amber-600: #dc6803;
 
   --red-50: #fef3f2;
-  --red-100: #fee4e2;
   --red-500: #f04438;
   --red-600: #d92d20;
   --red-700: #b42318;
@@ -55,7 +45,6 @@
   /* ---- Semantic surfaces --------------------------------------------- */
   --surface-page: var(--gray-50);
   --surface-card: #ffffff;
-  --surface-raised: #ffffff;
   --surface-sunken: var(--gray-100);
   --surface-inverse: var(--gray-900);
   --surface-hover: var(--gray-50);
@@ -64,9 +53,7 @@
   /**
    * Product and brand images arrive from suppliers as JPEG/PNG on a white
    * background. `multiply` drops that white into our light surfaces so the
-   * cut-out looks native. On a dark surface the same blend would multiply the
-   * artwork into the background and erase it — dark mode falls back to
-   * `normal`, which keeps the white plate but keeps the image legible.
+   * cut-out looks native.
    */
   --image-blend: multiply;
 
@@ -112,6 +99,9 @@
   --sale: var(--red-600);
   --sale-soft: var(--red-50);
 
+  /* Dimmed page behind a modal or drawer. */
+  --overlay-backdrop: rgb(12 17 29 / 55%);
+
   /* ---- Spacing (4px base) --------------------------------------------- */
   --space-1: 4px;
   --space-2: 8px;
@@ -130,8 +120,6 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 28px;
   --radius-full: 999px;
 
   /* ---- Elevation ------------------------------------------------------- */
@@ -166,7 +154,6 @@
 
   /* ---- Motion ---------------------------------------------------------- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
@@ -190,62 +177,4 @@
   --z-overlay: 400;
   --z-modal: 500;
   --z-toast: 600;
-}
-
-/* Dark theme: only the semantic layer is reassigned. */
-@mixin dark-tokens {
-  color-scheme: dark;
-  --surface-page: var(--gray-950);
-  --surface-card: var(--gray-900);
-  --surface-raised: var(--gray-800);
-  --surface-sunken: #0a0e16;
-  --surface-inverse: var(--gray-100);
-  --surface-hover: rgb(255 255 255 / 4%);
-  --surface-active: rgb(255 255 255 / 8%);
-
-  --image-blend: normal;
-
-  --text-strong: #f7f9fc;
-  --text-default: var(--gray-200);
-  --text-muted: var(--gray-400);
-  --text-subtle: var(--gray-500);
-  --text-inverse: var(--gray-900);
-  --text-link: #7aa5ff;
-
-  --border-subtle: rgb(255 255 255 / 8%);
-  --border-default: rgb(255 255 255 / 14%);
-  --border-strong: rgb(255 255 255 / 24%);
-
-  --brand: var(--blue-500);
-  --brand-hover: var(--blue-600);
-  --brand-soft: rgb(59 130 246 / 14%);
-  --brand-soft-text: #9dc0ff;
-  --brand-ring: rgb(59 130 246 / 40%);
-
-  --success-soft: rgb(18 183 106 / 14%);
-  --success-soft-text: #6ce9a6;
-  --warning-soft: rgb(247 144 9 / 14%);
-  --warning-soft-text: #fdb022;
-  --danger-soft: rgb(240 68 56 / 14%);
-  --danger-soft-text: #fda29b;
-  --info-soft: rgb(124 58 237 / 18%);
-  --info-soft-text: #c4b5fd;
-  --sale-soft: rgb(240 68 56 / 14%);
-
-  --shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
-  --shadow-sm: 0 1px 3px rgb(0 0 0 / 50%);
-  --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 50%);
-  --shadow-lg: 0 12px 16px -4px rgb(0 0 0 / 55%);
-  --shadow-xl: 0 20px 24px -4px rgb(0 0 0 / 60%);
-}
-
-/**
- * The storefront is light. Dark tokens stay defined and opt-in via
- * `.theme-dark` on <html>, ready for a future toggle, but the OS preference is
- * deliberately NOT followed: a shop that flips to dark because the visitor's
- * laptop is in night mode shows product photos on backgrounds they were never
- * shot for.
- */
-:root.theme-dark {
-  @include dark-tokens;
 }

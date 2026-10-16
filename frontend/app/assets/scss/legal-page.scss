@@ -1,6 +1,11 @@
-/* Общий стиль текстовых/юридических страниц (условия продажи, политика ПДн, гарантия, о компании, доставка, контакты). */
+/*
+ * Общий стиль текстовых/юридических страниц (условия продажи, политика ПДн,
+ * гарантия, о компании, доставка, контакты). Global via storefront.scss:
+ * six pages each compiled their own scoped copy. Requisites tables are
+ * components/storefront/companyRequisites.vue.
+ */
 .legal-page {
-  width: min(880px, calc(100% - 32px));
+  width: min(var(--container-narrow), calc(100% - 32px));
   margin: 12px auto 64px;
 
   h1 {
@@ -38,43 +43,9 @@
     margin: -8px 0 18px;
     font-size: 13px;
   }
-}
 
-.requisites {
-  display: grid;
-  gap: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: white;
-  margin-top: 14px;
-  overflow: hidden;
-
-  > div {
-    display: grid;
-    gap: 4px;
-    border-bottom: 1px solid var(--border-subtle);
-    padding: 12px 16px;
-
-    &:last-child {
-      border-bottom: 0;
-    }
-
-    @media (min-width: 640px) {
-      grid-template-columns: 280px minmax(0, 1fr);
-      gap: 16px;
-    }
-  }
-
-  dt {
-    color: var(--text-muted);
-    font-size: 13px;
-    font-weight: 700;
-  }
-
-  dd {
-    margin: 0;
-    color: #101828;
-    font-weight: 600;
-    overflow-wrap: anywhere;
+  // Closing paragraph after a requisites table
+  .legal-note {
+    margin-top: 16px;
   }
 }

@@ -1,21 +1,11 @@
 <script setup lang="ts">
 import { company } from '~/data/company'
 
-const config = useRuntimeConfig()
-const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
+const { siteUrl } = useSite()
 const description =
-  'Условия продажи интернет-магазина Мультитул: как оформляется и подтверждается заказ, цены, оплата, доставка, возврат и обмен.'
+  'Условия продажи интернет-магазина Gost.by: как оформляется и подтверждается заказ, цены, оплата, доставка, возврат и обмен.'
 
-useSeoMeta({
-  title: 'Условия продажи | Мультитул',
-  description,
-  ogTitle: 'Условия продажи | Мультитул',
-  ogDescription: description
-})
-
-useHead({
-  link: [{ rel: 'canonical', href: `${siteUrl}/usloviya` }]
-})
+usePageSeo({ title: 'Условия продажи', description, path: '/usloviya' })
 </script>
 
 <template>
@@ -167,39 +157,7 @@ useHead({
     </p>
 
     <h2>9. Сведения о продавце</h2>
-    <dl class="requisites">
-      <div>
-        <dt>Наименование</dt>
-        <dd>{{ company.name }}</dd>
-      </div>
-      <div>
-        <dt>УНП</dt>
-        <dd>{{ company.unp }}</dd>
-      </div>
-      <div>
-        <dt>Юридический адрес</dt>
-        <dd>{{ company.legalAddress }}</dd>
-      </div>
-      <div>
-        <dt>Адрес магазина (самовывоз)</dt>
-        <dd>{{ company.storeAddress }}</dd>
-      </div>
-      <div>
-        <dt>Режим работы</dt>
-        <dd>{{ company.workingHours }}</dd>
-      </div>
-      <div>
-        <dt>Телефон</dt>
-        <dd><a :href="company.phoneHref">{{ company.phone }}</a></dd>
-      </div>
-      <div>
-        <dt>E-mail</dt>
-        <dd><a :href="company.emailHref">{{ company.email }}</a></dd>
-      </div>
-    </dl>
+    <StorefrontCompanyRequisites variant="seller" />
   </section>
 </template>
 
-<style scoped lang="scss">
-@use '@/assets/scss/legal-page.scss' as *;
-</style>

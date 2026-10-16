@@ -1,4 +1,5 @@
-import { useCartStore } from '~/stores/cart'
+import { useCartStore, type CartItem } from '~/stores/cart'
+import { normalizeCurrency } from '~/composables/useFormatPrice'
 import { useWishlistStore } from '~/stores/wishlist'
 import { useCompareStore, COMPARE_LIMIT } from '~/stores/compare'
 
@@ -26,6 +27,41 @@ export interface CatalogProduct {
 }
 
 /**
+ * A product as a favourites / comparison entry — the fields both lists keep.
+ * Prices may be missing: a list remembers a product even when it cannot be bought.
+ */
+export function toListEntry(product: CatalogProduct) {
+  return {
+    productId: product.id,
+    slug: product.slug,
+    name: product.name,
+    image: product.images?.[0]?.url ?? null,
+    price: product.priceValue ?? null,
+    oldPrice: product.oldPrice ?? null,
+    currency: normalizeCurrency(product.priceCurrency),
+  }
+}
+
+/**
+ * A product as a cart line, or null when it has no price to sell at — the
+ * cart (and POST /orders) never takes an unpriced item.
+ */
+export function toCartLine(
+  product: Pick<CatalogProduct, 'id' | 'slug' | 'name' | 'sku' | 'priceValue' | 'priceCurrency' | 'images'>
+): Omit<CartItem, 'quantity'> | null {
+  if (product.priceValue == null || product.priceValue <= 0) return null
+  return {
+    productId: product.id,
+    slug: product.slug,
+    name: product.name,
+    sku: product.sku ?? null,
+    image: product.images?.[0]?.url ?? null,
+    price: product.priceValue,
+    currency: normalizeCurrency(product.priceCurrency),
+  }
+}
+
+/**
  * Cart / wishlist / compare actions plus the derived display state every
  * product surface needs. Keeps toast wording consistent across the storefront.
  */
@@ -34,7 +70,6 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
   const wishlist = useWishlistStore()
   const compare = useCompareStore()
   const toast = useAppToast()
-  const { normalizeCurrency } = useFormatPrice()
 
   const item = computed(() => toValue(product))
   const image = computed(() => item.value.images?.[0]?.url ?? null)
@@ -89,32 +124,14 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
   const inCart = computed(() => cart.items.some((i) => i.productId === item.value.id))
 
   function addToCart(quantity = 1) {
-    if (!canBuy.value) return
-    cart.add(
-      {
-        productId: item.value.id,
-        slug: item.value.slug,
-        name: item.value.name,
-        sku: item.value.sku ?? null,
-        image: image.value,
-        price: item.value.priceValue as number,
-        currency: currency.value,
-      },
-      quantity
-    )
+    const line = toCartLine(item.value)
+    if (!line) return
+    cart.add(line, quantity)
     toast.success(`«${item.value.name}» в корзине`)
   }
 
   function toggleWishlist() {
-    const added = wishlist.toggle({
-      productId: item.value.id,
-      slug: item.value.slug,
-      name: item.value.name,
-      image: image.value,
-      price: item.value.priceValue ?? null,
-      oldPrice: item.value.oldPrice ?? null,
-      currency: currency.value,
-    })
+    const added = wishlist.toggle(toListEntry(item.value))
     toast.push(added ? 'Добавлено в избранное' : 'Удалено из избранного', {
       tone: added ? 'success' : 'info',
     })
@@ -122,13 +139,7 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
 
   function toggleCompare() {
     const result = compare.toggle({
-      productId: item.value.id,
-      slug: item.value.slug,
-      name: item.value.name,
-      image: image.value,
-      price: item.value.priceValue ?? null,
-      oldPrice: item.value.oldPrice ?? null,
-      currency: currency.value,
+      ...toListEntry(item.value),
       categorySlug: item.value.category?.slug ?? null,
       categoryName: item.value.category?.name ?? null,
     })
@@ -169,7 +180,8 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
  * and category rows (descriptions, SEO fields), every image and every spec —
  * and whatever `useAsyncData` returns is serialised into `__NUXT_DATA__` of
  * the cached HTML. Pages that only render cards (the home rails) pass their
- * rows through this in `transform`. Keep it in step with `CatalogProduct`'s
+ * rows through this in `transform`. Four specs survive: the list row shows
+ * four, the card three. Keep it in step with `CatalogProduct`'s
  * consumers: the card, `useProductActions` and the cart/wishlist/compare
  * entries built from it.
  */
@@ -191,7 +203,7 @@ export function toCardProduct(product: CatalogProduct): CatalogProduct {
     brand: relation(product.brand),
     category: relation(product.category),
     images: (product.images ?? []).slice(0, 1).map(image => ({ url: image.url, alt: image.alt ?? null })),
-    productSpecs: (product.productSpecs ?? []).slice(0, 3).map(spec => ({ name: spec.name, value: spec.value })),
+    productSpecs: (product.productSpecs ?? []).slice(0, 4).map(spec => ({ name: spec.name, value: spec.value })),
     offerCount: product.offerCount,
     offers: product.offers,
   }

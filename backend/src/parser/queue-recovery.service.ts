@@ -1,30 +1,49 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PARSER_SOURCES } from './parser-settings.service';
+import { queueTable } from './queue-table';
 
-/** Give a failed URL this long to be a transient blip before retrying it. */
-const RETRY_AFTER_MINUTES = Number(
-  process.env.PARSER_RETRY_AFTER_MINUTES ?? 60,
-);
+/** A number from the environment, or the fallback when unset or malformed. */
+function envNumber(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 /**
- * Attempts beyond which a URL is left alone. `fetchWithTimeout` already retries
- * transient blips inside one attempt, so three failed *runs* means the problem
- * is the page or the parser, and a human has to look.
+ * Read on every run, not at module load: a malformed value used to become
+ * NaN, an Invalid Date, and a watchdog that threw on every tick.
  */
-const REFRESH_AFTER_HOURS = Number(
-  process.env.PARSER_REFRESH_AFTER_HOURS ?? 24,
-);
-
-const MAX_ATTEMPTS = Number(process.env.PARSER_MAX_ATTEMPTS ?? 3);
+function recoverySettings() {
+  return {
+    /** Give a failed URL this long to be a transient blip before retrying. */
+    retryAfterMinutes: envNumber('PARSER_RETRY_AFTER_MINUTES', 60),
+    /** DONE snapshots older than this are re-read (prices move daily). */
+    refreshAfterHours: envNumber('PARSER_REFRESH_AFTER_HOURS', 24),
+    /**
+     * SKIPPED rows (not a product page, filtered category, 404) are looked at
+     * again after this long. Suppliers relist products, fix pages, and admins
+     * loosen category filters — none of that used to come back on its own.
+     */
+    skippedRecheckDays: envNumber('PARSER_SKIPPED_RECHECK_DAYS', 7),
+    /**
+     * Attempts beyond which a URL is left alone. `fetchWithTimeout` already
+     * retries transient blips inside one attempt, so three failed *runs*
+     * means the problem is the page or the parser.
+     */
+    maxAttempts: envNumber('PARSER_MAX_ATTEMPTS', 3),
+  };
+}
 
 /**
- * Puts recoverable FAILED rows back into the queue.
+ * Keeps every supplier queue moving without anyone pressing a button:
  *
- * Without this, a supplier being down for ten minutes leaves a few hundred URLs
- * stuck as FAILED until somebody notices and presses "Повторить проблемные" —
- * the catalogue quietly stays incomplete in the meantime. SKIPPED rows are
- * never touched: those were skipped on purpose.
+ * - FAILED rows with attempts left are retried after a pause;
+ * - DONE rows older than a day are refreshed (that is what re-reads prices);
+ * - SKIPPED rows are re-checked weekly, so a relisted product or a loosened
+ *   category filter is picked up automatically;
+ * - a PENDING row that has used up its attempts without ever finishing — the
+ *   URL that crashes the process (OOM) and so never reaches FAILED — is
+ *   parked as FAILED instead of sorting first and killing every batch.
  */
 @Injectable()
 export class QueueRecoveryService {
@@ -33,20 +52,78 @@ export class QueueRecoveryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async requeueRecoverable() {
-    const cutoff = new Date(Date.now() - RETRY_AFTER_MINUTES * 60_000);
-    const results: Record<string, number> = {};
-    const refreshed: Record<string, number> = {};
+    const settings = recoverySettings();
+    const now = Date.now();
+    const retryCutoff = new Date(now - settings.retryAfterMinutes * 60_000);
     const refreshCutoff = new Date(
-      Date.now() - REFRESH_AFTER_HOURS * 3_600_000,
+      now - settings.refreshAfterHours * 3_600_000,
+    );
+    const skippedCutoff = new Date(
+      now - settings.skippedRecheckDays * 86_400_000,
     );
 
+    const results: Record<string, number> = {};
+    const refreshed: Record<string, number> = {};
+    const rechecked: Record<string, number> = {};
+    const parked: Record<string, number> = {};
+
     for (const source of PARSER_SOURCES) {
-      results[source.code] = await this.requeueSource(source.code, cutoff);
-      refreshed[source.code] = await this.requeueSource(
-        source.code,
-        refreshCutoff,
-        true,
-      );
+      const table = queueTable(this.prisma, source.code);
+      if (!table) continue;
+
+      parked[source.code] = (
+        await table.updateMany({
+          where: { status: 'PENDING', attempts: { gte: settings.maxAttempts } },
+          data: {
+            status: 'FAILED',
+            lastError:
+              'Разбор этого URL ни разу не завершился (процесс падал или зависал)',
+          },
+        })
+      ).count;
+
+      results[source.code] = (
+        await table.updateMany({
+          where: {
+            status: 'FAILED',
+            attempts: { lt: settings.maxAttempts },
+            lastTriedAt: { lt: retryCutoff },
+          },
+          // lastTriedAt cleared: it doubles as the claim lease.
+          data: {
+            status: 'PENDING',
+            isVisited: false,
+            visitedAt: null,
+            lastTriedAt: null,
+          },
+        })
+      ).count;
+
+      // Keep `visitedAt` on refreshes and re-checks: never-seen URLs go first,
+      // then the stalest snapshots. A new cycle gets a fresh retry budget.
+      refreshed[source.code] = (
+        await table.updateMany({
+          where: { status: 'DONE', visitedAt: { lt: refreshCutoff } },
+          data: {
+            status: 'PENDING',
+            isVisited: false,
+            attempts: 0,
+            lastError: null,
+          },
+        })
+      ).count;
+
+      rechecked[source.code] = (
+        await table.updateMany({
+          where: { status: 'SKIPPED', visitedAt: { lt: skippedCutoff } },
+          data: {
+            status: 'PENDING',
+            isVisited: false,
+            attempts: 0,
+            lastError: null,
+          },
+        })
+      ).count;
     }
 
     const categoriesRefreshed =
@@ -59,60 +136,27 @@ export class QueueRecoveryService {
         },
         data: { status: 'PENDING', attempts: 0, lastError: null },
       });
+
     const total = Object.values(results).reduce((sum, n) => sum + n, 0);
     if (total) {
       this.logger.log(
         `Requeued ${total} recoverable URLs: ${JSON.stringify(results)}`,
       );
     }
+    const parkedTotal = Object.values(parked).reduce((sum, n) => sum + n, 0);
+    if (parkedTotal) {
+      this.logger.warn(
+        `Parked ${parkedTotal} URLs that never finished parsing: ${JSON.stringify(parked)}`,
+      );
+    }
     return {
       total,
       bySource: results,
-      maxAttempts: MAX_ATTEMPTS,
+      maxAttempts: settings.maxAttempts,
       refreshed,
+      rechecked,
+      parked,
       categoriesRefreshed: categoriesRefreshed.count,
     };
-  }
-
-  private requeueSource(code: string, cutoff: Date, refresh = false) {
-    const where = refresh
-      ? { status: 'DONE', visitedAt: { lt: cutoff } }
-      : {
-          status: 'FAILED',
-          attempts: { lt: MAX_ATTEMPTS },
-          lastTriedAt: { lt: cutoff },
-        };
-    const data = {
-      status: 'PENDING',
-      isVisited: false,
-      // Keep the last successful date on scheduled refreshes: new URLs go
-      // first, then the oldest snapshots. Reset the retry budget for a new cycle.
-      ...(refresh ? { attempts: 0, lastError: null } : { visitedAt: null }),
-    };
-
-    // Each source has its own queue table, so the delegate is picked explicitly
-    // rather than by string — Prisma's types do not survive a dynamic lookup.
-    switch (code) {
-      case 'th-tools':
-        return this.count(
-          this.prisma.sitemapsThTools.updateMany({ where, data }),
-        );
-      case 'tools-by':
-        return this.count(
-          this.prisma.sitemapsToolsBy.updateMany({ where, data }),
-        );
-      case 'dukon':
-        return this.count(
-          this.prisma.sitemapsDukon.updateMany({ where, data }),
-        );
-      case '7745':
-        return this.count(this.prisma.sitemaps7745.updateMany({ where, data }));
-      default:
-        return Promise.resolve(0);
-    }
-  }
-
-  private async count(promise: Promise<{ count: number }>) {
-    return (await promise).count;
   }
 }

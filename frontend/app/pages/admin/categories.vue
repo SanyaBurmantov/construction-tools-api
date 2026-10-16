@@ -21,6 +21,7 @@ type Category = {
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
+const { run, busy } = useAdminAction()
 
 const categories = ref<Category[]>([])
 const loading = ref(false)
@@ -222,23 +223,6 @@ const blankForm = () => ({
 })
 const form = reactive(blankForm())
 
-const TRANSLIT: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
-  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
-  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch',
-  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-}
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .split('')
-    .map((char) => TRANSLIT[char] ?? char)
-    .join('')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 90)
-
 function openCreate(parentId = '') {
   editing.value = null
   Object.assign(form, blankForm())
@@ -284,17 +268,23 @@ async function save() {
     return
   }
 
+  const isUpdate = Boolean(editing.value)
   const body = {
     name: form.name.trim(),
     slug: form.slug.trim(),
-    parentId: form.parentId || undefined,
-    description: form.description.trim() || undefined,
+    // On an update a blank is sent as '' — that is how «Корневая категория»
+    // moves a branch to the root and how a description is cleared; omitting
+    // it meant "no change", so neither ever happened. A create must omit it:
+    // '' there would be taken as a parent id.
+    parentId: form.parentId || (isUpdate ? '' : undefined),
+    description: form.description.trim() || (isUpdate ? '' : undefined),
     // `null`, not `undefined`: an omitted field leaves the old URL in place,
     // so emptying the input could never remove a picture.
     image: form.image.trim() || null,
     seoTitle: form.seoTitle.trim() || form.name.trim(),
     seoDescription: form.seoDescription.trim() || form.name.trim(),
-    sortOrder: form.sortOrder ? Number(form.sortOrder) : 0,
+    // 0 is the meaningful "never placed" here, so a blank deliberately maps to it.
+    sortOrder: numOrNull(form.sortOrder) ?? 0,
     isVisible: form.isVisible,
     isFeatured: form.isFeatured,
   }
@@ -329,32 +319,36 @@ async function save() {
  * The row is updated in place on success rather than reloading the whole list,
  * so the tree keeps its scroll position and collapsed state.
  */
+/**
+ * Several rows can be mid-request at once (`useAdminAction().busy` holds one
+ * key), so the per-row lock is its own set.
+ */
 const busyRows = ref<Set<string>>(new Set())
 
-function setBusy(id: string, busy: boolean) {
-  const next = new Set(busyRows.value)
-  if (busy) next.add(id)
-  else next.delete(id)
-  busyRows.value = next
+async function withRowBusy<R>(id: string, fn: () => Promise<R>) {
+  busyRows.value = new Set(busyRows.value).add(id)
+  try {
+    return await fn()
+  } finally {
+    const next = new Set(busyRows.value)
+    next.delete(id)
+    busyRows.value = next
+  }
 }
 
-async function patchDisplay(row: Category, body: Record<string, unknown>, done: string) {
-  setBusy(row.id, true)
-  try {
-    const updated = await adminFetch<Category>(`/categories/${row.id}`, {
-      method: 'PATCH',
-      body,
-    })
-    const index = categories.value.findIndex((item) => item.id === row.id)
-    if (index >= 0) {
-      categories.value[index] = { ...categories.value[index]!, ...updated }
-    }
-    toast.success(done)
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось сохранить настройку'))
-  } finally {
-    setBusy(row.id, false)
-  }
+function patchDisplay(row: Category, body: Record<string, unknown>, done: string) {
+  return withRowBusy(row.id, () =>
+    run(() => adminFetch<Category>(`/categories/${row.id}`, { method: 'PATCH', body }), {
+      error: 'Не удалось сохранить настройку',
+      success: done,
+      after: (updated) => {
+        const index = categories.value.findIndex(item => item.id === row.id)
+        if (index >= 0) {
+          categories.value[index] = { ...categories.value[index]!, ...updated }
+        }
+      },
+    }),
+  )
 }
 
 function toggleVisible(row: Category) {
@@ -389,19 +383,18 @@ async function move(row: Category, direction: -1 | 1) {
   const [moved] = ids.splice(from, 1)
   ids.splice(to, 0, moved!)
 
-  setBusy(row.id, true)
-  try {
-    await adminFetch('/categories/order', { method: 'PATCH', body: { ids } })
-    // Positions are 1-based on the server; mirror that locally.
-    for (const [index, id] of ids.entries()) {
-      const target = categories.value.findIndex((item) => item.id === id)
-      if (target >= 0) categories.value[target] = { ...categories.value[target]!, sortOrder: index + 1 }
-    }
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить порядок'))
-  } finally {
-    setBusy(row.id, false)
-  }
+  await withRowBusy(row.id, () =>
+    run(() => adminFetch('/categories/order', { method: 'PATCH', body: { ids } }), {
+      error: 'Не удалось изменить порядок',
+      after: () => {
+        // Positions are 1-based on the server; mirror that locally.
+        for (const [index, id] of ids.entries()) {
+          const target = categories.value.findIndex(item => item.id === id)
+          if (target >= 0) categories.value[target] = { ...categories.value[target]!, sortOrder: index + 1 }
+        }
+      },
+    }),
+  )
 }
 
 function canMove(row: Category, direction: -1 | 1) {
@@ -455,51 +448,47 @@ async function saveImage(value: string | null) {
 /* ---- Merge & delete ---------------------------------------------------- */
 const merging = ref<Category | null>(null)
 const mergeTarget = ref('')
-const mergeBusy = ref(false)
 
 async function confirmMerge() {
-  if (!merging.value || !mergeTarget.value) return
-  mergeBusy.value = true
-  try {
-    await adminFetch(`/categories/${merging.value.id}/merge`, {
-      method: 'POST',
-      body: { targetCategoryId: mergeTarget.value },
-    })
-    toast.success('Категории объединены')
-    merging.value = null
-    mergeTarget.value = ''
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось объединить категории'))
-  } finally {
-    mergeBusy.value = false
-  }
+  const source = merging.value
+  const targetCategoryId = mergeTarget.value
+  if (!source || !targetCategoryId) return
+  await run(
+    () =>
+      adminFetch(`/categories/${source.id}/merge`, {
+        method: 'POST',
+        body: { targetCategoryId },
+      }),
+    {
+      key: 'merge',
+      error: 'Не удалось объединить категории',
+      success: 'Категории объединены',
+      after: () => {
+        merging.value = null
+        mergeTarget.value = ''
+        return load()
+      },
+    },
+  )
 }
 
 const deleting = ref<Category | null>(null)
-const deletingBusy = ref(false)
 
 async function confirmDelete() {
-  if (!deleting.value) return
-  deletingBusy.value = true
-  try {
-    await adminFetch(`/categories/${deleting.value.id}`, { method: 'DELETE' })
-    toast.success('Категория удалена')
-    deleting.value = null
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить категорию'))
-  } finally {
-    deletingBusy.value = false
-  }
+  const category = deleting.value
+  if (!category) return
+  await run(() => adminFetch(`/categories/${category.id}`, { method: 'DELETE' }), {
+    key: 'delete',
+    error: 'Не удалось удалить категорию',
+    success: 'Категория удалена',
+    after: () => {
+      deleting.value = null
+      return load()
+    },
+  })
 }
 
-const categoryOptions = computed(() =>
-  categories.value
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-    .map((c) => ({ value: c.id, label: `${'— '.repeat(c.level)}${c.name}` }))
-)
+const categoryOptions = computed(() => categoryTreeOptions(categories.value))
 
 const mergeOptions = computed(() =>
   categoryOptions.value.filter((option) => option.value !== merging.value?.id)
@@ -507,29 +496,23 @@ const mergeOptions = computed(() =>
 </script>
 
 <template>
-  <div class="admin-categories">
-    <header class="head">
-      <div>
-        <h1>Категории</h1>
-        <p>
-          {{ categories.length }} категорий · {{ hiddenCount }} скрыто ·
-          {{ featuredCount }} на главной
-        </p>
-      </div>
-      <div class="head-actions">
-        <UiSelect v-model="view" size="sm" class="view" :options="VIEWS" />
-        <UiInput v-model="search" placeholder="Найти категорию" size="sm" class="search" />
-        <UiButton
-          v-if="!filtering && expanded.size"
-          variant="ghost"
-          size="sm"
-          @click="collapseAll"
-        >
-          Свернуть всё
-        </UiButton>
-        <UiButton @click="openCreate()">Добавить</UiButton>
-      </div>
-    </header>
+  <div class="admin-page">
+    <AdminPageHead
+      title="Категории"
+      :description="`${categories.length} категорий · ${hiddenCount} скрыто · ${featuredCount} на главной`"
+    >
+      <UiSelect v-model="view" size="sm" class="view" :options="VIEWS" />
+      <UiInput v-model="search" placeholder="Найти категорию" size="sm" class="search" />
+      <UiButton
+        v-if="!filtering && expanded.size"
+        variant="ghost"
+        size="sm"
+        @click="collapseAll"
+      >
+        Свернуть всё
+      </UiButton>
+      <UiButton @click="openCreate()">Добавить</UiButton>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -670,7 +653,7 @@ const mergeOptions = computed(() =>
     >
       <UiAlert v-if="formError" tone="danger" class="form-error">{{ formError }}</UiAlert>
 
-      <div class="form">
+      <div class="admin-form">
         <UiField label="Название" required for="c-name">
           <UiInput id="c-name" v-model="form.name" />
         </UiField>
@@ -803,7 +786,7 @@ const mergeOptions = computed(() =>
       size="md"
       @update:open="merging = null"
     >
-      <p class="confirm-text">
+      <p class="admin-muted merge-text">
         Все товары и подкатегории из «{{ merging?.name }}» переедут в выбранную категорию,
         а «{{ merging?.name }}» будет удалена.
       </p>
@@ -818,61 +801,27 @@ const mergeOptions = computed(() =>
 
       <template #footer>
         <UiButton variant="ghost" @click="merging = null">Отмена</UiButton>
-        <UiButton :loading="mergeBusy" :disabled="!mergeTarget" @click="confirmMerge">
+        <UiButton :loading="busy === 'merge'" :disabled="!mergeTarget" @click="confirmMerge">
           Объединить
         </UiButton>
       </template>
     </UiModal>
 
     <!-- Delete -->
-    <UiModal
+    <UiConfirm
       :open="Boolean(deleting)"
       title="Удалить категорию?"
-      size="sm"
+      :busy="busy === 'delete'"
       @update:open="deleting = null"
+      @confirm="confirmDelete"
     >
-      <p class="confirm-text">
-        «{{ deleting?.name }}» будет удалена. Если в ней есть товары или подкатегории,
-        API отклонит удаление — сначала объедините её с другой категорией.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="deleting = null">Отмена</UiButton>
-        <UiButton variant="danger" :loading="deletingBusy" @click="confirmDelete">Удалить</UiButton>
-      </template>
-    </UiModal>
+      «{{ deleting?.name }}» будет удалена. Если в ней есть товары или подкатегории,
+      API отклонит удаление — сначала объедините её с другой категорией.
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-categories {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.head-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
 .search {
   width: min(260px, 100%);
 }
@@ -1108,19 +1057,12 @@ const mergeOptions = computed(() =>
   }
 }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
 .form-error {
   margin-bottom: var(--space-4);
 }
 
-.confirm-text {
+.merge-text {
   margin-bottom: var(--space-4);
-  color: var(--text-muted);
 }
 
 @media (max-width: 900px) {

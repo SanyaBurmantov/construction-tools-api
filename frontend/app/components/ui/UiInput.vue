@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(
+const props = withDefaults(
   defineProps<{
     type?: string
     placeholder?: string
@@ -27,6 +27,11 @@ const model = defineModel<string | number | null>()
 // `blur` doesn't bubble, so a fallthrough listener on the wrapper div would
 // never fire. Declaring it here re-emits from the real input instead.
 const emit = defineEmits<{ blur: [FocusEvent], focus: [FocusEvent] }>()
+
+// Every password field gets a show/hide toggle here rather than per form.
+const isPassword = computed(() => props.type === 'password')
+const revealed = ref(false)
+const inputType = computed(() => (isPassword.value && revealed.value ? 'text' : props.type))
 </script>
 
 <template>
@@ -35,7 +40,7 @@ const emit = defineEmits<{ blur: [FocusEvent], focus: [FocusEvent] }>()
     <input
       :id="id"
       v-model="model"
-      :type="type"
+      :type="inputType"
       :placeholder="placeholder"
       :disabled="disabled"
       :readonly="readonly"
@@ -49,6 +54,21 @@ const emit = defineEmits<{ blur: [FocusEvent], focus: [FocusEvent] }>()
       @focus="emit('focus', $event)"
     >
     <span v-if="$slots.trailing" class="affix"><slot name="trailing" /></span>
+    <button
+      v-if="isPassword"
+      type="button"
+      class="reveal"
+      :aria-label="revealed ? 'Скрыть пароль' : 'Показать пароль'"
+      :aria-pressed="revealed"
+      :disabled="disabled"
+      @click="revealed = !revealed"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
+        <circle cx="12" cy="12" r="3" />
+        <path v-if="revealed" d="M4 4l16 16" />
+      </svg>
+    </button>
   </div>
 </template>
 
@@ -117,6 +137,36 @@ input::placeholder {
 .size-lg input {
   font-size: var(--text-md);
   min-height: 50px;
+}
+
+.reveal {
+  display: grid;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-right: calc(var(--space-1) * -1);
+  border-radius: var(--radius-xs);
+  color: var(--text-subtle);
+  place-items: center;
+}
+
+.reveal:hover:not(:disabled) {
+  color: var(--text-strong);
+}
+
+.reveal:focus-visible {
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+
+.reveal svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .affix {

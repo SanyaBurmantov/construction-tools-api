@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import type { Paginated } from '~/types/api'
+import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
+
 definePageMeta({ layout: 'admin' })
 
-type Review = {
+/** The moderation projection — the public `Review` carries neither e-mail nor product. */
+type AdminReview = {
   id: string
   productId: string
   authorName: string
@@ -20,93 +24,47 @@ type Review = {
   }
 }
 
-type ListResponse = {
-  data: Review[]
-  pendingCount: number
-  pagination: { page: number, limit: number, total: number, pages: number }
-}
+type ListResponse = Paginated<AdminReview> & { pendingCount: number }
 
-const { adminFetch, errorMessage } = useAdminApi()
-const toast = useAppToast()
-
-const reviews = ref<Review[]>([])
-const pendingCount = ref(0)
-const pagination = ref({ page: 1, limit: 20, total: 0, pages: 0 })
-const loading = ref(false)
-const loadError = ref('')
-const busyId = ref('')
+const { adminFetch } = useAdminApi()
+const { run, busy } = useAdminAction()
 
 const tab = ref<'PENDING' | 'APPROVED' | 'REJECTED' | ''>('PENDING')
 const search = ref('')
-const page = ref(1)
+const pendingCount = ref(0)
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const response = await adminFetch<ListResponse>('/reviews', {
-      params: {
-        page: page.value,
-        limit: 20,
-        ...(tab.value ? { status: tab.value } : {}),
-        ...(search.value.trim() ? { search: search.value.trim() } : {}),
-      },
-    })
-    reviews.value = response.data
+const { rows: reviews, pagination, loading, error: loadError, load, setPage } = useAdminList<
+  AdminReview,
+  ListResponse
+>('/reviews', {
+  params: () => ({ status: tab.value, search: search.value }),
+  debounce: 350,
+  errorText: 'Не удалось загрузить отзывы',
+  onResponse: (response) => {
     pendingCount.value = response.pendingCount
-    pagination.value = response.pagination
-  } catch (error) {
-    loadError.value = errorMessage(error, 'Не удалось загрузить отзывы')
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
-watch(tab, () => {
-  page.value = 1
-  void load()
-})
-watch(page, () => void load())
-
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-watch(search, () => {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    page.value = 1
-    void load()
-  }, 350)
+  },
 })
 
-async function setStatus(review: Review, status: Review['status']) {
-  busyId.value = review.id
-  try {
-    await adminFetch(`/reviews/${review.id}/status`, { method: 'PATCH', body: { status } })
-    toast.success(status === 'APPROVED' ? 'Отзыв опубликован' : 'Отзыв отклонён')
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить статус'))
-  } finally {
-    busyId.value = ''
-  }
-}
+const setStatus = (review: AdminReview, status: AdminReview['status']) =>
+  run(() => adminFetch(`/reviews/${review.id}/status`, { method: 'PATCH', body: { status } }), {
+    key: review.id,
+    error: 'Не удалось изменить статус',
+    success: status === 'APPROVED' ? 'Отзыв опубликован' : 'Отзыв отклонён',
+    after: load,
+  })
 
-const deleting = ref<Review | null>(null)
-const deletingBusy = ref(false)
+const deleting = ref<AdminReview | null>(null)
 
 async function confirmDelete() {
-  if (!deleting.value) return
-  deletingBusy.value = true
-  try {
-    await adminFetch(`/reviews/${deleting.value.id}`, { method: 'DELETE' })
-    toast.success('Отзыв удалён')
-    deleting.value = null
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить отзыв'))
-  } finally {
-    deletingBusy.value = false
-  }
+  const review = deleting.value
+  if (!review) return
+  const done = await run(() => adminFetch(`/reviews/${review.id}`, { method: 'DELETE' }), {
+    key: 'delete',
+    error: 'Не удалось удалить отзыв',
+    success: 'Отзыв удалён',
+    after: load,
+  })
+  if (done !== undefined) deleting.value = null
 }
 
 const STATUS_TONES = {
@@ -119,26 +77,19 @@ const STATUS_LABELS = {
   APPROVED: 'Опубликован',
   REJECTED: 'Отклонён',
 } as const
-
-const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
 </script>
 
 <template>
-  <div class="admin-reviews">
-    <header class="head">
-      <div>
-        <h1>Отзывы</h1>
-        <p>Каждый отзыв публикуется только после проверки</p>
-      </div>
-      <UiInput v-model="search" placeholder="Автор или текст" size="sm" class="search" />
-    </header>
+  <div class="admin-page">
+    <AdminPageHead title="Отзывы" description="Каждый отзыв публикуется только после проверки">
+      <UiInput
+        v-model="search"
+        placeholder="Автор или текст"
+        aria-label="Поиск отзывов"
+        size="sm"
+        class="search"
+      />
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -171,7 +122,7 @@ const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
             <UiBadge :tone="STATUS_TONES[review.status]" size="sm">
               {{ STATUS_LABELS[review.status] }}
             </UiBadge>
-            <time :datetime="review.createdAt">{{ formatDate(review.createdAt) }}</time>
+            <time :datetime="review.createdAt">{{ formatDateTime(review.createdAt) }}</time>
           </div>
 
           <h3 v-if="review.title">{{ review.title }}</h3>
@@ -200,7 +151,7 @@ const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
               v-if="review.status !== 'APPROVED'"
               size="sm"
               variant="success"
-              :loading="busyId === review.id"
+              :loading="busy === review.id"
               @click="setStatus(review, 'APPROVED')"
             >
               Опубликовать
@@ -209,7 +160,7 @@ const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
               v-if="review.status !== 'REJECTED'"
               size="sm"
               variant="secondary"
-              :loading="busyId === review.id"
+              :loading="busy === review.id"
               @click="setStatus(review, 'REJECTED')"
             >
               Отклонить
@@ -224,51 +175,23 @@ const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
       :page="pagination.page"
       :pages="pagination.pages"
       :total="pagination.total"
-      @change="page = $event"
+      @change="setPage"
     />
 
-    <UiModal
+    <UiConfirm
       :open="Boolean(deleting)"
       title="Удалить отзыв?"
-      size="sm"
+      :busy="busy === 'delete'"
       @update:open="deleting = null"
+      @confirm="confirmDelete"
     >
-      <p class="confirm-text">
-        Отзыв от «{{ deleting?.authorName }}» будет удалён безвозвратно, рейтинг товара
-        пересчитается.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="deleting = null">Отмена</UiButton>
-        <UiButton variant="danger" :loading="deletingBusy" @click="confirmDelete">Удалить</UiButton>
-      </template>
-    </UiModal>
+      Отзыв от «{{ deleting?.authorName }}» будет удалён безвозвратно, рейтинг товара
+      пересчитается.
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-reviews {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 .search {
   width: min(280px, 100%);
 }
@@ -365,10 +288,6 @@ const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
   flex-direction: column;
   margin-top: auto;
   gap: var(--space-2);
-}
-
-.confirm-text {
-  color: var(--text-muted);
 }
 
 @media (max-width: 900px) {

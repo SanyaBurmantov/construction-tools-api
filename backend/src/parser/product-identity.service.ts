@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { isUniqueViolation } from '../common/utils/upsert-tolerantly';
 import { generateSlug } from '../common/utils/generate-slug';
 import { shouldBeFilterable } from './spec-filterable';
 import { canonicalSpec, normalizeSpecValue } from './spec-canonical';
@@ -9,6 +11,25 @@ import { normalizeBrandName } from './brand-name';
 
 /** How many `-2`, `-3`… suffixes to try before giving up on a slug. */
 const MAX_SLUG_ATTEMPTS = 50;
+
+/**
+ * Columns a parse never writes, whatever the parser passes:
+ * - prices belong to PricingService (`applyCost` after the offer is saved) —
+ *   a parser writing them clobbered MANUAL prices and published new products
+ *   at the raw supplier cost;
+ * - status belongs to the publication rules in OffersService and to admins —
+ *   a parse must not republish what someone hid.
+ */
+const PARSER_FORBIDDEN_FIELDS = [
+  'priceValue',
+  'oldPrice',
+  'costPrice',
+  'pricingMode',
+  'status',
+  'statusSource',
+  'aiLockedFields',
+  'lockedFields',
+] as const;
 
 export type ProductWriteData = {
   // Unchecked variants: the parsers set foreign keys directly (`brandId`,
@@ -64,38 +85,65 @@ export class ProductIdentityService {
     // Every parser saves through here, so this is the one place a supplier's
     // sales boilerplate (their phone, «купить в Минске») is kept out of our
     // product text, whichever parser forgot to clean it.
-    params = { ...params, data: this.withCleanTexts(params.data) };
+    params = {
+      ...params,
+      data: this.withoutForbiddenFields(this.withCleanTexts(params.data)),
+    };
     const existingId = await this.findByOffer(params.sourceId, params.url);
 
     if (existingId) {
-      // Never republish something an admin hid or archived — the caller decides
-      // whether to flip DRAFT→PUBLISHED and passes it in `update`.
       return this.prisma.product.update({
         where: { id: existingId },
-        data: await this.withoutAiLockedFields(existingId, params.data.update),
+        data: await this.withoutLockedFields(existingId, params.data.update),
       });
     }
 
-    return this.createWithFreeSlug(params.baseSlug, params.data);
+    return this.createWithFreeSlug(params, params.data);
   }
 
   /**
-   * Text an AI task rewrote (`Product.aiLockedFields`) is ours now: the daily
-   * re-parse would otherwise put the supplier's version back within 24 hours.
+   * Text an AI task rewrote (`aiLockedFields`) and fields an admin corrected
+   * by hand (`lockedFields`) are ours now: the daily re-parse would otherwise
+   * put the supplier's version back within 24 hours.
    */
-  private async withoutAiLockedFields(
+  private async withoutLockedFields(
     productId: string,
     update: ProductWriteData['update'],
   ): Promise<ProductWriteData['update']> {
     const row = await this.prisma.product.findUnique({
       where: { id: productId },
-      select: { aiLockedFields: true },
+      select: { aiLockedFields: true, lockedFields: true },
     });
-    const locked = row?.aiLockedFields ?? [];
+    const locked = [
+      ...(row?.aiLockedFields ?? []),
+      ...(row?.lockedFields ?? []),
+    ];
     if (!locked.length) return update;
     const fields = { ...(update as Record<string, unknown>) };
     for (const key of locked) delete fields[key];
     return fields as ProductWriteData['update'];
+  }
+
+  /**
+   * Enforced here rather than trusted to each parser: four parsers drifted,
+   * and every one wrote `priceValue` on create.
+   */
+  private withoutForbiddenFields(data: ProductWriteData): ProductWriteData {
+    const strip = <T extends object>(input: T): T => {
+      const fields = { ...(input as Record<string, unknown>) };
+      for (const key of PARSER_FORBIDDEN_FIELDS) delete fields[key];
+      return fields as T;
+    };
+    return {
+      update: strip(data.update),
+      create: {
+        ...strip(data.create),
+        // Not on the storefront until PricingService has priced it and
+        // OffersService publishes it — a half-saved product is invisible.
+        status: 'DRAFT',
+        statusSource: 'SYSTEM',
+      },
+    };
   }
 
   private withCleanTexts(data: ProductWriteData): ProductWriteData {
@@ -115,19 +163,51 @@ export class ProductIdentityService {
     return { update: clean(data.update), create: clean(data.create) };
   }
 
-  private async createWithFreeSlug(baseSlug: string, data: ProductWriteData) {
-    const base = baseSlug || 'product';
+  /**
+   * Creates the product **together with** a stub of its SourceProduct, in one
+   * transaction. The full offer row is written later in the parse (after
+   * categories and specs); before, it was the only link from the URL to the
+   * product, so any failure in between left a product no offer pointed at,
+   * and the retry created another one as `slug-2`. With the stub committed
+   * alongside, a retry finds the product through `findByOffer`. The stub has
+   * no price, so it never counts as a live offer.
+   */
+  private async createWithFreeSlug(
+    params: { sourceId: string; url: string; baseSlug: string },
+    data: ProductWriteData,
+  ) {
+    const base = params.baseSlug || 'product';
 
     for (let attempt = 0; attempt <= MAX_SLUG_ATTEMPTS; attempt++) {
       const slug = attempt === 0 ? base : `${base}-${attempt + 1}`;
+      const id = randomUUID();
 
       // A product may already exist under this slug from an earlier run of a
       // *different* supplier URL. That is a genuine second product, so it gets
       // its own slug rather than overwriting the first.
       try {
-        const created = await this.prisma.product.create({
-          data: { ...data.create, slug },
-        });
+        const [created] = await this.prisma.$transaction([
+          this.prisma.product.create({ data: { ...data.create, id, slug } }),
+          this.prisma.sourceProduct.upsert({
+            where: {
+              sourceId_url: { sourceId: params.sourceId, url: params.url },
+            },
+            create: {
+              sourceId: params.sourceId,
+              url: params.url,
+              externalId: params.url,
+              name: String(data.create.name),
+              price: null,
+              stock: false,
+              images: [],
+              specifications: {},
+              productId: id,
+            },
+            // A row left with `productId: null` (its product was deleted
+            // before soft-delete existed) is re-linked to the new product.
+            update: { productId: id },
+          }),
+        ]);
 
         if (attempt > 0) {
           this.logger.debug(
@@ -136,8 +216,17 @@ export class ProductIdentityService {
         }
         return created;
       } catch (error) {
-        if (!this.isUniqueViolation(error)) throw error;
-        // Taken (or lost a race against a concurrent worker) — next candidate.
+        if (!isUniqueViolation(error)) throw error;
+        // A concurrent worker may have just created this very offer's
+        // product; use it rather than minting a duplicate.
+        const raced = await this.findByOffer(params.sourceId, params.url);
+        if (raced) {
+          return this.prisma.product.update({
+            where: { id: raced },
+            data: await this.withoutLockedFields(raced, data.update),
+          });
+        }
+        // Slug taken — next candidate.
       }
     }
 
@@ -160,6 +249,13 @@ export class ProductIdentityService {
     const slug = generateSlug(name);
     if (!slug) return undefined;
 
+    // A brand an admin merged away: its spelling now means the survivor.
+    const alias = await this.prisma.brandAlias.findUnique({
+      where: { slug },
+      select: { brandId: true },
+    });
+    if (alias) return alias.brandId;
+
     try {
       const brand = await this.prisma.brand.upsert({
         where: { slug },
@@ -168,7 +264,7 @@ export class ProductIdentityService {
       });
       return brand.id;
     } catch (error) {
-      if (!this.isUniqueViolation(error)) throw error;
+      if (!isUniqueViolation(error)) throw error;
 
       const raced = await this.prisma.brand.findUnique({
         where: { slug },
@@ -270,18 +366,11 @@ export class ProductIdentityService {
         },
       });
     } catch (error) {
-      if (!this.isUniqueViolation(error)) throw error;
+      if (!isUniqueViolation(error)) throw error;
 
       return this.prisma.specification.findUnique({
         where: { categoryId_key: { categoryId, key } },
       });
     }
-  }
-
-  private isUniqueViolation(error: unknown) {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2002'
-    );
   }
 }

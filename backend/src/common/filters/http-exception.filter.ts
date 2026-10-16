@@ -30,11 +30,20 @@ const RESERVED_KEYS = new Set([
 
 /**
  * Client errors that mean "this should have worked" — the ones worth keeping
- * when an admin screen hits them. 401/403/404 are left out: they are the normal
- * noise of a public API and an expired session, and the audit trail already
- * records the rejected admin attempts.
+ * when an admin screen hits them. 404 is left out: it is the normal noise of a
+ * public API.
  */
 const UNEXPECTED_CLIENT_ERROR = new Set([400, 405, 409, 413, 415, 422]);
+
+/**
+ * Rejected attempts on the admin surface. Guards run before interceptors, so
+ * the audit interceptor never sees a request AdminGuard turned away — this
+ * filter is the only place that does. Limited to `/admin` paths so an expired
+ * storefront session is not logged.
+ */
+const REJECTED_ADMIN_ATTEMPT = new Set([401, 403]);
+const isAdminPath = (request: AuthenticatedRequest) =>
+  request.path?.startsWith('/admin') === true;
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -60,6 +69,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     request: AuthenticatedRequest,
   ): boolean {
     if (status >= 500) return true;
+    if (REJECTED_ADMIN_ATTEMPT.has(status)) return isAdminPath(request);
     return UNEXPECTED_CLIENT_ERROR.has(status) && isAdminScope(request);
   }
 
@@ -107,11 +117,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
+    // The real message of an unexpected error (a Prisma invocation with table
+    // and column names, a TypeError) goes to the log and ErrorLog only. A 5xx
+    // HttpException was thrown on purpose and its message is meant for the
+    // caller ("Сервис временно недоступен").
+    const internalMessage =
+      exception instanceof Error ? exception.message : String(exception);
     const message =
       payload?.message ||
-      (exception instanceof Error
+      (status < 500 && exception instanceof Error
         ? exception.message
         : 'Internal server error');
+    const loggedMessage = payload?.message || internalMessage;
 
     if (this.errorLog && HttpExceptionFilter.shouldRecord(status, request)) {
       // Fire-and-forget with its own catch inside the service: the response
@@ -119,7 +136,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       void this.errorLog.record({
         statusCode: status,
         method: request.method,
-        path: request.originalUrl || request.url,
+        // Without the query string: `?x=1`, `?x=2`… are the same broken
+        // endpoint and must collapse into one row.
+        path: (request.originalUrl || request.url).split('?')[0],
         kind:
           exception instanceof Error
             ? exception.constructor.name
@@ -127,8 +146,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
         // A validation failure arrives as a list of sentences; the joined form
         // is what makes the list readable at a glance in the admin table, and
         // the list itself is kept in `detail`.
-        message: Array.isArray(message) ? message.join('; ') : String(message),
-        detail: Array.isArray(message) ? { message } : undefined,
+        message: Array.isArray(loggedMessage)
+          ? loggedMessage.join('; ')
+          : String(loggedMessage),
+        detail: Array.isArray(loggedMessage)
+          ? { message: loggedMessage }
+          : undefined,
         stack:
           status >= 500 && exception instanceof Error
             ? exception.stack

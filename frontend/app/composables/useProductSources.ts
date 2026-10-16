@@ -34,22 +34,19 @@ export function useProductSources() {
   // Keyed by product id; a missing key means "not fetched", an empty array
   // means "fetched, no supplier offers" (a hand-made product).
   const cache = useState<Record<string, ProductSource[]>>(CACHE_KEY, () => ({}))
-  const inFlight = new Set<string>()
-  const pending = usePendingIds()
-  let flushTimer: ReturnType<typeof setTimeout> | undefined
 
   /**
    * Asks for these ids on the next tick. A grid of 24 cards each asking for
    * itself becomes one request, so components can stay dumb about batching.
    */
   function queue(productIds: string[]) {
-    if (!isAdmin.value) return
-    for (const id of productIds) pending.add(id)
+    if (import.meta.server || !isAdmin.value) return
+    for (const id of productIds) pendingIds.add(id)
     if (flushTimer) return
     flushTimer = setTimeout(() => {
       flushTimer = undefined
-      const ids = [...pending]
-      pending.clear()
+      const ids = [...pendingIds]
+      pendingIds.clear()
       void load(ids)
     }, 50)
   }
@@ -87,6 +84,8 @@ export function useProductSources() {
   }
 
   const sourcesFor = (productId: string) => cache.value[productId] ?? []
+  /** True once the answer for this id is in — an empty list then means "no offers". */
+  const isLoaded = (productId: string) => cache.value[productId] !== undefined
 
   /**
    * Offers folded by supplier.
@@ -138,16 +137,16 @@ export function useProductSources() {
       .join(', ')
   }
 
-  return { isAdmin, queue, load, sourcesFor, groupedFor, labelFor }
+  return { isAdmin, queue, load, isLoaded, sourcesFor, groupedFor, labelFor }
 }
 
 /**
- * The batching buffer lives outside the composable's reactive state: it is
- * transport bookkeeping, not something a component should render, and every
- * caller must share one buffer for the batching to work.
+ * The batching bookkeeping lives at module level, outside the reactive state:
+ * it is transport, not something a component renders, and every caller must
+ * share it. Kept per instance, the timer batched only one card's own ids and
+ * `inFlight` could not stop two cards asking for the same product. Client-only
+ * — `queue()` never runs during SSR, where module state is shared by requests.
  */
-let pendingIds: Set<string> | undefined
-function usePendingIds() {
-  pendingIds ??= new Set<string>()
-  return pendingIds
-}
+const pendingIds = new Set<string>()
+const inFlight = new Set<string>()
+let flushTimer: ReturnType<typeof setTimeout> | undefined

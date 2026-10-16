@@ -26,11 +26,24 @@ const props = withDefaults(
   { variant: 'badge', showEmpty: false }
 )
 
-const { isAdmin, queue, groupedFor, labelFor } = useProductSources()
+const { isAdmin, queue, isLoaded, groupedFor, labelFor } = useProductSources()
 const { formatPrice } = useFormatPrice()
 
-onMounted(() => queue([props.productId]))
-watch(() => props.productId, id => queue([id]))
+// The session is learned client-side after mount, so `isAdmin` usually turns
+// true later than this mounts — asking only on mount never asked at all.
+watch(
+  [() => props.productId, isAdmin],
+  ([id, admin]) => {
+    if (admin) queue([id])
+  },
+  { immediate: true },
+)
+
+/**
+ * «нет предложений» only once the answer is in: before it, an empty list
+ * means "not asked yet", and every product briefly read as hand-made.
+ */
+const showEmptyNote = computed(() => props.showEmpty && isLoaded(props.productId))
 
 /**
  * Folded by supplier, never one entry per offer: a product that a supplier
@@ -56,7 +69,7 @@ function lastSyncLabel(iso: string) {
     <template v-if="isAdmin">
       <!-- Product page: the first thing an admin sees. One block per supplier,
            with every page of theirs that feeds this card under it. -->
-      <div v-if="variant === 'banner' && (groups.length || showEmpty)" class="banner">
+      <div v-if="variant === 'banner' && (groups.length || showEmptyNote)" class="banner">
         <span class="banner-label">Источник парсинга</span>
         <ul v-if="groups.length" class="banner-list">
           <li v-for="group in groups" :key="group.sourceId" class="banner-source">
@@ -88,7 +101,7 @@ function lastSyncLabel(iso: string) {
 
       <!-- Order composition: the link an admin clicks to go and buy the
            item, one per supplier page, with the purchase price next to it. -->
-      <span v-else-if="variant === 'order' && (groups.length || showEmpty)" class="order-source">
+      <span v-else-if="variant === 'order' && (groups.length || showEmptyNote)" class="order-source">
         <span class="order-source-label">Первоисточник</span>
         <template v-if="groups.length">
           <template v-for="group in groups" :key="group.sourceId">
@@ -110,7 +123,7 @@ function lastSyncLabel(iso: string) {
       </span>
 
       <!-- Table cell. -->
-      <span v-else-if="variant === 'line' && (groups.length || showEmpty)" class="line">
+      <span v-else-if="variant === 'line' && (groups.length || showEmptyNote)" class="line">
         <template v-if="groups.length">
           <span v-for="group in groups" :key="group.sourceId" class="line-item">
             <a :href="group.offers[0]!.url" target="_blank" rel="noopener noreferrer">

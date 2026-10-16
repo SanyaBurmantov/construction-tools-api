@@ -20,12 +20,14 @@ function next() {
 }
 
 function start() {
+  // Also the watcher below: a list that shrank to one banner must stop
+  // rotating, not keep a timer cycling a single slide.
+  stop()
   if (props.banners.length < 2) return
   // Auto-advance is decoration; respect a reduced-motion preference.
   if (import.meta.client && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     return
   }
-  stop()
   timer = setInterval(() => {
     if (!paused.value) next()
   }, AUTOPLAY_MS)
@@ -38,7 +40,10 @@ function stop() {
 
 onMounted(start)
 onBeforeUnmount(stop)
-watch(() => props.banners.length, start)
+watch(() => props.banners.length, (total) => {
+  if (active.value >= total) active.value = 0
+  start()
+})
 
 // Touch swipe — the slider is most used on phones.
 const touchStartX = ref(0)
@@ -179,7 +184,7 @@ function onTouchEnd(event: TouchEvent) {
 }
 
 .caption h2 {
-  color: #fff;
+  color: var(--text-inverse);
   font-size: var(--text-2xl);
   text-shadow: 0 1px 12px rgb(0 0 0 / 45%);
 }
@@ -195,7 +200,7 @@ function onTouchEnd(event: TouchEvent) {
   margin-top: var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--brand);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: var(--text-sm);
   font-weight: 700;
 }
@@ -220,7 +225,7 @@ function onTouchEnd(event: TouchEvent) {
 }
 
 .nav:hover {
-  background: #fff;
+  background: var(--surface-card);
 }
 
 .nav svg {
@@ -255,7 +260,7 @@ function onTouchEnd(event: TouchEvent) {
 
 .dots button.is-active {
   width: 24px;
-  background: #fff;
+  background: var(--surface-card);
 }
 
 @media (max-width: 640px) {

@@ -1,4 +1,5 @@
 import { company } from '~/data/company'
+import { formatPrice } from '~/composables/useFormatPrice'
 
 /**
  * Meta description of a product page, built from our own data only.
@@ -23,15 +24,6 @@ export type ProductMetaInput = {
 
 const MAX_LENGTH = 160
 const DELIVERY = 'Доставка по Беларуси, самовывоз в Витебске.'
-
-function formatPrice(value: number, currency?: string | null) {
-  const code = currency?.trim().toUpperCase()
-  return new Intl.NumberFormat('ru-BY', {
-    style: 'currency',
-    currency: code && /^[A-Z]{3}$/.test(code) ? code : 'BYN',
-    maximumFractionDigits: 2,
-  }).format(value)
-}
 
 function truncateAtWord(text: string, max: number) {
   if (text.length <= max) return text

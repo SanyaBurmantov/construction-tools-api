@@ -209,13 +209,11 @@ useHead({ title: 'Документация | Админка', meta: [{ name: 'ro
 </script>
 
 <template>
-  <div class="admin-docs">
-    <header class="head">
-      <div>
-        <h1>Документация</h1>
-        <p>Как устроен парсинг и что делать, когда он ведёт себя не так, как ожидалось.</p>
-      </div>
-    </header>
+  <div class="admin-page admin-docs">
+    <AdminPageHead
+      title="Документация"
+      description="Как устроен парсинг и что делать, когда он ведёт себя не так, как ожидалось."
+    />
 
     <UiCard>
       <template #header>
@@ -302,7 +300,7 @@ useHead({ title: 'Документация | Админка', meta: [{ name: 'ro
         <section>
           <h3>Откуда берутся ссылки</h3>
           <p>{{ source.discovery }}</p>
-          <p class="muted">Адрес карточки: <code>{{ source.productUrl }}</code></p>
+          <p class="admin-muted product-url">Адрес карточки: <code>{{ source.productUrl }}</code></p>
         </section>
 
         <section>
@@ -352,18 +350,9 @@ useHead({ title: 'Документация | Админка', meta: [{ name: 'ro
 
 <style scoped>
 .admin-docs {
-  display: flex;
-  flex-direction: column;
   gap: var(--space-5);
 }
 
-.head h1 {
-  margin-bottom: var(--space-1);
-  font-size: var(--text-2xl);
-  color: var(--text-strong);
-}
-
-.head p,
 .card-head p {
   color: var(--text-muted);
   font-size: var(--text-sm);
@@ -383,8 +372,7 @@ useHead({ title: 'Документация | Админка', meta: [{ name: 'ro
   line-height: 1.6;
 }
 
-.muted {
-  color: var(--text-muted);
+.product-url {
   font-size: var(--text-sm);
 }
 

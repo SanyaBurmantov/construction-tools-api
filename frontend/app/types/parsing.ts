@@ -5,7 +5,7 @@
  * markup that read them. Now that each panel is its own component, the page and
  * its components need a common place to agree on what the API sends.
  */
-import type { Pagination } from './api'
+import type { Paginated } from './api'
 
 export type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED'
 
@@ -27,7 +27,7 @@ export type QueueRow = {
   lastTriedAt?: string | null
 }
 
-export type QueueRowsResponse = { data: QueueRow[], pagination: Pagination }
+export type QueueRowsResponse = Paginated<QueueRow>
 
 export type BulkRetryResponse = { count: number }
 

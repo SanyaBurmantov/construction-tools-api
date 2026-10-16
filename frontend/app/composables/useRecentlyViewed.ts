@@ -1,3 +1,5 @@
+import { readArray, writeJson } from '~/utils/safe-storage'
+
 export interface ViewedProduct {
   slug: string
   name: string
@@ -22,24 +24,12 @@ export function useRecentlyViewed() {
 
   function load() {
     if (loaded.value || !import.meta.client) return
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      const parsed = raw ? JSON.parse(raw) : null
-      if (Array.isArray(parsed)) items.value = parsed
-    } catch {
-      items.value = []
-    }
+    items.value = readArray<ViewedProduct>(STORAGE_KEY)
     loaded.value = true
   }
 
-  function persist() {
-    if (!import.meta.client) return
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items.value))
-    } catch {
-      // Browsing should keep working when storage is blocked or full.
-    }
-  }
+  // Browsing keeps working when storage is blocked or full — writeJson never throws.
+  const persist = () => writeJson(STORAGE_KEY, items.value)
 
   /** Records a view, moving an already-seen product back to the front. */
   function track(product: Omit<ViewedProduct, 'viewedAt'>) {
@@ -59,5 +49,5 @@ export function useRecentlyViewed() {
 
   onMounted(load)
 
-  return { items, track, clear, load }
+  return { items, track, clear }
 }

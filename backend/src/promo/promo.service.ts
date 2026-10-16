@@ -174,7 +174,21 @@ export class PromoService {
     });
     if (existing)
       throw new BadRequestException('Такой промокод уже существует');
-    return this.prisma.promoCode.create({ data });
+    // The check above races a concurrent create; the unique index decides.
+    return this.prisma.promoCode
+      .create({ data })
+      .catch((error: unknown) => this.rethrowDuplicate(error));
+  }
+
+  /** A renamed or concurrently created code that collides is a 400, not a 500. */
+  private rethrowDuplicate(error: unknown): never {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      throw new BadRequestException('Такой промокод уже существует');
+    }
+    throw error;
   }
 
   async update(id: string, dto: AdminUpdatePromoCodeDto) {
@@ -185,18 +199,22 @@ export class PromoService {
       ...existing,
       ...dto,
     } as AdminCreatePromoCodeDto);
-    return this.prisma.promoCode.update({ where: { id }, data });
+    return this.prisma.promoCode
+      .update({ where: { id }, data })
+      .catch((error: unknown) => this.rethrowDuplicate(error));
   }
 
   async remove(id: string) {
     const existing = await this.prisma.promoCode.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Промокод не найден');
     // Orders keep promoCodeLabel, so deleting a code doesn't lose order history.
-    await this.prisma.order.updateMany({
-      where: { promoCodeId: id },
-      data: { promoCodeId: null },
-    });
-    await this.prisma.promoCode.delete({ where: { id } });
+    await this.prisma.$transaction([
+      this.prisma.order.updateMany({
+        where: { promoCodeId: id },
+        data: { promoCodeId: null },
+      }),
+      this.prisma.promoCode.delete({ where: { id } }),
+    ]);
     return { ok: true };
   }
 }

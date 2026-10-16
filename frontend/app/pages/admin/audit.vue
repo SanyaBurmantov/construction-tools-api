@@ -18,70 +18,20 @@ type AuditEntry = {
   actor: { id: string, login: string, role: 'CUSTOMER' | 'ADMIN' } | null
 }
 
-type Response = {
-  data: AuditEntry[]
-  pagination: { page: number, limit: number, total: number, pages: number }
-}
-
-const { adminFetch, errorMessage } = useAdminApi()
-
-const entries = ref<AuditEntry[]>([])
-const page = ref(1)
-const pages = ref(1)
-const total = ref(0)
-const loading = ref(false)
-const loadError = ref('')
-
 const filters = reactive({
   method: '' as '' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: '',
   onlyFailures: false,
 })
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const response = await adminFetch<Response>('/audit', {
-      params: {
-        page: page.value,
-        method: filters.method || undefined,
-        path: filters.path.trim() || undefined,
-        onlyFailures: filters.onlyFailures ? 'true' : undefined,
-      },
-    })
-    entries.value = response.data
-    page.value = response.pagination.page
-    pages.value = response.pagination.pages
-    total.value = response.pagination.total
-  } catch (error) {
-    loadError.value = errorMessage(error, 'Не удалось загрузить журнал')
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
-
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-watch(
-  () => [filters.method, filters.path, filters.onlyFailures],
-  () => {
-    if (searchTimer) clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => {
-      page.value = 1
-      void load()
-    }, 300)
-  }
+const { rows: entries, pagination, loading, error: loadError, setPage } = useAdminList<AuditEntry>(
+  '/audit',
+  {
+    params: () => ({ ...filters, onlyFailures: filters.onlyFailures ? 'true' : undefined }),
+    limit: 50,
+    errorText: 'Не удалось загрузить журнал',
+  },
 )
-onBeforeUnmount(() => {
-  if (searchTimer) clearTimeout(searchTimer)
-})
-
-function goToPage(next: number) {
-  page.value = next
-  void load()
-}
 
 /* ---- Display ----------------------------------------------------------- */
 const expanded = ref('')
@@ -92,9 +42,6 @@ const METHOD_TONE: Record<string, 'info' | 'warning' | 'danger' | 'neutral'> = {
   PATCH: 'warning',
   DELETE: 'danger',
 }
-
-const statusTone = (code: number) =>
-  code >= 500 ? 'danger' : code >= 400 ? 'warning' : 'success'
 
 /** Keeps the table readable: the full body is one click away. */
 const payloadPreview = (payload: unknown) => {
@@ -107,17 +54,14 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
 </script>
 
 <template>
-  <div class="admin-audit">
-    <header class="head">
-      <div>
-        <h1>Журнал действий</h1>
-        <p>
-          Кто и что менял в панели управления. Пишутся только изменяющие
-          запросы — пароли и токены в теле заменяются на «[redacted]».
-          {{ total }} записей.
-        </p>
-      </div>
-    </header>
+  <div class="admin-page admin-audit">
+    <AdminPageHead title="Журнал действий">
+      <template #description>
+        Кто и что менял в панели управления. Пишутся только изменяющие
+        запросы — пароли и токены в теле заменяются на «[redacted]».
+        {{ pagination.total }} записей.
+      </template>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -125,6 +69,7 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
       <UiInput
         v-model="filters.path"
         placeholder="Путь, например users или pricing"
+        aria-label="Путь запроса"
         size="sm"
       />
       <UiSelect
@@ -161,8 +106,8 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
         <NuxtLink v-if="row.actor" :to="`/admin/users/${row.actor.id}`">
           {{ row.actor.login }}
         </NuxtLink>
-        <span v-else class="muted">{{ row.actorLabel }}</span>
-        <p v-if="row.ip" class="muted hint">{{ row.ip }}</p>
+        <span v-else class="admin-muted">{{ row.actorLabel }}</span>
+        <p v-if="row.ip" class="admin-muted hint">{{ row.ip }}</p>
       </template>
 
       <template #cell-action="{ row }">
@@ -184,32 +129,25 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
       </template>
 
       <template #cell-status="{ row }">
-        <UiBadge :tone="statusTone(row.statusCode)" size="sm">
+        <UiBadge :tone="httpStatusTone(row.statusCode)" size="sm">
           {{ row.statusCode }}
         </UiBadge>
-        <p v-if="row.durationMs != null" class="muted hint">{{ row.durationMs }} мс</p>
+        <p v-if="row.durationMs != null" class="admin-muted hint">{{ row.durationMs }} мс</p>
       </template>
     </UiTable>
 
-    <UiPagination :page="page" :pages="pages" :total="total" @change="goToPage" />
+    <UiPagination
+      :page="pagination.page"
+      :pages="pagination.pages"
+      :total="pagination.total"
+      @change="setPage"
+    />
   </div>
 </template>
 
 <style scoped>
-.admin-audit {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
+.admin-audit :deep(.admin-head p) {
   max-width: 70ch;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
 }
 
 .filters {
@@ -252,10 +190,6 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
   background: var(--surface-sunken);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-}
-
-.muted {
-  color: var(--text-muted);
 }
 
 .hint {

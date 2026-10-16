@@ -1,31 +1,20 @@
 <script setup lang="ts">
+import type { Paginated, Review } from '~/types/api'
+
 const props = defineProps<{
   slug: string
   productName: string
 }>()
 
-type Review = {
-  id: string
-  authorName: string
-  rating: number
-  title: string | null
-  text: string
-  /** The author had a non-cancelled order with this product when they wrote it. */
-  isVerifiedPurchase: boolean
-  createdAt: string
-}
-
-type ReviewsResponse = {
-  data: Review[]
+type ReviewsResponse = Paginated<Review> & {
   summary: {
     average: number | null
     count: number
     distribution: Record<string, number>
   }
-  pagination: { page: number, limit: number, total: number, pages: number }
 }
 
-const config = useRuntimeConfig()
+const { apiBase } = useSite()
 const toast = useAppToast()
 // A signed-in author gets their name prefilled, the review linked to the
 // account, and the "подтверждённая покупка" badge when they actually bought it.
@@ -38,7 +27,7 @@ const { data, status } = await useAsyncData<ReviewsResponse>(
   () => `reviews-${props.slug}-${page.value}-${sort.value}`,
   () =>
     $fetch<ReviewsResponse>(
-      `${import.meta.server ? config.apiBaseServer : config.public.apiBase}/products/${props.slug}/reviews`,
+      `${apiBase}/products/${props.slug}/reviews`,
       { params: { page: page.value, limit: 5, sortBy: sort.value, sortOrder: 'desc' } }
     ),
   {
@@ -60,19 +49,12 @@ function share(star: number) {
   return Math.round(((summary.value.distribution[String(star)] ?? 0) / total) * 100)
 }
 
-const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-})
-const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
-
 /* ---- Submission -------------------------------------------------------- */
 const formOpen = ref(false)
 const submitting = ref(false)
 // `website` is the honeypot — hidden from real users, so anything in it came
 // from a bot. Never shown, never validated, just forwarded to the API.
-const form = reactive({
+const emptyForm = () => ({
   authorName: '',
   authorEmail: '',
   rating: 5,
@@ -80,6 +62,7 @@ const form = reactive({
   text: '',
   website: '',
 })
+const form = reactive(emptyForm())
 const errors = ref<Record<string, string>>({})
 
 /** Fills in what the account already knows, without overwriting typing. */
@@ -110,7 +93,7 @@ async function submit() {
   if (!validate()) return
   submitting.value = true
   try {
-    await $fetch(`${config.public.apiBase}/products/${props.slug}/reviews`, {
+    await $fetch(`${apiBase}/products/${props.slug}/reviews`, {
       method: 'POST',
       // With a session the API links the review to the account and swaps the
       // per-IP spam limits for "one review per product per account".
@@ -127,14 +110,7 @@ async function submit() {
       },
     })
     formOpen.value = false
-    Object.assign(form, {
-      authorName: '',
-      authorEmail: '',
-      rating: 5,
-      title: '',
-      text: '',
-      website: '',
-    })
+    Object.assign(form, emptyForm())
     toast.success('Отзыв отправлен на модерацию — он появится после проверки.')
   } catch (error) {
     const message

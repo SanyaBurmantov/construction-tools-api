@@ -1,19 +1,12 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
 import { company } from '~/data/company'
-
-interface OrderResponse {
-  id: string
-  number: number
-  total: number
-  currency: string
-}
+import type { DeliveryMethod, Order, PaymentMethod } from '~/types/api'
 
 const cart = useCartStore()
 const config = useRuntimeConfig()
-const toast = useAppToast()
 const { ensureAuthenticated } = useCheckoutAuth()
-const { user } = useAuth()
+const { user, authFetch, errorMessage } = useAuth()
 const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()
@@ -23,43 +16,42 @@ const cartValidation = useCartValidation()
 const deliveryOptions = computed(() => [
   {
     value: 'PICKUP' as const,
-    label: 'Самовывоз',
+    label: DELIVERY_LABEL.PICKUP,
     cost: 0,
     hint: company.storeAddress,
   },
   {
     value: 'COURIER' as const,
-    label: 'Курьер',
+    label: DELIVERY_LABEL.COURIER,
     cost: Number(config.public.deliveryCourier),
     hint: 'По адресу, в течение 1–2 дней',
   },
   {
     value: 'POST' as const,
-    label: 'Почта',
+    label: DELIVERY_LABEL.POST,
     cost: Number(config.public.deliveryPost),
     hint: 'Белпочта, по всей стране',
   },
 ])
 
 const paymentOptions = [
-  { value: 'CASH', label: 'Наличными', hint: 'При получении' },
-  { value: 'CARD', label: 'Картой', hint: 'При получении' },
-  { value: 'INVOICE', label: 'По счёту', hint: 'Для юридических лиц' },
-] as const
+  { value: 'CASH' as const, label: PAYMENT_LABEL.CASH, hint: 'При получении' },
+  { value: 'CARD' as const, label: PAYMENT_LABEL.CARD, hint: 'При получении' },
+  { value: 'INVOICE' as const, label: PAYMENT_LABEL.INVOICE, hint: 'Для юридических лиц' },
+]
 
 const form = reactive({
   customerName: '',
   customerPhone: '',
   customerEmail: '',
   comment: '',
-  deliveryMethod: 'PICKUP' as 'PICKUP' | 'COURIER' | 'POST',
+  deliveryMethod: 'PICKUP' as DeliveryMethod,
   deliveryAddress: '',
-  paymentMethod: 'CASH' as 'CASH' | 'CARD' | 'INVOICE',
+  paymentMethod: 'CASH' as PaymentMethod,
 })
 
 const submitting = ref(false)
 const submitError = ref('')
-const promoInput = ref('')
 
 onMounted(async () => {
   cart.load()
@@ -69,8 +61,6 @@ onMounted(async () => {
   prefillFromAccount()
   // Last chance to catch a stale price before the customer commits.
   await cartValidation.validate()
-  await promo.restore()
-  promoInput.value = promo.code.value
 })
 
 /**
@@ -95,13 +85,6 @@ const deliveryCost = computed(() => {
     = deliveryOptions.value.find((o) => o.value === form.deliveryMethod)?.cost ?? 0
   return promo.freeDelivery.value ? 0 : base
 })
-// Preview only — POST /orders recomputes every number server-side.
-const estimatedTotal = computed(() =>
-  Math.max(
-    0,
-    Math.round((cart.totalPrice - promo.discount.value + deliveryCost.value) * 100) / 100
-  )
-)
 
 /* ---- Validation --------------------------------------------------------- */
 // Errors are computed always but only shown for fields the user has left, or
@@ -145,17 +128,6 @@ const canSubmit = computed(
     && personalDataConsent.value
 )
 
-/* ---- Promo -------------------------------------------------------------- */
-async function applyPromo() {
-  const ok = await promo.validate(promoInput.value)
-  if (ok) toast.success(`Промокод ${promo.code.value} применён`)
-}
-
-function removePromo() {
-  promo.clear()
-  promoInput.value = ''
-}
-
 /* ---- Submit ------------------------------------------------------------- */
 async function submit() {
   submitAttempted.value = true
@@ -164,13 +136,10 @@ async function submit() {
   submitting.value = true
   submitError.value = ''
   try {
-    const order = await $fetch<OrderResponse>(`${config.public.apiBase}/orders`, {
+    // The session is what links the order to the account, so it shows up in
+    // «История заказов». authFetch carries the cookie and the CSRF header.
+    const order = await authFetch<Pick<Order, 'id'>>('/orders', {
       method: 'POST',
-      // The session is what links the order to the account, so it shows up in
-      // «История заказов». Without it the API treats the order as a guest one.
-      // The session cookie rides along by itself (same-origin /api); the
-      // header is the CSRF proof the API asks of a cookie session.
-      headers: API_REQUEST_HEADERS,
       body: {
         items: cart.items.map((item) => ({
           productId: item.productId,
@@ -206,17 +175,14 @@ async function submit() {
       return
     }
 
-    const message = (error as { data?: { message?: string | string[] } }).data?.message
-    submitError.value = Array.isArray(message)
-      ? message.join(', ')
-      : message || 'Не удалось оформить заказ. Попробуйте ещё раз.'
+    submitError.value = errorMessage(error, 'Не удалось оформить заказ. Попробуйте ещё раз.')
   } finally {
     submitting.value = false
   }
 }
 
 useHead({
-  title: 'Оформление заказа | Мультитул',
+  title: 'Оформление заказа | Gost.by',
   meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>
@@ -307,24 +273,18 @@ useHead({
           </UiCard>
 
           <UiCard title="Доставка">
-            <fieldset class="options">
-              <legend class="sr-only">Способ доставки</legend>
-              <label
-                v-for="option in deliveryOptions"
-                :key="option.value"
-                class="option"
-                :class="{ 'is-active': form.deliveryMethod === option.value }"
-              >
-                <input v-model="form.deliveryMethod" type="radio" :value="option.value">
-                <span class="option-body">
-                  <span class="option-label">{{ option.label }}</span>
-                  <span class="option-hint">{{ option.hint }}</span>
-                </span>
+            <UiRadioCards
+              v-model="form.deliveryMethod"
+              :options="deliveryOptions"
+              legend="Способ доставки"
+              hide-legend
+            >
+              <template #extra="{ option }">
                 <span class="option-cost">
                   {{ option.cost ? formatPrice(option.cost, cart.currency) : 'бесплатно' }}
                 </span>
-              </label>
-            </fieldset>
+              </template>
+            </UiRadioCards>
 
             <UiField
               v-if="needsAddress"
@@ -346,21 +306,12 @@ useHead({
           </UiCard>
 
           <UiCard title="Оплата">
-            <fieldset class="options">
-              <legend class="sr-only">Способ оплаты</legend>
-              <label
-                v-for="option in paymentOptions"
-                :key="option.value"
-                class="option"
-                :class="{ 'is-active': form.paymentMethod === option.value }"
-              >
-                <input v-model="form.paymentMethod" type="radio" :value="option.value">
-                <span class="option-body">
-                  <span class="option-label">{{ option.label }}</span>
-                  <span class="option-hint">{{ option.hint }}</span>
-                </span>
-              </label>
-            </fieldset>
+            <UiRadioCards
+              v-model="form.paymentMethod"
+              :options="paymentOptions"
+              legend="Способ оплаты"
+              hide-legend
+            />
           </UiCard>
 
           <UiCard title="Комментарий">
@@ -376,10 +327,13 @@ useHead({
           </UiCard>
         </div>
 
-        <aside class="summary">
-          <div class="summary-card">
-            <h2>Ваш заказ</h2>
-
+        <CartOrderSummary
+          title="Ваш заказ"
+          total-label="Итого"
+          :delivery-cost="deliveryCost"
+          compact
+        >
+          <template #lines>
             <ul class="summary-items">
               <li v-for="item in cart.items" :key="item.productId">
                 <span class="qty">{{ item.quantity }}×</span>
@@ -387,93 +341,43 @@ useHead({
                 <span class="sum">{{ formatPrice(item.price * item.quantity, item.currency) }}</span>
               </li>
             </ul>
+          </template>
 
-            <UiField label="Промокод" :error="promo.error.value">
-              <div v-if="!promo.preview.value" class="promo-input">
-                <UiInput
-                  v-model="promoInput"
-                  placeholder="Введите код"
-                  size="sm"
-                  :invalid="Boolean(promo.error.value)"
-                  @keydown.enter.prevent="applyPromo"
-                />
-                <UiButton
-                  variant="secondary"
-                  size="sm"
-                  :loading="promo.validating.value"
-                  @click="applyPromo"
-                >
-                  ОК
-                </UiButton>
-              </div>
-              <div v-else class="promo-applied">
-                <div>
-                  <code>{{ promo.preview.value.code }}</code>
-                  <span v-if="promo.preview.value.freeDelivery">+ бесплатная доставка</span>
-                </div>
-                <button type="button" aria-label="Убрать промокод" @click="removePromo">✕</button>
-              </div>
-            </UiField>
+          <UiAlert v-if="submitError" tone="danger">{{ submitError }}</UiAlert>
+          <UiAlert v-else-if="hasBlockingIssues" tone="danger">
+            Уберите недоступные товары, чтобы продолжить.
+          </UiAlert>
+          <UiAlert
+            v-else-if="submitAttempted && Object.keys(errors).length"
+            tone="warning"
+          >
+            Заполните обязательные поля, отмеченные звёздочкой.
+          </UiAlert>
+          <UiAlert v-else-if="submitAttempted && !personalDataConsent" tone="warning">
+            Чтобы оформить заказ, дайте согласие на обработку персональных данных.
+          </UiAlert>
 
-            <dl class="totals">
-              <div>
-                <dt>Товары ({{ cart.count }})</dt>
-                <dd>{{ formatPrice(cart.totalPrice, cart.currency) }}</dd>
-              </div>
-              <div v-if="promo.discount.value" class="is-discount">
-                <dt>Скидка ({{ promo.code.value }})</dt>
-                <dd>−{{ formatPrice(promo.discount.value, cart.currency) }}</dd>
-              </div>
-              <div>
-                <dt>
-                  Доставка<template v-if="promo.freeDelivery.value"> (по промокоду)</template>
-                </dt>
-                <dd>
-                  {{ deliveryCost ? formatPrice(deliveryCost, cart.currency) : 'бесплатно' }}
-                </dd>
-              </div>
-              <div class="is-total">
-                <dt>Итого</dt>
-                <dd>{{ formatPrice(estimatedTotal, cart.currency) }}</dd>
-              </div>
-            </dl>
+          <UiCheckbox v-model="personalDataConsent" class="consent-check">
+            <span class="consent">
+              Даю согласие на обработку персональных данных в соответствии с
+              <NuxtLink to="/privacy" target="_blank">Политикой обработки персональных данных</NuxtLink>,
+              в том числе на их трансграничную передачу для уведомления
+              сотрудников магазина о заказе через Telegram.
+            </span>
+          </UiCheckbox>
 
-            <UiAlert v-if="submitError" tone="danger">{{ submitError }}</UiAlert>
-            <UiAlert v-else-if="hasBlockingIssues" tone="danger">
-              Уберите недоступные товары, чтобы продолжить.
-            </UiAlert>
-            <UiAlert
-              v-else-if="submitAttempted && Object.keys(errors).length"
-              tone="warning"
-            >
-              Заполните обязательные поля, отмеченные звёздочкой.
-            </UiAlert>
-            <UiAlert v-else-if="submitAttempted && !personalDataConsent" tone="warning">
-              Чтобы оформить заказ, дайте согласие на обработку персональных данных.
-            </UiAlert>
+          <UiButton type="submit" size="lg" block :loading="submitting">
+            Подтвердить заказ
+          </UiButton>
 
-            <UiCheckbox v-model="personalDataConsent" class="consent-check">
-              <span class="consent">
-                Даю согласие на обработку персональных данных в соответствии с
-                <NuxtLink to="/privacy" target="_blank">Политикой обработки персональных данных</NuxtLink>,
-                в том числе на их трансграничную передачу для уведомления
-                сотрудников магазина о заказе через Telegram.
-              </span>
-            </UiCheckbox>
+          <p class="consent">
+            Заказ — это заявка: договор заключается, когда мы подтвердим
+            заказ по телефону или e-mail. Оформляя заказ, вы соглашаетесь с
+            <NuxtLink to="/usloviya" target="_blank">условиями продажи</NuxtLink>.
+          </p>
 
-            <UiButton type="submit" size="lg" block :loading="submitting">
-              Подтвердить заказ
-            </UiButton>
-
-            <p class="consent">
-              Заказ — это заявка: договор заключается, когда мы подтвердим
-              заказ по телефону или e-mail. Оформляя заказ, вы соглашаетесь с
-              <NuxtLink to="/usloviya" target="_blank">условиями продажи</NuxtLink>.
-            </p>
-
-            <UiButton variant="ghost" block to="/cart">Вернуться в корзину</UiButton>
-          </div>
-        </aside>
+          <UiButton variant="ghost" block to="/cart">Вернуться в корзину</UiButton>
+        </CartOrderSummary>
       </form>
     </ClientOnly>
   </div>
@@ -514,68 +418,6 @@ useHead({
   grid-column: 1 / -1;
 }
 
-/* ---- Radio cards ---- */
-.options {
-  display: grid;
-  padding: 0;
-  border: 0;
-  margin: 0;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-3);
-}
-
-.option {
-  display: flex;
-  align-items: center;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  cursor: pointer;
-  gap: var(--space-3);
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    background var(--duration-fast) var(--ease-out);
-}
-
-.option:hover {
-  border-color: var(--border-strong);
-}
-
-.option.is-active {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-}
-
-.option input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.option:has(input:focus-visible) {
-  box-shadow: var(--shadow-focus);
-}
-
-.option-body {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.option-label {
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.option-hint {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
 .option-cost {
   flex-shrink: 0;
   color: var(--text-strong);
@@ -586,27 +428,6 @@ useHead({
 
 .address {
   margin-top: var(--space-4);
-}
-
-/* ---- Summary ---- */
-.summary {
-  position: sticky;
-  top: calc(var(--header-height) + var(--space-4));
-}
-
-.summary-card {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-sm);
-  gap: var(--space-4);
-}
-
-.summary-card h2 {
-  font-size: var(--text-lg);
 }
 
 .summary-items {
@@ -652,80 +473,6 @@ useHead({
   white-space: nowrap;
 }
 
-.promo-input {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.promo-applied {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--success-soft);
-  border-radius: var(--radius-sm);
-  background: var(--success-soft);
-  gap: var(--space-2);
-}
-
-.promo-applied > div {
-  display: flex;
-  flex-direction: column;
-}
-
-.promo-applied code {
-  color: var(--success-soft-text);
-  font-family: var(--font-mono);
-  font-weight: 700;
-}
-
-.promo-applied span {
-  color: var(--success-soft-text);
-  font-size: var(--text-xs);
-}
-
-.promo-applied button {
-  color: var(--success-soft-text);
-}
-
-.totals {
-  display: flex;
-  flex-direction: column;
-  padding-top: var(--space-4);
-  margin: 0;
-  border-top: 1px solid var(--border-subtle);
-  gap: var(--space-2);
-}
-
-.totals > div {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.totals dd {
-  margin: 0;
-  color: var(--text-strong);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.totals .is-discount,
-.totals .is-discount dd {
-  color: var(--sale);
-  font-weight: 600;
-}
-
-.totals .is-total {
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-strong);
-  font-size: var(--text-lg);
-  font-weight: 800;
-}
-
 .consent {
   color: var(--text-subtle);
   font-size: var(--text-xs);
@@ -748,10 +495,6 @@ useHead({
 @media (max-width: 1000px) {
   .layout {
     grid-template-columns: 1fr;
-  }
-
-  .summary {
-    position: static;
   }
 }
 

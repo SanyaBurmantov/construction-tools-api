@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import type { AdminOrder, OrderStatus, Paginated } from '~/types/api'
+import type { AdminOrder, OrderStatus } from '~/types/api'
+import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
 
 definePageMeta({ layout: 'admin' })
-
-type ListResponse = Paginated<AdminOrder>
 
 /**
  * Lines printed in the list's «Состав» column before the rest is summarised.
@@ -12,46 +11,48 @@ type ListResponse = Paginated<AdminOrder>
  */
 const COMPOSITION_PREVIEW = 3
 
+const COLUMNS = [
+  { key: 'number', label: '№', class: 'num-cell' },
+  { key: 'customer', label: 'Покупатель' },
+  { key: 'composition', label: 'Состав', class: 'composition' },
+  { key: 'delivery', label: 'Доставка', class: 'admin-muted' },
+  { key: 'createdAt', label: 'Дата', class: 'admin-muted', nowrap: true },
+  { key: 'total', label: 'Сумма', align: 'end' as const },
+  { key: 'status', label: 'Статус' },
+]
+
+const TABS = [
+  { value: '', label: 'Все' },
+  ...orderStatusOptions({ plural: true }),
+]
+
 const route = useRoute()
 const router = useRouter()
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
-const { formatPrice } = useFormatPrice()
-
-const orders = ref<AdminOrder[]>([])
-const pagination = ref({ page: 1, limit: 20, total: 0, pages: 0 })
-const loading = ref(false)
-const loadError = ref('')
+const { run, busy } = useAdminAction()
 
 const tab = ref<OrderStatus | ''>('')
 const search = ref('')
-const page = ref(1)
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const response = await adminFetch<ListResponse>('/orders', {
-      params: {
-        page: page.value,
-        limit: 20,
-        ...(tab.value ? { status: tab.value } : {}),
-        ...(search.value.trim() ? { search: search.value.trim() } : {}),
-      },
-    })
-    orders.value = response.data
-    pagination.value = response.pagination
-  } catch (error) {
-    loadError.value = errorMessage(error, 'Не удалось загрузить заказы')
-  } finally {
-    loading.value = false
-  }
-}
+const {
+  rows: orders,
+  pagination,
+  loading,
+  error: loadError,
+  load,
+  setPage,
+} = useAdminList<AdminOrder>('/orders', {
+  params: () => ({ status: tab.value, search: search.value }),
+  debounce: 350,
+  errorText: 'Не удалось загрузить заказы',
+  // The deep link below has to wait for the list, so this page starts it.
+  immediate: false,
+})
 
 /* ---- Detail ------------------------------------------------------------ */
 const detail = ref<AdminOrder | null>(null)
 const detailLoading = ref(false)
-const statusBusy = ref(false)
 
 async function openDetail(id: string) {
   detailLoading.value = true
@@ -70,21 +71,27 @@ function closeDetail() {
   if (route.query.order) router.replace({ query: {} })
 }
 
-async function setStatus(status: OrderStatus) {
-  if (!detail.value) return
-  statusBusy.value = true
-  try {
-    detail.value = await adminFetch<AdminOrder>(`/orders/${detail.value.id}/status`, {
-      method: 'PATCH',
-      body: { status },
-    })
-    toast.success('Статус обновлён')
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить статус'))
-  } finally {
-    statusBusy.value = false
-  }
+function setStatus(status: OrderStatus) {
+  const order = detail.value
+  if (!order) return
+  return run(
+    () =>
+      adminFetch<AdminOrder>(`/orders/${order.id}/status`, {
+        method: 'PATCH',
+        body: { status },
+      }),
+    {
+      key: status,
+      error: 'Не удалось изменить статус',
+      success: 'Статус обновлён',
+      after: (updated) => {
+        // Merged, not replaced: the PATCH answer does not carry `user`, and
+        // swapping it in turned an account's order into «гостевой заказ».
+        if (detail.value?.id === order.id) detail.value = { ...detail.value, ...updated }
+        return load()
+      },
+    },
+  )
 }
 
 onMounted(async () => {
@@ -93,204 +100,108 @@ onMounted(async () => {
   const orderId = route.query.order
   if (typeof orderId === 'string') await openDetail(orderId)
 })
-
-watch(tab, () => {
-  page.value = 1
-  void load()
-})
-watch(page, () => void load())
-
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-watch(search, () => {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    page.value = 1
-    void load()
-  }, 350)
-})
-
-/* ---- Display ----------------------------------------------------------- */
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  NEW: 'Новый',
-  CONFIRMED: 'Подтверждён',
-  PROCESSING: 'Собирается',
-  SHIPPED: 'Отправлен',
-  DELIVERED: 'Доставлен',
-  CANCELLED: 'Отменён',
-}
-const STATUS_TONES: Record<OrderStatus, 'brand' | 'info' | 'warning' | 'success' | 'danger'> = {
-  NEW: 'brand',
-  CONFIRMED: 'info',
-  PROCESSING: 'warning',
-  SHIPPED: 'warning',
-  DELIVERED: 'success',
-  CANCELLED: 'danger',
-}
-const DELIVERY_LABELS: Record<string, string> = {
-  PICKUP: 'Самовывоз',
-  COURIER: 'Курьер',
-  POST: 'Почта',
-}
-const PAYMENT_LABELS: Record<string, string> = {
-  CASH: 'Наличными',
-  CARD: 'Картой',
-  INVOICE: 'По счёту',
-}
-
-const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-const formatDate = (iso: string) => dateFormatter.format(new Date(iso))
-
-/** Next steps offered for the current status — cancelling is always allowed. */
-function nextStatuses(status: OrderStatus): OrderStatus[] {
-  switch (status) {
-    case 'NEW':
-      return ['CONFIRMED', 'CANCELLED']
-    case 'CONFIRMED':
-      return ['PROCESSING', 'CANCELLED']
-    case 'PROCESSING':
-      return ['SHIPPED', 'CANCELLED']
-    case 'SHIPPED':
-      return ['DELIVERED', 'CANCELLED']
-    // Delivered and cancelled are terminal.
-    default:
-      return []
-  }
-}
 </script>
 
 <template>
-  <div class="admin-orders">
-    <header class="head">
-      <div>
-        <h1>Заказы</h1>
-        <p>{{ pagination.total }} заказов всего</p>
-      </div>
+  <div class="admin-page">
+    <AdminPageHead title="Заказы" :description="`${pagination.total} заказов всего`">
       <UiInput v-model="search" placeholder="Номер, имя, телефон или email" size="sm" class="search" />
-    </header>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
-    <UiTabs
-      v-model="tab"
-      :tabs="[
-        { value: '', label: 'Все' },
-        { value: 'NEW', label: 'Новые' },
-        { value: 'CONFIRMED', label: 'Подтверждённые' },
-        { value: 'PROCESSING', label: 'В сборке' },
-        { value: 'SHIPPED', label: 'Отправленные' },
-        { value: 'DELIVERED', label: 'Доставленные' },
-        { value: 'CANCELLED', label: 'Отменённые' }
-      ]"
-    />
+    <UiTabs v-model="tab" :tabs="TABS" />
 
-    <div class="table-wrap scroll-x">
-      <table class="orders-table">
-        <thead>
-          <tr>
-            <th>№</th>
-            <th>Покупатель</th>
-            <th>Состав</th>
-            <th>Доставка</th>
-            <th>Дата</th>
-            <th class="num">Сумма</th>
-            <th>Статус</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="7"><UiSkeleton :lines="5" height="18px" /></td>
-          </tr>
-          <tr v-else-if="!orders.length">
-            <td colspan="7">
-              <UiEmpty
-                icon="cart"
-                title="Заказов не найдено"
-                description="Здесь появятся заказы, оформленные через корзину на сайте."
-              />
-            </td>
-          </tr>
-          <tr
-            v-for="order in orders"
-            v-else
-            :key="order.id"
-            class="order-row"
+    <UiTable
+      :columns="COLUMNS"
+      :rows="orders"
+      row-key="id"
+      :loading="loading"
+      :row-class="() => 'order-row'"
+      @row-click="order => openDetail(order.id)"
+    >
+      <template #empty>
+        <UiEmpty
+          icon="cart"
+          title="Заказов не найдено"
+          description="Здесь появятся заказы, оформленные через корзину на сайте."
+        />
+      </template>
+
+      <template #cell-number="{ row: order }">#{{ order.number }}</template>
+
+      <template #cell-customer="{ row: order }">
+        <div class="customer">
+          <strong>{{ order.customerName }}</strong>
+          <span>{{ order.customerPhone }}</span>
+          <span v-if="order.user" class="account">
+            аккаунт: {{ order.user.login }}
+          </span>
+          <span v-else class="account is-guest">без аккаунта</span>
+        </div>
+      </template>
+
+      <!-- Everything in here is a link, and the row itself opens the order —
+           so the cell keeps its own clicks. -->
+      <template #cell-composition="{ row: order }">
+        <div @click.stop>
+          <div
+            v-for="item in order.items.slice(0, COMPOSITION_PREVIEW)"
+            :key="item.id"
+            class="composition-item"
+          >
+            <span class="composition-line">
+              <span class="composition-qty">{{ item.quantity }} ×</span>
+              <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">
+                {{ item.productName }}
+              </NuxtLink>
+            </span>
+            <!-- `line`, not `order`: three repetitions of the «первоисточник»
+                 label would be noise in a table. One link per supplier is
+                 enough to click through and buy; the full list of pages is one
+                 click away in the order itself. -->
+            <AdminProductSourceNote
+              v-if="item.productId"
+              :product-id="item.productId"
+              variant="line"
+            />
+          </div>
+          <button
+            v-if="order.items.length > COMPOSITION_PREVIEW"
+            type="button"
+            class="composition-rest"
             @click="openDetail(order.id)"
           >
-            <td class="num-cell">#{{ order.number }}</td>
-            <td>
-              <div class="customer">
-                <strong>{{ order.customerName }}</strong>
-                <span>{{ order.customerPhone }}</span>
-                <span v-if="order.user" class="account">
-                  аккаунт: {{ order.user.login }}
-                </span>
-                <span v-else class="account is-guest">без аккаунта</span>
-              </div>
-            </td>
-            <!-- Everything in here is a link, and the row itself opens the
-                 order — so the cell keeps its own clicks. -->
-            <td class="composition" @click.stop>
-              <div
-                v-for="item in order.items.slice(0, COMPOSITION_PREVIEW)"
-                :key="item.id"
-                class="composition-item"
-              >
-                <span class="composition-line">
-                  <span class="composition-qty">{{ item.quantity }} ×</span>
-                  <NuxtLink :to="`/product/${item.productSlug}`" target="_blank">
-                    {{ item.productName }}
-                  </NuxtLink>
-                </span>
-                <!-- `line`, not `order`: three repetitions of the
-                     «первоисточник» label would be noise in a table. One link
-                     per supplier is enough to click through and buy; the full
-                     list of pages is one click away in the order itself. -->
-                <AdminProductSourceNote
-                  v-if="item.productId"
-                  :product-id="item.productId"
-                  variant="line"
-                />
-              </div>
-              <button
-                v-if="order.items.length > COMPOSITION_PREVIEW"
-                type="button"
-                class="composition-rest"
-                @click="openDetail(order.id)"
-              >
-                +{{ order.items.length - COMPOSITION_PREVIEW }} позиц. →
-              </button>
-            </td>
-            <td class="muted">{{ DELIVERY_LABELS[order.deliveryMethod] }}</td>
-            <td class="muted nowrap">{{ formatDate(order.createdAt) }}</td>
-            <td class="num">
-              <div class="total-cell">
-                <strong>{{ formatPrice(order.total, order.currency) }}</strong>
-                <span v-if="order.discountTotal" class="discount">
-                  −{{ formatPrice(order.discountTotal, order.currency) }}
-                </span>
-              </div>
-            </td>
-            <td>
-              <UiBadge :tone="STATUS_TONES[order.status]" size="sm">
-                {{ STATUS_LABELS[order.status] }}
-              </UiBadge>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            +{{ order.items.length - COMPOSITION_PREVIEW }} позиц. →
+          </button>
+        </div>
+      </template>
+
+      <template #cell-delivery="{ row: order }">{{ DELIVERY_LABEL[order.deliveryMethod] }}</template>
+
+      <template #cell-createdAt="{ row: order }">{{ formatDateTime(order.createdAt) }}</template>
+
+      <template #cell-total="{ row: order }">
+        <div class="total-cell">
+          <strong>{{ formatPrice(order.total, order.currency) }}</strong>
+          <span v-if="order.discountTotal" class="discount">
+            −{{ formatPrice(order.discountTotal, order.currency) }}
+          </span>
+        </div>
+      </template>
+
+      <template #cell-status="{ row: order }">
+        <UiBadge :tone="ORDER_STATUS_TONE[order.status]" size="sm">
+          {{ ORDER_STATUS_LABEL[order.status] }}
+        </UiBadge>
+      </template>
+    </UiTable>
 
     <UiPagination
       :page="pagination.page"
       :pages="pagination.pages"
       :total="pagination.total"
-      @change="page = $event"
+      @change="setPage"
     />
 
     <!-- Detail -->
@@ -304,8 +215,8 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
 
       <div v-else-if="detail" class="detail">
         <div class="detail-head">
-          <UiBadge :tone="STATUS_TONES[detail.status]">{{ STATUS_LABELS[detail.status] }}</UiBadge>
-          <time :datetime="detail.createdAt">{{ formatDate(detail.createdAt) }}</time>
+          <UiBadge :tone="ORDER_STATUS_TONE[detail.status]">{{ ORDER_STATUS_LABEL[detail.status] }}</UiBadge>
+          <time :datetime="detail.createdAt">{{ formatDateTime(detail.createdAt) }}</time>
         </div>
 
         <div class="detail-grid">
@@ -317,7 +228,7 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
                   <NuxtLink v-if="detail.user" :to="`/admin/users/${detail.user.id}`">
                     {{ detail.user.login }}
                   </NuxtLink>
-                  <span v-else class="muted">гостевой заказ</span>
+                  <span v-else class="admin-muted">гостевой заказ</span>
                 </dd>
               </div>
               <div v-if="detail.user?.companyName">
@@ -347,7 +258,7 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
             <dl class="facts">
               <div>
                 <dt>Способ</dt>
-                <dd>{{ DELIVERY_LABELS[detail.deliveryMethod] }}</dd>
+                <dd>{{ DELIVERY_LABEL[detail.deliveryMethod] }}</dd>
               </div>
               <div v-if="detail.deliveryAddress">
                 <dt>Адрес</dt>
@@ -355,7 +266,7 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
               </div>
               <div>
                 <dt>Оплата</dt>
-                <dd>{{ PAYMENT_LABELS[detail.paymentMethod] || detail.paymentMethod }}</dd>
+                <dd>{{ PAYMENT_LABEL[detail.paymentMethod] || detail.paymentMethod }}</dd>
               </div>
               <div v-if="detail.promoCodeLabel">
                 <dt>Промокод</dt>
@@ -421,13 +332,14 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
       <template #footer>
         <template v-if="detail">
           <UiButton
-            v-for="status in nextStatuses(detail.status)"
+            v-for="status in nextOrderStatuses(detail.status)"
             :key="status"
             :variant="status === 'CANCELLED' ? 'ghost' : 'primary'"
-            :loading="statusBusy"
+            :loading="busy === status"
+            :disabled="Boolean(busy)"
             @click="setStatus(status)"
           >
-            {{ STATUS_LABELS[status] }}
+            {{ ORDER_STATUS_LABEL[status] }}
           </UiButton>
         </template>
         <UiButton variant="secondary" @click="closeDetail">Закрыть</UiButton>
@@ -437,94 +349,19 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
 </template>
 
 <style scoped>
-.admin-orders {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 .search {
   width: min(320px, 100%);
 }
 
-.table-wrap {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-}
-
-.orders-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-sm);
-}
-
-.orders-table th {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-align: left;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.orders-table td {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
-  vertical-align: middle;
-}
-
-.orders-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.order-row {
+/* UiTable cells are its own; the column classes reach them through :deep(). */
+:deep(.order-row) {
   cursor: pointer;
 }
 
-.order-row:hover td {
-  background: var(--surface-hover);
-}
-
-.num,
-.num-cell {
-  text-align: right;
-}
-
-.num-cell {
+:deep(.num-cell) {
   color: var(--text-muted);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  text-align: left;
-}
-
-.nowrap {
-  white-space: nowrap;
-}
-
-.muted {
-  color: var(--text-muted);
 }
 
 .customer {
@@ -637,7 +474,7 @@ function nextStatuses(status: OrderStatus): OrderStatus[] {
   font-size: var(--text-sm);
 }
 
-.composition {
+:deep(td.composition) {
   min-width: 260px;
   max-width: 420px;
   font-size: var(--text-sm);

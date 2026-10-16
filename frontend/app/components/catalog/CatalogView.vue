@@ -1,77 +1,12 @@
 <script setup lang="ts">
-import ProductCatalogCard from '~/components/product/productCatalogCard.vue'
-
-type FacetItem = {
-  id: string
-  name: string
-  slug?: string
-  code?: string
-  _count?: { products: number }
-}
-
-type CategoryPage = {
-  id: string
-  name: string
-  slug: string
-  description?: string | null
-  seoTitle?: string | null
-  seoDescription?: string | null
-  /** false for an admin-hidden branch: its URL works, but it is not indexed */
-  isVisible?: boolean
-  productCount: number
-  ancestors: Array<{ id: string, name: string, slug: string }>
-  children: Array<{
-    id: string
-    name: string
-    slug: string
-    image?: string | null
-    productCount: number
-  }>
-}
-
-type SpecFacet = {
-  id: string
-  name: string
-  unit?: string | null
-  group?: string | null
-  values: Array<{ value: string, count: number }>
-}
-
-type Product = {
-  id: string
-  slug: string
-  name: string
-  sku?: string | null
-  priceValue?: number | null
-  priceCurrency?: string | null
-  stockStatus?: string | null
-  brand?: FacetItem | null
-  category?: FacetItem | null
-  images?: Array<{ url: string, alt?: string | null }>
-  productSpecs?: Array<{ name: string, value: string }>
-}
-
-type ProductResponse = {
-  data: Product[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    pages: number
-  }
-  facets?: {
-    specs?: SpecFacet[]
-    categories?: Record<string, number>
-    brands?: Record<string, number>
-    priceRange?: { min: number, max: number } | null
-  }
-}
+import type { CatalogProductsResponse, CategoryPage, FacetItem, SpecFacet } from '~/types/api'
+import { toCardProduct } from '~/composables/useProductActions'
 
 const props = defineProps<{ categorySlug?: string }>()
 
 const PAGE_SIZE = 24
 /**
- * Cards whose photo loads eagerly. The grid is `minmax(228px, 1fr)`, so the
+ * Cards whose photo loads eagerly. `.product-grid` has 228px tracks, so the
  * widest common layout fits four per row — enough to cover what is actually
  * above the fold without pulling the whole page in at once.
  */
@@ -105,8 +40,7 @@ function setViewMode(mode: 'grid' | 'list') {
 
 const route = useRoute()
 const router = useRouter()
-const config = useRuntimeConfig()
-const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+const { apiBase, absoluteUrl } = useSite()
 
 function queryValue(value: unknown) {
   if (Array.isArray(value)) return value[0] ? String(value[0]) : undefined
@@ -114,9 +48,10 @@ function queryValue(value: unknown) {
 }
 
 const cleanParams = (params: Record<string, string | number | boolean | undefined>) => {
+  // The filter drops `undefined`/''/false, so what is left fits a route query.
   return Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== '' && value !== false)
-  )
+  ) as Record<string, string | number>
 }
 
 // --- filter state derived from the URL (URL is the source of truth) ---
@@ -132,8 +67,9 @@ const selectedBrandIds = computed(() => {
  * goods with nothing in the UI saying so — the chip that would have said it is
  * hidden too. For everyone else the parameter is ignored and the catalogue is
  * always the whole catalogue. `isAdmin` is false on the server (the session
- * lives in localStorage), so SSR renders the full listing and the admin's own
- * browser re-fetches with the filter after hydration.
+ * cookie is `Path=/api`, so a page request never carries it), so SSR renders
+ * the full listing and the admin's own browser re-fetches with the filter
+ * after hydration.
  */
 const { isAdmin, authFetch } = useAuth()
 const selectedSource = computed(() =>
@@ -246,19 +182,52 @@ const queryParams = computed(() => cleanParams({
  * turned into the maintenance page below.
  */
 const categoryUnavailable = ref(false)
-const { data: category } = await useAsyncData<CategoryPage | null>(
-  () => `catalog-category:${props.categorySlug || ''}`,
-  () => props.categorySlug
-    ? $fetch<CategoryPage>(`${apiBase}/categories/${props.categorySlug}`).catch(error => {
-        if (isApiUnavailable(error)) {
-          categoryUnavailable.value = true
-          return null
-        }
-        throw error
-      })
-    : Promise.resolve(null),
-  { default: () => null }
-)
+
+// The four requests are independent — products are filtered by the slug in
+// the URL, not by the category answer — so they start together and the render
+// waits for the slowest instead of their sum.
+const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
+const [
+  { data: category },
+  { data: products, pending, error },
+  { data: tree },
+  { data: brands },
+] = await Promise.all([
+  useAsyncData<CategoryPage | null>(
+    () => `catalog-category:${props.categorySlug || ''}`,
+    () => props.categorySlug
+      ? $fetch<CategoryPage>(`${apiBase}/categories/${props.categorySlug}`).catch(error => {
+          if (isApiUnavailable(error)) {
+            categoryUnavailable.value = true
+            return null
+          }
+          throw error
+        })
+      : Promise.resolve(null),
+    { default: () => null }
+  ),
+  useAsyncData<CatalogProductsResponse>(
+    catalogDataKey,
+    () => $fetch<CatalogProductsResponse>(`${apiBase}/products`, { params: queryParams.value }),
+    {
+      default: () => ({ data: [], pagination: { page: 1, limit: PAGE_SIZE, total: 0, pages: 0 } }),
+      transform: response => ({ ...response, data: response.data.map(toCardProduct) }),
+      watch: [queryParams]
+    }
+  ),
+  useCategoryTree(),
+  // Only what the brand facet draws: `/brands` sends every column of every
+  // brand, and the whole answer would otherwise ride along in the page payload.
+  useAsyncData<FacetItem[]>(
+    'catalog-brands',
+    () => $fetch<FacetItem[]>(`${apiBase}/brands`).catch(() => []),
+    {
+      default: () => [],
+      transform: list => (Array.isArray(list) ? list : [])
+        .map(brand => ({ id: brand.id, name: brand.name, slug: brand.slug }))
+    }
+  ),
+])
 
 if (categoryUnavailable.value) throw apiUnavailableError()
 
@@ -270,16 +239,6 @@ if (category.value && props.categorySlug !== category.value.slug) {
   await navigateTo({ path: `/catalog/${category.value.slug}`, query: route.query }, { redirectCode: 301, replace: true })
 }
 
-const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
-const { data: products, pending, error } = await useAsyncData<ProductResponse>(
-  catalogDataKey,
-  () => $fetch(`${apiBase}/products`, { params: queryParams.value }),
-  {
-    default: () => ({ data: [], pagination: { page: 1, limit: PAGE_SIZE, total: 0, pages: 0 } }),
-    watch: [queryParams]
-  }
-)
-
 /**
  * On the server an unreachable API means the technical-works page instead of
  * an empty catalogue. On the client the inline alert below is the better
@@ -287,20 +246,6 @@ const { data: products, pending, error } = await useAsyncData<ProductResponse>(
  * throw the visitor out of it.
  */
 if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
-
-const { data: tree } = await useCategoryTree()
-
-// Only what the brand facet draws: `/brands` sends every column of every
-// brand, and the whole answer would otherwise ride along in the page payload.
-const { data: brands } = await useAsyncData<FacetItem[]>(
-  'catalog-brands',
-  () => $fetch<FacetItem[]>(`${apiBase}/brands`).catch(() => []),
-  {
-    default: () => [],
-    transform: list => (Array.isArray(list) ? list : [])
-      .map(brand => ({ id: brand.id, name: brand.name, slug: brand.slug }))
-  }
-)
 
 /**
  * The «Поставщик» facet is **admin-only**: which supplier carries a product is
@@ -531,18 +476,49 @@ const breadcrumbItems = computed(() => {
   return items
 })
 
+// --- filter panel (rendered twice: drawer on mobile, sidebar on desktop) ---
+const filterProps = computed(() => ({
+  brandQuery: brandQuery.value,
+  priceMin: priceDraft.min,
+  priceMax: priceDraft.max,
+  category: category.value,
+  categoryLinks: categoryLinks.value,
+  categoryHasChildren: Boolean(category.value?.children.length),
+  parentLink: parentLink.value,
+  inStock: inStock.value,
+  onSale: onSale.value,
+  priceRange: priceRange.value,
+  brandCount: brands.value.length,
+  visibleBrands: visibleBrands.value,
+  brandCounts: brandCounts.value,
+  selectedBrandIds: selectedBrandIds.value,
+  sources: sources.value,
+  selectedSource: selectedSource.value,
+  activeFiltersCount: activeFiltersCount.value,
+  specFacets: specFacets.value,
+  selectedSpecs: selectedSpecs.value,
+  categoryTo
+}))
+
+const filterEvents = {
+  'update:brandQuery': (value: string) => { brandQuery.value = value },
+  'update:priceMin': (value: string) => { priceDraft.min = value },
+  'update:priceMax': (value: string) => { priceDraft.max = value },
+  pushQuery,
+  toggleBrand,
+  toggleSource,
+  toggleSpec: toggleSpecValue,
+  clearSpec,
+  applyPrice,
+  clear: clearFilters
+}
+
 // --- mobile filters drawer ---
+// UiDrawer locks the page scroll itself (useModalA11y).
 const filtersOpen = ref(false)
 watch(() => route.fullPath, () => { filtersOpen.value = false })
-watch(filtersOpen, open => {
-  if (import.meta.client) document.body.style.overflow = open ? 'hidden' : ''
-})
-onUnmounted(() => {
-  if (import.meta.client) document.body.style.overflow = ''
-})
 
 // --- SEO ---
-const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
 /**
  * `?page=N` of an unfiltered listing is its own page for a crawler: it is the
  * only route to the products past the first 24, so it gets a self-referencing
@@ -556,13 +532,12 @@ const canonicalPage = computed(() =>
 const pageSuffix = computed(() => (page.value > 1 ? ` — страница ${page.value}` : ''))
 const pageTitle = computed(() => (category.value
   ? `${category.value.name} — купить в каталоге`
-  : 'Каталог инструмента и крепежа') + `${pageSuffix.value} | Мультитул`)
+  : 'Каталог инструмента и крепежа') + `${pageSuffix.value} | Gost.by`)
 const pageDescription = computed(() => category.value
-  ? (category.value.seoDescription || `${category.value.name}: ${pluralize(category.value.productCount, 'product')} в каталоге Мультитул. Фильтры по брендам и цене, доставка по Беларуси.`)
+  ? (category.value.seoDescription || `${category.value.name}: ${pluralize(category.value.productCount, 'product')} в каталоге Gost.by. Фильтры по брендам и цене, доставка по Беларуси.`)
   : 'Каталог инструментов, крепежа и расходников с фильтрами по категориям, брендам и цене.')
-const listingUrl = computed(() => category.value
-  ? `${siteUrl}/catalog/${category.value.slug}`
-  : `${siteUrl}/catalog`)
+const listingUrl = computed(() =>
+  absoluteUrl(category.value ? `/catalog/${category.value.slug}` : '/catalog'))
 const canonicalUrl = computed(() =>
   canonicalPage.value > 1 ? `${listingUrl.value}?page=${canonicalPage.value}` : listingUrl.value
 )
@@ -580,33 +555,9 @@ useSeoMeta({
   robots: () => (category.value?.isVisible === false ? 'noindex, follow' : undefined)
 })
 
+// The BreadcrumbList JSON-LD comes from <UiBreadcrumbs>.
 useHead(() => ({
-  link: [{ rel: 'canonical', href: canonicalUrl.value }],
-  script: category.value
-    ? [{
-        type: 'application/ld+json',
-        innerHTML: JSON.stringify({
-          '@context': 'https://schema.org',
-          '@type': 'BreadcrumbList',
-          'itemListElement': [
-            { '@type': 'ListItem', 'position': 1, 'name': 'Главная', 'item': `${siteUrl}/` },
-            { '@type': 'ListItem', 'position': 2, 'name': 'Каталог', 'item': `${siteUrl}/catalog` },
-            ...category.value.ancestors.map((ancestor, index) => ({
-              '@type': 'ListItem',
-              'position': 3 + index,
-              'name': ancestor.name,
-              'item': `${siteUrl}/catalog/${ancestor.slug}`
-            })),
-            {
-              '@type': 'ListItem',
-              'position': 3 + category.value.ancestors.length,
-              'name': category.value.name,
-              'item': listingUrl.value
-            }
-          ]
-        })
-      }]
-    : []
+  link: [{ rel: 'canonical', href: canonicalUrl.value }]
 }))
 </script>
 
@@ -662,35 +613,7 @@ useHead(() => ({
 
     <div class="layout">
       <UiDrawer v-model:open="filtersOpen" title="Фильтры">
-        <CatalogFilters
-          v-model:brand-query="brandQuery"
-          v-model:price-min="priceDraft.min"
-          v-model:price-max="priceDraft.max"
-          :category="category"
-          :category-links="categoryLinks"
-          :category-has-children="Boolean(category?.children.length)"
-          :parent-link="parentLink"
-          :in-stock="inStock"
-          :on-sale="onSale"
-          :price-range="priceRange"
-          :brands="brands"
-          :visible-brands="visibleBrands"
-          :brand-counts="brandCounts"
-          :selected-brand-ids="selectedBrandIds"
-          :sources="sources"
-          :selected-source="selectedSource"
-          :active-filters-count="activeFiltersCount"
-          :spec-facets="specFacets"
-          :selected-specs="selectedSpecs"
-          :category-to="categoryTo"
-          @push-query="pushQuery"
-          @toggle-brand="toggleBrand"
-          @toggle-source="toggleSource"
-          @toggle-spec="toggleSpecValue"
-          @clear-spec="clearSpec"
-          @apply-price="applyPrice"
-          @clear="clearFilters"
-        />
+        <CatalogFilters v-bind="filterProps" v-on="filterEvents" />
         <template #footer>
           <UiButton block @click="filtersOpen = false">
             Показать {{ products?.pagination.total || 0 }}
@@ -699,35 +622,7 @@ useHead(() => ({
       </UiDrawer>
 
       <aside class="filters-desktop" aria-label="Фильтры каталога">
-        <CatalogFilters
-          v-model:brand-query="brandQuery"
-          v-model:price-min="priceDraft.min"
-          v-model:price-max="priceDraft.max"
-          :category="category"
-          :category-links="categoryLinks"
-          :category-has-children="Boolean(category?.children.length)"
-          :parent-link="parentLink"
-          :in-stock="inStock"
-          :on-sale="onSale"
-          :price-range="priceRange"
-          :brands="brands"
-          :visible-brands="visibleBrands"
-          :brand-counts="brandCounts"
-          :selected-brand-ids="selectedBrandIds"
-          :sources="sources"
-          :selected-source="selectedSource"
-          :active-filters-count="activeFiltersCount"
-          :spec-facets="specFacets"
-          :selected-specs="selectedSpecs"
-          :category-to="categoryTo"
-          @push-query="pushQuery"
-          @toggle-brand="toggleBrand"
-          @toggle-source="toggleSource"
-          @toggle-spec="toggleSpecValue"
-          @clear-spec="clearSpec"
-          @apply-price="applyPrice"
-          @clear="clearFilters"
-        />
+        <CatalogFilters v-bind="filterProps" v-on="filterEvents" />
       </aside>
 
       <div class="content">
@@ -775,9 +670,7 @@ useHead(() => ({
                 aria-label="Списком"
                 @click="setViewMode('list')"
               >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 5h16M4 12h16M4 19h16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
-                </svg>
+                <UiIcon name="menu" :stroke-width="2.4" />
               </button>
             </div>
           </div>
@@ -792,14 +685,12 @@ useHead(() => ({
             @click="chip.remove()"
           >
             {{ chip.label }}
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-            </svg>
+            <UiIcon name="close" :stroke-width="2" />
           </button>
           <button type="button" class="chip is-clear" @click="clearFilters">Сбросить всё</button>
         </div>
 
-        <div v-if="pending" :class="viewMode === 'grid' ? 'grid' : 'list'">
+        <div v-if="pending" :class="viewMode === 'grid' ? 'product-grid' : 'list'">
           <UiSkeleton
             v-for="i in 8"
             :key="i"
@@ -822,7 +713,7 @@ useHead(() => ({
         </UiEmpty>
 
         <template v-else>
-          <div v-if="viewMode === 'grid'" class="grid">
+          <div v-if="viewMode === 'grid'" class="product-grid">
             <ProductCatalogCard
               v-for="(product, index) in products.data"
               :key="product.id"
@@ -1042,14 +933,6 @@ useHead(() => ({
 }
 
 /* ---- Results ---- */
-.grid {
-  display: grid;
-  /* `min()` keeps the track from being wider than its own container: a bare
-     `minmax(228px, …)` overflows once the viewport drops under ~260px. */
-  grid-template-columns: repeat(auto-fill, minmax(min(228px, 100%), 1fr));
-  gap: var(--space-4);
-}
-
 .list {
   display: flex;
   flex-direction: column;

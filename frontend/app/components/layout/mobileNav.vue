@@ -11,30 +11,33 @@ const cart = useCartStore()
 const wishlist = useWishlistStore()
 const route = useRoute()
 
+// The counters need no <ClientOnly>: the stores load from localStorage in
+// `onNuxtReady`, so they are empty during hydration exactly as on the server.
+
 const items = computed(() => [
   {
     to: '/',
     label: 'Главная',
-    icon: 'M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z',
+    icon: 'home' as const,
     active: route.path === '/',
   },
   {
     to: '/catalog',
     label: 'Каталог',
-    icon: 'M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z',
+    icon: 'grid' as const,
     active: route.path.startsWith('/catalog'),
   },
   {
     to: '/favorites',
     label: 'Избранное',
-    icon: 'M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20z',
+    icon: 'heart' as const,
     active: route.path === '/favorites',
     count: wishlist.count,
   },
   {
     to: '/cart',
     label: 'Корзина',
-    icon: 'M3 4h2l2.4 10.4A2 2 0 0 0 9.35 16H17a2 2 0 0 0 1.95-1.55L20.5 8H6',
+    icon: 'cart' as const,
     active: route.path === '/cart',
     count: cart.count,
   },
@@ -44,14 +47,14 @@ const items = computed(() => [
     // and hydration. /account sends a guest to the login screen itself.
     to: '/account',
     label: 'Кабинет',
-    icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0',
+    icon: 'user' as const,
     active: route.path === '/account',
   },
 ])
 </script>
 
 <template>
-  <nav class="mobile-nav" aria-label="Основная навигация">
+  <nav class="mobile-nav" aria-label="Мобильная навигация">
     <NuxtLink
       v-for="item in items"
       :key="item.to"
@@ -61,12 +64,8 @@ const items = computed(() => [
       :aria-current="item.active ? 'page' : undefined"
     >
       <span class="icon-wrap">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path :d="item.icon" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <ClientOnly>
-          <span v-if="item.count" class="badge">{{ item.count }}</span>
-        </ClientOnly>
+        <UiIcon :name="item.icon" :size="22" :stroke-width="1.7" />
+        <span v-if="item.count" class="badge">{{ item.count }}</span>
       </span>
       <span class="label">{{ item.label }}</span>
     </NuxtLink>
@@ -106,11 +105,6 @@ const items = computed(() => [
   display: block;
 }
 
-.icon-wrap svg {
-  width: 22px;
-  height: 22px;
-}
-
 .badge {
   position: absolute;
   top: -4px;
@@ -121,7 +115,7 @@ const items = computed(() => [
   padding: 0 4px;
   border-radius: var(--radius-full);
   background: var(--sale);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 10px;
   font-weight: 700;
   place-items: center;

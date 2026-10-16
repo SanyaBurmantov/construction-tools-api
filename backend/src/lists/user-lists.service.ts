@@ -147,14 +147,22 @@ export class UserListsService {
     const keep = wanted.filter((id) => orderable.has(id));
 
     if (mode === 'replace') {
+      // createMany in one statement gives every row the same `now()`, and the
+      // list is read back ordered by createdAt — the order (and comparison's
+      // "first added wins the cap") became arbitrary after any change. One
+      // millisecond apart, in the order the storefront sent them.
+      const base = Date.now();
       await this.prisma.$transaction([
         this.prisma.userListItem.deleteMany({ where: { userId, kind } }),
         ...(keep.length
           ? [
               this.prisma.userListItem.createMany({
-                data: keep
-                  .slice(0, LIMITS[kind])
-                  .map((productId) => ({ userId, kind, productId })),
+                data: keep.slice(0, LIMITS[kind]).map((productId, index) => ({
+                  userId,
+                  kind,
+                  productId,
+                  createdAt: new Date(base + index),
+                })),
                 skipDuplicates: true,
               }),
             ]
@@ -166,17 +174,27 @@ export class UserListsService {
     // Merge: a union, capped. Which rows survive the cap matters for
     // comparison — the four already stored win over newly arrived ones, so
     // signing in never silently reshuffles the table being compared.
+    // Only rows that are still on sale count against the cap: a stored line
+    // for a product since unpublished is dropped on the next read anyway, and
+    // counting it refused room for a comparison item the customer just added.
     const existing = await this.prisma.userListItem.findMany({
       where: { userId, kind },
-      select: { productId: true },
+      select: { productId: true, product: { select: { status: true } } },
     });
     const have = new Set(existing.map((row) => row.productId));
-    const room = Math.max(0, LIMITS[kind] - have.size);
+    const live = existing.filter((row) => row.product.status === 'PUBLISHED');
+    const room = Math.max(0, LIMITS[kind] - live.length);
     const toAdd = keep.filter((id) => !have.has(id)).slice(0, room);
 
     if (toAdd.length) {
+      const base = Date.now();
       await this.prisma.userListItem.createMany({
-        data: toAdd.map((productId) => ({ userId, kind, productId })),
+        data: toAdd.map((productId, index) => ({
+          userId,
+          kind,
+          productId,
+          createdAt: new Date(base + index),
+        })),
         skipDuplicates: true,
       });
     }

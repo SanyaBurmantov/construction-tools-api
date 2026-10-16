@@ -17,9 +17,7 @@ const { toasts, dismiss } = useAppToast()
             <span>{{ toast.message }}</span>
           </div>
           <button type="button" aria-label="Закрыть" @click="dismiss(toast.id)">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
+            <UiIcon name="close" :size="16" :stroke-width="1.8" />
           </button>
         </output>
       </TransitionGroup>
@@ -78,11 +76,6 @@ button {
 
 button:hover {
   color: var(--text-strong);
-}
-
-button svg {
-  width: 16px;
-  height: 16px;
 }
 
 .tone-info {

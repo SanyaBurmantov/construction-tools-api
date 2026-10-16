@@ -2,14 +2,13 @@
 import type { BrandCategoriesResponse, BrandCategory } from '~/types/api'
 
 const route = useRoute()
-const config = useRuntimeConfig()
-const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+const { apiBase, absoluteUrl } = useSite()
 const slug = computed(() => String(route.params.slug || ''))
 
 const { data, status, error } = await useAsyncData<BrandCategoriesResponse>(
   () => `brand-categories:${slug.value}`,
-  () => $fetch<BrandCategoriesResponse>(`${apiBase}/brands/${slug.value}/categories`),
-  { watch: [slug] }
+  // The key follows the slug, so no `watch` is needed to re-fetch.
+  () => $fetch<BrandCategoriesResponse>(`${apiBase}/brands/${slug.value}/categories`)
 )
 
 if (error.value) {
@@ -38,25 +37,29 @@ const allProductsLink = computed(() =>
   brand.value?.id ? `/catalog?brands=${brand.value.id}` : '/catalog'
 )
 
+const heroStats = computed(() => [
+  { value: totalProducts.value, label: plural(totalProducts.value, ...PLURALS.product) },
+  { value: categories.value.length, label: plural(categories.value.length, ...PLURALS.category) },
+])
+
 const description = computed(() =>
   brand.value
-    ? `Товары бренда ${brand.value.name} в каталоге Мультитул: ${totalProducts.value} позиций в ${categories.value.length} категориях.`
-    : 'Категории бренда в каталоге Мультитул.'
+    ? `Товары бренда ${brand.value.name} в каталоге Gost.by: ${pluralize(totalProducts.value, 'position')} в ${pluralize(categories.value.length, 'categoryIn')}.`
+    : 'Категории бренда в каталоге Gost.by.'
 )
-const canonical = computed(
-  () => `${String(config.public.siteUrl).replace(/\/$/, '')}/brand/${slug.value}`
-)
+const canonical = computed(() => absoluteUrl(`/brand/${slug.value}`))
 
 useSeoMeta({
-  title: () => (brand.value ? `${brand.value.name} | Мультитул` : 'Бренд | Мультитул'),
+  title: () => (brand.value ? `${brand.value.name} | Gost.by` : 'Бренд | Gost.by'),
   description: () => description.value,
-  ogTitle: () => (brand.value ? `${brand.value.name} | Мультитул` : 'Бренд | Мультитул'),
+  ogTitle: () => (brand.value ? `${brand.value.name} | Gost.by` : 'Бренд | Gost.by'),
   ogDescription: () => description.value,
   ogType: 'website',
   ogUrl: () => canonical.value,
 })
 
-useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
+// A getter, so the canonical follows the slug when the page is reused.
+useHead(() => ({ link: [{ rel: 'canonical', href: canonical.value }] }))
 </script>
 
 <template>
@@ -69,28 +72,13 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
       ]"
     />
 
-    <section class="hero">
-      <div class="hero-copy">
-        <span class="eyebrow">Бренд</span>
-        <h1>{{ brand?.name }}</h1>
-        <p>Выберите категорию, чтобы открыть каталог с товарами этого бренда.</p>
-        <div class="hero-actions">
-          <UiButton :to="allProductsLink" size="sm">Все товары бренда</UiButton>
-          <UiButton to="/brand" variant="secondary" size="sm">Все бренды</UiButton>
-        </div>
+    <StorefrontPageHero eyebrow="Бренд" :title="brand?.name" :stats="heroStats">
+      <p>Выберите категорию, чтобы открыть каталог с товарами этого бренда.</p>
+      <div class="hero-actions">
+        <UiButton :to="allProductsLink" size="sm">Все товары бренда</UiButton>
+        <UiButton to="/brand" variant="secondary" size="sm">Все бренды</UiButton>
       </div>
-
-      <div class="hero-stats">
-        <div class="hero-stat">
-          <strong>{{ totalProducts }}</strong>
-          <span>товаров</span>
-        </div>
-        <div class="hero-stat">
-          <strong>{{ categories.length }}</strong>
-          <span>категорий</span>
-        </div>
-      </div>
-    </section>
+    </StorefrontPageHero>
 
     <div v-if="status === 'pending'" class="grid">
       <UiSkeleton v-for="i in 6" :key="i" height="96px" radius="var(--radius-md)" />
@@ -125,66 +113,11 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
   gap: var(--space-5);
 }
 
-.hero {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-6);
-  padding: var(--space-8);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--brand-soft), var(--surface-card));
-}
-
-.hero-copy {
-  display: flex;
-  max-width: 60ch;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.hero .eyebrow {
-  color: var(--brand);
-}
-
-.hero p {
-  color: var(--text-muted);
-}
-
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-2);
-}
-
-.hero-stats {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.hero-stat {
-  display: flex;
-  min-width: 110px;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-}
-
-.hero-stat strong {
-  color: var(--brand);
-  font-size: var(--text-3xl);
-  font-weight: 800;
-  line-height: 1;
-}
-
-.hero-stat span {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
 }
 
 .grid {
@@ -193,19 +126,5 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
      minmax() floor overflows rather than collapsing to one column. */
   grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: var(--space-3);
-}
-
-@media (max-width: 640px) {
-  .hero {
-    padding: var(--space-5);
-  }
-
-  .hero-stats {
-    width: 100%;
-  }
-
-  .hero-stat {
-    flex: 1;
-  }
 }
 </style>

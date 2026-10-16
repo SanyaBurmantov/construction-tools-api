@@ -1,42 +1,13 @@
 <script setup lang="ts">
-const { login, refresh, isAuthenticated, isAdmin, errorMessage } = useAuth()
-const route = useRoute()
+const { login, isAdmin, errorMessage } = useAuth()
+const { redirect, reason, otherLink: registerLink, leaveIfSignedIn } = useAuthRedirect('/register')
 const toast = useAppToast()
 
 const form = reactive({ login: '', password: '' })
 const submitting = ref(false)
 const error = ref('')
 
-/** Where to go after a successful login: ?redirect=…, else the account page. */
-const redirect = computed(() => {
-  const target = route.query.redirect
-  return typeof target === 'string' && target.startsWith('/') ? target : ''
-})
-
-/**
- * Why the visitor was sent here (`?reason=checkout` when they pressed
- * "Оформить заказ" with a full cart). The cart is untouched — it is in
- * localStorage and the redirect brings them back to it.
- */
-const reason = computed(() => {
-  const key = route.query.reason
-  return typeof key === 'string' ? AUTH_REASONS[key] || '' : ''
-})
-
-/** Carries the redirect and the reason over to the registration form. */
-const registerLink = computed(() => ({
-  path: '/register',
-  query: {
-    ...(redirect.value ? { redirect: redirect.value } : {}),
-    ...(typeof route.query.reason === 'string' ? { reason: route.query.reason } : {}),
-  },
-}))
-
-onMounted(async () => {
-  await refresh()
-  // Already signed in — no reason to show the form again.
-  if (isAuthenticated.value) await navigateTo(redirect.value || '/account')
-})
+onMounted(leaveIfSignedIn)
 
 async function submit() {
   error.value = ''
@@ -56,7 +27,7 @@ async function submit() {
   }
 }
 
-useSeoMeta({ title: 'Вход | Мультитул', robots: 'noindex,nofollow' })
+useSeoMeta({ title: 'Вход | Gost.by', robots: 'noindex,nofollow' })
 </script>
 
 <template>

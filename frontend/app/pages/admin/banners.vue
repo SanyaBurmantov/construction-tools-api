@@ -5,11 +5,11 @@ definePageMeta({ layout: 'admin' })
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
+const { run, busy } = useAdminAction()
 
 const banners = ref<AdminBanner[]>([])
 const loading = ref(true)
 const loadError = ref('')
-const busy = ref(false)
 
 async function load() {
   loading.value = true
@@ -45,8 +45,6 @@ const blankForm = () => ({
   endsAt: '',
 })
 const form = reactive(blankForm())
-
-const toLocalInput = (iso: string | null) => (iso ? iso.slice(0, 16) : '')
 
 function openCreate() {
   editing.value = null
@@ -87,18 +85,21 @@ async function save() {
     return
   }
 
+  // A cleared field goes as `null`: `undefined` is dropped from the JSON, and
+  // the update merges an absent field with the stored value, so an emptied
+  // subtitle or end date used to come back on save.
   const body = {
     title: form.title.trim(),
-    subtitle: form.subtitle.trim() || undefined,
+    subtitle: textOrNull(form.subtitle),
     imageUrl: form.imageUrl.trim(),
-    mobileUrl: form.mobileUrl.trim() || undefined,
-    linkUrl: form.linkUrl.trim() || undefined,
-    buttonText: form.buttonText.trim() || undefined,
-    bgColor: form.bgColor.trim() || undefined,
-    order: Number(form.order) || 0,
+    mobileUrl: textOrNull(form.mobileUrl),
+    linkUrl: textOrNull(form.linkUrl),
+    buttonText: textOrNull(form.buttonText),
+    bgColor: textOrNull(form.bgColor),
+    order: numOrNull(form.order) ?? 0,
     isActive: form.isActive,
-    startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : undefined,
-    endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : undefined,
+    startsAt: fromLocalInput(form.startsAt),
+    endsAt: fromLocalInput(form.endsAt),
   }
 
   saving.value = true
@@ -119,61 +120,55 @@ async function save() {
   }
 }
 
-async function toggleActive(banner: AdminBanner) {
-  busy.value = true
-  try {
-    await adminFetch(`/banners/${banner.id}`, {
+const toggleActive = (banner: AdminBanner) =>
+  run(
+    () => adminFetch(`/banners/${banner.id}`, {
       method: 'PATCH',
       body: { isActive: !banner.isActive },
-    })
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить статус'))
-  } finally {
-    busy.value = false
-  }
-}
+    }),
+    { key: `toggle-${banner.id}`, error: 'Не удалось изменить статус', after: load },
+  )
 
-/** Swaps `order` with the neighbour, so the slider sequence is editable. */
+/**
+ * Swaps `order` with the neighbour, so the slider sequence is editable. There
+ * is no bulk order endpoint for banners, so it is two PATCHes; when the second
+ * fails the first has already landed, and the list is reloaded either way so
+ * the screen shows the order the database actually has.
+ */
 async function move(banner: AdminBanner, direction: -1 | 1) {
   const sorted = [...banners.value].sort((a, b) => a.order - b.order)
-  const index = sorted.findIndex((b) => b.id === banner.id)
+  const index = sorted.findIndex(b => b.id === banner.id)
   const neighbour = sorted[index + direction]
   if (!neighbour) return
 
-  busy.value = true
-  try {
-    await adminFetch(`/banners/${banner.id}`, {
-      method: 'PATCH',
-      body: { order: neighbour.order },
-    })
-    await adminFetch(`/banners/${neighbour.id}`, {
-      method: 'PATCH',
-      body: { order: banner.order },
-    })
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить порядок'))
-  } finally {
-    busy.value = false
-  }
+  await run(
+    async () => {
+      await adminFetch(`/banners/${banner.id}`, {
+        method: 'PATCH',
+        body: { order: neighbour.order },
+      })
+      await adminFetch(`/banners/${neighbour.id}`, {
+        method: 'PATCH',
+        body: { order: banner.order },
+      })
+    },
+    { key: 'move', error: 'Не удалось изменить порядок' },
+  )
+  await load()
 }
 
 const deleting = ref<AdminBanner | null>(null)
 
 async function confirmDelete() {
-  if (!deleting.value) return
-  busy.value = true
-  try {
-    await adminFetch(`/banners/${deleting.value.id}`, { method: 'DELETE' })
-    toast.success('Баннер удалён')
-    deleting.value = null
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить баннер'))
-  } finally {
-    busy.value = false
-  }
+  const banner = deleting.value
+  if (!banner) return
+  const done = await run(() => adminFetch(`/banners/${banner.id}`, { method: 'DELETE' }), {
+    key: 'delete',
+    error: 'Не удалось удалить баннер',
+    success: 'Баннер удалён',
+    after: load,
+  })
+  if (done !== undefined) deleting.value = null
 }
 
 /** Why a banner isn't on the site right now, or null when it is. */
@@ -184,26 +179,13 @@ function hiddenReason(banner: AdminBanner) {
   if (banner.endsAt && new Date(banner.endsAt).getTime() < now) return 'Истёк'
   return null
 }
-
-const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-const formatDate = (iso: string | null) =>
-  iso ? dateFormatter.format(new Date(iso)) : '—'
 </script>
 
 <template>
-  <div class="admin-banners">
-    <header class="head">
-      <div>
-        <h1>Баннеры</h1>
-        <p>Слайдер в первом экране главной страницы</p>
-      </div>
+  <div class="admin-page">
+    <AdminPageHead title="Баннеры" description="Слайдер в первом экране главной страницы">
       <UiButton @click="openCreate">Добавить баннер</UiButton>
-    </header>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -256,7 +238,7 @@ const formatDate = (iso: string | null) =>
             </div>
             <div v-if="banner.startsAt || banner.endsAt">
               <dt>Период</dt>
-              <dd>{{ formatDate(banner.startsAt) }} — {{ formatDate(banner.endsAt) }}</dd>
+              <dd>{{ formatDateTime(banner.startsAt) }} — {{ formatDateTime(banner.endsAt) }}</dd>
             </div>
           </dl>
         </div>
@@ -265,7 +247,7 @@ const formatDate = (iso: string | null) =>
           <div class="order">
             <button
               type="button"
-              :disabled="index === 0 || busy"
+              :disabled="index === 0 || Boolean(busy)"
               aria-label="Выше"
               @click="move(banner, -1)"
             >
@@ -273,7 +255,7 @@ const formatDate = (iso: string | null) =>
             </button>
             <button
               type="button"
-              :disabled="index === banners.length - 1 || busy"
+              :disabled="index === banners.length - 1 || Boolean(busy)"
               aria-label="Ниже"
               @click="move(banner, 1)"
             >
@@ -281,7 +263,12 @@ const formatDate = (iso: string | null) =>
             </button>
           </div>
           <UiButton variant="ghost" size="sm" @click="openEdit(banner)">Изменить</UiButton>
-          <UiButton variant="ghost" size="sm" :loading="busy" @click="toggleActive(banner)">
+          <UiButton
+            variant="ghost"
+            size="sm"
+            :loading="busy === `toggle-${banner.id}`"
+            @click="toggleActive(banner)"
+          >
             {{ banner.isActive ? 'Выключить' : 'Включить' }}
           </UiButton>
           <UiButton variant="ghost" size="sm" @click="deleting = banner">Удалить</UiButton>
@@ -296,7 +283,7 @@ const formatDate = (iso: string | null) =>
     >
       <UiAlert v-if="formError" tone="danger" class="form-error">{{ formError }}</UiAlert>
 
-      <div class="form">
+      <div class="admin-form">
         <UiField label="Заголовок" required for="b-title">
           <UiInput id="b-title" v-model="form.title" placeholder="Скидки на электроинструмент" />
         </UiField>
@@ -317,7 +304,7 @@ const formatDate = (iso: string | null) =>
           <UiInput id="b-mob" v-model="form.mobileUrl" placeholder="https://…/banner-mobile.jpg" />
         </UiField>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Ссылка при клике" for="b-link">
             <UiInput id="b-link" v-model="form.linkUrl" placeholder="/sales" />
           </UiField>
@@ -326,7 +313,7 @@ const formatDate = (iso: string | null) =>
           </UiField>
         </div>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Цвет фона" hint="Если картинка не закрывает всю область" for="b-bg">
             <UiInput id="b-bg" v-model="form.bgColor" placeholder="#0f172a" />
           </UiField>
@@ -335,7 +322,7 @@ const formatDate = (iso: string | null) =>
           </UiField>
         </div>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Показывать с" for="b-start">
             <UiInput id="b-start" v-model="form.startsAt" type="datetime-local" />
           </UiField>
@@ -355,45 +342,19 @@ const formatDate = (iso: string | null) =>
       </template>
     </UiModal>
 
-    <UiModal
+    <UiConfirm
       :open="Boolean(deleting)"
       title="Удалить баннер?"
-      size="sm"
+      :busy="busy === 'delete'"
       @update:open="deleting = null"
+      @confirm="confirmDelete"
     >
-      <p class="confirm-text">«{{ deleting?.title }}» будет удалён безвозвратно.</p>
-      <template #footer>
-        <UiButton variant="ghost" @click="deleting = null">Отмена</UiButton>
-        <UiButton variant="danger" :loading="busy" @click="confirmDelete">Удалить</UiButton>
-      </template>
-    </UiModal>
+      «{{ deleting?.title }}» будет удалён безвозвратно.
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-banners {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 .list {
   display: flex;
   flex-direction: column;
@@ -522,18 +483,6 @@ const formatDate = (iso: string | null) =>
   opacity: 0.4;
 }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-}
-
 .form-preview {
   aspect-ratio: 3 / 1;
   overflow: hidden;
@@ -552,10 +501,6 @@ const formatDate = (iso: string | null) =>
   margin-bottom: var(--space-4);
 }
 
-.confirm-text {
-  color: var(--text-muted);
-}
-
 @media (max-width: 900px) {
   .banner {
     grid-template-columns: 1fr;
@@ -564,12 +509,6 @@ const formatDate = (iso: string | null) =>
   .actions {
     flex-direction: row;
     flex-wrap: wrap;
-  }
-}
-
-@media (max-width: 640px) {
-  .form-row {
-    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -1,16 +1,14 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
   title?: string
   size?: 'sm' | 'md' | 'lg' | 'xl'
-  /** Hides the built-in close affordances for flows that must be resolved. */
-  persistent?: boolean
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
 const dialog = ref<HTMLElement | null>(null)
 
 function close() {
-  if (!props.persistent) open.value = false
+  open.value = false
 }
 
 useModalA11y(open, dialog, close)
@@ -29,14 +27,10 @@ useModalA11y(open, dialog, close)
           aria-modal="true"
           :aria-label="title"
         >
-          <header v-if="title || $slots.header" class="dialog-header">
-            <slot name="header">
-              <h2>{{ title }}</h2>
-            </slot>
-            <button v-if="!persistent" type="button" class="close" aria-label="Закрыть" @click="close">
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              </svg>
+          <header v-if="title" class="dialog-header">
+            <h2>{{ title }}</h2>
+            <button type="button" class="close" aria-label="Закрыть" @click="close">
+              <UiIcon name="close" :size="18" :stroke-width="1.8" />
             </button>
           </header>
 
@@ -65,7 +59,7 @@ useModalA11y(open, dialog, close)
 
 .backdrop {
   position: absolute;
-  background: rgb(12 17 29 / 55%);
+  background: var(--overlay-backdrop);
   backdrop-filter: blur(3px);
   inset: 0;
 }
@@ -123,11 +117,6 @@ useModalA11y(open, dialog, close)
 .close:hover {
   background: var(--surface-active);
   color: var(--text-strong);
-}
-
-.close svg {
-  width: 18px;
-  height: 18px;
 }
 
 .dialog-body {

@@ -1,23 +1,20 @@
 <script setup lang="ts">
 /**
- * Horizontal scroller with no visible scrollbar.
+ * Horizontal scroller with no visible scrollbar, arrow buttons on pointer
+ * devices and click-and-drag panning with a mouse.
  *
- * Used for the category nav, tabs, breadcrumbs and the product thumbnail strip
- * — places where a native scrollbar is both ugly and, on desktop, hard to grab.
+ * Used for the header's category nav and the catalogue's subcategory strip —
+ * places where a native scrollbar is both ugly and, on desktop, hard to grab.
  * Deliberately not Swiper: this needs scrolling, not a carousel, and a real
  * scroll container keeps keyboard focus, wheel and touch behaviour for free.
  */
 withDefaults(
   defineProps<{
-    /** Shows arrow buttons on pointer devices when content overflows. */
-    arrows?: boolean
     /** Fades the edges to hint that there is more content. */
     fade?: boolean
-    /** Enables click-and-drag panning with a mouse. */
-    drag?: boolean
     label?: string
   }>(),
-  { arrows: true, fade: true, drag: true }
+  { fade: true, label: undefined }
 )
 
 const viewport = ref<HTMLElement | null>(null)
@@ -81,6 +78,9 @@ function onClickCapture(event: MouseEvent) {
   }
 }
 
+// The viewport's own box covers window resizes; content changes (links added
+// or removed, counts loading in) re-render this component's slot, so they are
+// caught by `onUpdated` — observing each child only ever saw the first set.
 let observer: ResizeObserver | undefined
 
 onMounted(() => {
@@ -88,18 +88,10 @@ onMounted(() => {
   if (viewport.value) {
     observer = new ResizeObserver(measure)
     observer.observe(viewport.value)
-    // Children changing width (facet counts loading in) also shifts overflow.
-    for (const child of Array.from(viewport.value.children)) {
-      observer.observe(child)
-    }
   }
-  window.addEventListener('resize', measure)
 })
-
-onBeforeUnmount(() => {
-  observer?.disconnect()
-  window.removeEventListener('resize', measure)
-})
+onUpdated(() => nextTick(measure))
+onBeforeUnmount(() => observer?.disconnect())
 </script>
 
 <template>
@@ -108,25 +100,23 @@ onBeforeUnmount(() => {
     :class="{ 'has-fade': fade, 'is-start': atStart, 'is-end': atEnd }"
   >
     <button
-      v-if="arrows && overflowing && !atStart"
+      v-if="overflowing && !atStart"
       type="button"
       class="arrow is-prev"
       aria-label="Прокрутить назад"
       @click="scrollByPage(-1)"
     >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <UiIcon name="chevron-left" :stroke-width="2" />
     </button>
 
     <div
       ref="viewport"
       class="viewport"
-      :class="{ 'is-draggable': drag && overflowing }"
+      :class="{ 'is-draggable': overflowing }"
       :aria-label="label"
       @scroll.passive="measure"
-      @pointerdown="drag && onPointerDown($event)"
-      @pointermove="drag && onPointerMove($event)"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
       @pointerup="endDrag"
       @pointerleave="endDrag"
       @click.capture="onClickCapture"
@@ -135,15 +125,13 @@ onBeforeUnmount(() => {
     </div>
 
     <button
-      v-if="arrows && overflowing && !atEnd"
+      v-if="overflowing && !atEnd"
       type="button"
       class="arrow is-next"
       aria-label="Прокрутить вперёд"
       @click="scrollByPage(1)"
     >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <UiIcon name="chevron-right" :stroke-width="2" />
     </button>
   </div>
 </template>

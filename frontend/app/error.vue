@@ -14,12 +14,22 @@ const isMaintenance = computed(() => props.error.statusCode === 503)
 // read in a crawler (or an audit) as «page without a title».
 useHead(() => ({
   title: isMaintenance.value
-    ? 'Технические работы | Мультитул'
+    ? 'Технические работы | Gost.by'
     : props.error.statusCode === 404
-      ? 'Страница не найдена | Мультитул'
-      : 'Ошибка | Мультитул',
+      ? 'Страница не найдена | Gost.by'
+      : 'Ошибка | Gost.by',
   meta: [{ name: 'robots', content: 'noindex' }],
 }))
+
+/**
+ * Nuxt fills `message` with `statusMessage` when nothing else was given, so
+ * printing both repeated the heading word for word under itself.
+ */
+const detail = computed(() => {
+  const message = props.error.message
+  if (!message || message === props.error.statusMessage) return ''
+  return message
+})
 
 const handleError = () => clearError({ redirect: '/' })
 const retry = () => reloadNuxtApp({ persistState: false })
@@ -33,14 +43,14 @@ const retry = () => reloadNuxtApp({ persistState: false })
       <h1>Магазин временно недоступен</h1>
       <p>Мы уже чиним — обновите страницу через пару минут. Заказы и корзина
         никуда не делись.</p>
-      <button type="button" @click="retry">Обновить страницу</button>
+      <UiButton class="error-action" size="lg" @click="retry">Обновить страницу</UiButton>
     </div>
 
     <div v-else class="error-card">
       <span class="eyebrow">Ошибка {{ error.statusCode || error.status }}</span>
       <h1>{{ error.statusMessage || 'Что-то пошло не так' }}</h1>
-      <p>{{ error.message || 'Попробуйте обновить страницу или вернуться на главную.' }}</p>
-      <button type="button" @click="handleError">Вернуться на главную</button>
+      <p>{{ detail || 'Попробуйте обновить страницу или вернуться на главную.' }}</p>
+      <UiButton class="error-action" size="lg" @click="handleError">Вернуться на главную</UiButton>
     </div>
   </div>
 </template>
@@ -63,14 +73,6 @@ const retry = () => reloadNuxtApp({ persistState: false })
   padding: clamp(28px, 6vw, 56px);
 }
 
-.eyebrow {
-  color: var(--brand-hover);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
 h1 {
   margin-top: 12px;
   font-size: clamp(34px, 7vw, 64px);
@@ -83,14 +85,7 @@ p {
   line-height: 1.7;
 }
 
-button {
+.error-action {
   margin-top: 28px;
-  border: 2px solid var(--text-strong);
-  border-radius: 999px;
-  background: var(--brand);
-  color: var(--text-strong);
-  cursor: pointer;
-  font-weight: 900;
-  padding: 13px 18px;
 }
 </style>

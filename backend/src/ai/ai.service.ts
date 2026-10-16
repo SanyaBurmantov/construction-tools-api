@@ -47,6 +47,13 @@ const DESCRIPTION_CONTEXT_CHARS = 2500;
 
 export type BatchOutcome = 'done' | 'progress' | 'rate-limited' | 'error';
 
+/** The answer's fields that were asked for, nothing else. */
+function pickFields(record: Record<string, unknown>, keys: string[]) {
+  return Object.fromEntries(
+    keys.filter((key) => key in record).map((key) => [key, record[key]]),
+  );
+}
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -475,7 +482,14 @@ export class AiService {
   }
 
   async cancel(id: string) {
-    await this.requireTask(id);
+    const task = await this.requireTask(id);
+    // A finished task stays finished; cancelling it rewrote its history.
+    if (
+      task.status === AiTaskStatus.DONE ||
+      task.status === AiTaskStatus.CANCELLED
+    ) {
+      throw new ConflictException('Задача уже завершена');
+    }
     return this.prisma.aiTask.update({
       where: { id },
       data: { status: AiTaskStatus.CANCELLED, finishedAt: new Date() },
@@ -484,7 +498,12 @@ export class AiService {
 
   /** FAILED items back to PENDING and the task back into the queue. */
   async retryFailed(id: string) {
-    await this.requireTask(id);
+    const task = await this.requireTask(id);
+    // Checked before touching items: resume() refuses a cancelled task, and
+    // the items were already reset by then, leaving the counts wrong.
+    if (task.status === AiTaskStatus.CANCELLED) {
+      throw new ConflictException('Задача отменена — создайте новую');
+    }
     const { count } = await this.prisma.aiTaskItem.updateMany({
       where: { taskId: id, status: AiTaskItemStatus.FAILED },
       data: { status: AiTaskItemStatus.PENDING, attempts: 0, error: null },
@@ -496,7 +515,10 @@ export class AiService {
 
   async deleteTask(id: string) {
     const task = await this.requireTask(id);
-    if (task.status === AiTaskStatus.RUNNING) {
+    // `activeTaskId`: a paused or queued task can still have a batch in
+    // flight; deleting it under the runner left products changed and locked
+    // with no record to revert them from.
+    if (task.status === AiTaskStatus.RUNNING || this.activeTaskId === id) {
       throw new ConflictException(
         'Задача выполняется — сначала приостановите её',
       );
@@ -576,8 +598,12 @@ export class AiService {
     }
 
     if (entity === AiEntity.PRODUCT) {
+      // Unlock only what was actually restored. A skipped field holds a newer
+      // AI task's text or an admin's edit; unlocking it let the next re-parse
+      // put the supplier text back over that work.
+      const restored = Object.keys(data);
       const locked = ((current.aiLockedFields as string[]) ?? []).filter(
-        (key) => !keys.includes(key),
+        (key) => !restored.includes(key),
       );
       await this.prisma.product.update({
         where: { id },
@@ -625,9 +651,19 @@ export class AiService {
 
   /* ---- Runner ---------------------------------------------------------- */
 
+  /** The task the runner holds right now (see `deleteTask`). */
+  activeTaskId: string | null = null;
+
+  /**
+   * The free tier's limit is per *key*, not per task. Remembered here so the
+   * other queued tasks do not each spend a request discovering the same 429.
+   */
+  private quotaResetsAt: Date | null = null;
+
   /** The task the runner should work on now, if any. */
   async nextRunnableTask() {
     const now = new Date();
+    if (this.quotaResetsAt && this.quotaResetsAt > now) return null;
     return this.prisma.aiTask.findFirst({
       where: {
         status: { in: [AiTaskStatus.QUEUED, AiTaskStatus.RUNNING] },
@@ -641,6 +677,15 @@ export class AiService {
 
   /** Processes one batch of a task. */
   async runBatch(task: AiTask): Promise<BatchOutcome> {
+    this.activeTaskId = task.id;
+    try {
+      return await this.runBatchInner(task);
+    } finally {
+      this.activeTaskId = null;
+    }
+  }
+
+  private async runBatchInner(task: AiTask): Promise<BatchOutcome> {
     const items = await this.prisma.aiTaskItem.findMany({
       where: { taskId: task.id, status: AiTaskItemStatus.PENDING },
       orderBy: { entityName: 'asc' },
@@ -707,6 +752,7 @@ export class AiService {
       if (error instanceof AiRateLimitError) {
         // The quota, not the batch, is the problem: nothing is charged to the
         // items, the task just sleeps until the limit resets.
+        this.quotaResetsAt = error.retryAt;
         await this.prisma.aiTask.update({
           where: { id: task.id },
           data: { pausedUntil: error.retryAt, lastError: message },
@@ -738,26 +784,44 @@ export class AiService {
         await this.chargeAttempt([item], 'Нет в ответе модели');
         continue;
       }
-      const context = contexts.get(item.entityId)!;
       try {
-        const changes = diffAnswer(fields, context.current, record);
-        await this.applyChanges(
-          task.entity,
-          item.entityId,
-          changes,
-          context.current,
-        );
-        await this.prisma.aiTaskItem.update({
-          where: { id: item.id },
-          data: {
-            status: Object.keys(changes).length
-              ? AiTaskItemStatus.APPLIED
-              : AiTaskItemStatus.UNCHANGED,
-            attempts: { increment: 1 },
-            changes: changes as Prisma.InputJsonValue,
-            response: record as Prisma.InputJsonValue,
-            error: null,
-          },
+        // One transaction for the write and its record, against values read
+        // *now*: the context was loaded before a model call that can take two
+        // minutes, so an admin edit in that window was overwritten and the
+        // stored `old` was wrong; and a crash between two separate writes
+        // left a changed product with no record to revert it from.
+        await this.prisma.$transaction(async (tx) => {
+          const current = await this.currentValues(
+            task.entity,
+            item.entityId,
+            fields.map((field) => field.key),
+            tx,
+          );
+          if (!current) throw new Error('Запись удалена');
+          const changes = diffAnswer(fields, current, record);
+          await this.applyChanges(
+            task.entity,
+            item.entityId,
+            changes,
+            current,
+            tx,
+          );
+          await tx.aiTaskItem.update({
+            where: { id: item.id },
+            data: {
+              status: Object.keys(changes).length
+                ? AiTaskItemStatus.APPLIED
+                : AiTaskItemStatus.UNCHANGED,
+              attempts: { increment: 1 },
+              changes: changes as Prisma.InputJsonValue,
+              // Only the fields asked for: the model may invent extra keys.
+              response: pickFields(
+                record,
+                fields.map((field) => field.key),
+              ) as Prisma.InputJsonValue,
+              error: null,
+            },
+          });
         });
       } catch (error) {
         await this.chargeAttempt([item], (error as Error).message);
@@ -771,6 +835,7 @@ export class AiService {
     id: string,
     changes: Record<string, FieldChange>,
     current: Record<string, unknown>,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     const keys = Object.keys(changes);
     if (!keys.length) return;
@@ -783,12 +848,12 @@ export class AiService {
         ...((current.aiLockedFields as string[]) ?? []),
         ...keys,
       ]);
-      await this.prisma.product.update({
+      await db.product.update({
         where: { id },
         data: { ...data, aiLockedFields: [...locked] },
       });
     } else {
-      await this.prisma.category.update({ where: { id }, data });
+      await db.category.update({ where: { id }, data });
     }
   }
 
@@ -849,17 +914,22 @@ export class AiService {
 
   /* ---- Context --------------------------------------------------------- */
 
-  private async currentValues(entity: AiEntity, id: string, keys: string[]) {
+  private async currentValues(
+    entity: AiEntity,
+    id: string,
+    keys: string[],
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
     const select = Object.fromEntries(
       [...keys, 'name'].map((key) => [key, true]),
     );
     if (entity === AiEntity.PRODUCT) {
-      return this.prisma.product.findUnique({
+      return db.product.findUnique({
         where: { id },
         select: { ...select, aiLockedFields: true },
       }) as Promise<Record<string, unknown> | null>;
     }
-    return this.prisma.category.findUnique({
+    return db.category.findUnique({
       where: { id },
       select,
     }) as Promise<Record<string, unknown> | null>;

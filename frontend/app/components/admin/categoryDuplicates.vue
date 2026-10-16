@@ -240,13 +240,4 @@ async function mergeAll() {
 .dup-option code {
   overflow-wrap: anywhere;
 }
-
-.sr-only {
-  position: absolute;
-  overflow: hidden;
-  width: 1px;
-  height: 1px;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
 </style>

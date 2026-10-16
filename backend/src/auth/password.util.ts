@@ -113,3 +113,15 @@ export function passwordProblem(password: string): string | null {
     return `Пароль не должен быть длиннее ${MAX_PASSWORD_LENGTH} символов`;
   return null;
 }
+
+let dummyHash: Promise<string> | null = null;
+
+/**
+ * A hash of a random password, made once per process. Verifying against it
+ * costs exactly what a real check costs, so a login for an account that does
+ * not exist takes as long as one with a wrong password.
+ */
+export function dummyPasswordHash(): Promise<string> {
+  dummyHash ??= hashPassword(randomBytes(16).toString('hex'));
+  return dummyHash;
+}

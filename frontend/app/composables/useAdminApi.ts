@@ -1,3 +1,5 @@
+import type { AdminStats } from '~/types/api'
+
 /**
  * Admin API client.
  *
@@ -48,4 +50,32 @@ export function useAdminApi() {
     adminFetch,
     errorMessage,
   }
+}
+
+let statsRequest: Promise<AdminStats> | null = null
+
+/**
+ * `GET /admin/stats`, shared: the layout loads it for the sidebar badges on
+ * every screen change, and the dashboard renders the same answer. A load that
+ * is already in flight is joined rather than repeated, so opening the
+ * dashboard costs one run of the heaviest query in the app, not two. `load()`
+ * throws on failure; the caller decides what a failure means.
+ */
+export function useAdminStats() {
+  const stats = useState<AdminStats | null>('admin-stats', () => null)
+  const { adminFetch } = useAdminApi()
+
+  function load() {
+    statsRequest ??= adminFetch<AdminStats>('/stats')
+      .then((response) => {
+        stats.value = response
+        return response
+      })
+      .finally(() => {
+        statsRequest = null
+      })
+    return statsRequest
+  }
+
+  return { stats, load }
 }

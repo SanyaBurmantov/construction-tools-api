@@ -6,9 +6,9 @@ import { CatalogNormalizerService } from './catalog-normalizer.service';
 /**
  * Nightly catalogue normalization.
  *
- * 03:40 is deliberately off every parsing slot: the sources process their
- * queues at :10/:20/:40/:50 and refresh at 05:00–06:40, and the watchdog runs
- * at :07/:37. The normalizer rewrites the same tables the parsers write to, so
+ * 03:45 is deliberately off every parsing slot: the sources process their
+ * queues at :00/:10/:20/:25/:30/:40/:50/:55, categories at :05, refresh at
+ * 05:00–06:40, and the watchdog runs at :07/:37. The normalizer rewrites the same tables the parsers write to, so
  * overlapping would mean both fighting for the same rows.
  *
  * Gated on the global parser switch only. A per-source switch makes no sense
@@ -23,7 +23,10 @@ export class CatalogNormalizerCron {
     private readonly normalizer: CatalogNormalizerService,
   ) {}
 
-  @Cron('0 40 3 * * *')
+  // :45 — the one slot no parser uses (th-tools :00/:30, categories :05,
+  // tools-by :10/:40, dukon :20/:50, 7745 :25/:55, watchdog :07/:37). At :40
+  // it wrote the same tables as a tools-by batch.
+  @Cron('0 45 3 * * *')
   async normalizeNightly() {
     if (!(await this.settings.isCronEnabled())) return;
     // Fire and forget with an explicit catch: a cron handler that rejects

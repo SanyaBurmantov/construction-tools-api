@@ -5,9 +5,10 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { CustomerType, Prisma, User, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { hashOpaqueToken } from './token-hash';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import {
@@ -17,7 +18,12 @@ import {
 } from './dto/update-profile.dto';
 import { loginProblem, normalizeLogin } from './login.util';
 import { isUniqueViolation } from './prisma-errors';
-import { hashPassword, passwordProblem, verifyPassword } from './password.util';
+import {
+  dummyPasswordHash,
+  hashPassword,
+  passwordProblem,
+  verifyPassword,
+} from './password.util';
 import { EmailVerificationService } from './email-verification.service';
 
 /** Fields safe to return — `passwordHash` is never selected. */
@@ -81,7 +87,7 @@ export class AuthService {
    * randomness, which a rainbow table cannot cover.
    */
   static hashToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
+    return hashOpaqueToken(token);
   }
 
   /** The company-name rule lives here so register and admin-create share it. */
@@ -177,7 +183,12 @@ export class AuthService {
     // One message for "no such login" and "wrong password": telling them apart
     // turns the login form into a list of registered accounts.
     const invalid = new UnauthorizedException('Неверный логин или пароль');
-    if (!user) throw invalid;
+    if (!user) {
+      // Spend the same scrypt time as a real check, or the response time
+      // tells an unknown login from a wrong password.
+      await verifyPassword(dto.password, await dummyPasswordHash());
+      throw invalid;
+    }
     if (!(await verifyPassword(dto.password, user.passwordHash))) throw invalid;
     if (!user.isActive)
       throw new UnauthorizedException('Учётная запись отключена');
@@ -277,7 +288,7 @@ export class AuthService {
     const email =
       dto.email === undefined
         ? undefined
-        : dto.email.trim().toLowerCase() || null;
+        : dto.email?.trim().toLowerCase() || null;
     // A new address is unproven until its own link is followed.
     const emailChanged = email !== undefined && email !== current.email;
 
@@ -285,15 +296,17 @@ export class AuthService {
       where: { id: userId },
       data: {
         customerType,
-        name: dto.name === undefined ? undefined : dto.name.trim() || null,
+        // `null` clears a field (form-values.ts convention) — `?.` keeps it
+        // from becoming a 500.
+        name: dto.name === undefined ? undefined : dto.name?.trim() || null,
         email,
         emailVerifiedAt: emailChanged ? null : undefined,
-        phone: dto.phone === undefined ? undefined : dto.phone.trim() || null,
+        phone: dto.phone === undefined ? undefined : dto.phone?.trim() || null,
         companyName:
           dto.companyName === undefined
             ? undefined
-            : dto.companyName.trim() || null,
-        taxId: dto.taxId === undefined ? undefined : dto.taxId.trim() || null,
+            : dto.companyName?.trim() || null,
+        taxId: dto.taxId === undefined ? undefined : dto.taxId?.trim() || null,
       },
       select: USER_SELECT,
     });

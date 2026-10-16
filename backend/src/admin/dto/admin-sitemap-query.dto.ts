@@ -2,7 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
-  IsNumber,
+  IsInt,
   IsOptional,
   IsString,
   Max,
@@ -34,13 +34,14 @@ export class AdminSitemapQueryDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(10000)
   page?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(100)
   limit?: number;

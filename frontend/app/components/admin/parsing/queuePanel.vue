@@ -150,28 +150,13 @@ const COLUMNS = [
         </template>
       </UiTable>
 
-      <div class="pagination pad">
-        <UiButton
-          size="sm"
-          variant="secondary"
-          :disabled="queue.pagination.page <= 1"
-          @click="queue.setPage(queue.pagination.page - 1)"
-        >
-          Назад
-        </UiButton>
-        <span class="muted">
-          {{ queue.pagination.page }} / {{ queue.pagination.pages || 1 }}
-          <template v-if="queue.pagination.total">· {{ queue.pagination.total }} URL</template>
-        </span>
-        <UiButton
-          size="sm"
-          variant="secondary"
-          :disabled="queue.pagination.page >= queue.pagination.pages"
-          @click="queue.setPage(queue.pagination.page + 1)"
-        >
-          Вперёд
-        </UiButton>
-      </div>
+      <UiPagination
+        class="pad"
+        :page="queue.pagination.page"
+        :pages="queue.pagination.pages"
+        :total="queue.pagination.total"
+        @change="queue.setPage"
+      />
     </div>
   </UiCard>
 </template>

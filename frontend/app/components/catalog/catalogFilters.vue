@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import type { RouteLocationRaw } from 'vue-router'
+import type { FacetItem, SpecFacet } from '~/types/api'
 
-type FacetItem = { id: string, name: string, slug?: string, code?: string }
 type CategoryLink = { id: string, name: string, slug: string, count: number }
 // eslint-disable-next-line no-unused-vars -- parameter name documents the signature
 type CategoryTo = (categorySlug: string) => RouteLocationRaw
-type SpecFacet = {
-  id: string
-  name: string
-  unit?: string | null
-  values: Array<{ value: string, count: number }>
-}
 
 /**
  * The filter panel, rendered twice: as a full-height sidebar on desktop and inside
@@ -33,7 +27,8 @@ const props = defineProps<{
   inStock: boolean
   onSale: boolean
   priceRange: { min: number, max: number } | null
-  brands: FacetItem[]
+  /** How many brands the catalogue has at all — only decides whether to draw the facet. */
+  brandCount: number
   visibleBrands: FacetItem[]
   brandCounts: Record<string, number>
   selectedBrandIds: string[]
@@ -170,13 +165,13 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       </form>
     </section>
 
-    <section v-if="brands.length" class="group">
+    <section v-if="brandCount" class="group">
       <h3>
         Бренды
         <small v-if="selectedBrandIds.length">{{ selectedBrandIds.length }}</small>
       </h3>
       <UiInput
-        v-if="brands.length > 8"
+        v-if="brandCount > 8"
         v-model="brandQuery"
         type="search"
         size="sm"

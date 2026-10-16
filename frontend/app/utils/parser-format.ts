@@ -3,6 +3,7 @@
  * themselves go through `formatDateTime` from `format-datetime.ts` — the same
  * one the rest of the admin uses.
  */
+import type { ParserSourceOverview, SourceDraft } from '~/types/parsing'
 
 /** "5 мин назад" reads faster than a timestamp when you're checking liveness. */
 export function formatAgo(iso: string | null | undefined) {
@@ -45,3 +46,27 @@ export const QUEUE_STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' 
   FAILED: 'danger',
   SKIPPED: 'neutral',
 }
+
+/**
+ * A source's settings as the form edits them. The page seeds its drafts with
+ * it and the control panel compares against it, so the two agree on what
+ * «изменено» means.
+ */
+export function draftFromSource(source: ParserSourceOverview): SourceDraft {
+  return {
+    batchLimit: source.batchLimit,
+    requestDelayMs: source.requestDelayMs,
+    maxPages: source.maxPages,
+    categoryBatchLimit: source.categoryBatchLimit ?? 0,
+    categoryIncludeRegex: source.categoryFilters.include,
+    categoryExcludeRegex: source.categoryFilters.exclude,
+  }
+}
+
+export function sameDraft(a: SourceDraft, b: SourceDraft) {
+  return (Object.keys(a) as Array<keyof SourceDraft>).every(key => a[key] === b[key])
+}
+
+/** Badge tone of an HTTP status in the audit and error logs. */
+export const httpStatusTone = (code: number) =>
+  code >= 500 ? 'danger' : code >= 400 ? 'warning' : 'success'

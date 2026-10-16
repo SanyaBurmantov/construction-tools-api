@@ -1,59 +1,51 @@
 <script setup lang="ts">
+import type { ProductDetail } from '~/types/api'
 import { useCompareStore } from '~/stores/compare'
 import { useCartStore } from '~/stores/cart'
-
-type CompareProduct = {
-  id: string
-  slug: string
-  name: string
-  sku?: string | null
-  model?: string | null
-  priceValue?: number | null
-  oldPrice?: number | null
-  priceCurrency?: string | null
-  stockStatus?: string | null
-  ratingAvg?: number | null
-  ratingCount?: number | null
-  brand?: { name: string, slug: string } | null
-  category?: { name: string, slug: string } | null
-  images?: Array<{ url: string, alt?: string | null }>
-  productSpecs?: Array<{ name: string, value: string }>
-}
 
 const compare = useCompareStore()
 const cart = useCartStore()
 const toast = useAppToast()
-const config = useRuntimeConfig()
-const { formatPrice } = useFormatPrice()
+const { apiBase } = useSite()
 
-const products = ref<CompareProduct[]>([])
+const products = ref<ProductDetail[]>([])
 const loading = ref(false)
 const loadError = ref('')
 /** When on, rows where every product agrees are hidden. */
 const onlyDifferences = ref(false)
 
+/**
+ * Syncs the table with the store. Products already on screen are kept (a
+ * removal is a local filter, not four new requests); only slugs not loaded
+ * yet are fetched. A single 404 just drops that column (unpublished since),
+ * but when every request fails the page says so instead of «Нечего сравнивать».
+ */
 async function loadProducts() {
   const slugs = compare.slugs
-  if (!slugs.length) {
-    products.value = []
-    return
-  }
-
-  loading.value = true
+  const loaded = new Map(products.value.map(product => [product.slug, product]))
+  const missing = slugs.filter(slug => !loaded.has(slug))
   loadError.value = ''
-  try {
+
+  if (missing.length) {
+    loading.value = true
+    let failed = 0
     const results = await Promise.all(
-      slugs.map((slug) =>
-        $fetch<CompareProduct>(`${config.public.apiBase}/products/${slug}`).catch(() => null)
+      missing.map(slug =>
+        $fetch<ProductDetail>(`${apiBase}/products/${slug}`).catch((error) => {
+          if (isApiUnavailable(error)) failed += 1
+          return null
+        })
       )
     )
-    // Keep the store's order; drop anything that 404'd (unpublished since).
-    products.value = results.filter((p): p is CompareProduct => Boolean(p))
-  } catch {
-    loadError.value = 'Не удалось загрузить товары для сравнения'
-  } finally {
+    for (const product of results) if (product) loaded.set(product.slug, product)
+    if (failed === missing.length) loadError.value = 'Не удалось загрузить товары для сравнения'
     loading.value = false
   }
+
+  // Keep the store's order.
+  products.value = slugs
+    .map(slug => loaded.get(slug))
+    .filter((product): product is ProductDetail => Boolean(product))
 }
 
 onMounted(() => {
@@ -61,8 +53,15 @@ onMounted(() => {
   void loadProducts()
 })
 
-// Refetch when the list changes (removal from the table or the compare bar).
+// Re-sync when the list changes (removal from the table or the compare bar).
 watch(() => compare.slugs.join(','), () => void loadProducts())
+
+/** Same wording as the product card's availability, without the quantity. */
+function stockLabel(product: ProductDetail) {
+  if (product.stockStatus === 'in_stock') return 'В наличии'
+  if (product.stockStatus === 'out_of_stock') return 'Под заказ'
+  return 'Уточняйте наличие'
+}
 
 /* ---- Row model --------------------------------------------------------- */
 type Row = { label: string, values: string[], differs: boolean }
@@ -86,16 +85,7 @@ const baseRows = computed<Row[]>(() => {
     buildRow('Категория', list.map((p) => p.category?.name)),
     buildRow('Артикул', list.map((p) => p.sku)),
     buildRow('Модель', list.map((p) => p.model)),
-    buildRow(
-      'Наличие',
-      list.map((p) =>
-        p.stockStatus === 'in_stock'
-          ? 'В наличии'
-          : p.stockStatus === 'out_of_stock'
-            ? 'Под заказ'
-            : 'Уточняйте'
-      )
-    ),
+    buildRow('Наличие', list.map(stockLabel)),
     buildRow(
       'Рейтинг',
       list.map((p) => (p.ratingCount ? `${p.ratingAvg?.toFixed(1)} (${p.ratingCount})` : null))
@@ -134,22 +124,15 @@ const differenceCount = computed(
   () => [...baseRows.value, ...specRows.value].filter((r) => r.differs).length
 )
 
-function addToCart(product: CompareProduct) {
-  if (product.priceValue == null || product.priceValue <= 0) return
-  cart.add({
-    productId: product.id,
-    slug: product.slug,
-    name: product.name,
-    sku: product.sku ?? null,
-    image: product.images?.[0]?.url ?? null,
-    price: product.priceValue,
-    currency: product.priceCurrency || 'BYN',
-  })
+function addToCart(product: ProductDetail) {
+  const line = toCartLine(product)
+  if (!line) return
+  cart.add(line)
   toast.success(`«${product.name}» в корзине`)
 }
 
 useHead({
-  title: 'Сравнение товаров | Мультитул',
+  title: 'Сравнение товаров | Gost.by',
   meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>
@@ -161,125 +144,113 @@ useHead({
     <header class="page-head">
       <div>
         <h1>Сравнение товаров</h1>
-        <ClientOnly>
-          <p v-if="products.length" class="subtitle">
-            {{ pluralize(products.length, 'product') }} · {{ pluralize(differenceCount, 'difference') }}
-          </p>
-        </ClientOnly>
+        <p v-if="products.length" class="subtitle">
+          {{ pluralize(products.length, 'product') }} · {{ pluralize(differenceCount, 'difference') }}
+        </p>
       </div>
 
-      <ClientOnly>
-        <div v-if="products.length" class="head-actions">
-          <UiCheckbox v-model="onlyDifferences" label="Только отличия" />
-          <UiButton variant="ghost" size="sm" @click="compare.clear()">Очистить</UiButton>
-        </div>
-      </ClientOnly>
+      <div v-if="products.length" class="head-actions">
+        <UiCheckbox v-model="onlyDifferences" label="Только отличия" />
+        <UiButton variant="ghost" size="sm" @click="compare.clear()">Очистить</UiButton>
+      </div>
     </header>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
-    <ClientOnly>
-      <template #fallback>
-        <UiSkeleton height="400px" radius="var(--radius-md)" />
-      </template>
+    <UiSkeleton v-if="loading" height="400px" radius="var(--radius-md)" />
 
-      <UiSkeleton v-if="loading" height="400px" radius="var(--radius-md)" />
+    <UiEmpty
+      v-else-if="!products.length && !loadError"
+      icon="box"
+      title="Нечего сравнивать"
+      description="Добавьте до четырёх товаров из каталога — и увидите их характеристики бок о бок."
+    >
+      <UiButton to="/catalog">Перейти в каталог</UiButton>
+    </UiEmpty>
 
-      <UiEmpty
-        v-else-if="!products.length"
-        icon="box"
-        title="Нечего сравнивать"
-        description="Добавьте до четырёх товаров из каталога — и увидите их характеристики бок о бок."
-      >
-        <UiButton to="/catalog">Перейти в каталог</UiButton>
-      </UiEmpty>
+    <div v-else-if="products.length" class="table-scroll scroll-x">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th class="label-col">Характеристика</th>
+            <th v-for="product in products" :key="product.id" class="product-col">
+              <div class="product-head">
+                <button
+                  type="button"
+                  class="remove"
+                  :aria-label="`Убрать ${product.name} из сравнения`"
+                  @click="compare.remove(product.id)"
+                >
+                  <UiIcon name="close" :stroke-width="1.8" />
+                </button>
 
-      <div v-else class="table-scroll scroll-x">
-        <table class="compare-table">
-          <thead>
-            <tr>
-              <th class="label-col">Характеристика</th>
-              <th v-for="product in products" :key="product.id" class="product-col">
-                <div class="product-head">
-                  <button
-                    type="button"
-                    class="remove"
-                    :aria-label="`Убрать ${product.name} из сравнения`"
-                    @click="compare.remove(product.id)"
+                <NuxtLink :to="`/product/${product.slug}`" class="thumb">
+                  <img
+                    v-if="product.images?.length"
+                    :src="product.images[0]!.url"
+                    :alt="product.name"
+                    loading="lazy"
                   >
-                    <svg viewBox="0 0 20 20" aria-hidden="true">
-                      <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                    </svg>
-                  </button>
+                  <span v-else class="thumb-empty" aria-hidden="true" />
+                </NuxtLink>
 
-                  <NuxtLink :to="`/product/${product.slug}`" class="thumb">
-                    <img
-                      v-if="product.images?.length"
-                      :src="product.images[0]!.url"
-                      :alt="product.name"
-                      loading="lazy"
-                    >
-                    <span v-else class="thumb-empty" aria-hidden="true" />
-                  </NuxtLink>
+                <NuxtLink :to="`/product/${product.slug}`" class="product-name">
+                  {{ product.name }}
+                </NuxtLink>
 
-                  <NuxtLink :to="`/product/${product.slug}`" class="product-name">
-                    {{ product.name }}
-                  </NuxtLink>
+                <UiPrice
+                  :value="product.priceValue"
+                  :old-price="product.oldPrice"
+                  :currency="product.priceCurrency"
+                  size="sm"
+                />
 
-                  <UiPrice
-                    :value="product.priceValue"
-                    :old-price="product.oldPrice"
-                    :currency="product.priceCurrency"
-                    size="sm"
-                  />
+                <UiButton
+                  v-if="product.priceValue"
+                  size="sm"
+                  block
+                  @click="addToCart(product)"
+                >
+                  В корзину
+                </UiButton>
+              </div>
+            </th>
+          </tr>
+        </thead>
 
-                  <UiButton
-                    v-if="product.priceValue"
-                    size="sm"
-                    block
-                    @click="addToCart(product)"
-                  >
-                    В корзину
-                  </UiButton>
-                </div>
-              </th>
-            </tr>
-          </thead>
+        <tbody>
+          <tr v-if="visibleBaseRows.length" class="section-row">
+            <td :colspan="products.length + 1">Основное</td>
+          </tr>
+          <tr
+            v-for="row in visibleBaseRows"
+            :key="`base-${row.label}`"
+            :class="{ 'is-diff': row.differs }"
+          >
+            <th scope="row">{{ row.label }}</th>
+            <td v-for="(value, index) in row.values" :key="index">{{ value }}</td>
+          </tr>
 
-          <tbody>
-            <tr v-if="visibleBaseRows.length" class="section-row">
-              <td :colspan="products.length + 1">Основное</td>
-            </tr>
-            <tr
-              v-for="row in visibleBaseRows"
-              :key="`base-${row.label}`"
-              :class="{ 'is-diff': row.differs }"
-            >
-              <th scope="row">{{ row.label }}</th>
-              <td v-for="(value, index) in row.values" :key="index">{{ value }}</td>
-            </tr>
+          <tr v-if="visibleSpecRows.length" class="section-row">
+            <td :colspan="products.length + 1">Характеристики</td>
+          </tr>
+          <tr
+            v-for="row in visibleSpecRows"
+            :key="`spec-${row.label}`"
+            :class="{ 'is-diff': row.differs }"
+          >
+            <th scope="row">{{ row.label }}</th>
+            <td v-for="(value, index) in row.values" :key="index">{{ value }}</td>
+          </tr>
 
-            <tr v-if="visibleSpecRows.length" class="section-row">
-              <td :colspan="products.length + 1">Характеристики</td>
-            </tr>
-            <tr
-              v-for="row in visibleSpecRows"
-              :key="`spec-${row.label}`"
-              :class="{ 'is-diff': row.differs }"
-            >
-              <th scope="row">{{ row.label }}</th>
-              <td v-for="(value, index) in row.values" :key="index">{{ value }}</td>
-            </tr>
-
-            <tr v-if="onlyDifferences && !visibleBaseRows.length && !visibleSpecRows.length">
-              <td :colspan="products.length + 1" class="no-diff">
-                Различий между выбранными товарами нет.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </ClientOnly>
+          <tr v-if="onlyDifferences && !visibleBaseRows.length && !visibleSpecRows.length">
+            <td :colspan="products.length + 1" class="no-diff">
+              Различий между выбранными товарами нет.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 

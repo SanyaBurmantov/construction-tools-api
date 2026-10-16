@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CategoryOptionSource } from '~/utils/category-options'
+
 definePageMeta({ layout: 'admin' })
 
 type Scope = 'GLOBAL' | 'CATEGORY' | 'BRAND' | 'SOURCE'
@@ -37,34 +39,32 @@ type ReviewItem = {
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
-const { formatPrice } = useFormatPrice()
+const { run, busy } = useAdminAction()
 
 const rules = ref<PricingRule[]>([])
 const reviewQueue = ref<ReviewItem[]>([])
-const categories = ref<Array<{ id: string, name: string, level: number }>>([])
+const categories = ref<CategoryOptionSource[]>([])
 const brands = ref<Array<{ id: string, name: string }>>([])
 const sources = ref<Array<{ id: string, name: string }>>([])
 
 const loading = ref(true)
 const loadError = ref('')
-const busy = ref(false)
 
+/**
+ * Rules and the review queue — what an action changes. The reference lists
+ * (every category, brand and supplier) used to be re-fetched after each
+ * accept/reject/save as well; they only feed the selects, so they load once.
+ */
 async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [rulesData, queue, cats, brs, srcs] = await Promise.all([
+    const [rulesData, queue] = await Promise.all([
       adminFetch<PricingRule[]>('/pricing/rules'),
       adminFetch<{ data: ReviewItem[] }>('/pricing/review-queue'),
-      adminFetch<Array<{ id: string, name: string, level: number }>>('/categories').catch(() => []),
-      adminFetch<Array<{ id: string, name: string }>>('/brands').catch(() => []),
-      adminFetch<Array<{ id: string, name: string }>>('/sources').catch(() => []),
     ])
     rules.value = rulesData
     reviewQueue.value = queue.data
-    categories.value = cats
-    brands.value = brs
-    sources.value = srcs
   } catch (error) {
     loadError.value = errorMessage(error, 'Не удалось загрузить настройки цен')
   } finally {
@@ -72,7 +72,22 @@ async function load() {
   }
 }
 
-onMounted(load)
+/** Select options. A failure only empties a select; it is not worth an alert. */
+async function loadReferences() {
+  const [cats, brs, srcs] = await Promise.all([
+    adminFetch<CategoryOptionSource[]>('/categories').catch(() => []),
+    adminFetch<Array<{ id: string, name: string }>>('/brands').catch(() => []),
+    adminFetch<Array<{ id: string, name: string }>>('/sources').catch(() => []),
+  ])
+  categories.value = cats
+  brands.value = brs
+  sources.value = srcs
+}
+
+onMounted(() => {
+  void loadReferences()
+  void load()
+})
 
 /* ---- Simulator ---------------------------------------------------------- */
 const sim = reactive({
@@ -119,58 +134,58 @@ watch(
   }
 )
 onMounted(() => void runSimulation())
+onBeforeUnmount(() => {
+  if (simTimer) clearTimeout(simTimer)
+})
 
 /* ---- Bulk actions ------------------------------------------------------- */
 const confirmRecalc = ref(false)
 const confirmBackfill = ref(false)
 
-async function recalculate() {
-  busy.value = true
-  try {
-    const result = await adminFetch<{ total: number, processed: number, updated: number }>(
-      '/pricing/recalculate',
-      { method: 'POST', body: {} }
-    )
-    toast.success(`Пересчитано ${result.processed}, изменено цен: ${result.updated}`)
-    confirmRecalc.value = false
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось пересчитать'))
-  } finally {
-    busy.value = false
-  }
+function recalculate() {
+  return run(
+    () =>
+      adminFetch<{ total: number, processed: number, updated: number }>(
+        '/pricing/recalculate',
+        { method: 'POST', body: {} },
+      ),
+    {
+      key: 'recalc',
+      error: 'Не удалось пересчитать',
+      success: result => `Пересчитано ${result.processed}, изменено цен: ${result.updated}`,
+      after: () => {
+        confirmRecalc.value = false
+        return load()
+      },
+    },
+  )
 }
 
-async function backfill() {
-  busy.value = true
-  try {
-    const result = await adminFetch<{ updated: number }>('/pricing/backfill-cost', {
-      method: 'POST',
-    })
-    toast.success(`Закупочная цена проставлена у ${result.updated} товаров`)
-    confirmBackfill.value = false
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось перенести цены'))
-  } finally {
-    busy.value = false
-  }
+function backfill() {
+  return run(
+    () => adminFetch<{ updated: number }>('/pricing/backfill-cost', { method: 'POST' }),
+    {
+      key: 'backfill',
+      error: 'Не удалось перенести цены',
+      success: result => `Закупочная цена проставлена у ${result.updated} товаров`,
+      after: () => {
+        confirmBackfill.value = false
+      },
+    },
+  )
 }
 
 /* ---- Review queue ------------------------------------------------------- */
-async function resolveReview(item: ReviewItem, accept: boolean) {
-  busy.value = true
-  try {
-    await adminFetch(`/pricing/review/${item.id}`, {
-      method: 'POST',
-      body: { accept },
-    })
-    toast.success(accept ? 'Новая закупка принята, цена пересчитана' : 'Прежняя цена оставлена')
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось применить решение'))
-  } finally {
-    busy.value = false
-  }
+function resolveReview(item: ReviewItem, accept: boolean) {
+  return run(
+    () => adminFetch(`/pricing/review/${item.id}`, { method: 'POST', body: { accept } }),
+    {
+      key: `${item.id}:${accept}`,
+      error: 'Не удалось применить решение',
+      success: accept ? 'Новая закупка принята, цена пересчитана' : 'Прежняя цена оставлена',
+      after: load,
+    },
+  )
 }
 
 /* ---- Rule editor -------------------------------------------------------- */
@@ -225,8 +240,6 @@ function openEdit(rule: PricingRule) {
   editorOpen.value = true
 }
 
-const toNumber = (v: number | null) => (v === null || Number.isNaN(v) ? undefined : Number(v))
-
 async function save() {
   formError.value = ''
   if (!form.name.trim()) {
@@ -234,19 +247,21 @@ async function save() {
     return
   }
 
+  // A cleared bound or margin goes as `null`: the update merges the body over
+  // the stored rule, so an absent field kept the old value forever.
   const body = {
     name: form.name.trim(),
     scope: form.scope,
-    categoryId: form.scope === 'CATEGORY' ? form.categoryId || undefined : undefined,
-    brandId: form.scope === 'BRAND' ? form.brandId || undefined : undefined,
-    sourceId: form.scope === 'SOURCE' ? form.sourceId || undefined : undefined,
-    minCost: toNumber(form.minCost),
-    maxCost: toNumber(form.maxCost),
-    markupPercent: toNumber(form.markupPercent) ?? 0,
-    markupFixed: toNumber(form.markupFixed) ?? 0,
-    minMargin: toNumber(form.minMargin),
+    categoryId: form.scope === 'CATEGORY' ? form.categoryId || null : null,
+    brandId: form.scope === 'BRAND' ? form.brandId || null : null,
+    sourceId: form.scope === 'SOURCE' ? form.sourceId || null : null,
+    minCost: numOrNull(form.minCost),
+    maxCost: numOrNull(form.maxCost),
+    markupPercent: numOrNull(form.markupPercent) ?? 0,
+    markupFixed: numOrNull(form.markupFixed) ?? 0,
+    minMargin: numOrNull(form.minMargin),
     rounding: form.rounding,
-    priority: toNumber(form.priority) ?? 0,
+    priority: numOrNull(form.priority) ?? 0,
     isActive: form.isActive,
   }
 
@@ -272,18 +287,17 @@ async function save() {
 const deleting = ref<PricingRule | null>(null)
 
 async function confirmDelete() {
-  if (!deleting.value) return
-  busy.value = true
-  try {
-    await adminFetch(`/pricing/rules/${deleting.value.id}`, { method: 'DELETE' })
-    toast.success('Правило удалено')
-    deleting.value = null
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить правило'))
-  } finally {
-    busy.value = false
-  }
+  const rule = deleting.value
+  if (!rule) return
+  await run(() => adminFetch(`/pricing/rules/${rule.id}`, { method: 'DELETE' }), {
+    key: 'delete',
+    error: 'Не удалось удалить правило',
+    success: 'Правило удалено',
+    after: () => {
+      deleting.value = null
+      return load()
+    },
+  })
 }
 
 /* ---- Display ------------------------------------------------------------ */
@@ -299,6 +313,15 @@ const SCOPE_TONES: Record<Scope, 'neutral' | 'brand' | 'info' | 'warning'> = {
   BRAND: 'info',
   SOURCE: 'warning',
 }
+const RULE_COLUMNS = [
+  { key: 'name', label: 'Правило' },
+  { key: 'scope', label: 'Область' },
+  { key: 'cost', label: 'Закупка', class: 'admin-muted' },
+  { key: 'markup', label: 'Наценка' },
+  { key: 'rounding', label: 'Округление', class: 'admin-muted' },
+  { key: 'priority', label: 'Приор.', align: 'end' as const, class: 'num' },
+  { key: 'actions', label: '', nowrap: true },
+]
 const ROUNDING_LABELS: Record<Rounding, string> = {
   NONE: 'без округления',
   INTEGER: 'до целого',
@@ -328,28 +351,23 @@ function costBand(rule: PricingRule) {
   return rule.minCost != null ? `от ${rule.minCost}` : `до ${rule.maxCost}`
 }
 
-const categoryOptions = computed(() =>
-  categories.value.map((c) => ({ value: c.id, label: `${'— '.repeat(c.level)}${c.name}` }))
-)
+const categoryOptions = computed(() => categoryTreeOptions(categories.value))
 const brandOptions = computed(() => brands.value.map((b) => ({ value: b.id, label: b.name })))
 const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, label: s.name })))
 </script>
 
 <template>
-  <div class="admin-pricing">
-    <header class="head">
-      <div>
-        <h1>Ценообразование</h1>
-        <p>Правила наценки применяются автоматически при каждом парсинге</p>
-      </div>
-      <div class="head-actions">
-        <UiButton variant="secondary" @click="confirmBackfill = true">
-          Перенести цены в закупку
-        </UiButton>
-        <UiButton variant="secondary" @click="confirmRecalc = true">Пересчитать всё</UiButton>
-        <UiButton @click="openCreate">Новое правило</UiButton>
-      </div>
-    </header>
+  <div class="admin-page">
+    <AdminPageHead
+      title="Ценообразование"
+      description="Правила наценки применяются автоматически при каждом парсинге"
+    >
+      <UiButton variant="secondary" @click="confirmBackfill = true">
+        Перенести цены в закупку
+      </UiButton>
+      <UiButton variant="secondary" @click="confirmRecalc = true">Пересчитать всё</UiButton>
+      <UiButton @click="openCreate">Новое правило</UiButton>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -371,10 +389,21 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
             </span>
           </div>
           <div class="review-actions">
-            <UiButton size="sm" :loading="busy" @click="resolveReview(item, true)">
+            <UiButton
+              size="sm"
+              :loading="busy === `${item.id}:true`"
+              :disabled="Boolean(busy)"
+              @click="resolveReview(item, true)"
+            >
               Принять новую
             </UiButton>
-            <UiButton size="sm" variant="ghost" :loading="busy" @click="resolveReview(item, false)">
+            <UiButton
+              size="sm"
+              variant="ghost"
+              :loading="busy === `${item.id}:false`"
+              :disabled="Boolean(busy)"
+              @click="resolveReview(item, false)"
+            >
               Оставить прежнюю
             </UiButton>
           </div>
@@ -396,45 +425,36 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
           <UiButton @click="openCreate">Создать правило</UiButton>
         </UiEmpty>
 
-        <div v-else class="scroll-x">
-          <table class="rules-table">
-            <thead>
-              <tr>
-                <th>Правило</th>
-                <th>Область</th>
-                <th>Закупка</th>
-                <th>Наценка</th>
-                <th>Округление</th>
-                <th class="num">Приор.</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="rule in rules" :key="rule.id" :class="{ 'is-off': !rule.isActive }">
-                <td>
-                  <button type="button" class="rule-name" @click="openEdit(rule)">
-                    {{ rule.name }}
-                  </button>
-                  <UiBadge v-if="!rule.isActive" tone="neutral" size="sm">выключено</UiBadge>
-                </td>
-                <td>
-                  <UiBadge :tone="SCOPE_TONES[rule.scope]" size="sm">
-                    {{ SCOPE_LABELS[rule.scope] }}
-                  </UiBadge>
-                  <span class="target">{{ scopeTarget(rule) }}</span>
-                </td>
-                <td class="muted">{{ costBand(rule) }}</td>
-                <td><strong>{{ markupLabel(rule) }}</strong></td>
-                <td class="muted">{{ ROUNDING_LABELS[rule.rounding] }}</td>
-                <td class="num">{{ rule.priority }}</td>
-                <td class="actions">
-                  <UiButton variant="ghost" size="sm" @click="openEdit(rule)">Изменить</UiButton>
-                  <UiButton variant="ghost" size="sm" @click="deleting = rule">✕</UiButton>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <UiTable
+          v-else
+          class="rules-table"
+          :columns="RULE_COLUMNS"
+          :rows="rules"
+          row-key="id"
+          :row-class="rule => ({ 'is-off': !rule.isActive })"
+        >
+          <template #cell-name="{ row: rule }">
+            <button type="button" class="rule-name" @click="openEdit(rule)">
+              {{ rule.name }}
+            </button>
+            <UiBadge v-if="!rule.isActive" tone="neutral" size="sm">выключено</UiBadge>
+          </template>
+          <template #cell-scope="{ row: rule }">
+            <UiBadge :tone="SCOPE_TONES[rule.scope]" size="sm">
+              {{ SCOPE_LABELS[rule.scope] }}
+            </UiBadge>
+            <span class="target">{{ scopeTarget(rule) }}</span>
+          </template>
+          <template #cell-cost="{ row: rule }">{{ costBand(rule) }}</template>
+          <template #cell-markup="{ row: rule }">
+            <strong>{{ markupLabel(rule) }}</strong>
+          </template>
+          <template #cell-rounding="{ row: rule }">{{ ROUNDING_LABELS[rule.rounding] }}</template>
+          <template #cell-actions="{ row: rule }">
+            <UiButton variant="ghost" size="sm" @click="openEdit(rule)">Изменить</UiButton>
+            <UiButton variant="ghost" size="sm" @click="deleting = rule">✕</UiButton>
+          </template>
+        </UiTable>
       </UiCard>
 
       <!-- Simulator -->
@@ -509,7 +529,7 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
     >
       <UiAlert v-if="formError" tone="danger" class="form-error">{{ formError }}</UiAlert>
 
-      <div class="form">
+      <div class="admin-form">
         <UiField label="Название" required for="r-name">
           <UiInput id="r-name" v-model="form.name" placeholder="Базовая наценка" />
         </UiField>
@@ -541,7 +561,7 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
           <UiSelect id="r-src" v-model="form.sourceId" placeholder="Выберите" :options="sourceOptions" />
         </UiField>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Закупка от" hint="Пусто — без нижней границы" for="r-min">
             <UiInput id="r-min" v-model="form.minCost" type="number" step="0.01" min="0" />
           </UiField>
@@ -550,7 +570,7 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
           </UiField>
         </div>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Наценка, %" for="r-pct">
             <UiInput id="r-pct" v-model="form.markupPercent" type="number" step="0.1" min="0" />
           </UiField>
@@ -559,7 +579,7 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
           </UiField>
         </div>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField
             label="Минимальная маржа, BYN"
             hint="Поднимет цену, если процента мало"
@@ -598,80 +618,50 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
     </UiModal>
 
     <!-- Confirmations -->
-    <UiModal v-model:open="confirmRecalc" title="Пересчитать все цены?" size="sm">
-      <p class="confirm-text">
-        Цены всех товаров в режиме AUTO будут пересчитаны по текущим правилам.
-        Товары с ручной ценой не изменятся. Каждое изменение попадёт в историю.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="confirmRecalc = false">Отмена</UiButton>
-        <UiButton :loading="busy" @click="recalculate">Пересчитать</UiButton>
-      </template>
-    </UiModal>
+    <UiConfirm
+      v-model:open="confirmRecalc"
+      title="Пересчитать все цены?"
+      tone="primary"
+      confirm-label="Пересчитать"
+      :busy="busy === 'recalc'"
+      @confirm="recalculate"
+    >
+      Цены всех товаров в режиме AUTO будут пересчитаны по текущим правилам.
+      Товары с ручной ценой не изменятся. Каждое изменение попадёт в историю.
+    </UiConfirm>
 
-    <UiModal v-model:open="confirmBackfill" title="Перенести цены в закупочные?" size="sm">
-      <p class="confirm-text">
+    <UiConfirm
+      v-model:open="confirmBackfill"
+      title="Перенести цены в закупочные?"
+      tone="primary"
+      confirm-label="Перенести"
+      :busy="busy === 'backfill'"
+      @confirm="backfill"
+    >
+      <p>
         Товарам без закупочной цены она будет проставлена из текущей цены на витрине.
         Нужно один раз, чтобы правила заработали на уже собранном каталоге.
         Повторный запуск безопасен — уже заполненные не трогаются.
       </p>
-      <p class="confirm-text warn">
+      <p class="warn">
         После этого запустите пересчёт, иначе наценка не применится.
       </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="confirmBackfill = false">Отмена</UiButton>
-        <UiButton :loading="busy" @click="backfill">Перенести</UiButton>
-      </template>
-    </UiModal>
+    </UiConfirm>
 
-    <UiModal
+    <UiConfirm
       :open="Boolean(deleting)"
       title="Удалить правило?"
-      size="sm"
+      :busy="busy === 'delete'"
       @update:open="deleting = null"
+      @confirm="confirmDelete"
     >
-      <p class="confirm-text">
-        «{{ deleting?.name }}» перестанет действовать. Цены товаров не изменятся,
-        пока вы не запустите пересчёт.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="deleting = null">Отмена</UiButton>
-        <UiButton variant="danger" :loading="busy" @click="confirmDelete">Удалить</UiButton>
-      </template>
-    </UiModal>
+      «{{ deleting?.name }}» перестанет действовать. Цены товаров не изменятся,
+      пока вы не запустите пересчёт.
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-pricing {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
 .grid {
   display: grid;
   align-items: start;
@@ -684,40 +674,13 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
 }
 
 /* ---- Rules table ---- */
+/* The card is the frame; the table's own border would draw a second one. */
 .rules-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--text-sm);
+  border: 0;
+  border-radius: 0;
 }
 
-.rules-table th {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-align: left;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.rules-table td {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
-  vertical-align: middle;
-}
-
-.rules-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.rules-table tbody tr:hover td {
-  background: var(--surface-hover);
-}
-
-.is-off td {
+.rules-table :deep(.is-off td) {
   opacity: 0.6;
 }
 
@@ -737,17 +700,8 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
   font-size: var(--text-xs);
 }
 
-.muted {
-  color: var(--text-muted);
-}
-
-.num {
-  text-align: right;
+.rules-table :deep(.num) {
   font-variant-numeric: tabular-nums;
-}
-
-.actions {
-  white-space: nowrap;
 }
 
 /* ---- Simulator ---- */
@@ -871,27 +825,11 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
 }
 
 /* ---- Forms ---- */
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-}
-
 .form-error {
   margin-bottom: var(--space-4);
 }
 
-.confirm-text {
-  color: var(--text-muted);
-}
-
-.confirm-text.warn {
+.warn {
   margin-top: var(--space-3);
   color: var(--warning-soft-text);
   font-weight: 600;
@@ -899,12 +837,6 @@ const sourceOptions = computed(() => sources.value.map((s) => ({ value: s.id, la
 
 @media (max-width: 1100px) {
   .grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .form-row {
     grid-template-columns: 1fr;
   }
 }

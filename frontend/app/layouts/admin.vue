@@ -7,23 +7,14 @@
  * not the `ADMIN_TOKEN` form it used to be — that token stayed a
  * service-to-service header.
  */
-const { authorized, adminFetch, errorMessage, refresh, logout, user, isAdmin }
+const { authorized, errorMessage, refresh, logout, user, isAdmin }
   = useAdminApi()
 const { login: signInWithPassword } = useAuth()
-
-type Stats = {
-  newOrders: number
-  pendingReviews: number
-  queuedSitemaps: number
-  priceReviewNeeded: number
-  /** Server errors of the last 24h — the badge on «Ошибки». */
-  recentErrors: number
-}
+const { stats: badges, load: loadStats } = useAdminStats()
 
 const checking = ref(true)
 const signingIn = ref(false)
 const signInError = ref('')
-const badges = ref<Stats | null>(null)
 const sidebarOpen = ref(false)
 const credentials = reactive({ login: '', password: '' })
 
@@ -100,10 +91,13 @@ function verify() {
   return authorized.value
 }
 
-/** Sidebar counters. A failure here must not cost anyone access. */
+/**
+ * Sidebar counters. A failure here must not cost anyone access. The answer is
+ * shared state, so the dashboard renders from it instead of asking again.
+ */
 async function loadBadges() {
   try {
-    badges.value = await adminFetch<Stats>('/stats')
+    await loadStats()
   } catch {
     badges.value = null
   }
@@ -147,15 +141,20 @@ onMounted(async () => {
 })
 
 const route = useRoute()
+// The menu closes on any navigation, filters included.
 watch(() => route.fullPath, () => {
   sidebarOpen.value = false
-  // Keep the sidebar counters fresh as the admin moves around. Counters only —
-  // a page change must not re-run the access check against a heavy endpoint.
+})
+// Keep the sidebar counters fresh as the admin moves between screens — on the
+// path, not the full URL: every filter and page switch rewrites the query, and
+// each one re-ran the heaviest query in the app. Counters only — a page change
+// must not re-run the access check.
+watch(() => route.path, () => {
   if (authorized.value) void loadBadges()
 })
 
 useHead({
-  title: 'Админка | Мультитул',
+  title: 'Админка | Gost.by',
   meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>
@@ -286,22 +285,14 @@ useHead({
   </div>
 </template>
 
+<style lang="scss">
+@use '@/assets/scss/admin.scss';
+</style>
+
 <style scoped>
 .admin-shell {
   min-height: 100vh;
   background: var(--surface-page);
-}
-
-.logo-mark {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: var(--radius-sm);
-  background: var(--brand);
-  color: #fff;
-  font-weight: 800;
-  place-items: center;
 }
 
 /* ---- Gate ---- */

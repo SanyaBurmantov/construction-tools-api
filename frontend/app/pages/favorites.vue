@@ -1,47 +1,40 @@
 <script setup lang="ts">
-import { useWishlistStore } from '~/stores/wishlist'
+import { useWishlistStore, type WishlistItem } from '~/stores/wishlist'
 import { useCartStore } from '~/stores/cart'
 
 const wishlist = useWishlistStore()
 const cart = useCartStore()
 const toast = useAppToast()
-const { formatPrice } = useFormatPrice()
 
-/** Favourites are a client-only list, so the cards are rendered from the store. */
-function addToCart(productId: string) {
-  const item = wishlist.items.find((i) => i.productId === productId)
-  if (!item || item.price == null || item.price <= 0) return
+const canBuy = (item: WishlistItem) => item.price != null && item.price > 0
 
-  cart.add({
+/** Favourites are a client-only list, so the cart line is built from the store entry. */
+function toCartLine(item: WishlistItem) {
+  return {
     productId: item.productId,
     slug: item.slug,
     name: item.name,
     sku: null,
     image: item.image,
-    price: item.price,
+    price: item.price as number,
     currency: item.currency,
-  })
+  }
+}
+
+function addToCart(item: WishlistItem) {
+  if (!canBuy(item)) return
+  cart.add(toCartLine(item))
   toast.success(`«${item.name}» в корзине`)
 }
 
 function moveAllToCart() {
-  const buyable = wishlist.items.filter((i) => i.price != null && i.price > 0)
-  buyable.forEach((item) =>
-    cart.add({
-      productId: item.productId,
-      slug: item.slug,
-      name: item.name,
-      sku: null,
-      image: item.image,
-      price: item.price as number,
-      currency: item.currency,
-    })
-  )
+  const buyable = wishlist.items.filter(canBuy)
+  buyable.forEach(item => cart.add(toCartLine(item)))
   toast.success(`Добавлено в корзину: ${buyable.length}`)
 }
 
 useHead({
-  title: 'Избранное | Мультитул',
+  title: 'Избранное | Gost.by',
   meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>
@@ -53,83 +46,66 @@ useHead({
     <header class="page-head">
       <div>
         <h1>Избранное</h1>
-        <ClientOnly>
-          <p v-if="!wishlist.isEmpty" class="subtitle">
-            {{ pluralize(wishlist.count, 'product') }} в списке
-          </p>
-        </ClientOnly>
+        <p v-if="!wishlist.isEmpty" class="subtitle">
+          {{ pluralize(wishlist.count, 'product') }} в списке
+        </p>
       </div>
-      <ClientOnly>
-        <div v-if="!wishlist.isEmpty" class="head-actions">
-          <UiButton variant="ghost" size="sm" @click="wishlist.clear()">Очистить</UiButton>
-          <UiButton size="sm" @click="moveAllToCart">Всё в корзину</UiButton>
-        </div>
-      </ClientOnly>
+      <div v-if="!wishlist.isEmpty" class="head-actions">
+        <UiButton variant="ghost" size="sm" @click="wishlist.clear()">Очистить</UiButton>
+        <UiButton size="sm" @click="moveAllToCart">Всё в корзину</UiButton>
+      </div>
     </header>
 
-    <ClientOnly>
-      <template #fallback>
-        <div class="grid">
-          <UiSkeleton v-for="i in 4" :key="i" height="280px" radius="var(--radius-md)" />
-        </div>
-      </template>
+    <UiEmpty
+      v-if="wishlist.isEmpty"
+      icon="heart"
+      title="В избранном пока пусто"
+      description="Нажимайте на сердечко в карточке товара, чтобы сохранить его и вернуться позже."
+    >
+      <UiButton to="/catalog">Перейти в каталог</UiButton>
+    </UiEmpty>
 
-      <UiEmpty
-        v-if="wishlist.isEmpty"
-        icon="heart"
-        title="В избранном пока пусто"
-        description="Нажимайте на сердечко в карточке товара, чтобы сохранить его и вернуться позже."
-      >
-        <UiButton to="/catalog">Перейти в каталог</UiButton>
-      </UiEmpty>
+    <ul v-else class="product-grid">
+      <li v-for="item in wishlist.items" :key="item.productId" class="fav-card">
+        <NuxtLink :to="`/product/${item.slug}`" class="image">
+          <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+          <span v-else class="placeholder" aria-hidden="true" />
+        </NuxtLink>
 
-      <ul v-else class="grid">
-        <li v-for="item in wishlist.items" :key="item.productId" class="fav-card">
-          <NuxtLink :to="`/product/${item.slug}`" class="image">
-            <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
-            <span v-else class="placeholder" aria-hidden="true" />
-          </NuxtLink>
+        <div class="body">
+          <NuxtLink :to="`/product/${item.slug}`" class="name">{{ item.name }}</NuxtLink>
+          <UiPrice
+            :value="item.price"
+            :old-price="item.oldPrice"
+            :currency="item.currency"
+            size="sm"
+          />
 
-          <div class="body">
-            <NuxtLink :to="`/product/${item.slug}`" class="name">{{ item.name }}</NuxtLink>
-            <UiPrice
-              :value="item.price"
-              :old-price="item.oldPrice"
-              :currency="item.currency"
+          <div class="actions">
+            <UiButton
+              v-if="canBuy(item)"
               size="sm"
-            />
-            <p v-if="item.price == null" class="on-request">
-              {{ formatPrice(null, item.currency) }}
-            </p>
-
-            <div class="actions">
-              <UiButton
-                v-if="item.price != null && item.price > 0"
-                size="sm"
-                block
-                @click="addToCart(item.productId)"
-              >
-                В корзину
-              </UiButton>
-              <UiButton v-else size="sm" variant="secondary" block :to="`/product/${item.slug}`">
-                Подробнее
-              </UiButton>
-              <UiButton
-                variant="ghost"
-                size="sm"
-                icon-only
-                :aria-label="`Убрать ${item.name} из избранного`"
-                @click="wishlist.remove(item.productId)"
-              >
-                <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-                  <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                </svg>
-              </UiButton>
-            </div>
+              block
+              @click="addToCart(item)"
+            >
+              В корзину
+            </UiButton>
+            <UiButton v-else size="sm" variant="secondary" block :to="`/product/${item.slug}`">
+              Подробнее
+            </UiButton>
+            <UiButton
+              variant="ghost"
+              size="sm"
+              icon-only
+              :aria-label="`Убрать ${item.name} из избранного`"
+              @click="wishlist.remove(item.productId)"
+            >
+              <UiIcon name="close" :size="16" :stroke-width="1.8" />
+            </UiButton>
           </div>
-        </li>
-      </ul>
-    </ClientOnly>
+        </div>
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -157,15 +133,6 @@ useHead({
 .head-actions {
   display: flex;
   gap: var(--space-2);
-}
-
-.grid {
-  display: grid;
-  padding: 0;
-  margin: 0;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-4);
-  list-style: none;
 }
 
 .fav-card {
@@ -218,11 +185,6 @@ useHead({
 
 .name:hover {
   color: var(--text-link);
-}
-
-.on-request {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
 }
 
 .actions {

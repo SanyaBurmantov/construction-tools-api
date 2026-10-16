@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { readArray, writeJson } from '~/utils/safe-storage'
 
 export interface WishlistItem {
   productId: string
@@ -27,29 +28,17 @@ export const useWishlistStore = defineStore('wishlist', {
   getters: {
     count: (state) => state.items.length,
     isEmpty: (state) => state.items.length === 0,
-    ids: (state) => new Set(state.items.map((i) => i.productId)),
     has: (state) => (productId: string) =>
       state.items.some((i) => i.productId === productId),
   },
   actions: {
     load() {
       if (this.loaded || !import.meta.client) return
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY)
-        const parsed = raw ? JSON.parse(raw) : null
-        if (Array.isArray(parsed)) this.items = parsed
-      } catch {
-        this.items = []
-      }
+      this.items = readArray<WishlistItem>(STORAGE_KEY)
       this.loaded = true
     },
     persist() {
-      if (!import.meta.client) return
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
-      } catch {
-        // The in-memory store still works when storage is blocked or full.
-      }
+      writeJson(STORAGE_KEY, this.items)
     },
     add(item: Omit<WishlistItem, 'addedAt'>) {
       if (this.has(item.productId)) return

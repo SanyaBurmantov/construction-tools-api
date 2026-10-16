@@ -150,6 +150,27 @@ const MAX_CATEGORY_BATCH_LIMIT = 200;
  */
 const CACHE_TTL_MS = 5000;
 
+/**
+ * Why a filter pattern is unsafe to run on every product, or null. The filters
+ * run synchronously in the API process, so a catastrophically backtracking
+ * pattern — a quantified group that itself contains a quantifier, `(a+)+$` —
+ * freezes every request, not just the parser. Syntax checking alone let one
+ * through.
+ */
+export function regexRisk(pattern: string): string | null {
+  if (pattern.length > 2000) return 'выражение длиннее 2000 символов';
+  // A group whose body contains + * or {n,} and is itself quantified.
+  const nested =
+    /\((?:[^()\\]|\\.)*(?:[+*]|\{\d*,\d*\})(?:[^()\\]|\\.)*\)\s*(?:[+*]|\{\d*,\d*\})/;
+  if (nested.test(pattern)) {
+    return 'вложенные квантификаторы вида (a+)+ могут подвесить сервер — перепишите без них';
+  }
+  if (/\\[1-9]/.test(pattern)) {
+    return 'обратные ссылки (\\1) не поддерживаются в фильтрах';
+  }
+  return null;
+}
+
 @Injectable()
 export class ParserSettingsService {
   private readonly logger = new Logger(ParserSettingsService.name);
@@ -402,6 +423,8 @@ export class ParserSettingsService {
         `${label}: некорректное регулярное выражение — ${this.message(error)}`,
       );
     }
+    const risk = regexRisk(pattern);
+    if (risk) throw new BadRequestException(`${label}: ${risk}`);
   }
 
   /* ----------------------------------------------------------- store ---- */

@@ -4,22 +4,10 @@ import { company } from '~/data/company'
 import { toCardProduct } from '~/composables/useProductActions'
 
 const config = useRuntimeConfig()
-const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
-const { formatPrice } = useFormatPrice()
+const { apiBase, absoluteUrl } = useSite()
 const search = ref('')
 
 const emptyPage = { data: [], pagination: { page: 1, limit: 8, total: 0, pages: 0 } }
-
-/**
- * Whatever these `useAsyncData` calls return is serialised into the cached
- * HTML's `__NUXT_DATA__`, so each rail keeps only what a card renders: the
- * list endpoint also sends full brand/category rows, every image and spec,
- * and the catalogue-wide `facets` the home page never reads.
- */
-const toRail = (page: ProductsResponse): ProductsResponse => ({
-  data: page.data.map(toCardProduct),
-  pagination: page.pagination,
-})
 
 /**
  * Each rail degrades to an empty list instead of failing the page — the home
@@ -37,70 +25,63 @@ function soft<T>(request: Promise<T>, fallback: T): Promise<T> {
   })
 }
 
-const { data: sales } = await useAsyncData<ProductsResponse>(
-  'home-sales',
-  () =>
-    soft(
-      $fetch<ProductsResponse>(`${apiBase}/products`, {
-        params: { limit: 8, onSale: true, sortBy: 'createdAt', sortOrder: 'desc' },
-      }),
-      emptyPage
-    ),
-  { default: () => emptyPage, transform: toRail }
-)
-
-const { data: popular } = await useAsyncData<ProductsResponse>(
-  'home-popular',
-  () =>
-    soft(
-      $fetch<ProductsResponse>(`${apiBase}/products`, {
-        params: { limit: 8, inStock: true, sortBy: 'rating', sortOrder: 'desc' },
-      }),
-      emptyPage
-    ),
-  { default: () => emptyPage, transform: toRail }
-)
-
-const { data: newest } = await useAsyncData<ProductsResponse>(
-  'home-newest',
-  () =>
-    soft(
-      $fetch<ProductsResponse>(`${apiBase}/products`, {
-        params: { limit: 8, sortBy: 'createdAt', sortOrder: 'desc' },
-      }),
-      emptyPage
-    ),
-  { default: () => emptyPage, transform: toRail }
-)
-
-const { data: banners } = await useAsyncData<{ data: Banner[] }>(
-  'home-banners',
-  // Banners and brands are decoration: they degrade quietly even when they
-  // fail outright, and never on their own put the shop into maintenance.
-  () => $fetch<{ data: Banner[] }>(`${apiBase}/banners`).catch(() => ({ data: [] })),
-  { default: () => ({ data: [] }) }
-)
-
-const { data: tree } = await useCategoryTree()
+/**
+ * One product rail. Whatever `useAsyncData` returns is serialised into the
+ * cached HTML's `__NUXT_DATA__`, so each rail keeps only what a card renders:
+ * the list endpoint also sends full brand/category rows, every image and
+ * spec, and the catalogue-wide `facets` the home page never reads.
+ */
+function useRail(key: string, params: Record<string, string | number | boolean>) {
+  return useAsyncData<ProductsResponse>(
+    key,
+    () => soft($fetch<ProductsResponse>(`${apiBase}/products`, { params: { limit: 8, ...params } }), emptyPage),
+    {
+      default: () => emptyPage,
+      transform: page => ({ data: page.data.map(toCardProduct), pagination: page.pagination }),
+    }
+  )
+}
 
 /** How many brand tiles the home page shows. */
 const HOME_BRAND_COUNT = 14
 
-/**
- * `GET /brands` answers with every brand and every column (~400 rows,
- * descriptions and SEO fields included — ~93 KB in the page payload). The
- * grid shows fourteen logos, so only those fourteen, and only what a tile
- * renders, reach the payload.
- */
-const { data: brands } = await useAsyncData<Brand[]>(
-  'home-brands',
-  () => $fetch<Brand[]>(`${apiBase}/brands`).catch(() => []),
-  {
-    default: () => [],
-    transform: list =>
-      list.slice(0, HOME_BRAND_COUNT).map(({ id, name, slug, logo }) => ({ id, name, slug, logo })),
-  }
-)
+// Six independent requests: started together, the render waits for the
+// slowest one instead of their sum.
+const [
+  { data: sales },
+  { data: popular },
+  { data: newest },
+  { data: banners },
+  { data: tree },
+  { data: brands },
+] = await Promise.all([
+  useRail('home-sales', { onSale: true, sortBy: 'createdAt', sortOrder: 'desc' }),
+  useRail('home-popular', { inStock: true, sortBy: 'rating', sortOrder: 'desc' }),
+  useRail('home-newest', { sortBy: 'createdAt', sortOrder: 'desc' }),
+  useAsyncData<{ data: Banner[] }>(
+    'home-banners',
+    // Banners and brands are decoration: they degrade quietly even when they
+    // fail outright, and never on their own put the shop into maintenance.
+    () => $fetch<{ data: Banner[] }>(`${apiBase}/banners`).catch(() => ({ data: [] })),
+    { default: () => ({ data: [] }) }
+  ),
+  useCategoryTree(),
+  /**
+   * `GET /brands` answers with every brand and every column (~400 rows,
+   * descriptions and SEO fields included — ~93 KB in the page payload). The
+   * grid shows fourteen logos, so only those fourteen, and only what a tile
+   * renders, reach the payload.
+   */
+  useAsyncData<Brand[]>(
+    'home-brands',
+    () => $fetch<Brand[]>(`${apiBase}/brands`).catch(() => []),
+    {
+      default: () => [],
+      transform: list =>
+        list.slice(0, HOME_BRAND_COUNT).map(({ id, name, slug, logo }) => ({ id, name, slug, logo })),
+    }
+  ),
+])
 
 // The catalogue did not answer: show the technical-works page rather than a
 // shop that looks sold out. Nitro never caches a 4xx/5xx response, so the
@@ -110,18 +91,16 @@ if (unavailable.value) throw apiUnavailableError()
 /**
  * The grid an admin curates: categories pinned in `/admin/categories` lead,
  * then the biggest ones fill the row.
- */
-const HOME_CATEGORY_COUNT = 8
-const topCategories = computed(() => featuredCategories(tree.value, HOME_CATEGORY_COUNT))
-
-/**
- * Tile artwork now arrives with the tree itself: `GET /categories/tree` falls
+ *
+ * Tile artwork arrives with the tree itself: `GET /categories/tree` falls
  * back to the photo of the dearest product in a category's subtree when no
  * admin set one. This page used to ask `/products?limit=1` once per tile for
  * that — a dozen extra requests per render, and it took whatever product came
  * first rather than the one worth showing.
  */
-const topBrands = computed(() => brands.value || [])
+const HOME_CATEGORY_COUNT = 8
+const topCategories = computed(() => featuredCategories(tree.value, HOME_CATEGORY_COUNT))
+
 const popularProducts = computed(() =>
   popular.value.data.filter((product) => product.ratingCount)
 )
@@ -137,13 +116,13 @@ function submitSearch() {
 }
 
 const description
-  = 'Мультитул: инструмент, оборудование, крепёж и расходные материалы. Доставка по Беларуси, оплата картой или по счёту, самовывоз в Витебске.'
-const homeUrl = `${String(config.public.siteUrl).replace(/\/$/, '')}/`
+  = 'Gost.by: инструмент, оборудование, крепёж и расходные материалы. Доставка по Беларуси, оплата картой или по счёту, самовывоз в Витебске.'
+const homeUrl = absoluteUrl('/')
 
 useSeoMeta({
-  title: 'Мультитул — инструмент и оборудование в Беларуси',
+  title: 'Gost.by — инструмент и оборудование в Беларуси',
   description,
-  ogTitle: 'Мультитул — инструмент и оборудование в Беларуси',
+  ogTitle: 'Gost.by — инструмент и оборудование в Беларуси',
   ogDescription: description,
   ogType: 'website',
   ogUrl: homeUrl,
@@ -157,14 +136,14 @@ useHead({
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'Store',
-        name: 'Мультитул',
+        name: 'Gost.by',
         url: homeUrl,
         telephone: company.phone,
         email: company.email,
         address: { '@type': 'PostalAddress', streetAddress: company.storeAddress },
         potentialAction: {
           '@type': 'SearchAction',
-          target: `${homeUrl}catalog/?search={search_term_string}`,
+          target: `${homeUrl}catalog?search={search_term_string}`,
           'query-input': 'required name=search_term_string',
         },
       }),
@@ -195,9 +174,7 @@ useHead({
             aria-label="Поиск по каталогу"
           >
             <template #leading>
-              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-                <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm7.5 14.5L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              </svg>
+              <UiIcon name="search" :size="20" :stroke-width="1.8" />
             </template>
           </UiInput>
           <UiButton type="submit" size="lg">Найти</UiButton>
@@ -347,14 +324,14 @@ useHead({
     </ClientOnly>
 
     <!-- Brands -->
-    <section v-if="topBrands.length" class="block">
+    <section v-if="brands.length" class="block">
       <header class="block-head">
         <h2>Бренды</h2>
         <UiButton variant="link" to="/brand">Все бренды →</UiButton>
       </header>
       <div class="brand-grid">
         <NuxtLink
-          v-for="brand in topBrands"
+          v-for="brand in brands"
           :key="brand.id"
           :to="`/brand/${brand.slug}`"
           class="brand-card"
@@ -524,12 +501,6 @@ useHead({
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
-}
-
-.product-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
-  gap: var(--space-4);
 }
 
 /* ---- Categories ---- */

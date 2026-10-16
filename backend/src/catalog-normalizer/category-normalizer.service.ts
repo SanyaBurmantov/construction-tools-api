@@ -101,9 +101,10 @@ export class CategoryNormalizerService {
    * problem to be reorganised — they are products the operator has already
    * said this shop does not sell.
    *
-   * Excluded products are hidden, not deleted: the decision is reversible by
-   * loosening the regex and re-running. `ARCHIVED` and already-`HIDDEN`
-   * products are left alone, the same rule the parsers follow.
+   * Excluded products are hidden, not deleted, and the hide is a SYSTEM
+   * status: loosen the regex and the next parse of the URL (SKIPPED rows are
+   * re-checked weekly by the watchdog) publishes the product again through
+   * OffersService. A status an admin set is never touched.
    */
   private async applySourceCategoryFilters(dryRun: boolean): Promise<number> {
     const nodes = await this.loadTree();
@@ -129,6 +130,7 @@ export class CategoryNormalizerService {
 
       const where = {
         status: 'PUBLISHED' as const,
+        statusSource: 'SYSTEM' as const,
         categoryId: { in: excludedCategoryIds },
         // Only products this source actually brought in. A product carried by
         // two suppliers must not be hidden because one of them filters it.
@@ -282,33 +284,58 @@ export class CategoryNormalizerService {
     let removed = 0;
 
     for (let pass = 0; pass < 10; pass++) {
-      const empties = await this.prisma.category.findMany({
-        where: {
-          products: { none: {} },
-          children: { none: {} },
-          slug: { not: FALLBACK_CATEGORY_SLUG },
-          // A category a supplier mapping or a pricing rule points at is
-          // configuration, not debris.
-          mappedSourceCategories: { none: {} },
-          pricingRules: { none: {} },
-        },
-        select: { id: true },
-      });
+      // NOT EXISTS rather than Prisma's `{ none: {} }`, which compiles to the
+      // NOT IN shape that stalled for minutes on the full catalogue
+      // (see product-gaps.ts). Curated categories are configuration, not
+      // debris, even while empty: pinned (featured), hand-ordered, hidden by
+      // an admin, or moved by one (they carry a path alias).
+      const empties = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT c."id" FROM "Category" c
+        WHERE c."slug" <> ${FALLBACK_CATEGORY_SLUG}
+          AND c."isFeatured" = false
+          AND c."sortOrder" = 0
+          AND c."isVisible" = true
+          AND NOT EXISTS (SELECT 1 FROM "Product" p WHERE p."categoryId" = c."id")
+          AND NOT EXISTS (SELECT 1 FROM "Category" k WHERE k."parentId" = c."id")
+          AND NOT EXISTS (SELECT 1 FROM "SourceCategory" s WHERE s."mappedCategoryId" = c."id")
+          AND NOT EXISTS (SELECT 1 FROM "PricingRule" r WHERE r."categoryId" = c."id")
+          AND NOT EXISTS (SELECT 1 FROM "CategoryPathAlias" a WHERE a."categoryId" = c."id")
+      `;
       if (!empties.length) break;
+      if (dryRun) {
+        removed += empties.length;
+        break;
+      }
 
-      removed += empties.length;
-      if (dryRun) break;
-
-      const ids = empties.map((row) => row.id);
-      // Specifications reference the category with ON DELETE RESTRICT, and an
-      // empty category's specifications have no values left to lose.
-      await this.prisma.specification.deleteMany({
-        where: { categoryId: { in: ids }, productSpecs: { none: {} } },
-      });
-      await this.prisma.categoryRedirect.deleteMany({
-        where: { categoryId: { in: ids } },
-      });
-      await this.prisma.category.deleteMany({ where: { id: { in: ids } } });
+      // One transaction per category: a single bad row used to fail the
+      // whole `DELETE … IN (…)`, throw out of normalize() and skip the spec
+      // pass every night.
+      let removedThisPass = 0;
+      for (const { id } of empties) {
+        try {
+          await this.prisma.$transaction([
+            // Values left behind by products that moved to another category
+            // still reference these specs (RESTRICT); they are stale.
+            this.prisma.productSpecification.deleteMany({
+              where: { specification: { categoryId: id } },
+            }),
+            this.prisma.specification.deleteMany({
+              where: { categoryId: id },
+            }),
+            this.prisma.categoryRedirect.deleteMany({
+              where: { categoryId: id },
+            }),
+            this.prisma.category.delete({ where: { id } }),
+          ]);
+          removedThisPass++;
+        } catch (error) {
+          this.logger.warn(
+            `Could not prune empty category ${id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+      removed += removedThisPass;
+      if (!removedThisPass) break;
     }
 
     return removed;

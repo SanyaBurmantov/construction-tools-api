@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // Seconds matter: a burst of the same error is read by its timestamps.
+import type { Paginated } from '~/types/api'
 import { formatDateTimeWithSeconds as formatDateTime } from '~/utils/format-datetime'
 
 definePageMeta({ layout: 'admin' })
@@ -22,23 +23,12 @@ type ErrorEntry = {
   lastSeenAt: string
 }
 
-type Response = {
-  data: ErrorEntry[]
-  serverErrors24h: number
-  pagination: { page: number, limit: number, total: number, pages: number }
-}
+type Response = Paginated<ErrorEntry> & { serverErrors24h: number }
 
-const { adminFetch, errorMessage } = useAdminApi()
-const toast = useAppToast()
+const { adminFetch } = useAdminApi()
+const { run, busy } = useAdminAction()
 
-const entries = ref<ErrorEntry[]>([])
-const page = ref(1)
-const pages = ref(1)
-const total = ref(0)
 const serverErrors24h = ref(0)
-const loading = ref(false)
-const loadError = ref('')
-const clearing = ref(false)
 const confirmClear = ref(false)
 
 const filters = reactive({
@@ -46,72 +36,29 @@ const filters = reactive({
   search: '',
 })
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const response = await adminFetch<Response>('/errors', {
-      params: {
-        page: page.value,
-        kind: filters.kind || undefined,
-        search: filters.search.trim() || undefined,
-      },
-    })
-    entries.value = response.data
+const { rows: entries, pagination, loading, error: loadError, setPage } = useAdminList<
+  ErrorEntry,
+  Response
+>('/errors', {
+  params: () => ({ ...filters }),
+  limit: 50,
+  errorText: 'Не удалось загрузить журнал ошибок',
+  onResponse: (response) => {
     serverErrors24h.value = response.serverErrors24h
-    page.value = response.pagination.page
-    pages.value = response.pagination.pages
-    total.value = response.pagination.total
-  } catch (error) {
-    loadError.value = errorMessage(error, 'Не удалось загрузить журнал ошибок')
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
-
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-watch(
-  () => [filters.kind, filters.search],
-  () => {
-    if (searchTimer) clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => {
-      page.value = 1
-      void load()
-    }, 300)
-  }
-)
-onBeforeUnmount(() => {
-  if (searchTimer) clearTimeout(searchTimer)
+  },
 })
 
-function goToPage(next: number) {
-  page.value = next
-  void load()
-}
-
 async function clearLog() {
-  clearing.value = true
-  try {
-    const { removed } = await adminFetch<{ removed: number }>('/errors', {
-      method: 'DELETE',
-    })
-    toast.success(`Журнал очищен: ${removed} записей`)
-    confirmClear.value = false
-    page.value = 1
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось очистить журнал'))
-  } finally {
-    clearing.value = false
-  }
+  const done = await run(() => adminFetch<{ removed: number }>('/errors', { method: 'DELETE' }), {
+    error: 'Не удалось очистить журнал',
+    success: ({ removed }) => `Журнал очищен: ${removed} записей`,
+    after: () => setPage(1),
+  })
+  if (done) confirmClear.value = false
 }
 
 /* ---- Display ----------------------------------------------------------- */
 const expanded = ref('')
-
-const statusTone = (code: number) => (code >= 500 ? 'danger' : 'warning')
 
 /** Validation failures arrive as a list; everything else is one sentence. */
 const messageLines = (row: ErrorEntry) =>
@@ -121,27 +68,20 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
 </script>
 
 <template>
-  <div class="admin-errors">
-    <header class="head">
-      <div>
-        <h1>Ошибки API</h1>
-        <p>
-          Все ответы 5xx и те 4xx, которые получила сама админка — то есть
-          случаи, когда экран должен был сработать и не сработал. Запросы
-          витрины с кодами 401/403/404 сюда не попадают, иначе журнал утонет в
-          обычном шуме. Пароли и токены в теле заменяются на «[redacted]»,
-          записи старше 30 дней удаляются сами.
-        </p>
-      </div>
+  <div class="admin-page admin-errors">
+    <AdminPageHead
+      title="Ошибки API"
+      description="Все ответы 5xx и те 4xx, которые получила сама админка — то есть случаи, когда экран должен был сработать и не сработал. Запросы витрины с кодами 401/403/404 сюда не попадают, иначе журнал утонет в обычном шуме. Пароли и токены в теле заменяются на «[redacted]», записи старше 30 дней удаляются сами."
+    >
       <UiButton
-        v-if="total"
+        v-if="pagination.total"
         variant="ghost"
         size="sm"
         @click="confirmClear = true"
       >
         Очистить журнал
       </UiButton>
-    </header>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -150,7 +90,7 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
       нашей стороне — стоит посмотреть, что именно падает.
     </UiAlert>
 
-    <UiAlert v-else-if="!total && !loading" tone="success">
+    <UiAlert v-else-if="!pagination.total && !loading" tone="success">
       Ошибок нет — за всё время, что ведётся журнал.
     </UiAlert>
 
@@ -158,6 +98,7 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
       <UiInput
         v-model="filters.search"
         placeholder="Путь или текст ошибки"
+        aria-label="Поиск ошибок"
         size="sm"
       />
       <UiSelect
@@ -185,7 +126,7 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
     >
       <template #cell-lastSeenAt="{ row }">
         {{ formatDateTime(row.lastSeenAt) }}
-        <p v-if="row.occurrences > 1" class="muted hint">
+        <p v-if="row.occurrences > 1" class="admin-muted hint">
           повторилась {{ row.occurrences }} раз, впервые
           {{ formatDateTime(row.createdAt) }}
         </p>
@@ -196,17 +137,17 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
           <UiBadge tone="neutral" size="sm">{{ row.method }}</UiBadge>
           <code class="path">{{ row.path }}</code>
         </div>
-        <p v-if="row.actorLabel && row.actorLabel !== 'anonymous'" class="muted hint">
+        <p v-if="row.actorLabel && row.actorLabel !== 'anonymous'" class="admin-muted hint">
           {{ row.actorLabel }}<template v-if="row.ip"> · {{ row.ip }}</template>
         </p>
-        <p v-else-if="row.ip" class="muted hint">{{ row.ip }}</p>
+        <p v-else-if="row.ip" class="admin-muted hint">{{ row.ip }}</p>
       </template>
 
       <template #cell-what="{ row }">
         <p v-for="line in messageLines(row)" :key="line" class="message">
           {{ line }}
         </p>
-        <p class="muted hint">{{ row.kind }}</p>
+        <p class="admin-muted hint">{{ row.kind }}</p>
         <button
           v-if="row.stack || row.payload"
           type="button"
@@ -222,56 +163,35 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
       </template>
 
       <template #cell-status="{ row }">
-        <UiBadge :tone="statusTone(row.statusCode)" size="sm">
+        <UiBadge :tone="httpStatusTone(row.statusCode)" size="sm">
           {{ row.statusCode }}
         </UiBadge>
       </template>
     </UiTable>
 
-    <UiPagination :page="page" :pages="pages" :total="total" @change="goToPage" />
+    <UiPagination
+      :page="pagination.page"
+      :pages="pagination.pages"
+      :total="pagination.total"
+      @change="setPage"
+    />
 
-    <UiModal
-      :open="confirmClear"
+    <UiConfirm
+      v-model:open="confirmClear"
       title="Очистить журнал ошибок?"
-      size="sm"
-      @update:open="confirmClear = false"
+      confirm-label="Очистить"
+      :busy="Boolean(busy)"
+      @confirm="clearLog"
     >
-      <p class="confirm-text">
-        Удалятся все {{ total }} записей. Это разумно после того, как поломку
-        починили — чтобы следующая ошибка была видна сразу.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="confirmClear = false">Отмена</UiButton>
-        <UiButton variant="danger" :loading="clearing" @click="clearLog">
-          Очистить
-        </UiButton>
-      </template>
-    </UiModal>
+      Удалятся все {{ pagination.total }} записей. Это разумно после того, как поломку
+      починили — чтобы следующая ошибка была видна сразу.
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-errors {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
+.admin-errors :deep(.admin-head p) {
   max-width: 70ch;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
 }
 
 .filters {
@@ -297,10 +217,6 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
   overflow-wrap: anywhere;
   color: var(--text-strong);
   font-size: var(--text-sm);
-}
-
-.muted {
-  color: var(--text-muted);
 }
 
 .hint {
@@ -330,11 +246,6 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
   font-size: var(--text-xs);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.confirm-text {
-  margin-bottom: var(--space-4);
-  color: var(--text-muted);
 }
 
 @media (max-width: 640px) {

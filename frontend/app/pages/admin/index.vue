@@ -1,54 +1,19 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'admin' })
 
-type Stats = {
-  products: number
-  publishedProducts: number
-  categories: number
-  brands: number
-  sources: number
-  queuedSitemaps: number
-  orders: number
-  newOrders: number
-  pendingReviews: number
-  activePromoCodes: number
-  productsWithoutImages: number
-  users: number
-  admins: number
-  revenueTotal: number
-  averageOrder: number
-  ordersByStatus: Record<string, number>
-  recentOrders: Array<{
-    id: string
-    number: number
-    status: string
-    customerName: string
-    total: number
-    currency: string
-    createdAt: string
-  }>
-  salesSeries: Array<{ date: string, orders: number, revenue: number }>
-  topProducts: Array<{
-    productId: string | null
-    name: string
-    slug: string
-    quantity: number
-    revenue: number
-  }>
-}
+const { errorMessage } = useAdminApi()
+// The layout loads the same answer for the sidebar badges; joining it saves a
+// second run of the heaviest query in the app. «Обновить» asks again.
+const { stats, load: loadStats } = useAdminStats()
 
-const { adminFetch, errorMessage } = useAdminApi()
-const { formatPrice } = useFormatPrice()
-
-const stats = ref<Stats | null>(null)
-const loading = ref(true)
+const loading = ref(false)
 const loadError = ref('')
 
 async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    stats.value = await adminFetch<Stats>('/stats')
+    await loadStats()
   } catch (error) {
     loadError.value = errorMessage(error, 'Не удалось загрузить статистику')
   } finally {
@@ -58,13 +23,17 @@ async function load() {
 
 onMounted(load)
 
-const ORDER_STATUS_LABELS: Record<string, string> = {
-  NEW: 'Новые',
-  CONFIRMED: 'Подтверждены',
-  SHIPPED: 'Отправлены',
-  COMPLETED: 'Завершены',
-  CANCELLED: 'Отменены',
-}
+/**
+ * Every status the database has, in lifecycle order. The hand-written list had
+ * a `COMPLETED` that never existed and lacked PROCESSING and DELIVERED.
+ */
+const statusRows = computed(() =>
+  ORDER_STATUSES.map(status => ({
+    status,
+    label: ORDER_STATUS_PLURAL[status],
+    count: stats.value?.ordersByStatus[status] ?? 0,
+  })),
+)
 
 /** Bar heights are relative to the busiest day in the window. */
 const maxRevenue = computed(() =>
@@ -73,16 +42,12 @@ const maxRevenue = computed(() =>
 </script>
 
 <template>
-  <div class="dashboard">
-    <header class="head">
-      <div>
-        <h1>Дашборд</h1>
-        <p>Сводка по магазину за последние 14 дней</p>
-      </div>
+  <div class="admin-page dashboard">
+    <AdminPageHead title="Дашборд" description="Сводка по магазину за последние 14 дней">
       <UiButton variant="secondary" size="sm" :loading="loading" @click="load">
         Обновить
       </UiButton>
-    </header>
+    </AdminPageHead>
 
     <AdminSetupWarnings />
 
@@ -171,9 +136,9 @@ const maxRevenue = computed(() =>
 
         <UiCard title="Заказы по статусам">
           <ul class="status-list">
-            <li v-for="(label, key) in ORDER_STATUS_LABELS" :key="key">
-              <span>{{ label }}</span>
-              <strong>{{ stats.ordersByStatus[key] ?? 0 }}</strong>
+            <li v-for="row in statusRows" :key="row.status">
+              <span>{{ row.label }}</span>
+              <strong>{{ row.count }}</strong>
             </li>
           </ul>
         </UiCard>
@@ -215,27 +180,9 @@ const maxRevenue = computed(() =>
 </template>
 
 <style scoped>
+/* The dashboard breathes a little more than the list screens. */
 .dashboard {
-  display: flex;
-  flex-direction: column;
   gap: var(--space-5);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
 }
 
 .tiles {

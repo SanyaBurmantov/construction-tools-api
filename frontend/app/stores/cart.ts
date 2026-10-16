@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { readArray, writeJson } from '~/utils/safe-storage'
 
 export interface CartItem {
   productId: string
@@ -33,24 +34,11 @@ export const useCartStore = defineStore('cart', {
   actions: {
     load() {
       if (this.loaded || !import.meta.client) return
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY)
-        if (raw) {
-          const parsed = JSON.parse(raw)
-          if (Array.isArray(parsed)) this.items = parsed
-        }
-      } catch {
-        this.items = []
-      }
+      this.items = readArray<CartItem>(STORAGE_KEY)
       this.loaded = true
     },
     persist() {
-      if (!import.meta.client) return
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
-      } catch {
-        // The in-memory store still works when storage is blocked or full.
-      }
+      writeJson(STORAGE_KEY, this.items)
     },
     add(item: Omit<CartItem, 'quantity'>, quantity = 1) {
       const existing = this.items.find((i) => i.productId === item.productId)

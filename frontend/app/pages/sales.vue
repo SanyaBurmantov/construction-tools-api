@@ -1,18 +1,26 @@
 <script setup lang="ts">
 import type { ProductsResponse } from '~/types/api'
+import { toCardProduct } from '~/composables/useProductActions'
 
 const route = useRoute()
 const router = useRouter()
-const config = useRuntimeConfig()
-const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+const { apiBase } = useSite()
 
-const page = computed(() => Number(route.query.page) || 1)
-const sort = computed(() => String(route.query.sort || 'discount'))
+const SORT_OPTIONS = [
+  { value: 'new', label: 'Сначала новые' },
+  { value: 'price-asc', label: 'Сначала дешевле' },
+  { value: 'price-desc', label: 'Сначала дороже' },
+  { value: 'rating', label: 'По рейтингу' },
+]
+
+const page = computed(() => Math.max(1, Number(route.query.page) || 1))
+const sort = computed(() => String(route.query.sort || 'new'))
 
 /**
  * `onSale=true` filters to products whose oldPrice really exceeds the current
- * price. The API has no "sort by discount size", so the default view sorts by
- * price and the biggest markdowns are surfaced by the badge on each card.
+ * price. The API has no "sort by discount size", so the default view puts the
+ * newest markdowns first and the biggest ones are surfaced by the badge on
+ * each card.
  */
 const sortParams = computed<Record<string, string>>(() => {
   switch (sort.value) {
@@ -27,6 +35,8 @@ const sortParams = computed<Record<string, string>>(() => {
   }
 })
 
+// The key carries page and sort, so it alone re-runs the fetch. Rows are cut
+// to what a card renders — see `toCardProduct`.
 const { data, status, error } = await useAsyncData<ProductsResponse>(
   () => `sales-${page.value}-${sort.value}`,
   () =>
@@ -34,8 +44,8 @@ const { data, status, error } = await useAsyncData<ProductsResponse>(
       params: { onSale: true, limit: 24, page: page.value, ...sortParams.value },
     }),
   {
-    watch: [page, sort],
     default: () => ({ data: [], pagination: { page: 1, limit: 24, total: 0, pages: 0 } }),
+    transform: response => ({ data: response.data.map(toCardProduct), pagination: response.pagination }),
   }
 )
 
@@ -46,6 +56,11 @@ if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableErr
 
 function setQuery(patch: Record<string, string | number | undefined>) {
   router.push({ query: { ...route.query, ...patch } })
+}
+
+/** The pager renders these as real links — crawlers only follow an href. */
+function pageHref(next: number) {
+  return router.resolve({ query: { ...route.query, page: next > 1 ? String(next) : undefined } }).href
 }
 
 /** Deepest markdown on the page — used for the hero headline. */
@@ -59,60 +74,45 @@ const bestDiscount = computed(() => {
   return best
 })
 
-const description
-  = 'Товары со скидкой: инструмент, оборудование и расходные материалы по сниженным ценам.'
-const canonical = computed(
-  () => `${String(config.public.siteUrl).replace(/\/$/, '')}/sales`
-)
-
-useSeoMeta({
-  title: 'Акции и скидки | Мультитул',
-  description,
-  ogTitle: 'Акции и скидки | Мультитул',
-  ogDescription: description,
-  ogType: 'website',
-  ogUrl: () => canonical.value,
+const heroStats = computed(() => {
+  const total = data.value.pagination.total
+  return [{ value: total, label: `${plural(total, ...PLURALS.product)} по акции` }]
 })
 
-useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
+const description
+  = 'Товары со скидкой: инструмент, оборудование и расходные материалы по сниженным ценам.'
+
+usePageSeo({ title: 'Акции и скидки', description, path: '/sales' })
 </script>
 
 <template>
   <div class="sales-page">
     <UiBreadcrumbs :items="[{ label: 'Главная', to: '/' }, { label: 'Акции' }]" />
 
-    <section class="hero">
-      <div class="hero-copy">
-        <span class="eyebrow">Акции</span>
-        <h1>Товары со скидкой</h1>
-        <p>
-          {{ description }}
-          <template v-if="bestDiscount">
-            Максимальная скидка на этой странице — {{ bestDiscount }}%.
-          </template>
-        </p>
-      </div>
-      <div class="hero-stat">
-        <strong>{{ data.pagination.total }}</strong>
-        <span>{{ plural(data.pagination.total, 'товар', 'товара', 'товаров') }} по акции</span>
-      </div>
-    </section>
+    <StorefrontPageHero
+      eyebrow="Акции"
+      title="Товары со скидкой"
+      tone="sale"
+      :stats="heroStats"
+    >
+      <p>
+        {{ description }}
+        <template v-if="bestDiscount">
+          Максимальная скидка на этой странице — {{ bestDiscount }}%.
+        </template>
+      </p>
+    </StorefrontPageHero>
 
     <div v-if="data.pagination.total" class="toolbar">
       <UiSelect
         :model-value="sort"
         size="sm"
-        :options="[
-          { value: 'discount', label: 'Сначала новые' },
-          { value: 'price-asc', label: 'Сначала дешевле' },
-          { value: 'price-desc', label: 'Сначала дороже' },
-          { value: 'rating', label: 'По рейтингу' }
-        ]"
-        @update:model-value="setQuery({ sort: String($event), page: 1 })"
+        :options="SORT_OPTIONS"
+        @update:model-value="setQuery({ sort: String($event), page: undefined })"
       />
     </div>
 
-    <div v-if="status === 'pending'" class="grid">
+    <div v-if="status === 'pending'" class="product-grid">
       <UiSkeleton v-for="i in 8" :key="i" height="340px" radius="var(--radius-md)" />
     </div>
 
@@ -127,7 +127,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
     </UiEmpty>
 
     <template v-else>
-      <div class="grid">
+      <div class="product-grid">
         <ProductCatalogCard
           v-for="product in data.data"
           :key="product.id"
@@ -139,6 +139,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
         :page="data.pagination.page"
         :pages="data.pagination.pages"
         :total="data.pagination.total"
+        :href-for="pageHref"
         @change="setQuery({ page: $event })"
       />
     </template>
@@ -152,55 +153,6 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
   gap: var(--space-5);
 }
 
-.hero {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-8);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--sale-soft), var(--surface-card));
-  border: 1px solid var(--border-subtle);
-  gap: var(--space-6);
-}
-
-.hero-copy {
-  display: flex;
-  max-width: 60ch;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.hero .eyebrow {
-  color: var(--sale);
-}
-
-.hero p {
-  color: var(--text-muted);
-}
-
-.hero-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-4) var(--space-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-}
-
-.hero-stat strong {
-  color: var(--sale);
-  font-size: var(--text-3xl);
-  font-weight: 800;
-  line-height: 1;
-}
-
-.hero-stat span {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
 .toolbar {
   display: flex;
   justify-content: flex-end;
@@ -208,17 +160,5 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
 
 .toolbar :deep(.ui-select) {
   width: 240px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: var(--space-4);
-}
-
-@media (max-width: 640px) {
-  .hero {
-    padding: var(--space-5);
-  }
 }
 </style>

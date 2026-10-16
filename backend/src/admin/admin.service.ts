@@ -1,10 +1,21 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { rekeyCategory } from '../categories/category-path-alias';
+import { PricingService } from '../pricing/pricing.service';
+import { ParserJobsService } from '../parser/parser-jobs.service';
+import { SupplierQueueParser } from '../parser/supplier-queue-parser';
+import { QueueSourceCode } from '../parser/queue-table';
+
+/** Parsers that discover their own URLs (all but th-tools' sitemap service). */
+type DiscoveringParser = SupplierQueueParser & {
+  refreshSitemaps(): Promise<unknown>;
+};
 import {
   countProducts,
   fromSource,
@@ -27,8 +38,39 @@ import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { ParserLogService } from '../parser/parser-log.service';
 import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
-import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
-import { Admin7745SitemapQueryDto } from './dto/admin-7745-sitemap-query.dto';
+
+/**
+ * A button press waits for its batch inside one HTTP request, so it is capped
+ * well below a cron batch — and an unvalidated `limit` from the body could ask
+ * for thousands of URLs.
+ */
+const MAX_MANUAL_BATCH = 50;
+const manualBatch = (limit: unknown) => {
+  const value = Math.trunc(Number(limit));
+  return Number.isFinite(value) && value > 0
+    ? Math.min(value, MAX_MANUAL_BATCH)
+    : 25;
+};
+
+/**
+ * Product fields a parse also writes. An admin edit to any of them locks it
+ * against the re-parse (`Product.lockedFields`).
+ */
+const PARSER_OWNED_FIELDS = [
+  'name',
+  'sku',
+  'barcode',
+  'model',
+  'brandId',
+  'categoryId',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+] as const;
+
+/** Same budget CategoryMergeService gives a subtree rewrite. */
+const CATEGORY_TX_OPTIONS = { maxWait: 10_000, timeout: 120_000 };
 
 @Injectable()
 export class AdminService {
@@ -41,6 +83,8 @@ export class AdminService {
     private readonly toolsByParserService: ToolsByParserService,
     private readonly parserLogService: ParserLogService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
+    private readonly pricing: PricingService,
+    private readonly jobs: ParserJobsService,
   ) {}
 
   async getStats() {
@@ -230,18 +274,29 @@ export class AdminService {
     };
   }
 
-  createProduct(dto: AdminCreateProductDto) {
+  /**
+   * A product made by hand is the admin's from the start: its status is
+   * ADMIN (no automation publishes or hides it) and a price typed in is a
+   * MANUAL price, which no parse overwrites.
+   */
+  async createProduct(dto: AdminCreateProductDto) {
+    const slug = dto.slug.trim();
+    await this.ensureProductSlugFree(slug);
     return this.prisma.product.create({
       data: {
         name: dto.name.trim(),
-        slug: dto.slug.trim(),
+        slug,
         categoryId: dto.categoryId,
         brandId: dto.brandId || null,
         priceValue: dto.priceValue,
         oldPrice: dto.oldPrice ?? null,
+        costPrice: dto.costPrice ?? null,
+        pricingMode:
+          dto.pricingMode ?? (dto.priceValue != null ? 'MANUAL' : 'AUTO'),
         stockStatus: dto.stockStatus || 'in_stock',
         stockQuantity: dto.stockQuantity ?? null,
         status: dto.status || 'PUBLISHED',
+        statusSource: 'ADMIN',
         descriptionShort: dto.descriptionShort || null,
         descriptionFull: dto.descriptionFull || null,
         sku: dto.sku || null,
@@ -253,27 +308,125 @@ export class AdminService {
     });
   }
 
+  /**
+   * Three rules make this more than a `product.update`:
+   *
+   * - **Corrected fields stay corrected.** Every field an admin edits that a
+   *   parser also writes joins `lockedFields`, which the re-parse skips —
+   *   the daily refresh used to put the supplier's name or category back.
+   * - **A typed price is a MANUAL price** (unless the request says AUTO), and
+   *   the change goes to PriceHistory. Writing `priceValue` on an AUTO
+   *   product was silently undone by the next parse. Switching back to AUTO
+   *   re-prices from the cost through PricingService.
+   * - **A status set here is the admin's** (`statusSource = ADMIN`): the
+   *   automatic publish/hide rules leave it alone. A renamed slug leaves a
+   *   ProductRedirect behind so indexed URLs keep working.
+   */
   async updateProduct(id: string, dto: AdminUpdateProductDto) {
-    await this.ensureProductExists(id);
+    const current = await this.ensureProductExists(id);
+    const data: Prisma.ProductUncheckedUpdateInput = this.productData(dto);
 
-    return this.prisma.product.update({
-      where: { id },
-      data: this.productData(dto),
+    const slug = dto.slug?.trim();
+    const slugChanged = slug !== undefined && slug !== current.slug;
+    if (slugChanged) await this.ensureProductSlugFree(slug, id);
+
+    const locked = PARSER_OWNED_FIELDS.filter(
+      (field) => (dto as Record<string, unknown>)[field] !== undefined,
+    );
+    if (locked.length) {
+      data.lockedFields = [...new Set([...current.lockedFields, ...locked])];
+    }
+    if (dto.status !== undefined) data.statusSource = 'ADMIN';
+
+    const priceTouched =
+      dto.priceValue !== undefined || dto.oldPrice !== undefined;
+    const mode = dto.pricingMode ?? (priceTouched ? 'MANUAL' : undefined);
+    if (mode) data.pricingMode = mode;
+    if (mode === 'AUTO') {
+      // The engine owns the price again; a typed value would be overwritten
+      // on the next parse anyway, so it is not written at all.
+      delete data.priceValue;
+      delete data.oldPrice;
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.product.update({ where: { id }, data });
+      if (slugChanged) {
+        // The new slug may be an alias of this or another product; a slug
+        // cannot be both a product and a redirect.
+        await tx.productRedirect.deleteMany({ where: { slug } });
+        await tx.productRedirect.upsert({
+          where: { slug: current.slug },
+          create: { slug: current.slug, productId: id },
+          update: { productId: id },
+        });
+      }
+      if (
+        (data.priceValue !== undefined &&
+          row.priceValue !== current.priceValue) ||
+        (data.costPrice !== undefined && row.costPrice !== current.costPrice)
+      ) {
+        await tx.priceHistory.create({
+          data: {
+            productId: id,
+            costPrice: row.costPrice,
+            oldPrice: current.priceValue,
+            newPrice: row.priceValue,
+            reason: 'manual',
+          },
+        });
+      }
+      return row;
     });
+
+    if (mode === 'AUTO' && updated.costPrice != null) {
+      await this.pricing.applyCost(id, updated.costPrice, {
+        preserveOldPrice: true,
+      });
+      return this.prisma.product.findUnique({ where: { id } });
+    }
+    return updated;
   }
 
+  /**
+   * Archive, not delete. A hard delete cascaded away the product's customer
+   * reviews and price history, and the next parse recreated the product as
+   * new anyway (its offer pointed nowhere). ARCHIVED with an ADMIN status
+   * hides it everywhere and no automation brings it back; the URL 404s like
+   * any unpublished product, and an admin can restore it by status.
+   */
   async deleteProduct(id: string) {
     await this.ensureProductExists(id);
-    await this.prisma.productImage.deleteMany({ where: { productId: id } });
-    await this.prisma.productSpecification.deleteMany({
-      where: { productId: id },
+    await this.prisma.product.update({
+      where: { id },
+      data: { status: 'ARCHIVED', statusSource: 'ADMIN' },
     });
-    await this.prisma.sourceProduct.updateMany({
-      where: { productId: id },
-      data: { productId: null },
-    });
-    await this.prisma.product.delete({ where: { id } });
-    return { ok: true };
+    return { ok: true, archived: true };
+  }
+
+  /** Product slugs are public URLs, unique across products and redirects. */
+  private async ensureProductSlugFree(slug: string, exceptId?: string) {
+    if (!slug) throw new BadRequestException('Slug не может быть пустым');
+    const [taken, redirect] = await Promise.all([
+      this.prisma.product.findUnique({
+        where: { slug },
+        select: { id: true, name: true },
+      }),
+      this.prisma.productRedirect.findUnique({
+        where: { slug },
+        select: { productId: true },
+      }),
+    ]);
+    if (taken && taken.id !== exceptId) {
+      throw new ConflictException(
+        `Slug «${slug}» уже занят товаром «${taken.name}»`,
+      );
+    }
+    if (redirect && redirect.productId !== exceptId) {
+      throw new ConflictException(
+        `Slug «${slug}» — старый адрес другого товара`,
+      );
+    }
   }
 
   getSources() {
@@ -306,34 +459,6 @@ export class AdminService {
           : await this.thToolsParserService.previewProductUrl(dto.url);
 
     return { ok: true, dryRun: true, parsed };
-  }
-
-  async getQueueStats() {
-    return this.thToolsParserService.getQueueStats();
-  }
-
-  getDukonQueueStats() {
-    return this.dukonParserService.getQueueStats();
-  }
-
-  getDukonSitemaps(query: AdminDukonSitemapQueryDto) {
-    return this.dukonParserService.getSitemaps(query);
-  }
-
-  get7745QueueStats() {
-    return this.supplier7745ParserService.getQueueStats();
-  }
-
-  get7745Sitemaps(query: Admin7745SitemapQueryDto) {
-    return this.supplier7745ParserService.getSitemaps(query);
-  }
-
-  getToolsByQueueStats() {
-    return this.toolsByParserService.getQueueStats();
-  }
-
-  getToolsBySitemaps(query: AdminSitemapQueryDto) {
-    return this.toolsByParserService.getSitemaps(query);
   }
 
   async getParserRuntimeStatus() {
@@ -400,70 +525,69 @@ export class AdminService {
     );
   }
 
-  async refreshSitemaps() {
-    await this.sitemapsService.parseAllSitemapsThTools();
-    return this.getQueueStats();
+  /* ------------------------------------------------- supplier queues ---- */
+
+  /**
+   * The supplier parser behind a queue. One lookup instead of four copies of
+   * every queue method — the routes stay per supplier, the code does not.
+   */
+  private queueParser(code: QueueSourceCode): SupplierQueueParser {
+    switch (code) {
+      case 'th-tools':
+        return this.thToolsParserService;
+      case 'dukon':
+        return this.dukonParserService;
+      case '7745':
+        return this.supplier7745ParserService;
+      case 'tools-by':
+        return this.toolsByParserService;
+    }
   }
 
-  async processQueuedProducts(limit = 25) {
-    await this.thToolsParserService.processSitemapsBatch(limit, 1);
-    return this.getQueueStats();
+  queueStats(code: QueueSourceCode) {
+    return this.queueParser(code).getQueueStats();
   }
 
-  retrySitemap(id: string) {
-    return this.thToolsParserService.retrySitemap(id);
+  /** `isVisited` is the old filter of the th-tools screen; status wins. */
+  queueRows(code: QueueSourceCode, query: AdminSitemapQueryDto) {
+    const status =
+      query.status ??
+      (query.isVisited === undefined
+        ? undefined
+        : query.isVisited
+          ? 'DONE'
+          : 'PENDING');
+    return this.queueParser(code).getSitemaps({ ...query, status });
   }
 
-  retryProblemSitemaps() {
-    return this.thToolsParserService.retryProblemSitemaps();
+  /**
+   * Discovery for one supplier (sitemap, or a catalogue crawl where there is
+   * none), under the same per-source lock as the cron jobs.
+   */
+  async refreshQueue(code: QueueSourceCode) {
+    const parser = this.queueParser(code);
+    await this.jobs.runExclusive(code, 'refresh', 'Пополнить очередь', () =>
+      code === 'th-tools'
+        ? this.sitemapsService.parseAllSitemapsThTools()
+        : (parser as DiscoveringParser).refreshSitemaps(),
+    );
+    return parser.getQueueStats();
   }
 
-  refreshDukonSitemaps() {
-    return this.dukonParserService.refreshSitemaps();
+  async processQueue(code: QueueSourceCode, limit: unknown) {
+    const parser = this.queueParser(code);
+    await this.jobs.runExclusive(code, 'process', 'Разобрать пачку', () =>
+      parser.processSitemapsBatch(manualBatch(limit), 1),
+    );
+    return parser.getQueueStats();
   }
 
-  processDukonQueuedProducts(limit = 25) {
-    return this.dukonParserService.processSitemapsBatch(limit, 2);
+  retryQueueRow(code: QueueSourceCode, id: string) {
+    return this.queueParser(code).retrySitemap(id);
   }
 
-  retryDukonSitemap(id: string) {
-    return this.dukonParserService.retrySitemap(id);
-  }
-
-  retryProblemDukonSitemaps() {
-    return this.dukonParserService.retryProblemSitemaps();
-  }
-
-  refresh7745Sitemaps() {
-    return this.supplier7745ParserService.refreshSitemaps();
-  }
-
-  process7745QueuedProducts(limit = 25) {
-    return this.supplier7745ParserService.processSitemapsBatch(limit, 1);
-  }
-
-  retry7745Sitemap(id: string) {
-    return this.supplier7745ParserService.retrySitemap(id);
-  }
-
-  retryProblem7745Sitemaps() {
-    return this.supplier7745ParserService.retryProblemSitemaps();
-  }
-
-  refreshToolsBySitemaps() {
-    return this.toolsByParserService.refreshSitemaps();
-  }
-
-  processToolsByQueuedProducts(limit = 25) {
-    return this.toolsByParserService.processSitemapsBatch(limit, 1);
-  }
-
-  retryToolsBySitemap(id: string) {
-    return this.toolsByParserService.retrySitemap(id);
-  }
-
-  retryProblemToolsBySitemaps() {
-    return this.toolsByParserService.retryProblemSitemaps();
+  retryQueueProblems(code: QueueSourceCode) {
+    return this.queueParser(code).retryProblemSitemaps();
   }
 
   getBrands() {
@@ -495,11 +619,23 @@ export class AdminService {
 
   async deleteBrand(id: string) {
     await this.ensureBrandExists(id);
-    await this.prisma.product.updateMany({
+    // A BRAND pricing rule whose brand is gone never matches again and keeps
+    // showing in the rules list as if it worked.
+    const rules = await this.prisma.pricingRule.count({
       where: { brandId: id },
-      data: { brandId: null },
     });
-    await this.prisma.brand.delete({ where: { id } });
+    if (rules) {
+      throw new BadRequestException(
+        `К бренду привязано правил наценки: ${rules}. Удалите их или объедините бренд с другим.`,
+      );
+    }
+    await this.prisma.$transaction([
+      this.prisma.product.updateMany({
+        where: { brandId: id },
+        data: { brandId: null },
+      }),
+      this.prisma.brand.delete({ where: { id } }),
+    ]);
     return { ok: true };
   }
 
@@ -512,9 +648,28 @@ export class AdminService {
     await this.ensureBrandExists(targetBrandId);
 
     return this.prisma.$transaction(async (tx) => {
+      const source = await tx.brand.findUniqueOrThrow({
+        where: { id },
+        select: { slug: true },
+      });
       const updated = await tx.product.updateMany({
         where: { brandId: id },
         data: { brandId: targetBrandId },
+      });
+      await tx.pricingRule.updateMany({
+        where: { brandId: id },
+        data: { brandId: targetBrandId },
+      });
+      // The supplier keeps spelling the old brand; without the alias the next
+      // parse recreates it and pulls its products back.
+      await tx.brandAlias.updateMany({
+        where: { brandId: id },
+        data: { brandId: targetBrandId },
+      });
+      await tx.brandAlias.upsert({
+        where: { slug: source.slug },
+        create: { slug: source.slug, brandId: targetBrandId },
+        update: { brandId: targetBrandId },
       });
       await tx.brand.delete({ where: { id } });
 
@@ -611,7 +766,14 @@ export class AdminService {
     const current = await this.ensureCategoryExists(id);
 
     const categories = await this.prisma.category.findMany({
-      select: { id: true, parentId: true, slug: true, level: true, path: true },
+      select: {
+        id: true,
+        parentId: true,
+        slug: true,
+        pathKey: true,
+        level: true,
+        path: true,
+      },
     });
     const descendants = this.collectSubtree(id, categories);
 
@@ -666,11 +828,13 @@ export class AdminService {
           ...(dto.isFeatured !== undefined
             ? { isFeatured: dto.isFeatured }
             : {}),
-          ...(moved
-            ? { path, level: parentPath.length, pathKey: path.join('/') }
-            : {}),
+          ...(moved ? { path, level: parentPath.length } : {}),
         },
       });
+      if (moved) {
+        // Parser identity follows the move; the old chain stays an alias.
+        await rekeyCategory(tx, id, current.pathKey, path.join('/'));
+      }
 
       if (slug !== current.slug) {
         // The new slug may itself be an alias left behind by an earlier
@@ -688,7 +852,9 @@ export class AdminService {
       }
 
       return updated;
-    });
+      // A move rewrites every descendant row by row; Prisma's default 5 s
+      // interactive-transaction timeout failed moves of large branches.
+    }, CATEGORY_TX_OPTIONS);
   }
 
   /** Every category below `id`, breadth-first. */
@@ -722,7 +888,12 @@ export class AdminService {
     tx: Prisma.TransactionClient,
     rootId: string,
     rootPath: string[],
-    categories: Array<{ id: string; parentId: string | null; slug: string }>,
+    categories: Array<{
+      id: string;
+      parentId: string | null;
+      slug: string;
+      pathKey: string;
+    }>,
   ) {
     const childrenByParent = new Map<string, typeof categories>();
     for (const row of categories) {
@@ -735,9 +906,9 @@ export class AdminService {
     const walk = async (parentId: string, parentPath: string[]) => {
       for (const child of childrenByParent.get(parentId) ?? []) {
         const path = [...parentPath, child.slug];
-        await tx.category.update({
-          where: { id: child.id },
-          data: { path, level: parentPath.length, pathKey: path.join('/') },
+        await rekeyCategory(tx, child.id, child.pathKey, path.join('/'), {
+          path,
+          level: parentPath.length,
         });
         await walk(child.id, path);
       }
@@ -796,21 +967,17 @@ export class AdminService {
       );
     }
 
-    await this.prisma.category.delete({ where: { id } });
+    // Spec definitions are RESTRICT on the category, and values can outlive
+    // the products that moved away — both must go first, in one transaction,
+    // or the delete fails half-way with a 500.
+    await this.prisma.$transaction([
+      this.prisma.productSpecification.deleteMany({
+        where: { specification: { categoryId: id } },
+      }),
+      this.prisma.specification.deleteMany({ where: { categoryId: id } }),
+      this.prisma.category.delete({ where: { id } }),
+    ]);
     return { ok: true };
-  }
-
-  async getSitemaps(query: AdminSitemapQueryDto) {
-    if (query.status) return this.thToolsParserService.getSitemaps(query);
-    return this.thToolsParserService.getSitemaps({
-      ...query,
-      status:
-        query.isVisited === undefined
-          ? undefined
-          : query.isVisited
-            ? 'DONE'
-            : 'PENDING',
-    });
   }
 
   getParserErrors() {
@@ -824,6 +991,7 @@ export class AdminService {
   private async ensureProductExists(id: string) {
     const product = await this.prisma.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException('Product not found');
+    return product;
   }
 
   private async ensureBrandExists(id: string) {

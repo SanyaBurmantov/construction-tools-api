@@ -37,6 +37,9 @@ const SPENT_ORDER_STATUSES: OrderStatus[] = [
  * which is the only way an ADMIN account comes into existence (registration
  * always produces a CUSTOMER).
  */
+/** pg_advisory_xact_lock key for the last-admin guard (any fixed int8). */
+const ADMIN_GUARD_LOCK_KEY = 4_200_001;
+
 @Injectable()
 export class UsersAdminService {
   constructor(private prisma: PrismaService) {}
@@ -161,9 +164,27 @@ export class UsersAdminService {
   }
 
   /** Active admins other than `exceptId` — the last-admin guard reads this. */
-  private async otherActiveAdmins(exceptId: string) {
-    return this.prisma.user.count({
+  private async otherActiveAdmins(
+    exceptId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    return db.user.count({
       where: { role: UserRole.ADMIN, isActive: true, NOT: { id: exceptId } },
+    });
+  }
+
+  /**
+   * Runs a change that may remove an admin under one transaction-scoped
+   * advisory lock. The last-admin guard is check-then-act: without the lock,
+   * two admins demoting each other at the same moment each see one other
+   * admin, both commit, and nobody can sign in any more.
+   */
+  private withAdminLock<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ADMIN_GUARD_LOCK_KEY})`;
+      return fn(tx);
     });
   }
 
@@ -172,7 +193,12 @@ export class UsersAdminService {
    * came in with the `x-admin-token` service header. Two things are refused
    * whatever the caller: locking yourself out, and removing the last way in.
    */
-  async update(id: string, dto: AdminUpdateUserDto, actorId?: string) {
+  async update(
+    id: string,
+    dto: AdminUpdateUserDto,
+    actorId?: string,
+    actorSessionId?: string,
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException('Пользователь не найден');
 
@@ -181,16 +207,10 @@ export class UsersAdminService {
       ((dto.role !== undefined && dto.role !== UserRole.ADMIN) ||
         dto.isActive === false);
 
-    if (losesAdmin) {
-      if (actorId === id)
-        throw new BadRequestException(
-          'Нельзя снять права администратора с собственной учётной записи',
-        );
-      if ((await this.otherActiveAdmins(id)) === 0)
-        throw new BadRequestException(
-          'Это последний активный администратор — сначала создайте другого',
-        );
-    }
+    if (losesAdmin && actorId === id)
+      throw new BadRequestException(
+        'Нельзя снять права администратора с собственной учётной записи',
+      );
 
     const customerType = dto.customerType ?? user.customerType;
     const companyName =
@@ -200,21 +220,26 @@ export class UsersAdminService {
         'Для юридического лица укажите название организации',
       );
 
+    const email =
+      dto.email === undefined
+        ? undefined
+        : dto.email?.trim().toLowerCase() || null;
     const data: Prisma.UserUpdateInput = {
       role: dto.role,
       isActive: dto.isActive,
       customerType: dto.customerType,
-      name: dto.name === undefined ? undefined : dto.name.trim() || null,
-      email:
-        dto.email === undefined
-          ? undefined
-          : dto.email.trim().toLowerCase() || null,
-      phone: dto.phone === undefined ? undefined : dto.phone.trim() || null,
+      // `?.`: an explicit null clears the field instead of throwing a 500.
+      name: dto.name === undefined ? undefined : dto.name?.trim() || null,
+      email,
+      // A new address is unproven, same rule as a customer's own change.
+      emailVerifiedAt:
+        email !== undefined && email !== user.email ? null : undefined,
+      phone: dto.phone === undefined ? undefined : dto.phone?.trim() || null,
       companyName:
         dto.companyName === undefined
           ? undefined
-          : dto.companyName.trim() || null,
-      taxId: dto.taxId === undefined ? undefined : dto.taxId.trim() || null,
+          : dto.companyName?.trim() || null,
+      taxId: dto.taxId === undefined ? undefined : dto.taxId?.trim() || null,
     };
 
     if (dto.password) {
@@ -223,19 +248,37 @@ export class UsersAdminService {
       data.passwordHash = await hashPassword(dto.password);
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data,
-      select: USER_SELECT,
-    });
+    const write = async (tx: Prisma.TransactionClient) => {
+      if (losesAdmin && (await this.otherActiveAdmins(id, tx)) === 0)
+        throw new BadRequestException(
+          'Это последний активный администратор — сначала создайте другого',
+        );
+      const updated = await tx.user.update({
+        where: { id },
+        data,
+        select: USER_SELECT,
+      });
 
-    // A reset password or a disabled account must take effect now, not
-    // whenever the open session happens to expire.
-    if (dto.password || dto.isActive === false) {
-      await this.prisma.userSession.deleteMany({ where: { userId: id } });
-    }
+      // A reset password or a disabled account must take effect now, not
+      // whenever the open session happens to expire. An admin resetting
+      // their own password keeps the session they are using, like
+      // AuthService.changePassword does.
+      if (dto.password || dto.isActive === false) {
+        await tx.userSession.deleteMany({
+          where: {
+            userId: id,
+            ...(actorId === id && actorSessionId
+              ? { NOT: { id: actorSessionId } }
+              : {}),
+          },
+        });
+      }
+      return updated;
+    };
 
-    return updated;
+    return losesAdmin
+      ? this.withAdminLock(write)
+      : this.prisma.$transaction(write);
   }
 
   async remove(id: string, actorId?: string) {
@@ -248,17 +291,18 @@ export class UsersAdminService {
       throw new BadRequestException(
         'Нельзя удалить собственную учётную запись',
       );
-    if (
-      user.role === UserRole.ADMIN &&
-      user.isActive &&
-      (await this.otherActiveAdmins(id)) === 0
-    )
-      throw new BadRequestException(
-        'Это последний активный администратор — сначала создайте другого',
-      );
-
     // Sessions cascade with the row.
-    await this.prisma.user.delete({ where: { id } });
+    if (user.role === UserRole.ADMIN && user.isActive) {
+      await this.withAdminLock(async (tx) => {
+        if ((await this.otherActiveAdmins(id, tx)) === 0)
+          throw new BadRequestException(
+            'Это последний активный администратор — сначала создайте другого',
+          );
+        await tx.user.delete({ where: { id } });
+      });
+    } else {
+      await this.prisma.user.delete({ where: { id } });
+    }
     return { ok: true };
   }
 }

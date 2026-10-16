@@ -6,6 +6,10 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  moveCategoryAliases,
+  rekeyCategory,
+} from '../categories/category-path-alias';
+import {
   findDuplicateSiblingGroups,
   sameCategoryName,
 } from './category-duplicates';
@@ -15,6 +19,7 @@ type CategoryRow = {
   name: string;
   parentId: string | null;
   slug: string;
+  pathKey: string;
   level: number;
   path: string[];
 };
@@ -170,6 +175,7 @@ export class CategoryMergeService {
         name: true,
         parentId: true,
         slug: true,
+        pathKey: true,
         level: true,
         path: true,
       },
@@ -256,6 +262,9 @@ export class CategoryMergeService {
     }
     index.childrenByParent.delete(source.id);
 
+    // The supplier breadcrumbs that named `source` now name `target`;
+    // otherwise the next parse recreates the merged-away category.
+    await moveCategoryAliases(tx, source, target.id);
     await tx.category.delete({ where: { id: source.id } });
   }
 
@@ -322,18 +331,15 @@ export class CategoryMergeService {
     ) => {
       const path = [...parentPath, row.slug];
       const level = parentLevel + 1;
-      await tx.category.update({
-        where: { id: row.id },
-        data: {
-          ...(parentId ? { parentId } : {}),
-          path,
-          level,
-          // pathKey is the parsers' identity for this category. Leaving it at
-          // the pre-merge chain would make the next parse create a fresh row
-          // at the old position — resurrecting the category an admin merged.
-          pathKey: path.join('/'),
-        },
+      // pathKey follows the new position, and the old one is kept as an
+      // alias — the parser's breadcrumbs still spell the old chain.
+      const pathKey = path.join('/');
+      await rekeyCategory(tx, row.id, row.pathKey, pathKey, {
+        ...(parentId ? { parentId } : {}),
+        path,
+        level,
       });
+      row.pathKey = pathKey;
       // The in-memory index serves the rest of this merge (a later twin may
       // be this very row), so it must see the new position too.
       row.path = path;

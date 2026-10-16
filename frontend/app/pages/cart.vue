@@ -6,12 +6,10 @@ const cart = useCartStore()
 const wishlist = useWishlistStore()
 const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
-const promo = usePromoCode()
 const cartValidation = useCartValidation()
 const { ensureAuthenticated } = useCheckoutAuth()
 const { isAuthenticated } = useAuth()
 
-const promoInput = ref('')
 const goingToCheckout = ref(false)
 
 /**
@@ -32,27 +30,7 @@ onMounted(async () => {
   wishlist.load()
   // Re-price against the API before the customer looks at the total.
   await cartValidation.validate()
-  await promo.restore()
-  promoInput.value = promo.code.value
 })
-
-// A changed subtotal can invalidate a min-order code, so re-check on edits.
-watch(
-  () => cart.totalPrice,
-  async () => {
-    if (promo.preview.value) await promo.validate(promo.code.value)
-  }
-)
-
-async function applyPromo() {
-  const ok = await promo.validate(promoInput.value)
-  if (ok) toast.success(`Промокод ${promo.code.value} применён`)
-}
-
-function removePromo() {
-  promo.clear()
-  promoInput.value = ''
-}
 
 function moveToWishlist(productId: string) {
   const item = cart.items.find((i) => i.productId === productId)
@@ -70,12 +48,8 @@ function moveToWishlist(productId: string) {
   toast.info('Перенесено в избранное')
 }
 
-const total = computed(() =>
-  Math.max(0, Math.round((cart.totalPrice - promo.discount.value) * 100) / 100)
-)
-
 useHead({
-  title: 'Корзина | Мультитул',
+  title: 'Корзина | Gost.by',
   meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>
@@ -143,68 +117,22 @@ useHead({
           </ul>
         </section>
 
-        <aside class="summary">
-          <div class="summary-card">
-            <h2>Итого</h2>
+        <CartOrderSummary title="Итого" total-label="К оплате">
+          <p class="note">Стоимость доставки рассчитывается на следующем шаге.</p>
 
-            <div class="promo">
-              <UiField label="Промокод" :error="promo.error.value">
-                <div v-if="!promo.preview.value" class="promo-input">
-                  <UiInput
-                    v-model="promoInput"
-                    placeholder="Введите код"
-                    :invalid="Boolean(promo.error.value)"
-                    @keydown.enter.prevent="applyPromo"
-                  />
-                  <UiButton
-                    variant="secondary"
-                    :loading="promo.validating.value"
-                    @click="applyPromo"
-                  >
-                    Применить
-                  </UiButton>
-                </div>
-                <div v-else class="promo-applied">
-                  <div>
-                    <code>{{ promo.preview.value.code }}</code>
-                    <span v-if="promo.preview.value.freeDelivery">+ бесплатная доставка</span>
-                  </div>
-                  <button type="button" aria-label="Убрать промокод" @click="removePromo">✕</button>
-                </div>
-              </UiField>
-            </div>
-
-            <dl class="totals">
-              <div>
-                <dt>Товары ({{ cart.count }})</dt>
-                <dd>{{ formatPrice(cart.totalPrice, cart.currency) }}</dd>
-              </div>
-              <div v-if="promo.discount.value" class="is-discount">
-                <dt>Скидка</dt>
-                <dd>−{{ formatPrice(promo.discount.value, cart.currency) }}</dd>
-              </div>
-              <div class="is-total">
-                <dt>К оплате</dt>
-                <dd>{{ formatPrice(total, cart.currency) }}</dd>
-              </div>
-            </dl>
-
-            <p class="note">Стоимость доставки рассчитывается на следующем шаге.</p>
-
-            <UiButton size="lg" block :loading="goingToCheckout" @click="goToCheckout">
-              Оформить заказ
-            </UiButton>
-            <p class="note auth-note">
-              <template v-if="isAuthenticated">
-                Корзина сохранена в аккаунте — она откроется и на другом устройстве.
-              </template>
-              <template v-else>
-                Для оформления заказа понадобится вход — товары в корзине сохранятся.
-              </template>
-            </p>
-            <UiButton variant="ghost" block to="/catalog">Продолжить покупки</UiButton>
-          </div>
-        </aside>
+          <UiButton size="lg" block :loading="goingToCheckout" @click="goToCheckout">
+            Оформить заказ
+          </UiButton>
+          <p class="note auth-note">
+            <template v-if="isAuthenticated">
+              Корзина сохранена в аккаунте — она откроется и на другом устройстве.
+            </template>
+            <template v-else>
+              Для оформления заказа понадобится вход — товары в корзине сохранятся.
+            </template>
+          </p>
+          <UiButton variant="ghost" block to="/catalog">Продолжить покупки</UiButton>
+        </CartOrderSummary>
       </div>
     </ClientOnly>
   </div>
@@ -352,99 +280,6 @@ useHead({
   color: var(--danger);
 }
 
-/* ---- Summary ---- */
-.summary {
-  position: sticky;
-  top: calc(var(--header-height) + var(--space-4));
-}
-
-.summary-card {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-  box-shadow: var(--shadow-sm);
-  gap: var(--space-4);
-}
-
-.summary-card h2 {
-  font-size: var(--text-lg);
-}
-
-.promo-input {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.promo-applied {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--success-soft);
-  border-radius: var(--radius-sm);
-  background: var(--success-soft);
-  gap: var(--space-2);
-}
-
-.promo-applied > div {
-  display: flex;
-  flex-direction: column;
-}
-
-.promo-applied code {
-  color: var(--success-soft-text);
-  font-family: var(--font-mono);
-  font-weight: 700;
-}
-
-.promo-applied span {
-  color: var(--success-soft-text);
-  font-size: var(--text-xs);
-}
-
-.promo-applied button {
-  color: var(--success-soft-text);
-}
-
-.totals {
-  display: flex;
-  flex-direction: column;
-  padding-top: var(--space-4);
-  margin: 0;
-  border-top: 1px solid var(--border-subtle);
-  gap: var(--space-2);
-}
-
-.totals > div {
-  display: flex;
-  justify-content: space-between;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.totals dd {
-  margin: 0;
-  color: var(--text-strong);
-  font-variant-numeric: tabular-nums;
-}
-
-.totals .is-discount,
-.totals .is-discount dd {
-  color: var(--sale);
-  font-weight: 600;
-}
-
-.totals .is-total {
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-strong);
-  font-size: var(--text-lg);
-  font-weight: 800;
-}
-
 .note {
   color: var(--text-subtle);
   font-size: var(--text-xs);
@@ -453,10 +288,6 @@ useHead({
 @media (max-width: 1000px) {
   .layout {
     grid-template-columns: 1fr;
-  }
-
-  .summary {
-    position: static;
   }
 }
 

@@ -28,40 +28,16 @@ const {
 // More specs than the card shows — there's room for them in a row.
 const specs = computed(() => props.product.productSpecs?.slice(0, 4) ?? [])
 const link = computed(() => `/product/${props.product.slug}`)
-const imageFailed = ref(false)
-// NuxtImg renders an <img>, but the template ref points at the component.
-const imageElement = ref<{ $el?: HTMLImageElement } | HTMLImageElement | null>(null)
-onMounted(() => {
-  const ref_ = imageElement.value
-  const element = (ref_ && '$el' in ref_ ? ref_.$el : ref_) as HTMLImageElement | undefined
-  if (element?.complete && !element.naturalWidth) imageFailed.value = true
-})
-watch(image, () => { imageFailed.value = false })
 </script>
 
 <template>
   <article class="product-row">
     <NuxtLink :to="link" class="media" :aria-label="product.name">
-      <NuxtImg
-        v-if="image && !imageFailed"
-        ref="imageElement"
+      <ProductThumb
         :src="image"
         :alt="product.images?.[0]?.alt || product.name"
-        sizes="140px"
         :width="140"
-        :height="140"
-        fit="inside"
-        format="webp"
-        densities="x1 x2"
-        loading="lazy"
-        decoding="async"
-        @error="imageFailed = true"
       />
-      <span v-else class="placeholder" aria-hidden="true">
-        <svg viewBox="0 0 24 24">
-          <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
-        </svg>
-      </span>
       <UiBadge v-if="hasDiscount" tone="sale" size="sm" class="discount">
         −{{ discountPercent }}%
       </UiBadge>
@@ -128,23 +104,21 @@ watch(image, () => { imageFailed.value = false })
           type="button"
           :class="{ 'is-on': isFavourite }"
           :aria-pressed="isFavourite"
+          :aria-label="isFavourite ? 'Убрать из избранного' : 'В избранное'"
           :title="isFavourite ? 'Убрать из избранного' : 'В избранное'"
           @click="toggleWishlist"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20z" :fill="isFavourite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-          </svg>
+          <UiIcon name="heart" :size="17" :filled="isFavourite" />
         </button>
         <button
           type="button"
           :class="{ 'is-on': isComparing }"
           :aria-pressed="isComparing"
+          :aria-label="isComparing ? 'Убрать из сравнения' : 'К сравнению'"
           :title="isComparing ? 'Убрать из сравнения' : 'К сравнению'"
           @click="toggleCompare"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 20V9m6 11V4m6 16v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
+          <UiIcon name="compare" :size="17" :stroke-width="1.8" />
         </button>
       </div>
     </div>
@@ -173,30 +147,6 @@ watch(image, () => { imageFailed.value = false })
   position: relative;
   display: block;
   aspect-ratio: 1;
-}
-
-.media img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
-  mix-blend-mode: var(--image-blend);
-}
-
-.placeholder {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-  color: var(--text-subtle);
-  place-items: center;
-}
-
-.placeholder svg {
-  width: 44px;
-  height: 44px;
 }
 
 .discount {
@@ -316,11 +266,6 @@ watch(image, () => { imageFailed.value = false })
 .row-actions button.is-on {
   border-color: var(--brand);
   color: var(--brand);
-}
-
-.row-actions svg {
-  width: 17px;
-  height: 17px;
 }
 
 /* ---- Responsive ---- */

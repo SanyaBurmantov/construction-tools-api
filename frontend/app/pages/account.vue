@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
 import type { AccountUser, CustomerType } from '~/composables/useAuth'
-import type { Order, OrderStatus } from '~/types/api'
+import type { Order, OrderStatus, Paginated } from '~/types/api'
 // The year matters here: an order history spans them.
 import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
 
@@ -47,6 +47,7 @@ const {
   resendVerification,
   errorMessage,
 } = useAuth()
+const { ensureAuthenticated } = useCheckoutAuth()
 const cart = useCartStore()
 const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
@@ -72,9 +73,9 @@ watch(
 )
 
 /**
- * Section data is fetched lazily, but only once the session is restored:
+ * Section data is fetched lazily, but only once the session is known:
  * watchers run before `onMounted`, so firing a request here on a deep link
- * would hit the API with no Authorization header and get a 401.
+ * would go out before a signed-out visitor is sent to the login screen.
  */
 const booted = ref(false)
 
@@ -98,9 +99,8 @@ const loadError = ref('')
 const summary = ref<Summary | null>(null)
 
 /** Orders still in flight across the whole account, not just this page. */
-const ACTIVE_STATUSES: OrderStatus[] = ['NEW', 'CONFIRMED', 'PROCESSING', 'SHIPPED']
 const activeOrdersCount = computed(() =>
-  ACTIVE_STATUSES.reduce(
+  ORDER_STATUSES.filter(isActiveOrder).reduce(
     (sum, status) => sum + (summary.value?.orders.byStatus[status] ?? 0),
     0
   )
@@ -115,11 +115,7 @@ async function loadSummary() {
 }
 
 onMounted(async () => {
-  await refresh()
-  if (!user.value) {
-    await navigateTo('/login?redirect=/account&reason=account')
-    return
-  }
+  if (!(await ensureAuthenticated('/account', 'account'))) return
   cart.load()
   fillProfileForm()
   await loadSummary()
@@ -140,49 +136,16 @@ const ordersTotal = ref(0)
 const statusFilter = ref<'' | OrderStatus>('')
 const expandedOrder = ref<string>('')
 
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  NEW: 'Новый',
-  CONFIRMED: 'Подтверждён',
-  PROCESSING: 'Собирается',
-  SHIPPED: 'Отправлен',
-  DELIVERED: 'Доставлен',
-  CANCELLED: 'Отменён',
-}
-
-const STATUS_TONE: Record<OrderStatus, 'neutral' | 'info' | 'warning' | 'success' | 'danger'> = {
-  NEW: 'info',
-  CONFIRMED: 'info',
-  PROCESSING: 'warning',
-  SHIPPED: 'warning',
-  DELIVERED: 'success',
-  CANCELLED: 'danger',
-}
-
-const DELIVERY_LABEL: Record<Order['deliveryMethod'], string> = {
-  PICKUP: 'Самовывоз',
-  COURIER: 'Курьер',
-  POST: 'Почта',
-}
-
-const PAYMENT_LABEL: Record<Order['paymentMethod'], string> = {
-  CASH: 'Наличными',
-  CARD: 'Картой',
-  INVOICE: 'По счёту',
-}
-
 /** Orders still in flight — the ones a customer actually watches. */
 const activeOrders = computed(() =>
-  orders.value.filter(order => !['DELIVERED', 'CANCELLED'].includes(order.status))
+  orders.value.filter(order => isActiveOrder(order.status))
 )
 
 async function loadOrders() {
   ordersLoading.value = true
   ordersError.value = ''
   try {
-    const response = await authFetch<{
-      data: Order[]
-      pagination: { page: number, pages: number, total: number }
-    }>('/account/orders', {
+    const response = await authFetch<Paginated<Order>>('/account/orders', {
       params: {
         page: ordersPage.value,
         status: statusFilter.value || undefined,
@@ -427,13 +390,13 @@ async function confirmDelete() {
   }
 }
 
+const statusOptions = orderStatusOptions({ plural: true, withAll: true })
+const customerTypeOptions = (Object.keys(CUSTOMER_TYPE_LABEL) as CustomerType[]).map(value => ({
+  value,
+  label: CUSTOMER_TYPE_LABEL[value],
+}))
 
-const TYPE_LABEL: Record<CustomerType, string> = {
-  INDIVIDUAL: 'Физическое лицо',
-  COMPANY: 'Юридическое лицо',
-}
-
-useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 'noindex,nofollow' })
+useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,nofollow' })
 </script>
 
 <template>
@@ -445,7 +408,7 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
         <h1>Личный кабинет</h1>
         <p v-if="user" class="who">
           {{ user.login }}
-          <UiBadge size="sm">{{ TYPE_LABEL[user.customerType] }}</UiBadge>
+          <UiBadge size="sm">{{ CUSTOMER_TYPE_LABEL[user.customerType] }}</UiBadge>
           <UiBadge v-if="isAdmin" tone="brand" size="sm">Администратор</UiBadge>
         </p>
       </div>
@@ -507,7 +470,7 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
               </div>
               <div>
                 <dt>Тип покупателя</dt>
-                <dd>{{ user ? TYPE_LABEL[user.customerType] : '—' }}</dd>
+                <dd>{{ user ? CUSTOMER_TYPE_LABEL[user.customerType] : '—' }}</dd>
               </div>
               <div v-if="user?.customerType === 'COMPANY'">
                 <dt>Организация</dt>
@@ -550,8 +513,8 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
             <div v-if="summary?.orders.last" class="last-order">
               <div class="last-order-head">
                 <strong>№ {{ summary.orders.last.number }}</strong>
-                <UiBadge :tone="STATUS_TONE[summary.orders.last.status]" size="sm">
-                  {{ STATUS_LABEL[summary.orders.last.status] }}
+                <UiBadge :tone="ORDER_STATUS_TONE[summary.orders.last.status]" size="sm">
+                  {{ ORDER_STATUS_LABEL[summary.orders.last.status] }}
                 </UiBadge>
               </div>
               <p class="muted">{{ formatDateTime(summary.orders.last.createdAt) }}</p>
@@ -588,15 +551,7 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
             v-model="statusFilter"
             size="sm"
             class="status-filter"
-            :options="[
-              { value: '', label: 'Все статусы' },
-              { value: 'NEW', label: 'Новые' },
-              { value: 'CONFIRMED', label: 'Подтверждённые' },
-              { value: 'PROCESSING', label: 'В сборке' },
-              { value: 'SHIPPED', label: 'Отправленные' },
-              { value: 'DELIVERED', label: 'Доставленные' },
-              { value: 'CANCELLED', label: 'Отменённые' }
-            ]"
+            :options="statusOptions"
           />
         </div>
 
@@ -620,8 +575,8 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
             <div class="order-head">
               <div class="order-title">
                 <strong>Заказ № {{ order.number }}</strong>
-                <UiBadge :tone="STATUS_TONE[order.status]" size="sm">
-                  {{ STATUS_LABEL[order.status] }}
+                <UiBadge :tone="ORDER_STATUS_TONE[order.status]" size="sm">
+                  {{ ORDER_STATUS_LABEL[order.status] }}
                 </UiBadge>
               </div>
               <span class="muted">{{ formatDateTime(order.createdAt) }}</span>
@@ -817,10 +772,7 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
               <UiSelect
                 id="acc-type"
                 v-model="profile.customerType"
-                :options="[
-                  { value: 'INDIVIDUAL', label: 'Физическое лицо' },
-                  { value: 'COMPANY', label: 'Юридическое лицо' }
-                ]"
+                :options="customerTypeOptions"
               />
             </UiField>
 
@@ -934,11 +886,17 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
       </section>
     </template>
 
-    <UiModal v-model:open="deleteOpen" title="Удалить аккаунт?" size="sm">
+    <UiConfirm
+      v-model:open="deleteOpen"
+      title="Удалить аккаунт?"
+      confirm-label="Удалить навсегда"
+      :busy="deleting"
+      @confirm="confirmDelete"
+    >
       <UiAlert v-if="deleteError" tone="danger" class="form-error">
         {{ deleteError }}
       </UiAlert>
-      <p class="muted confirm-text">
+      <p class="confirm-text">
         Введите пароль, чтобы подтвердить. Заказы останутся в документах
         магазина, но больше не будут связаны с этим аккаунтом.
       </p>
@@ -950,13 +908,7 @@ useSeoMeta({ title: 'Личный кабинет | Мультитул', robots: 
           autocomplete="current-password"
         />
       </UiField>
-      <template #footer>
-        <UiButton variant="ghost" @click="deleteOpen = false">Отмена</UiButton>
-        <UiButton variant="danger" :loading="deleting" @click="confirmDelete">
-          Удалить навсегда
-        </UiButton>
-      </template>
-    </UiModal>
+    </UiConfirm>
   </div>
 </template>
 

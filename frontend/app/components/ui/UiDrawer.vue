@@ -1,12 +1,6 @@
 <script setup lang="ts">
-/** Side sheet — used for mobile filters and the mobile nav. */
-withDefaults(
-  defineProps<{
-    title?: string
-    side?: 'left' | 'right'
-  }>(),
-  { side: 'left' }
-)
+/** Left-hand sheet — used for mobile filters and the mobile nav. */
+defineProps<{ title?: string }>()
 
 const open = defineModel<boolean>('open', { required: true })
 const panel = ref<HTMLElement | null>(null)
@@ -20,13 +14,12 @@ useModalA11y(open, panel, close)
 
 <template>
   <Teleport to="body">
-    <Transition :name="`drawer-${side}`">
+    <Transition name="drawer">
       <div v-if="open" class="drawer-root">
         <div class="backdrop" @click="close" />
         <aside
           ref="panel"
           class="panel"
-          :class="`side-${side}`"
           role="dialog"
           aria-modal="true"
           :aria-label="title"
@@ -34,9 +27,7 @@ useModalA11y(open, panel, close)
           <header class="panel-header">
             <h2>{{ title }}</h2>
             <button type="button" class="close" aria-label="Закрыть" @click="close">
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              </svg>
+              <UiIcon name="close" :size="18" :stroke-width="1.8" />
             </button>
           </header>
           <div class="panel-body u-scroll u-scroll--fade">
@@ -60,27 +51,20 @@ useModalA11y(open, panel, close)
 
 .backdrop {
   position: absolute;
-  background: rgb(12 17 29 / 55%);
+  background: var(--overlay-backdrop);
   inset: 0;
 }
 
 .panel {
   position: absolute;
   top: 0;
+  left: 0;
   display: flex;
   width: min(380px, 88vw);
   height: 100%;
   flex-direction: column;
   background: var(--surface-card);
   box-shadow: var(--shadow-xl);
-}
-
-.side-left {
-  left: 0;
-}
-
-.side-right {
-  right: 0;
 }
 
 .panel-header {
@@ -108,11 +92,6 @@ useModalA11y(open, panel, close)
   background: var(--surface-active);
 }
 
-.close svg {
-  width: 18px;
-  height: 18px;
-}
-
 .panel-body {
   flex: 1;
   overflow-y: auto;
@@ -126,34 +105,23 @@ useModalA11y(open, panel, close)
   gap: var(--space-3);
 }
 
-.drawer-left-enter-active,
-.drawer-left-leave-active,
-.drawer-right-enter-active,
-.drawer-right-leave-active {
+.drawer-enter-active,
+.drawer-leave-active {
   transition: opacity var(--duration-base) var(--ease-out);
 }
 
-.drawer-left-enter-active .panel,
-.drawer-left-leave-active .panel,
-.drawer-right-enter-active .panel,
-.drawer-right-leave-active .panel {
+.drawer-enter-active .panel,
+.drawer-leave-active .panel {
   transition: transform var(--duration-base) var(--ease-out);
 }
 
-.drawer-left-enter-from,
-.drawer-left-leave-to,
-.drawer-right-enter-from,
-.drawer-right-leave-to {
+.drawer-enter-from,
+.drawer-leave-to {
   opacity: 0;
 }
 
-.drawer-left-enter-from .panel,
-.drawer-left-leave-to .panel {
+.drawer-enter-from .panel,
+.drawer-leave-to .panel {
   transform: translateX(-100%);
-}
-
-.drawer-right-enter-from .panel,
-.drawer-right-leave-to .panel {
-  transform: translateX(100%);
 }
 </style>

@@ -1,4 +1,5 @@
 import { useCartStore } from '~/stores/cart'
+import { readJson, removeStored, writeJson } from '~/utils/safe-storage'
 
 export interface PromoPreview {
   valid: true
@@ -44,7 +45,7 @@ export function usePromoCode() {
       })
       preview.value = result
       code.value = result.code
-      if (import.meta.client) sessionStorage.setItem(STORAGE_KEY, result.code)
+      writeJson(STORAGE_KEY, result.code, 'session')
       return true
     } catch (err) {
       const message = (err as { data?: { message?: string } }).data?.message
@@ -60,18 +61,43 @@ export function usePromoCode() {
     code.value = ''
     preview.value = null
     error.value = ''
-    if (import.meta.client) sessionStorage.removeItem(STORAGE_KEY)
+    removeStored(STORAGE_KEY, 'session')
   }
 
   /** Re-checks a previously applied code — cart totals may have changed. */
   async function restore() {
     if (!import.meta.client || preview.value) return
-    const saved = sessionStorage.getItem(STORAGE_KEY)
-    if (saved && !cart.isEmpty) await validate(saved)
+    const saved = readJson<string>(STORAGE_KEY, 'session')
+    if (typeof saved === 'string' && saved && !cart.isEmpty) await validate(saved)
+  }
+
+  /**
+   * A changed subtotal can invalidate a min-order code, so an applied code is
+   * re-checked on every edit — on the cart and on checkout alike. Scoped to the
+   * calling component, so each screen that shows the code keeps it honest.
+   */
+  function watchCartTotal() {
+    watch(
+      () => cart.totalPrice,
+      async () => {
+        if (preview.value) await validate(code.value)
+      }
+    )
   }
 
   const discount = computed(() => preview.value?.discount ?? 0)
   const freeDelivery = computed(() => preview.value?.freeDelivery ?? false)
 
-  return { code, preview, error, validating, discount, freeDelivery, validate, clear, restore }
+  return {
+    code,
+    preview,
+    error,
+    validating,
+    discount,
+    freeDelivery,
+    validate,
+    clear,
+    restore,
+    watchCartTotal,
+  }
 }

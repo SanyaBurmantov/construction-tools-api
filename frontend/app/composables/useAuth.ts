@@ -48,6 +48,14 @@ const LEGACY_TOKEN_KEY = 'auth-token'
  */
 const SESSION_HINT_KEY = 'auth-session'
 
+/** The `GET /auth/me` in flight, shared by concurrent `refresh()` calls. */
+let refreshing: Promise<AccountUser | null> | null = null
+
+/** Status of an ofetch error, whichever of the two fields it set. */
+function httpStatus(error: unknown) {
+  return (error as { statusCode?: number }).statusCode ?? (error as { status?: number }).status
+}
+
 /**
  * Account session for the storefront and the admin panel.
  *
@@ -136,9 +144,7 @@ export function useAuth() {
     } catch (error) {
       // 401 means the session is gone or expired server-side (the API drops
       // the cookie with it) — forget it instead of retrying a dead session.
-      const status
-        = (error as { statusCode?: number }).statusCode ?? (error as { status?: number }).status
-      if (status === 401) clear()
+      if (httpStatus(error) === 401) clear()
       throw error
     }
   }
@@ -175,8 +181,7 @@ export function useAuth() {
     ready.value = true
   }
 
-  /** Loads the account behind the session cookie. Safe to call repeatedly. */
-  async function refresh() {
+  async function loadSession() {
     forgetLegacyToken()
     if (!mayHaveSession()) {
       user.value = null
@@ -192,6 +197,25 @@ export function useAuth() {
       ready.value = true
     }
     return user.value
+  }
+
+  /**
+   * Loads the account behind the session cookie. Safe to call repeatedly:
+   * concurrent callers (the plugin, a page, a checkout click) share one
+   * `GET /auth/me`. Client-only sharing — on the server a module-level promise
+   * would leak one request's state into another's.
+   */
+  function refresh(): Promise<AccountUser | null> {
+    if (!import.meta.client) return loadSession()
+    refreshing ??= loadSession().finally(() => {
+      refreshing = null
+    })
+    return refreshing
+  }
+
+  /** The session as soon as it is known — asks the server only if nobody has yet. */
+  async function whenReady() {
+    return ready.value ? user.value : refresh()
   }
 
   async function updateProfile(patch: Partial<RegisterPayload>) {
@@ -238,11 +262,16 @@ export function useAuth() {
     ready.value = true
   }
 
-  /** Unwraps the API's error envelope into a plain message. */
+  /**
+   * Unwraps the API's error envelope into a plain message. An HTTP error
+   * without one gets the fallback: ofetch's own message ("[POST] /api/orders:
+   * 500 …") is not something to show a customer.
+   */
   function errorMessage(error: unknown, fallback = 'Что-то пошло не так') {
     const message = (error as { data?: { message?: string | string[] } }).data?.message
     if (Array.isArray(message)) return message.join(', ')
-    return message || (error instanceof Error ? error.message : fallback)
+    if (message) return message
+    return error instanceof Error && httpStatus(error) == null ? error.message : fallback
   }
 
   return {
@@ -255,6 +284,7 @@ export function useAuth() {
     register,
     logout,
     refresh,
+    whenReady,
     updateProfile,
     changePassword,
     logoutEverywhere,

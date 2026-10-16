@@ -1,21 +1,8 @@
 <script setup lang="ts">
-import { company } from '~/data/company'
-
-const config = useRuntimeConfig()
-const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
 const description =
-  'Контакты интернет-магазина Мультитул: телефон, e-mail, адрес магазина и реквизиты продавца.'
+  'Контакты интернет-магазина Gost.by: телефон, e-mail, адрес магазина и реквизиты продавца.'
 
-useSeoMeta({
-  title: 'Контакты | Мультитул',
-  description,
-  ogTitle: 'Контакты | Мультитул',
-  ogDescription: description
-})
-
-useHead({
-  link: [{ rel: 'canonical', href: `${siteUrl}/contacts` }]
-})
+usePageSeo({ title: 'Контакты', description, path: '/contacts' })
 </script>
 
 <template>
@@ -27,50 +14,12 @@ useHead({
       сроки доставки.
     </p>
 
-    <dl class="requisites">
-      <div>
-        <dt>Телефон</dt>
-        <dd><a :href="company.phoneHref">{{ company.phone }}</a></dd>
-      </div>
-      <div>
-        <dt>Viber, Telegram</dt>
-        <dd>
-          {{ company.phone }} —
-          <a :href="company.viberHref">Viber</a>,
-          <a :href="company.telegramHref" target="_blank" rel="noopener">Telegram</a>
-        </dd>
-      </div>
-      <div>
-        <dt>E-mail</dt>
-        <dd><a :href="company.emailHref">{{ company.email }}</a></dd>
-      </div>
-      <div>
-        <dt>Адрес магазина (самовывоз)</dt>
-        <dd>{{ company.storeAddress }}</dd>
-      </div>
-      <div>
-        <dt>Режим работы</dt>
-        <dd>{{ company.workingHours }}</dd>
-      </div>
-    </dl>
+    <StorefrontCompanyRequisites variant="contacts" />
 
     <h2>Реквизиты продавца</h2>
-    <dl class="requisites">
-      <div>
-        <dt>Наименование</dt>
-        <dd>{{ company.name }}</dd>
-      </div>
-      <div>
-        <dt>УНП</dt>
-        <dd>{{ company.unp }}</dd>
-      </div>
-      <div>
-        <dt>Юридический адрес</dt>
-        <dd>{{ company.legalAddress }}</dd>
-      </div>
-    </dl>
+    <StorefrontCompanyRequisites variant="legal" />
 
-    <p style="margin-top: 16px;">
+    <p class="legal-note">
       Условия покупки — в <NuxtLink to="/usloviya">условиях продажи</NuxtLink>,
       порядок работы с данными — в
       <NuxtLink to="/privacy">политике обработки персональных данных</NuxtLink>.
@@ -78,6 +27,3 @@ useHead({
   </section>
 </template>
 
-<style scoped lang="scss">
-@use '@/assets/scss/legal-page.scss' as *;
-</style>

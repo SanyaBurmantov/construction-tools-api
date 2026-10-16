@@ -30,7 +30,8 @@ const missing = computed(() =>
 code {
   padding: 1px 5px;
   border-radius: var(--radius-xs);
-  background: rgb(0 0 0 / 8%);
+  /* A tint of the alert's own text colour, so it reads on any tone. */
+  background: color-mix(in srgb, currentcolor 10%, transparent);
   font-family: var(--font-mono);
   font-size: 0.9em;
 }

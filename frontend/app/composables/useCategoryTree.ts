@@ -62,18 +62,21 @@ function slimTree(nodes: ApiCategoryNode[]): CategoryNode[] {
 }
 
 function fetchTree(depth: number) {
-  const config = useRuntimeConfig()
-  const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
-  // A failed tree must not fail the page: every surface that uses it is
-  // navigation around content that renders without it.
+  const { apiBase } = useSite()
   return () => $fetch<ApiCategoryNode[]>(`${apiBase}/categories/tree`, { params: { depth } })
     .then(slimTree)
-    .catch(() => [] as CategoryNode[])
 }
 
 /** The roots, SSR-rendered and shared by header, home and catalogue. */
 export function useCategoryTree() {
-  return useAsyncData<CategoryNode[]>('catalog-tree', fetchTree(1), { default: () => [] })
+  const fetchRoots = fetchTree(1)
+  // A failed tree must not fail the page: every surface that uses it is
+  // navigation around content that renders without it.
+  return useAsyncData<CategoryNode[]>(
+    'catalog-tree',
+    () => fetchRoots().catch(() => [] as CategoryNode[]),
+    { default: () => [] }
+  )
 }
 
 /**
@@ -82,7 +85,9 @@ export function useCategoryTree() {
  * once (later calls are no-ops, the key keeps it across navigations). The
  * header calls it when the browser goes idle after hydration and again on any
  * sign of intent, so the menu is normally complete before it is opened; until
- * then `tree` falls back to the roots.
+ * then `tree` falls back to the roots. A failed fetch is left to reject, so
+ * `status` becomes 'error' and the next `load()` retries it; the menu keeps
+ * showing the roots meanwhile.
  */
 export function useCategoryMenu() {
   const { data: roots } = useNuxtData<CategoryNode[]>('catalog-tree')

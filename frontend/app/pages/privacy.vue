@@ -1,21 +1,11 @@
 <script setup lang="ts">
 import { company } from '~/data/company'
 
-const config = useRuntimeConfig()
-const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
+const { siteUrl } = useSite()
 const description =
-  'Политика обработки персональных данных интернет-магазина Мультитул: какие данные обрабатываются, для чего, сколько хранятся и как реализовать свои права.'
+  'Политика обработки персональных данных интернет-магазина Gost.by: какие данные обрабатываются, для чего, сколько хранятся и как реализовать свои права.'
 
-useSeoMeta({
-  title: 'Политика обработки персональных данных | Мультитул',
-  description,
-  ogTitle: 'Политика обработки персональных данных | Мультитул',
-  ogDescription: description
-})
-
-useHead({
-  link: [{ rel: 'canonical', href: `${siteUrl}/privacy` }]
-})
+usePageSeo({ title: 'Политика обработки персональных данных', description, path: '/privacy' })
 </script>
 
 <!--
@@ -298,6 +288,3 @@ useHead({
   </section>
 </template>
 
-<style scoped lang="scss">
-@use '@/assets/scss/legal-page.scss' as *;
-</style>

@@ -1,17 +1,26 @@
-export function useFormatPrice() {
-  function normalizeCurrency(currency?: string | null) {
-    const value = currency?.trim().toUpperCase()
-    return value && /^[A-Z]{3}$/.test(value) ? value : 'BYN'
-  }
+/** `Intl.NumberFormat` is costly to build and was built on every price render. */
+const formatters = new Map<string, Intl.NumberFormat>()
 
-  function formatPrice(value?: number | null, currency?: string | null) {
-    if (value === null || value === undefined) return 'Цена по запросу'
-    return new Intl.NumberFormat('ru-BY', {
+export function normalizeCurrency(currency?: string | null) {
+  const value = currency?.trim().toUpperCase()
+  return value && /^[A-Z]{3}$/.test(value) ? value : 'BYN'
+}
+
+export function formatPrice(value?: number | null, currency?: string | null) {
+  if (value === null || value === undefined) return 'Цена по запросу'
+  const code = normalizeCurrency(currency)
+  let formatter = formatters.get(code)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('ru-BY', {
       style: 'currency',
-      currency: normalizeCurrency(currency),
+      currency: code,
       maximumFractionDigits: 2,
-    }).format(value)
+    })
+    formatters.set(code, formatter)
   }
+  return formatter.format(value)
+}
 
+export function useFormatPrice() {
   return { formatPrice, normalizeCurrency }
 }
