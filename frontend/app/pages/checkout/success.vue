@@ -1,28 +1,34 @@
 <script setup lang="ts">
-interface OrderItem {
-  id: string
-  productName: string
-  productSlug: string
-  productSku: string | null
-  productImage: string | null
-  unitPrice: number
-  quantity: number
-  lineTotal: number
-}
+import type { Order, OrderItem } from '~/types/api'
 
-interface OrderConfirmation {
-  number: number
-  status: string
-  currency: string
-  itemsTotal: number
-  deliveryCost: number
-  total: number
-  deliveryMethod: string
-  deliveryAddress: string | null
-  paymentMethod: string
-  customerName: string
-  createdAt: string
-  items: OrderItem[]
+/** What the public `GET /orders/:id` projects — no contact details beyond the name. */
+type OrderConfirmation = Pick<
+  Order,
+  | 'number'
+  | 'status'
+  | 'currency'
+  | 'itemsTotal'
+  | 'deliveryCost'
+  | 'total'
+  | 'deliveryMethod'
+  | 'deliveryAddress'
+  | 'paymentMethod'
+  | 'customerName'
+  | 'createdAt'
+> & {
+  items: Array<
+    Pick<
+      OrderItem,
+      | 'id'
+      | 'productName'
+      | 'productSlug'
+      | 'productSku'
+      | 'productImage'
+      | 'unitPrice'
+      | 'quantity'
+      | 'lineTotal'
+    >
+  >
 }
 
 const route = useRoute()
@@ -36,17 +42,6 @@ const orderId = computed(() => String(route.query.id || ''))
 const order = ref<OrderConfirmation | null>(null)
 const pending = ref(true)
 const failed = ref(false)
-
-const deliveryLabels: Record<string, string> = {
-  PICKUP: 'Самовывоз',
-  COURIER: 'Курьер',
-  POST: 'Почта',
-}
-const paymentLabels: Record<string, string> = {
-  CASH: 'Наличными',
-  CARD: 'Картой',
-  INVOICE: 'Счёт (для юр. лиц)',
-}
 
 async function loadOrder() {
   if (!orderId.value) {
@@ -68,7 +63,7 @@ async function loadOrder() {
 onMounted(loadOrder)
 
 useHead({
-  title: 'Заказ оформлен | Мультитул',
+  title: 'Заказ оформлен | Gost.by',
   meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>
@@ -106,19 +101,19 @@ useHead({
           <div><dt>Получатель</dt><dd>{{ order.customerName }}</dd></div>
           <div>
             <dt>Доставка</dt>
-            <dd>{{ deliveryLabels[order.deliveryMethod] || order.deliveryMethod }}<template v-if="order.deliveryAddress"> · {{ order.deliveryAddress }}</template></dd>
+            <dd>{{ DELIVERY_LABEL[order.deliveryMethod] }}<template v-if="order.deliveryAddress"> · {{ order.deliveryAddress }}</template></dd>
           </div>
-          <div><dt>Оплата</dt><dd>{{ paymentLabels[order.paymentMethod] || order.paymentMethod }}</dd></div>
+          <div><dt>Оплата</dt><dd>{{ PAYMENT_LABEL[order.paymentMethod] }}</dd></div>
           <div><dt>Товары</dt><dd>{{ formatPrice(order.itemsTotal, order.currency) }}</dd></div>
-          <div><dt>Доставка</dt><dd>{{ order.deliveryCost ? formatPrice(order.deliveryCost, order.currency) : 'бесплатно' }}</dd></div>
+          <div><dt>Стоимость доставки</dt><dd>{{ order.deliveryCost ? formatPrice(order.deliveryCost, order.currency) : 'бесплатно' }}</dd></div>
           <div class="total"><dt>Итого</dt><dd>{{ formatPrice(order.total, order.currency) }}</dd></div>
         </dl>
 
         <div class="actions">
-          <NuxtLink to="/catalog" class="primary">Продолжить покупки</NuxtLink>
-          <NuxtLink v-if="isAuthenticated" to="/account?tab=orders" class="secondary">
+          <UiButton to="/catalog" size="lg">Продолжить покупки</UiButton>
+          <UiButton v-if="isAuthenticated" to="/account?tab=orders" size="lg" variant="secondary">
             Мои заказы
-          </NuxtLink>
+          </UiButton>
         </div>
       </div>
 
@@ -126,7 +121,7 @@ useHead({
         <div class="mark">✓</div>
         <h1>Спасибо за заказ!</h1>
         <p class="sub">{{ failed && orderId ? 'Не удалось загрузить детали заказа, но он принят. Мы свяжемся с вами для подтверждения.' : 'Ваш заказ принят. Мы свяжемся с вами для подтверждения.' }}</p>
-        <NuxtLink to="/catalog" class="primary">Продолжить покупки</NuxtLink>
+        <UiButton to="/catalog" size="lg">Продолжить покупки</UiButton>
       </div>
     </ClientOnly>
   </section>
@@ -148,7 +143,7 @@ useHead({
   gap: 22px;
   border: 1px solid var(--border-subtle);
   border-radius: 24px;
-  background: white;
+  background: var(--surface-card);
   box-shadow: var(--shadow-sm);
   padding: clamp(24px, 4vw, 40px);
 
@@ -180,8 +175,8 @@ useHead({
   height: 56px;
   place-items: center;
   border-radius: 999px;
-  background: #dcfce7;
-  color: #16a34a;
+  background: var(--success-soft);
+  color: var(--success);
   font-size: 28px;
   font-weight: 900;
 }
@@ -210,7 +205,7 @@ useHead({
   place-items: center;
   overflow: hidden;
   border-radius: 12px;
-  background: #f8fafc;
+  background: var(--surface-sunken);
 
   img {
     width: 100%;
@@ -232,7 +227,7 @@ useHead({
 }
 
 .item-name {
-  color: #101828;
+  color: var(--text-strong);
   font-weight: 800;
   text-decoration: none;
 
@@ -276,7 +271,7 @@ useHead({
     margin: 0;
     font-weight: 700;
     text-align: right;
-    color: #101828;
+    color: var(--text-strong);
   }
 
   .total {
@@ -291,36 +286,9 @@ useHead({
   }
 }
 
-.primary {
-  display: inline-flex;
-  justify-content: center;
-  justify-self: start;
-  border-radius: 12px;
-  background: var(--brand);
-  color: white;
-  font-weight: 800;
-  padding: 13px 20px;
-  text-decoration: none;
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-}
-
-.secondary {
-  display: inline-flex;
-  justify-content: center;
-  padding: 13px 20px;
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
-  color: var(--text-strong);
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.secondary:hover {
-  border-color: var(--border-strong);
 }
 </style>

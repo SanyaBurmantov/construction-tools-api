@@ -76,6 +76,6 @@ withDefaults(
 
 .tone-sale {
   background: var(--sale);
-  color: #fff;
+  color: var(--text-inverse);
 }
 </style>

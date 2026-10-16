@@ -25,9 +25,35 @@ const IPX_TIMEOUT_MS = 6000
  * page, filter change) skip straight to the direct URL instead of each
  * waiting out the timeout again. Client-only state: on the server nothing
  * fails, and at hydration the set is still empty, so SSR and the first client
- * render agree.
+ * render agree. A plain Set: it is only read when a card picks its first
+ * stage, never rendered, so reactivity would buy nothing.
  */
-const brokenIpxHosts = reactive(new Set<string>())
+const brokenIpxHosts = new Set<string>()
+
+/**
+ * One IntersectionObserver for every card instead of one per card — a 24-card
+ * grid used to create 24. Each observed image maps to its card's callback.
+ */
+let sharedObserver: IntersectionObserver | undefined
+const onVisible = new WeakMap<Element, () => void>()
+
+function observeOnce(img: Element, callback: () => void) {
+  sharedObserver ??= new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      const cb = onVisible.get(entry.target)
+      unobserve(entry.target)
+      cb?.()
+    }
+  })
+  onVisible.set(img, callback)
+  sharedObserver.observe(img)
+}
+
+function unobserve(img: Element) {
+  onVisible.delete(img)
+  sharedObserver?.unobserve(img)
+}
 
 function hostOf(url: string | null | undefined): string | null {
   if (!url) return null
@@ -56,12 +82,12 @@ export function useResilientImage(src: MaybeRefOrGetter<string | null | undefine
   }
 
   let timer: ReturnType<typeof setTimeout> | undefined
-  let observer: IntersectionObserver | undefined
+  let observed: Element | undefined
   const stopWatching = () => {
     clearTimeout(timer)
     timer = undefined
-    observer?.disconnect()
-    observer = undefined
+    if (observed) unobserve(observed)
+    observed = undefined
   }
 
   function fail() {
@@ -91,16 +117,14 @@ export function useResilientImage(src: MaybeRefOrGetter<string | null | undefine
       return
     }
     if (typeof IntersectionObserver === 'undefined') return
-    observer = new IntersectionObserver((entries) => {
-      if (!entries.some(entry => entry.isIntersecting)) return
-      observer?.disconnect()
-      observer = undefined
+    observed = img
+    observeOnce(img, () => {
+      observed = undefined
       timer = setTimeout(() => {
         const current = element()
         if (stage.value === 'ipx' && !(current?.complete && current.naturalWidth)) fail()
       }, IPX_TIMEOUT_MS)
     })
-    observer.observe(img)
   }
 
   onMounted(watchIpx)

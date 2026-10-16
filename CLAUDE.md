@@ -117,8 +117,10 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   everything else → `frontend:3000`. Client calls use base `/api`
   (`NUXT_PUBLIC_API_BASE`); SSR calls go through the Nuxt server route
   `frontend/server/api/[...path].ts` → `API_BASE_SERVER` (`http://backend:8000`).
-- **Frontend ISR**: `nuxt.config.ts` `routeRules` — home/catalog `isr: 300`,
-  product/brand `isr: 900`, admin `ssr: false`. Note that Nitro's cache key is a
+- **Frontend ISR**: `nuxt.config.ts` `routeRules` — home `swr: 60`, catalog
+  `swr: 30`, product/brand `swr: 900`, `/sales` `swr: 300`, the info pages
+  (`/delivery`, `/about`, `/contacts`, `/garantiya`, `/usloviya`, `/privacy`)
+  `swr: 3600`, admin `ssr: false`. Note that Nitro's cache key is a
   hash of the **full URL including the query string**, so every filter
   combination on `/catalog` and every `?search=` on `/brand` is its own cache
   entry. Cached HTML is served cheaply; runtime
@@ -407,14 +409,25 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   edit, not a new opinion). Honeypot and duplicate-text still apply to
   everyone.
 - **Frontend design system**: tokens in `app/assets/scss/tokens.scss` (semantic
-  layer + dark mode); primitives in `app/components/ui/*` (`UiButton`, `UiInput`,
+  layer; light only — the never-enabled dark theme was removed); primitives in `app/components/ui/*` (`UiButton`, `UiInput`,
   `UiModal`, `UiTable`, `UiPrice`, `UiRating`, …). Components read tokens, never
   raw hex. **It is the only UI layer** — Vuetify, Nuxt UI and Tailwind were all
   installed and all unused (zero `<v-…>`, one `<UApp>` wrapper, no utility
   classes) once these 24 primitives took over; removing the three cut the build
   from 247 s to 140 s and the client bundle from 7.5 MB to 1.3 MB. Don't add a
   component library back — add a primitive here. `app/assets/scss/main.scss` keeps aliases for the pre-token variable
-  names. Toasts: `useToast()` + the single `<UiToaster>` in the layout.
+  names. Toasts: `useAppToast()` + the single `<UiToaster>` in the layout.
+  Icons: `<UiIcon name>` (one path map) — don't paste inline `<svg>`.
+  `UiInput type="password"` renders its own show/hide toggle.
+  Shared vocabulary lives in `app/utils/` — `order-labels.ts` (order status /
+  delivery / payment / customer type labels, `nextOrderStatuses`),
+  `product-status.ts`, `slugify.ts` (same transliteration as the backend),
+  `safe-storage.ts` (storage that never throws), `form-values.ts`
+  (`numOrNull`/`textOrNull`: on an update send `null` for a cleared field —
+  `undefined` is dropped from the JSON and the backend reads it as "no
+  change"; `toLocalInput`/`fromLocalInput` for `datetime-local`),
+  `category-options.ts` (tree-ordered selects). `useSite()` gives `siteUrl` /
+  `apiBase`, `usePageSeo()` the title/og/canonical set.
 - **Dates are formatted in one place**, `app/utils/format-datetime.ts`
   (`formatDate`, `formatDay`, `formatDateTime`, `…WithYear`, `…WithSeconds`).
   Six screens each built their own `Intl.DateTimeFormat('ru-BY', …)`. A screen
@@ -447,13 +460,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   segment, and children must sit at the root to list `/product/…`). All are
   cut from one in-process snapshot (`server/utils/sitemap.ts`, 1 h): a failed
   refresh keeps the previous snapshot, and with none they answer 503 instead
-  of a sitemap listing only the seven static URLs. Nitro never caches a 4xx/5xx, so the
+  of a sitemap listing only the static URLs. Nitro never caches a 4xx/5xx, so the
   outage page cannot outlive the outage. On the client the catalogue keeps its
   inline alert instead — the page is already rendered and a blip must not throw
   the visitor out of it.
 - **Guest lists**: cart, wishlist (`stores/wishlist.ts`) and comparison
-  (`stores/compare.ts`, max 4 items) are all localStorage-backed and rehydrated
-  by `plugins/cart.client.ts`. Pages `/favorites` and `/compare` are `ssr: false`.
+  (`stores/compare.ts`, max 4 items) are all localStorage-backed and loaded on
+  `onNuxtReady` by the two sync plugins (`plugins/cart-sync.client.ts`,
+  `plugins/lists-sync.client.ts`, both built on `utils/server-mirror.ts`). Pages `/favorites` and `/compare` are `ssr: false`.
   For a signed-in account both lists are backed up server-side exactly like the
   cart (`UserListItem` + `lists/`, one table with a `kind` because the two
   features differ only in the cap): merge on sign-in, replace on change,
@@ -464,6 +478,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   the sidebar. The gate is a **login + password form** for an ADMIN account
   (`useAuth().login()`, then `GET /admin/stats`), not the old `ADMIN_TOKEN`
   field; a signed-in non-admin gets the "нет прав" screen instead of the form.
+  Admin pages share one skeleton: `<AdminPageHead>` + `.admin-page` /
+  `.admin-form*` (`assets/scss/admin.scss`), `useAdminList()` for paged lists
+  (page changes only through `setPage()`, so a filter change loads once and a
+  stale answer is dropped), `useAdminAction().run()` for
+  request → toast → reload, `<UiConfirm>` for confirmations, `<UiTable>` for
+  tables. `/admin/stats` is shared by the sidebar and the dashboard through
+  `useAdminStats()`.
   Admin pages just set `definePageMeta({ layout: 'admin' })` and can assume the
   session is valid; do **not** re-add per-page token forms. `useAdminApi()`
   rides on the session cookie (same-origin, plus `X-Requested-With`) and

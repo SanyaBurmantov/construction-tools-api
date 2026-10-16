@@ -50,7 +50,7 @@ const previewing = ref(false)
 watch(open, async (isOpen) => {
   if (!isOpen) return
   Object.assign(form, blankForm())
-  form.name = `${props.entity === 'PRODUCT' ? 'Товары' : 'Категории'} · ${new Date().toLocaleDateString('ru-BY')}`
+  form.name = `${props.entity === 'PRODUCT' ? 'Товары' : 'Категории'} · ${formatDate(new Date().toISOString())}`
   form.model = props.status?.defaultModel ?? ''
   formError.value = ''
   preview.value = null
@@ -139,6 +139,11 @@ async function submit() {
         body: { name: form.promptName.trim(), entity: props.entity, text: form.prompt },
       })
       promptId = saved.id
+      // Saved once: if the task request below fails, the retry must reuse
+      // this prompt instead of saving a second copy of it.
+      prompts.value = [...prompts.value, saved]
+      form.promptId = saved.id
+      form.savePrompt = false
     }
     const task = await adminFetch<AiTask>('/ai/tasks', {
       method: 'POST',
@@ -150,7 +155,7 @@ async function submit() {
         prompt: form.prompt,
         model: form.model || undefined,
         batchSize: Number(form.batchSize) || 5,
-        scheduledAt: form.runAt === 'later' ? new Date(form.scheduledAt).toISOString() : undefined,
+        scheduledAt: form.runAt === 'later' ? fromLocalInput(form.scheduledAt) ?? undefined : undefined,
         ...(props.selection.mode === 'ids'
           ? { ids: props.selection.ids }
           : { filter: props.selection.filter }),

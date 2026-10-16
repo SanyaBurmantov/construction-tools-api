@@ -37,8 +37,6 @@ const specs = computed(() =>
   props.compact ? [] : (props.product.productSpecs?.slice(0, 3) ?? [])
 )
 const link = computed(() => `/product/${props.product.slug}`)
-// IPX first, then the supplier's own URL, then the placeholder — see the composable.
-const { stage: imageStage, imageElement, onLoad: onImageLoad, onError: onImageError } = useResilientImage(image)
 </script>
 
 <template>
@@ -48,44 +46,12 @@ const { stage: imageStage, imageElement, onLoad: onImageLoad, onError: onImageEr
            the photo so the card layout is identical for everyone. -->
       <AdminProductSourceNote :product-id="product.id" class="source-badge" />
       <NuxtLink :to="link" class="image-link" :aria-label="product.name">
-        <!-- width/height give the <img> an intrinsic size (no layout shift
-             before CSS); `fit="inside"` makes IPX scale *within* that box
-             instead of cropping to it, and also caps tall photos that a bare
-             `w_300` used to deliver at full height. -->
-        <NuxtImg
-          v-if="image && imageStage === 'ipx'"
-          ref="imageElement"
+        <ProductThumb
           :src="image"
           :alt="product.images?.[0]?.alt || product.name"
-          sizes="300px"
           :width="300"
-          :height="300"
-          fit="inside"
-          format="webp"
-          densities="x1 x2"
-          :loading="priority ? 'eager' : 'lazy'"
-          :fetchpriority="priority ? 'high' : 'auto'"
-          :preload="priority || undefined"
-          decoding="async"
-          @load="onImageLoad"
-          @error="onImageError"
+          :priority="priority"
         />
-        <!-- IPX could not fetch it: the browser can still load the original. -->
-        <img
-          v-else-if="image && imageStage === 'direct'"
-          :src="image"
-          :alt="product.images?.[0]?.alt || product.name"
-          width="300"
-          height="300"
-          :loading="priority ? 'eager' : 'lazy'"
-          decoding="async"
-          @error="onImageError"
-        >
-        <span v-else class="placeholder" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
-          </svg>
-        </span>
       </NuxtLink>
 
       <div class="flags">
@@ -102,9 +68,7 @@ const { stage: imageStage, imageElement, onLoad: onImageLoad, onError: onImageEr
           :title="isFavourite ? 'Убрать из избранного' : 'В избранное'"
           @click="toggleWishlist"
         >
-          <svg viewBox="0 0 24 24">
-            <path d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20z" :fill="isFavourite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-          </svg>
+          <UiIcon name="heart" :size="18" :filled="isFavourite" />
         </button>
         <button
           type="button"
@@ -115,9 +79,7 @@ const { stage: imageStage, imageElement, onLoad: onImageLoad, onError: onImageEr
           :title="isComparing ? 'Убрать из сравнения' : 'К сравнению'"
           @click="toggleCompare"
         >
-          <svg viewBox="0 0 24 24">
-            <path d="M6 20V9m6 11V4m6 16v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
+          <UiIcon name="compare" :size="18" :stroke-width="1.8" />
         </button>
       </div>
     </div>
@@ -226,31 +188,6 @@ const { stage: imageStage, imageElement, onLoad: onImageLoad, onError: onImageEr
   padding: var(--space-4);
 }
 
-.image-link img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
-  mix-blend-mode: var(--image-blend);
-}
-
-.placeholder {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-  color: var(--text-subtle);
-  place-items: center;
-}
-
-.placeholder svg {
-  width: 40%;
-  max-width: 56px;
-  height: auto;
-}
-
 .flags {
   position: absolute;
   top: var(--space-3);
@@ -299,19 +236,10 @@ const { stage: imageStage, imageElement, onLoad: onImageLoad, onError: onImageEr
     border-color var(--duration-fast) var(--ease-out);
 }
 
-.icon-action:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
+.icon-action:hover,
 .icon-action.is-on {
   border-color: var(--brand);
   color: var(--brand);
-}
-
-.icon-action svg {
-  width: 18px;
-  height: 18px;
 }
 
 /* ---- Body ---- */

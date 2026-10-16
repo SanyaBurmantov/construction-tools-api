@@ -181,3 +181,119 @@ export interface DuplicateCategoriesResponse {
   groups: DuplicateCategoryGroup[]
   totals: { groups: number, redundantCategories: number }
 }
+
+/** `GET /admin/stats` — the dashboard figures; the sidebar badges read the same answer. */
+export interface AdminStats {
+  products: number
+  publishedProducts: number
+  categories: number
+  brands: number
+  sources: number
+  orders: number
+  newOrders: number
+  pendingReviews: number
+  activePromoCodes: number
+  priceReviewNeeded: number
+  productsWithoutImages: number
+  users: number
+  admins: number
+  /** Server errors of the last 24h — the badge on «Ошибки». */
+  recentErrors: number
+  revenueTotal: number
+  averageOrder: number
+  ordersByStatus: Partial<Record<OrderStatus, number>>
+  recentOrders: Array<{
+    id: string
+    number: number
+    status: OrderStatus
+    customerName: string
+    total: number
+    currency: string
+    createdAt: string
+  }>
+  salesSeries: Array<{ date: string, orders: number, revenue: number }>
+  topProducts: Array<{
+    productId: string | null
+    name: string
+    slug: string
+    quantity: number
+    revenue: number
+  }>
+}
+
+/** An account as `/admin/users` lists it: the profile plus its live session count. */
+export type AdminUser = import('~/composables/useAuth').AccountUser & {
+  _count?: { sessions: number }
+}
+
+/* ---- Storefront catalogue (CatalogView, catalogFilters, product, compare) ---- */
+
+/** A brand / supplier row as a catalogue facet lists it. */
+export interface FacetItem {
+  id: string
+  name: string
+  slug?: string
+  /** Suppliers only: the `?source=` value. */
+  code?: string
+}
+
+/** A specification facet: its values with filter-aware counts. */
+export interface SpecFacet {
+  id: string
+  name: string
+  unit?: string | null
+  group?: string | null
+  values: Array<{ value: string, count: number }>
+}
+
+/** `GET /products` with the facets the catalogue page reads. */
+export interface CatalogProductsResponse extends ProductsResponse {
+  facets?: {
+    specs?: SpecFacet[]
+    /** Category id → products under it; categories that match nothing are absent. */
+    categories?: Record<string, number>
+    brands?: Record<string, number>
+    priceRange?: { min: number, max: number } | null
+  }
+}
+
+/** `GET /categories/:slug` — a category page with its ancestors and children. */
+export interface CategoryPage {
+  id: string
+  name: string
+  slug: string
+  description?: string | null
+  seoTitle?: string | null
+  seoDescription?: string | null
+  /** false for an admin-hidden branch: its URL works, but it is not indexed */
+  isVisible?: boolean
+  productCount: number
+  ancestors: Array<{ id: string, name: string, slug: string }>
+  children: Array<{
+    id: string
+    name: string
+    slug: string
+    image?: string | null
+    productCount: number
+  }>
+}
+
+/** `GET /products/:slug` — the product page and the comparison table. */
+export type ProductDetail = CatalogProduct & {
+  model?: string | null
+  descriptionShort?: string | null
+  descriptionFull?: string | null
+  images?: Array<{ id?: string, url: string, alt?: string | null }>
+}
+
+/** A published review as `GET /products/:slug/reviews` returns it (no account link). */
+export type Review = {
+  id: string
+  authorName: string
+  rating: number
+  title: string | null
+  text: string
+  /** The author had a non-cancelled order with this product when they wrote it. */
+  isVerifiedPurchase: boolean
+  createdAt: string
+}

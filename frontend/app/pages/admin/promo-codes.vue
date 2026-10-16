@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatDate } from '~/utils/format-datetime'
+
 definePageMeta({ layout: 'admin' })
 
 type PromoCode = {
@@ -21,7 +23,7 @@ type PromoCode = {
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
-const { formatPrice } = useFormatPrice()
+const { run, busy } = useAdminAction()
 
 const codes = ref<PromoCode[]>([])
 const loading = ref(false)
@@ -64,9 +66,6 @@ const blankForm = () => ({
 
 const form = reactive(blankForm())
 
-/** `datetime-local` wants `YYYY-MM-DDTHH:mm`, the API returns ISO. */
-const toLocalInput = (iso: string | null) => (iso ? iso.slice(0, 16) : '')
-
 function openCreate() {
   editing.value = null
   Object.assign(form, blankForm())
@@ -94,21 +93,17 @@ function openEdit(code: PromoCode) {
   editorOpen.value = true
 }
 
-function toNumber(value: number | null) {
-  return value === null || Number.isNaN(value) ? undefined : Number(value)
-}
-
 async function save() {
   formError.value = ''
   if (!form.code.trim()) {
     formError.value = 'Укажите код'
     return
   }
-  if (form.value == null || form.value < 0) {
+  if (numOrNull(form.value) === null || Number(form.value) < 0) {
     formError.value = 'Укажите размер скидки'
     return
   }
-  if (form.type === 'PERCENT' && form.value > 100) {
+  if (form.type === 'PERCENT' && Number(form.value) > 100) {
     formError.value = 'Процент скидки не может превышать 100'
     return
   }
@@ -117,15 +112,17 @@ async function save() {
     return
   }
 
+  // Blanks go as `null`, not dropped: the backend reads an absent field as
+  // "keep", so a cleared limit or deadline used to survive every save.
   const body = {
     code: form.code.trim(),
-    description: form.description.trim() || undefined,
+    description: textOrNull(form.description),
     type: form.type,
     value: Number(form.value),
-    minOrderTotal: toNumber(form.minOrderTotal),
-    maxUses: toNumber(form.maxUses),
-    startsAt: form.startsAt ? new Date(form.startsAt).toISOString() : undefined,
-    endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : undefined,
+    minOrderTotal: numOrNull(form.minOrderTotal),
+    maxUses: numOrNull(form.maxUses),
+    startsAt: fromLocalInput(form.startsAt),
+    endsAt: fromLocalInput(form.endsAt),
     isActive: form.isActive,
     freeDelivery: form.freeDelivery,
     isPublic: form.isPublic,
@@ -149,43 +146,30 @@ async function save() {
   }
 }
 
-async function toggleActive(code: PromoCode) {
-  try {
-    await adminFetch(`/promo-codes/${code.id}`, {
-      method: 'PATCH',
-      body: { isActive: !code.isActive },
-    })
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить статус'))
-  }
+function toggleActive(code: PromoCode) {
+  return run(
+    () => adminFetch(`/promo-codes/${code.id}`, { method: 'PATCH', body: { isActive: !code.isActive } }),
+    { key: code.id, error: 'Не удалось изменить статус', after: load },
+  )
 }
 
 const deleting = ref<PromoCode | null>(null)
-const deletingBusy = ref(false)
 
 async function confirmDelete() {
-  if (!deleting.value) return
-  deletingBusy.value = true
-  try {
-    await adminFetch(`/promo-codes/${deleting.value.id}`, { method: 'DELETE' })
-    toast.success('Промокод удалён')
-    deleting.value = null
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить промокод'))
-  } finally {
-    deletingBusy.value = false
-  }
+  const code = deleting.value
+  if (!code) return
+  await run(() => adminFetch(`/promo-codes/${code.id}`, { method: 'DELETE' }), {
+    key: 'delete',
+    error: 'Не удалось удалить промокод',
+    success: 'Промокод удалён',
+    after: () => {
+      deleting.value = null
+      return load()
+    },
+  })
 }
 
 /* ---- Display ----------------------------------------------------------- */
-const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-})
-const formatDate = (iso: string | null) => (iso ? dateFormatter.format(new Date(iso)) : '—')
 
 function discountLabel(code: PromoCode) {
   return code.type === 'PERCENT' ? `${code.value}%` : formatPrice(code.value, 'BYN')
@@ -203,14 +187,10 @@ function inactiveReason(code: PromoCode) {
 </script>
 
 <template>
-  <div class="admin-promo">
-    <header class="head">
-      <div>
-        <h1>Промокоды</h1>
-        <p>Скидка пересчитывается на сервере при оформлении заказа</p>
-      </div>
+  <div class="admin-page">
+    <AdminPageHead title="Промокоды" description="Скидка пересчитывается на сервере при оформлении заказа">
       <UiButton @click="openCreate">Создать промокод</UiButton>
-    </header>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -264,7 +244,7 @@ function inactiveReason(code: PromoCode) {
 
         <div class="promo-actions">
           <UiButton size="sm" variant="ghost" @click="openEdit(code)">Изменить</UiButton>
-          <UiButton size="sm" variant="ghost" @click="toggleActive(code)">
+          <UiButton size="sm" variant="ghost" :loading="busy === code.id" @click="toggleActive(code)">
             {{ code.isActive ? 'Выключить' : 'Включить' }}
           </UiButton>
           <UiButton size="sm" variant="ghost" @click="deleting = code">Удалить</UiButton>
@@ -279,7 +259,7 @@ function inactiveReason(code: PromoCode) {
     >
       <UiAlert v-if="formError" tone="danger" class="form-error">{{ formError }}</UiAlert>
 
-      <div class="form">
+      <div class="admin-form">
         <UiField label="Код" required hint="Регистр не важен — сохраняется в верхнем" for="pc-code">
           <UiInput id="pc-code" v-model="form.code" placeholder="SALE10" />
         </UiField>
@@ -288,7 +268,7 @@ function inactiveReason(code: PromoCode) {
           <UiInput id="pc-desc" v-model="form.description" />
         </UiField>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Тип скидки" for="pc-type">
             <UiSelect
               id="pc-type"
@@ -316,7 +296,7 @@ function inactiveReason(code: PromoCode) {
           </UiField>
         </div>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Минимальная сумма заказа" for="pc-min">
             <UiInput id="pc-min" v-model="form.minOrderTotal" type="number" step="0.01" min="0" />
           </UiField>
@@ -326,7 +306,7 @@ function inactiveReason(code: PromoCode) {
           </UiField>
         </div>
 
-        <div class="form-row">
+        <div class="admin-form-row">
           <UiField label="Действует с" for="pc-starts">
             <UiInput id="pc-starts" v-model="form.startsAt" type="datetime-local" />
           </UiField>
@@ -352,48 +332,20 @@ function inactiveReason(code: PromoCode) {
       </template>
     </UiModal>
 
-    <UiModal
+    <UiConfirm
       :open="Boolean(deleting)"
       title="Удалить промокод?"
-      size="sm"
+      :busy="busy === 'delete'"
       @update:open="deleting = null"
+      @confirm="confirmDelete"
     >
-      <p class="confirm-text">
-        Код «{{ deleting?.code }}» перестанет действовать. Заказы, где он был применён,
-        сохранят название кода в истории.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="deleting = null">Отмена</UiButton>
-        <UiButton variant="danger" :loading="deletingBusy" @click="confirmDelete">Удалить</UiButton>
-      </template>
-    </UiModal>
+      Код «{{ deleting?.code }}» перестанет действовать. Заказы, где он был применён,
+      сохранят название кода в истории.
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-promo {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 .cards {
   display: grid;
   padding: 0;
@@ -481,29 +433,7 @@ function inactiveReason(code: PromoCode) {
   gap: var(--space-1);
 }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
-}
-
 .form-error {
   margin-bottom: var(--space-4);
-}
-
-.confirm-text {
-  color: var(--text-muted);
-}
-
-@media (max-width: 640px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

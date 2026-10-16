@@ -1,21 +1,10 @@
 <script setup lang="ts">
 import { company } from '~/data/company'
 
-const config = useRuntimeConfig()
-const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
 const description =
-  'Мультитул — интернет-магазин инструмента, оборудования, крепежа и расходных материалов. Магазин и самовывоз в Витебске, доставка по Беларуси.'
+  'Gost.by — интернет-магазин инструмента, оборудования, крепежа и расходных материалов. Магазин и самовывоз в Витебске, доставка по Беларуси.'
 
-useSeoMeta({
-  title: 'О компании | Мультитул',
-  description,
-  ogTitle: 'О компании | Мультитул',
-  ogDescription: description
-})
-
-useHead({
-  link: [{ rel: 'canonical', href: `${siteUrl}/about` }]
-})
+usePageSeo({ title: 'О компании', description, path: '/about' })
 </script>
 
 <!--
@@ -28,7 +17,7 @@ useHead({
     <h1>О компании</h1>
 
     <p>
-      «Мультитул» — интернет-магазин {{ company.name }}. В каталоге более
+      «Gost.by» — интернет-магазин {{ company.name }}. В каталоге более
       50&nbsp;тысяч товаров: инструмент, оборудование, крепёж и расходные
       материалы. Цены и наличие обновляются ежедневно.
     </p>
@@ -55,51 +44,10 @@ useHead({
     </p>
 
     <h2>Контакты</h2>
-    <dl class="requisites">
-      <div>
-        <dt>Телефон</dt>
-        <dd><a :href="company.phoneHref">{{ company.phone }}</a></dd>
-      </div>
-      <div>
-        <dt>Viber, Telegram</dt>
-        <dd>
-          {{ company.phone }} —
-          <a :href="company.viberHref">Viber</a>,
-          <a :href="company.telegramHref" target="_blank" rel="noopener">Telegram</a>
-        </dd>
-      </div>
-      <div>
-        <dt>E-mail</dt>
-        <dd><a :href="company.emailHref">{{ company.email }}</a></dd>
-      </div>
-      <div>
-        <dt>Адрес магазина (самовывоз)</dt>
-        <dd>{{ company.storeAddress }}</dd>
-      </div>
-      <div>
-        <dt>Режим работы</dt>
-        <dd>{{ company.workingHours }}</dd>
-      </div>
-    </dl>
+    <StorefrontCompanyRequisites variant="contacts" />
 
     <h2>Реквизиты</h2>
-    <dl class="requisites">
-      <div>
-        <dt>Наименование</dt>
-        <dd>{{ company.name }}</dd>
-      </div>
-      <div>
-        <dt>УНП</dt>
-        <dd>{{ company.unp }}</dd>
-      </div>
-      <div>
-        <dt>Юридический адрес</dt>
-        <dd>{{ company.legalAddress }}</dd>
-      </div>
-    </dl>
+    <StorefrontCompanyRequisites variant="legal" />
   </section>
 </template>
 
-<style scoped lang="scss">
-@use '@/assets/scss/legal-page.scss' as *;
-</style>

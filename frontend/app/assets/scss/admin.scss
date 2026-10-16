@@ -1,0 +1,32 @@
+/*
+ * Chrome shared by every admin screen, loaded once by layouts/admin.vue.
+ * Unscoped on purpose and `admin-`-prefixed so it cannot collide with a page's
+ * scoped class names.
+ */
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.admin-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .admin-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-muted {
+  color: var(--text-muted);
+}

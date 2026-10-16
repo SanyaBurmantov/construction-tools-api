@@ -3,8 +3,7 @@ const props = defineProps<{
   items: Array<{ label: string, to?: string }>
 }>()
 
-const config = useRuntimeConfig()
-const siteUrl = computed(() => String(config.public.siteUrl).replace(/\/$/, ''))
+const { absoluteUrl } = useSite()
 
 /** BreadcrumbList structured data — the crumbs are already on the page. */
 const jsonLd = computed(() => ({
@@ -14,7 +13,7 @@ const jsonLd = computed(() => ({
     '@type': 'ListItem',
     position: index + 1,
     name: item.label,
-    ...(item.to ? { item: `${siteUrl.value}${item.to}` } : {}),
+    ...(item.to ? { item: absoluteUrl(item.to) } : {}),
   })),
 }))
 

@@ -29,8 +29,6 @@ export type CartPayloadItem = { productId: string, quantity: number }
 export function useServerCart() {
   const { authFetch } = useAuth()
 
-  const fetchCart = () => authFetch<ServerCart>('/cart')
-
   /** Sign-in step: union of the browser cart and the stored one. */
   const mergeLocal = (items: CartPayloadItem[]) =>
     authFetch<ServerCart>('/cart/merge', { method: 'POST', body: { items } })
@@ -39,7 +37,5 @@ export function useServerCart() {
   const replace = (items: CartPayloadItem[]) =>
     authFetch<ServerCart>('/cart', { method: 'PUT', body: { items } })
 
-  const clear = () => authFetch<{ ok: boolean }>('/cart', { method: 'DELETE' })
-
-  return { fetchCart, mergeLocal, replace, clear }
+  return { mergeLocal, replace }
 }

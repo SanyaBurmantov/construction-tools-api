@@ -1,7 +1,9 @@
-<script setup lang="ts" generic="T extends Record<string, unknown>">
+<script setup lang="ts" generic="T extends object">
 /**
  * Data table for the admin screens. Each column can be overridden with a
- * `#cell-<key>` slot; otherwise the raw value is printed.
+ * `#cell-<key>` slot; otherwise the raw value is printed. A header cell can be
+ * replaced with `#head-<key>` (a select-all checkbox), the empty state with
+ * `#empty`, and `rowClass` / `row-click` cover selectable and clickable rows.
  *
  * Always horizontally scrollable inside its own box so the page never scrolls
  * sideways on narrow screens.
@@ -13,12 +15,17 @@ defineProps<{
     align?: 'start' | 'center' | 'end'
     width?: string
     nowrap?: boolean
+    /** Extra class on that column's cells, header included. */
+    class?: string
   }>
   rows: T[]
   rowKey?: keyof T
   loading?: boolean
   emptyText?: string
+  rowClass?: (row: T) => string | Record<string, boolean> | undefined
 }>()
+
+defineEmits<{ 'row-click': [row: T, index: number] }>()
 </script>
 
 <template>
@@ -30,8 +37,9 @@ defineProps<{
             v-for="column in columns"
             :key="column.key"
             :style="{ width: column.width, textAlign: column.align || 'start' }"
+            :class="column.class"
           >
-            {{ column.label }}
+            <slot :name="`head-${column.key}`" :column="column">{{ column.label }}</slot>
           </th>
         </tr>
       </thead>
@@ -45,18 +53,26 @@ defineProps<{
         </tr>
         <tr v-else-if="!rows.length">
           <td :colspan="columns.length">
-            <p class="state empty">{{ emptyText || 'Нет данных' }}</p>
+            <slot name="empty">
+              <p class="state empty">{{ emptyText || 'Нет данных' }}</p>
+            </slot>
           </td>
         </tr>
-        <tr v-for="(row, index) in rows" v-else :key="rowKey ? String(row[rowKey]) : index">
+        <tr
+          v-for="(row, index) in rows"
+          v-else
+          :key="rowKey ? String(row[rowKey]) : index"
+          :class="rowClass?.(row)"
+          @click="$emit('row-click', row, index)"
+        >
           <td
             v-for="column in columns"
             :key="column.key"
             :style="{ textAlign: column.align || 'start' }"
-            :class="{ nowrap: column.nowrap }"
+            :class="[column.class, { nowrap: column.nowrap }]"
           >
             <slot :name="`cell-${column.key}`" :row="row" :index="index">
-              {{ row[column.key] }}
+              {{ (row as Record<string, unknown>)[column.key] }}
             </slot>
           </td>
         </tr>

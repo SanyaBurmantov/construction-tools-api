@@ -21,13 +21,9 @@ export interface ValidatedCartItem {
   lineTotal: number
 }
 
+/** The part of the `POST /cart/validate` answer the storefront reads. */
 export interface CartValidation {
   items: ValidatedCartItem[]
-  itemsTotal: number
-  currency: string
-  ok: boolean
-  hasBlocking: boolean
-  hasPriceChanges: boolean
 }
 
 /**
@@ -43,8 +39,6 @@ export function useCartValidation() {
   const config = useRuntimeConfig()
 
   const validation = useState<CartValidation | null>('cart-validation', () => null)
-  const validating = useState('cart-validating', () => false)
-  const failed = useState('cart-validation-failed', () => false)
 
   async function validate() {
     if (cart.isEmpty) {
@@ -52,8 +46,6 @@ export function useCartValidation() {
       return null
     }
 
-    validating.value = true
-    failed.value = false
     try {
       const result = await $fetch<CartValidation>(
         `${config.public.apiBase}/cart/validate`,
@@ -73,29 +65,29 @@ export function useCartValidation() {
     } catch {
       // A failed check must not block checkout — the server re-prices the
       // order anyway, and rejects it if the total moved.
-      failed.value = true
       validation.value = null
       return null
-    } finally {
-      validating.value = false
     }
   }
 
-  const changedItems = computed(
-    () => validation.value?.items.filter((i) => i.issue === 'price_changed') ?? []
-  )
-  const unavailableItems = computed(
-    () =>
-      validation.value?.items.filter(
-        (i) => i.issue === 'unavailable' || i.issue === 'price_missing'
-      ) ?? []
-  )
-  const backorderItems = computed(
-    () => validation.value?.items.filter((i) => i.issue === 'out_of_stock') ?? []
-  )
+  /**
+   * The answer describes the cart as it was when it was sent; a line removed
+   * since then must not keep its warning (or block checkout).
+   */
+  const linesInCart = computed(() => {
+    const ids = new Set(cart.items.map((item) => item.productId))
+    return validation.value?.items.filter((i) => ids.has(i.productId)) ?? []
+  })
 
-  /** The server-confirmed subtotal, falling back to the local one. */
-  const itemsTotal = computed(() => validation.value?.itemsTotal ?? cart.totalPrice)
+  const changedItems = computed(() =>
+    linesInCart.value.filter((i) => i.issue === 'price_changed')
+  )
+  const unavailableItems = computed(() =>
+    linesInCart.value.filter((i) => i.issue === 'unavailable' || i.issue === 'price_missing')
+  )
+  const backorderItems = computed(() =>
+    linesInCart.value.filter((i) => i.issue === 'out_of_stock')
+  )
 
   /** Accepts the new prices into the local cart and clears the warning. */
   function acceptPrices() {
@@ -116,13 +108,9 @@ export function useCartValidation() {
   }
 
   return {
-    validation,
-    validating,
-    failed,
     changedItems,
     unavailableItems,
     backorderItems,
-    itemsTotal,
     validate,
     acceptPrices,
     removeUnavailable,

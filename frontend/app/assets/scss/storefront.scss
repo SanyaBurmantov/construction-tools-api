@@ -1,0 +1,20 @@
+/*
+ * Storefront chrome shared by several pages (global, so each page does not
+ * compile its own scoped copy).
+ */
+
+@use 'legal-page';
+
+/*
+ * Product card grid: home rails, catalogue, sales, related, favourites.
+ * `min()` keeps the track from being wider than its own container: a bare
+ * `minmax(228px, …)` overflows once the viewport drops under ~260px.
+ */
+.product-grid {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(228px, 100%), 1fr));
+  gap: var(--space-4);
+  list-style: none;
+}

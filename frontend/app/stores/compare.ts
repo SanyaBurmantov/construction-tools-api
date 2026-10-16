@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { readArray, writeJson } from '~/utils/safe-storage'
 
 export interface CompareItem {
   productId: string
@@ -24,7 +25,6 @@ export const useCompareStore = defineStore('compare', {
   getters: {
     count: (state) => state.items.length,
     isEmpty: (state) => state.items.length === 0,
-    isFull: (state) => state.items.length >= COMPARE_LIMIT,
     has: (state) => (productId: string) =>
       state.items.some((i) => i.productId === productId),
     slugs: (state) => state.items.map((i) => i.slug),
@@ -32,22 +32,11 @@ export const useCompareStore = defineStore('compare', {
   actions: {
     load() {
       if (this.loaded || !import.meta.client) return
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY)
-        const parsed = raw ? JSON.parse(raw) : null
-        if (Array.isArray(parsed)) this.items = parsed.slice(0, COMPARE_LIMIT)
-      } catch {
-        this.items = []
-      }
+      this.items = readArray<CompareItem>(STORAGE_KEY).slice(0, COMPARE_LIMIT)
       this.loaded = true
     },
     persist() {
-      if (!import.meta.client) return
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.items))
-      } catch {
-        // The in-memory store still works when storage is blocked or full.
-      }
+      writeJson(STORAGE_KEY, this.items)
     },
     /** Returns false when the list is already full. */
     add(item: CompareItem) {

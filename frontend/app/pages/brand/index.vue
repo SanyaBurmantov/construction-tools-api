@@ -3,8 +3,7 @@ import type { Brand } from '~/types/api'
 
 const route = useRoute()
 const router = useRouter()
-const config = useRuntimeConfig()
-const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+const { apiBase } = useSite()
 
 /**
  * `/brands` answers every brand with every column (`description`, `seoTitle`,
@@ -67,42 +66,25 @@ const totalProducts = computed(() =>
 )
 
 function brandLink(brand: Brand) {
-  return `/brand/${brand.slug || brand.id}/`
+  return `/brand/${brand.slug || brand.id}`
 }
 
 const description
-  = 'Все бренды инструмента и оборудования в каталоге Мультитул — категории и товары каждого производителя.'
-const canonical = computed(
-  () => `${String(config.public.siteUrl).replace(/\/$/, '')}/brand`
-)
+  = 'Все бренды инструмента и оборудования в каталоге Gost.by — категории и товары каждого производителя.'
+const heroStats = computed(() => [
+  { value: sortedBrands.value.length, label: plural(sortedBrands.value.length, ...PLURALS.brand) },
+])
 
-useSeoMeta({
-  title: 'Бренды | Мультитул',
-  description,
-  ogTitle: 'Бренды | Мультитул',
-  ogDescription: description,
-  ogType: 'website',
-  ogUrl: () => canonical.value,
-})
-
-useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
+usePageSeo({ title: 'Бренды', description, path: '/brand' })
 </script>
 
 <template>
   <div class="brands-page">
     <UiBreadcrumbs :items="[{ label: 'Главная', to: '/' }, { label: 'Бренды' }]" />
 
-    <section class="hero">
-      <div class="hero-copy">
-        <span class="eyebrow">Бренды</span>
-        <h1>Все бренды в каталоге</h1>
-        <p>{{ description }}</p>
-      </div>
-      <div class="hero-stat">
-        <strong>{{ sortedBrands.length }}</strong>
-        <span>брендов</span>
-      </div>
-    </section>
+    <StorefrontPageHero eyebrow="Бренды" title="Все бренды в каталоге" :stats="heroStats">
+      <p>{{ description }}</p>
+    </StorefrontPageHero>
 
     <div class="toolbar">
       <label class="sr-only" for="brand-search">Поиск по названию бренда</label>
@@ -113,11 +95,10 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
         type="search"
         size="sm"
         placeholder="Поиск по названию бренда"
-        aria-label="Поиск по названию бренда"
         @update:model-value="applySearch(String($event ?? ''))"
       />
       <span class="toolbar-count">
-        {{ search ? `Найдено: ${filteredBrands.length}` : `${totalProducts} товаров` }}
+        {{ search ? `Найдено: ${filteredBrands.length}` : pluralize(totalProducts, 'product') }}
       </span>
     </div>
 
@@ -177,55 +158,6 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
   gap: var(--space-5);
 }
 
-.hero {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-6);
-  padding: var(--space-8);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--brand-soft), var(--surface-card));
-}
-
-.hero-copy {
-  display: flex;
-  max-width: 60ch;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.hero .eyebrow {
-  color: var(--brand);
-}
-
-.hero p {
-  color: var(--text-muted);
-}
-
-.hero-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: var(--space-4) var(--space-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-card);
-}
-
-.hero-stat strong {
-  color: var(--brand);
-  font-size: var(--text-3xl);
-  font-weight: 800;
-  line-height: 1;
-}
-
-.hero-stat span {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
 .toolbar {
   display: flex;
   align-items: center;
@@ -246,7 +178,7 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
   gap: var(--space-4);
 }
 
@@ -318,10 +250,6 @@ useHead({ link: [{ rel: 'canonical', href: canonical.value }] })
 }
 
 @media (max-width: 640px) {
-  .hero {
-    padding: var(--space-5);
-  }
-
   .toolbar {
     flex-direction: column;
     align-items: stretch;

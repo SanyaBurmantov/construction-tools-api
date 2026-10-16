@@ -35,29 +35,13 @@ const emit = defineEmits<{
 const fallbackDrafts = reactive<Record<string, SourceDraft>>({})
 
 function draftFor(source: ParserSourceOverview): SourceDraft {
-  return props.drafts[source.code] ?? (fallbackDrafts[source.code] ??= {
-    batchLimit: source.batchLimit,
-    requestDelayMs: source.requestDelayMs,
-    maxPages: source.maxPages,
-    categoryBatchLimit: source.categoryBatchLimit ?? 0,
-    categoryIncludeRegex: source.categoryFilters.include,
-    categoryExcludeRegex: source.categoryFilters.exclude,
-  })
+  return props.drafts[source.code] ?? (fallbackDrafts[source.code] ??= draftFromSource(source))
 }
 
 /** True when the form differs from what the server currently has. */
 function isDirty(source: ParserSourceOverview) {
   const draft = props.drafts[source.code]
-  if (!draft) return false
-  return (
-    draft.batchLimit !== source.batchLimit
-    || draft.requestDelayMs !== source.requestDelayMs
-    || draft.maxPages !== source.maxPages
-    || (source.categoryBatchLimit !== undefined
-      && draft.categoryBatchLimit !== source.categoryBatchLimit)
-    || draft.categoryIncludeRegex !== source.categoryFilters.include
-    || draft.categoryExcludeRegex !== source.categoryFilters.exclude
-  )
+  return Boolean(draft) && !sameDraft(draft!, draftFromSource(source))
 }
 
 /** Один прогон каждые 30 минут — отсюда и скорость разбора очереди. */
@@ -220,8 +204,10 @@ function toggleExpanded(code: string) {
       <h3>{{ expandedSourceRow.name }} — настройки парсера</h3>
 
       <div class="advanced-grid">
-        <label>
-          <span>Пауза между запросами, мс</span>
+        <UiField
+          label="Пауза между запросами, мс"
+          hint="Вежливость к поставщику. Меньше 1000 мс — только по согласованию с ним."
+        >
           <UiInput
             v-model.number="draftFor(expandedSourceRow).requestDelayMs"
             type="number"
@@ -229,11 +215,12 @@ function toggleExpanded(code: string) {
             min="200"
             max="60000"
           />
-          <small>Вежливость к поставщику. Меньше 1000 мс — только по согласованию с ним.</small>
-        </label>
+        </UiField>
 
-        <label>
-          <span>Страниц за обход каталога</span>
+        <UiField
+          label="Страниц за обход каталога"
+          hint="Если счётчик обхода упирается ровно в это число — каталог обошёлся не весь."
+        >
           <UiInput
             v-model.number="draftFor(expandedSourceRow).maxPages"
             type="number"
@@ -241,11 +228,13 @@ function toggleExpanded(code: string) {
             min="1"
             max="100000"
           />
-          <small>Если счётчик обхода упирается ровно в это число — каталог обошёлся не весь.</small>
-        </label>
+        </UiField>
 
-        <label v-if="expandedSourceRow.categoryBatchLimit !== undefined">
-          <span>Категорий за прогон</span>
+        <UiField
+          v-if="expandedSourceRow.categoryBatchLimit !== undefined"
+          label="Категорий за прогон"
+          hint="Обход категорий идёт раз в час. Делите число ожидающих категорий на это значение — столько часов займёт полный круг."
+        >
           <UiInput
             v-model.number="draftFor(expandedSourceRow).categoryBatchLimit"
             type="number"
@@ -253,24 +242,24 @@ function toggleExpanded(code: string) {
             min="1"
             max="200"
           />
-          <small>Обход категорий идёт раз в час. Делите число ожидающих категорий на это значение — столько часов займёт полный круг.</small>
-        </label>
+        </UiField>
       </div>
 
-      <label class="advanced-full">
-        <span>INCLUDE — брать только эти категории</span>
+      <UiField
+        class="advanced-full"
+        label="INCLUDE — брать только эти категории"
+        hint="Регулярное выражение по цепочке хлебных крошек, без учёта регистра."
+      >
         <UiInput v-model="draftFor(expandedSourceRow).categoryIncludeRegex" size="sm" placeholder="пусто = брать всё" />
-        <small>Регулярное выражение по цепочке хлебных крошек, без учёта регистра.</small>
-      </label>
+      </UiField>
 
-      <label class="advanced-full">
-        <span>EXCLUDE — не брать эти категории</span>
+      <UiField
+        class="advanced-full"
+        label="EXCLUDE — не брать эти категории"
+        hint="Применяется ко всей цепочке, поэтому правило ловит и подкатегории. Ошибка в выражении не сохранится — сервер её отклонит."
+      >
         <UiInput v-model="draftFor(expandedSourceRow).categoryExcludeRegex" size="sm" />
-        <small>
-          Применяется ко всей цепочке, поэтому правило ловит и подкатегории.
-          Ошибка в выражении не сохранится — сервер её отклонит.
-        </small>
-      </label>
+      </UiField>
 
       <section class="jobs">
         <h4>Запустить вручную</h4>
@@ -364,24 +353,8 @@ function toggleExpanded(code: string) {
   margin-bottom: var(--space-3);
 }
 
-.advanced label,
 .advanced-full {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
   margin-bottom: var(--space-3);
-}
-
-.advanced label > span {
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.advanced small {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  line-height: 1.4;
 }
 
 .jobs {

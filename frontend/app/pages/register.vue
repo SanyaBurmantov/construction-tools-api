@@ -1,32 +1,17 @@
 <script setup lang="ts">
 import type { CustomerType } from '~/composables/useAuth'
 
-const { register, refresh, isAuthenticated, errorMessage } = useAuth()
-const route = useRoute()
+const { register, errorMessage } = useAuth()
+const { redirect, reason, otherLink: loginLink, leaveIfSignedIn } = useAuthRedirect('/login')
 const toast = useAppToast()
 
-/** Same pair as the login screen: where to return and why we are here. */
-const redirect = computed(() => {
-  const target = route.query.redirect
-  return typeof target === 'string' && target.startsWith('/') ? target : ''
-})
-
-const reason = computed(() => {
-  const key = route.query.reason
-  return typeof key === 'string' ? AUTH_REASONS[key] || '' : ''
-})
-
-const loginLink = computed(() => ({
-  path: '/login',
-  query: {
-    ...(redirect.value ? { redirect: redirect.value } : {}),
-    ...(typeof route.query.reason === 'string' ? { reason: route.query.reason } : {}),
+const customerTypes = [
+  { value: 'INDIVIDUAL' as const, label: CUSTOMER_TYPE_LABEL.INDIVIDUAL, hint: 'Покупки для себя' },
+  {
+    value: 'COMPANY' as const,
+    label: CUSTOMER_TYPE_LABEL.COMPANY,
+    hint: 'Счёт на организацию, оплата по счёту',
   },
-}))
-
-const customerTypes: Array<{ value: CustomerType, label: string, hint: string }> = [
-  { value: 'INDIVIDUAL', label: 'Физическое лицо', hint: 'Покупки для себя' },
-  { value: 'COMPANY', label: 'Юридическое лицо', hint: 'Счёт на организацию, оплата по счёту' },
 ]
 
 const form = reactive({
@@ -47,10 +32,7 @@ const personalDataConsent = ref(false)
 const submitting = ref(false)
 const error = ref('')
 
-onMounted(async () => {
-  await refresh()
-  if (isAuthenticated.value) await navigateTo(redirect.value || '/account')
-})
+onMounted(leaveIfSignedIn)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -102,7 +84,7 @@ async function submit() {
   }
 }
 
-useSeoMeta({ title: 'Регистрация | Мультитул', robots: 'noindex,nofollow' })
+useSeoMeta({ title: 'Регистрация | Gost.by', robots: 'noindex,nofollow' })
 </script>
 
 <template>
@@ -112,21 +94,11 @@ useSeoMeta({ title: 'Регистрация | Мультитул', robots: 'noin
         <UiAlert v-if="reason" tone="info">{{ reason }}</UiAlert>
         <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
 
-        <fieldset class="options">
-          <legend>Тип покупателя</legend>
-          <label
-            v-for="option in customerTypes"
-            :key="option.value"
-            class="option"
-            :class="{ 'is-active': form.customerType === option.value }"
-          >
-            <input v-model="form.customerType" type="radio" :value="option.value">
-            <span class="option-body">
-              <span class="option-label">{{ option.label }}</span>
-              <span class="option-hint">{{ option.hint }}</span>
-            </span>
-          </label>
-        </fieldset>
+        <UiRadioCards
+          v-model="form.customerType"
+          :options="customerTypes"
+          legend="Тип покупателя"
+        />
 
         <UiField
           label="Логин"
@@ -230,73 +202,6 @@ useSeoMeta({ title: 'Регистрация | Мультитул', robots: 'noin
   gap: var(--space-4);
 }
 
-.options {
-  display: grid;
-  border: 0;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3);
-}
-
-.options legend {
-  margin-bottom: var(--space-2);
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  cursor: pointer;
-  gap: var(--space-3);
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    background var(--duration-fast) var(--ease-out);
-}
-
-.option:hover {
-  border-color: var(--border-strong);
-}
-
-.option.is-active {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-}
-
-.option input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.option:has(input:focus-visible) {
-  box-shadow: var(--shadow-focus);
-}
-
-.option-body {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
-.option-label {
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.option-hint {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
 .form .consent {
   align-items: flex-start;
   font-size: var(--text-sm);
@@ -318,8 +223,7 @@ useSeoMeta({ title: 'Регистрация | Мультитул', robots: 'noin
 }
 
 @media (max-width: 640px) {
-  .grid,
-  .options {
+  .grid {
     grid-template-columns: 1fr;
   }
 }

@@ -160,7 +160,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
 
 .is-danger {
   background: var(--danger);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .is-danger:hover:not(.is-disabled) {
@@ -169,7 +169,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
 
 .is-success {
   background: var(--success);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .is-link {

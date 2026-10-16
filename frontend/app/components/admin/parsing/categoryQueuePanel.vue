@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Pagination } from '~/types/api'
 import type { CategoryRow, CategoryStats, ParserSourceOverview } from '~/types/parsing'
 
 /**
@@ -13,7 +14,7 @@ const props = defineProps<{
   source: string
   stats: CategoryStats | null
   rows: CategoryRow[]
-  pagination: { page: number, limit: number, total: number, pages: number }
+  pagination: Pagination
   /** Edited in place: the page owns it and reloads on «Найти». */
   filters: { search: string, status: string }
   loading: boolean
@@ -186,27 +187,12 @@ const COLUMNS = [
       </template>
     </UiTable>
 
-    <div class="pagination pad">
-      <UiButton
-        size="sm"
-        variant="secondary"
-        :disabled="pagination.page <= 1"
-        @click="emit('set-page', pagination.page - 1)"
-      >
-        Назад
-      </UiButton>
-      <span class="muted">
-        {{ pagination.page }} / {{ pagination.pages || 1 }}
-        <template v-if="pagination.total">· {{ pagination.total }} категорий</template>
-      </span>
-      <UiButton
-        size="sm"
-        variant="secondary"
-        :disabled="pagination.page >= pagination.pages"
-        @click="emit('set-page', pagination.page + 1)"
-      >
-        Вперёд
-      </UiButton>
-    </div>
+    <UiPagination
+      class="pad"
+      :page="pagination.page"
+      :pages="pagination.pages"
+      :total="pagination.total"
+      @change="page => emit('set-page', page)"
+    />
   </UiCard>
 </template>

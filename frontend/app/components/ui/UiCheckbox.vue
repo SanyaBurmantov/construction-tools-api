@@ -67,7 +67,7 @@ input {
 input:checked + .box {
   border-color: var(--brand);
   background: var(--brand);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 input:focus-visible + .box {

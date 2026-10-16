@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Pagination, Paginated } from '~/types/api'
 import type { AiEntity, AiPrompt, AiTask, AiTaskItem, AiTaskItemStatus } from '~/types/ai'
 import { AI_ITEM_STATUS, AI_TASK_STATUS } from '~/types/ai'
 
@@ -14,85 +15,81 @@ const tab = ref(route.query.tab === 'prompts' ? 'prompts' : 'tasks')
 watch(tab, (value) => router.replace({ query: { ...route.query, tab: value === 'tasks' ? undefined : value } }))
 
 /* ---- Tasks ------------------------------------------------------------- */
-const tasks = ref<AiTask[]>([])
-const pagination = ref({ page: 1, limit: 25, total: 0, pages: 0 })
-const page = ref(1)
 const entityFilter = ref('')
-const loading = ref(false)
-const loadError = ref('')
 
-async function loadTasks(quiet = false) {
-  if (!quiet) loading.value = true
-  loadError.value = ''
-  try {
-    const response = await adminFetch<{ data: AiTask[], pagination: typeof pagination.value }>('/ai/tasks', {
-      params: { page: page.value, ...(entityFilter.value ? { entity: entityFilter.value } : {}) },
-    })
-    tasks.value = response.data
-    pagination.value = response.pagination
-  } catch (error) {
-    if (!quiet) loadError.value = errorMessage(error, 'Не удалось загрузить задачи')
-  } finally {
-    loading.value = false
-  }
-}
+const {
+  rows: tasks,
+  pagination,
+  loading,
+  error: loadError,
+  load: loadTasks,
+  setPage,
+} = useAdminList<AiTask>('/ai/tasks', {
+  params: () => ({ entity: entityFilter.value }),
+  limit: 25,
+  errorText: 'Не удалось загрузить задачи',
+})
 
-watch([page, entityFilter], () => void loadTasks())
-
-const hasActive = computed(() => tasks.value.some((task) => task.status === 'QUEUED' || task.status === 'RUNNING'))
+const hasActive = computed(() => tasks.value.some(task => task.status === 'QUEUED' || task.status === 'RUNNING'))
 
 // The runner works once a minute; poll while something is in flight.
 let poll: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
   void loadStatus()
-  void loadTasks()
   void loadPrompts()
   poll = setInterval(() => {
     if (!hasActive.value) return
-    void loadTasks(true)
+    void loadTasks()
     if (detail.value) void refreshDetail()
   }, 10_000)
 })
 onBeforeUnmount(() => clearInterval(poll))
 
-const busy = ref<string | null>(null)
+const { run, busy } = useAdminAction()
 
-async function action(task: AiTask, path: string, done: string, body?: Record<string, unknown>) {
-  busy.value = `${task.id}:${path}`
-  try {
-    const result = await adminFetch<{ reverted?: number, skippedFields?: number }>(`/ai/tasks/${task.id}/${path}`, { method: 'POST', body })
-    if (path === 'revert' && result?.reverted != null) {
-      toast.success(`Откачено записей: ${result.reverted}${result.skippedFields ? `, полей пропущено (изменены позже): ${result.skippedFields}` : ''}`)
-    } else {
-      toast.success(done)
-    }
-    await loadTasks(true)
-    if (detail.value?.id === task.id) await refreshDetail()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось выполнить действие'))
-  } finally {
-    busy.value = null
-  }
+/** Resolves to the result, or `undefined` when it failed (already toasted). */
+function action(task: AiTask, path: string, done: string, body?: Record<string, unknown>) {
+  return run(
+    () => adminFetch<{ reverted?: number, skippedFields?: number }>(
+      `/ai/tasks/${task.id}/${path}`,
+      { method: 'POST', body },
+    ),
+    {
+      key: `${task.id}:${path}`,
+      error: 'Не удалось выполнить действие',
+      success: result => path === 'revert' && result?.reverted != null
+        ? `Откачено записей: ${result.reverted}${result.skippedFields ? `, полей пропущено (изменены позже): ${result.skippedFields}` : ''}`
+        : done,
+      after: async () => {
+        await loadTasks()
+        if (detail.value?.id === task.id) await refreshDetail()
+      },
+    },
+  )
 }
 
 const confirmRevert = ref<AiTask | null>(null)
 const confirmDelete = ref<AiTask | null>(null)
 
+/** The dialog closes on success only — on failure it stays up to retry. */
+async function revertTask() {
+  const task = confirmRevert.value
+  if (!task) return
+  if (await action(task, 'revert', 'Откачено')) confirmRevert.value = null
+}
+
 async function removeTask() {
   const task = confirmDelete.value
   if (!task) return
-  busy.value = `${task.id}:delete`
-  try {
-    await adminFetch(`/ai/tasks/${task.id}`, { method: 'DELETE' })
-    toast.success('Задача удалена')
-    confirmDelete.value = null
-    if (detail.value?.id === task.id) detail.value = null
-    await loadTasks(true)
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить задачу'))
-  } finally {
-    busy.value = null
-  }
+  const done = await run(() => adminFetch(`/ai/tasks/${task.id}`, { method: 'DELETE' }), {
+    key: `${task.id}:delete`,
+    error: 'Не удалось удалить задачу',
+    success: 'Задача удалена',
+    after: loadTasks,
+  })
+  if (done === undefined) return
+  confirmDelete.value = null
+  if (detail.value?.id === task.id) detail.value = null
 }
 
 /* ---- Reschedule -------------------------------------------------------- */
@@ -107,19 +104,20 @@ function openReschedule(task: AiTask) {
 async function submitReschedule() {
   const task = rescheduling.value
   if (!task) return
-  await action(task, 'resume', 'Задача поставлена в очередь', {
-    scheduledAt: rescheduleAt.value ? new Date(rescheduleAt.value).toISOString() : undefined,
+  const done = await action(task, 'resume', 'Задача поставлена в очередь', {
+    scheduledAt: fromLocalInput(rescheduleAt.value) ?? undefined,
   })
-  rescheduling.value = null
+  if (done) rescheduling.value = null
 }
 
 /* ---- Detail ------------------------------------------------------------ */
 const detail = ref<AiTask | null>(null)
 const items = ref<AiTaskItem[]>([])
-const itemsPagination = ref({ page: 1, limit: 50, total: 0, pages: 0 })
+const itemsPagination = ref<Pagination>({ page: 1, limit: 50, total: 0, pages: 0 })
 const itemsPage = ref(1)
 const itemStatus = ref('')
 const itemsLoading = ref(false)
+let detailTicket = 0
 
 const detailOpen = computed({
   get: () => Boolean(detail.value),
@@ -128,46 +126,60 @@ const detailOpen = computed({
   },
 })
 
-async function openDetail(task: AiTask) {
+/**
+ * Page and status tab are changed only through these, each followed by one
+ * refresh — they used to be watched as well, so opening a task or switching
+ * a tab on page > 1 loaded the items two or three times.
+ */
+function openDetail(task: AiTask) {
   detail.value = task
+  // The previous task's rows must not show under this one's title.
+  items.value = []
   itemsPage.value = 1
   itemStatus.value = ''
-  await refreshDetail()
+  return refreshDetail()
+}
+
+function setItemsPage(next: number) {
+  itemsPage.value = next
+  return refreshDetail()
+}
+
+function setItemStatus(next: string | number) {
+  itemStatus.value = String(next)
+  itemsPage.value = 1
+  return refreshDetail()
 }
 
 async function refreshDetail() {
   if (!detail.value) return
   const id = detail.value.id
+  const ticket = ++detailTicket
   itemsLoading.value = !items.value.length
   try {
     const [task, response] = await Promise.all([
       adminFetch<AiTask>(`/ai/tasks/${id}`),
-      adminFetch<{ data: AiTaskItem[], pagination: typeof itemsPagination.value }>(`/ai/tasks/${id}/items`, {
-        params: { page: itemsPage.value, ...(itemStatus.value ? { status: itemStatus.value } : {}) },
+      adminFetch<Paginated<AiTaskItem>>(`/ai/tasks/${id}/items`, {
+        params: compactParams({ page: itemsPage.value, status: itemStatus.value }),
       }),
     ])
-    if (detail.value?.id !== id) return
+    if (ticket !== detailTicket || detail.value?.id !== id) return
     detail.value = task
     items.value = response.data
     itemsPagination.value = response.pagination
   } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось загрузить задачу'))
+    if (ticket === detailTicket) toast.error(errorMessage(error, 'Не удалось загрузить задачу'))
   } finally {
-    itemsLoading.value = false
+    if (ticket === detailTicket) itemsLoading.value = false
   }
 }
-
-watch([itemsPage, itemStatus], () => void refreshDetail())
-watch(itemStatus, () => {
-  itemsPage.value = 1
-})
 
 const itemTabs = computed(() => {
   const counts = detail.value?.counts ?? {}
   const total = Object.values(counts).reduce((sum, n) => sum + (n ?? 0), 0)
   return [
     { value: '', label: 'Все', count: total },
-    ...(Object.keys(AI_ITEM_STATUS) as AiTaskItemStatus[]).map((key) => ({
+    ...(Object.keys(AI_ITEM_STATUS) as AiTaskItemStatus[]).map(key => ({
       value: key,
       label: AI_ITEM_STATUS[key].label,
       count: counts[key] ?? 0,
@@ -175,16 +187,16 @@ const itemTabs = computed(() => {
   ]
 })
 
-async function revertItem(item: AiTaskItem) {
-  try {
-    await adminFetch(`/ai/tasks/${item.taskId}/items/${item.id}/revert`, { method: 'POST' })
-    toast.success('Изменения откачены')
-    await refreshDetail()
-    await loadTasks(true)
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось откатить'))
-  }
-}
+const revertItem = (item: AiTaskItem) =>
+  run(() => adminFetch(`/ai/tasks/${item.taskId}/items/${item.id}/revert`, { method: 'POST' }), {
+    key: `item:${item.id}`,
+    error: 'Не удалось откатить',
+    success: 'Изменения откачены',
+    after: async () => {
+      await refreshDetail()
+      await loadTasks()
+    },
+  })
 
 /* ---- Prompts ----------------------------------------------------------- */
 const prompts = ref<AiPrompt[]>([])
@@ -212,6 +224,7 @@ async function savePrompt() {
     promptError.value = 'Заполните название и текст'
     return
   }
+  promptError.value = ''
   promptSaving.value = true
   try {
     if (editingPrompt.value) {
@@ -232,15 +245,13 @@ async function savePrompt() {
   }
 }
 
-async function deletePrompt(prompt: AiPrompt) {
-  try {
-    await adminFetch(`/ai/prompts/${prompt.id}`, { method: 'DELETE' })
-    toast.success('Промпт удалён')
-    await loadPrompts()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить промпт'))
-  }
-}
+const deletePrompt = (prompt: AiPrompt) =>
+  run(() => adminFetch(`/ai/prompts/${prompt.id}`, { method: 'DELETE' }), {
+    key: `prompt:${prompt.id}`,
+    error: 'Не удалось удалить промпт',
+    success: 'Промпт удалён',
+    after: loadPrompts,
+  })
 
 /* ---- Display ----------------------------------------------------------- */
 const ENTITY_LABEL: Record<AiEntity, string> = { PRODUCT: 'Товары', CATEGORY: 'Категории' }
@@ -266,17 +277,14 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
 </script>
 
 <template>
-  <div class="ai-page">
-    <header class="head">
-      <div>
-        <h1>ИИ · Задачи</h1>
-        <p>Планировщик проверяет очередь раз в минуту и обрабатывает задачи по одной</p>
-      </div>
-      <div class="head-actions">
-        <UiButton variant="secondary" to="/admin/ai/products">Выбрать товары</UiButton>
-        <UiButton variant="secondary" to="/admin/ai/categories">Выбрать категории</UiButton>
-      </div>
-    </header>
+  <div class="admin-page">
+    <AdminPageHead
+      title="ИИ · Задачи"
+      description="Планировщик проверяет очередь раз в минуту и обрабатывает задачи по одной"
+    >
+      <UiButton variant="secondary" to="/admin/ai/products">Выбрать товары</UiButton>
+      <UiButton variant="secondary" to="/admin/ai/categories">Выбрать категории</UiButton>
+    </AdminPageHead>
 
     <AdminAiStatusLine :status="status" />
 
@@ -305,7 +313,8 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
 
       <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
-      <div v-if="loading" class="list">
+      <!-- Skeleton on the first load only: the 10 s poll must not blank the list. -->
+      <div v-if="loading && !tasks.length" class="list">
         <UiSkeleton v-for="i in 3" :key="i" height="120px" radius="var(--radius-md)" />
       </div>
 
@@ -322,7 +331,7 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
             <button type="button" class="task-name" @click="openDetail(task)">{{ task.name }}</button>
             <UiBadge size="sm">{{ ENTITY_LABEL[task.entity] }}</UiBadge>
             <UiBadge size="sm" :tone="AI_TASK_STATUS[task.status].tone" dot>{{ AI_TASK_STATUS[task.status].label }}</UiBadge>
-            <span v-if="waitingNote(task)" class="muted">{{ waitingNote(task) }}</span>
+            <span v-if="waitingNote(task)" class="admin-muted">{{ waitingNote(task) }}</span>
           </div>
 
           <div class="progress" :aria-label="`${percent(task)}%`">
@@ -407,18 +416,17 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
       </ul>
 
       <UiPagination
-        v-if="pagination.pages > 1"
-        :page="page"
+        :page="pagination.page"
         :pages="pagination.pages"
         :total="pagination.total"
-        @change="page = $event"
+        @change="setPage"
       />
     </template>
 
     <!-- Prompts -->
     <template v-else>
       <div class="toolbar">
-        <span class="muted">Шаблоны подставляются в мастер задачи; задача хранит свою копию текста</span>
+        <span class="admin-muted">Шаблоны подставляются в мастер задачи; задача хранит свою копию текста</span>
         <UiButton size="sm" @click="openPrompt(null)">Новый промпт</UiButton>
       </div>
       <UiEmpty
@@ -436,7 +444,14 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
           <p class="prompt-text">{{ prompt.text }}</p>
           <div class="actions">
             <UiButton size="sm" variant="ghost" @click="openPrompt(prompt)">Изменить</UiButton>
-            <UiButton size="sm" variant="ghost" @click="deletePrompt(prompt)">Удалить</UiButton>
+            <UiButton
+              size="sm"
+              variant="ghost"
+              :loading="busy === `prompt:${prompt.id}`"
+              @click="deletePrompt(prompt)"
+            >
+              Удалить
+            </UiButton>
           </div>
         </li>
       </ul>
@@ -447,14 +462,14 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
       <template v-if="detail">
         <div class="detail-head">
           <UiBadge size="sm" :tone="AI_TASK_STATUS[detail.status].tone" dot>{{ AI_TASK_STATUS[detail.status].label }}</UiBadge>
-          <span class="muted">{{ detail.processed }} / {{ detail.total }} · модель {{ detail.model }} · по {{ detail.batchSize }} в запросе</span>
+          <span class="admin-muted">{{ detail.processed }} / {{ detail.total }} · модель {{ detail.model }} · по {{ detail.batchSize }} в запросе</span>
         </div>
         <details class="prompt-box">
           <summary>Промпт{{ detail.prompt ? ` «${detail.prompt.name}»` : '' }}</summary>
           <p class="prompt-text">{{ detail.promptText }}</p>
         </details>
 
-        <UiTabs v-model="itemStatus" :tabs="itemTabs" />
+        <UiTabs :model-value="itemStatus" :tabs="itemTabs" @update:model-value="setItemStatus" />
 
         <UiSkeleton v-if="itemsLoading" :lines="5" height="18px" />
         <UiEmpty v-else-if="!items.length" icon="box" title="Записей нет" />
@@ -463,8 +478,16 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
             <div class="item-head">
               <strong>{{ item.entityName }}</strong>
               <UiBadge size="sm" :tone="AI_ITEM_STATUS[item.status].tone">{{ AI_ITEM_STATUS[item.status].label }}</UiBadge>
-              <span v-if="item.attempts > 1" class="muted">попыток: {{ item.attempts }}</span>
-              <UiButton v-if="item.status === 'APPLIED'" size="sm" variant="ghost" @click="revertItem(item)">Откатить</UiButton>
+              <span v-if="item.attempts > 1" class="admin-muted">попыток: {{ item.attempts }}</span>
+              <UiButton
+                v-if="item.status === 'APPLIED'"
+                size="sm"
+                variant="ghost"
+                :loading="busy === `item:${item.id}`"
+                @click="revertItem(item)"
+              >
+                Откатить
+              </UiButton>
             </div>
             <p v-if="item.error" class="error">{{ item.error }}</p>
             <div v-for="(change, key) in item.changes ?? {}" :key="key" class="diff-row">
@@ -476,11 +499,10 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
         </ul>
 
         <UiPagination
-          v-if="itemsPagination.pages > 1"
           :page="itemsPage"
           :pages="itemsPagination.pages"
           :total="itemsPagination.total"
-          @change="itemsPage = $event"
+          @change="setItemsPage"
         />
       </template>
     </UiModal>
@@ -492,45 +514,43 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
       </UiField>
       <template #footer>
         <UiButton variant="ghost" @click="rescheduling = null">Отмена</UiButton>
-        <UiButton @click="submitReschedule">Поставить в очередь</UiButton>
+        <UiButton
+          :loading="rescheduling ? isBusy(rescheduling, 'resume') : false"
+          @click="submitReschedule"
+        >
+          Поставить в очередь
+        </UiButton>
       </template>
     </UiModal>
 
     <!-- Revert -->
-    <UiModal :open="Boolean(confirmRevert)" title="Откатить задачу?" size="sm" @update:open="confirmRevert = null">
-      <p class="muted">
-        Обновлённые поля ({{ confirmRevert?.applied }} записей) вернутся к прежним значениям. Поле, которое
-        после задачи уже кто-то изменил, останется как есть. Закрепление от перепарсинга снимается.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="confirmRevert = null">Отмена</UiButton>
-        <UiButton
-          variant="danger"
-          :loading="confirmRevert ? isBusy(confirmRevert, 'revert') : false"
-          @click="confirmRevert && action(confirmRevert, 'revert', 'Откачено').then(() => (confirmRevert = null))"
-        >
-          Откатить
-        </UiButton>
-      </template>
-    </UiModal>
+    <UiConfirm
+      :open="Boolean(confirmRevert)"
+      title="Откатить задачу?"
+      confirm-label="Откатить"
+      :busy="confirmRevert ? isBusy(confirmRevert, 'revert') : false"
+      @update:open="confirmRevert = null"
+      @confirm="revertTask"
+    >
+      Обновлённые поля ({{ confirmRevert?.applied }} записей) вернутся к прежним значениям. Поле, которое
+      после задачи уже кто-то изменил, останется как есть. Закрепление от перепарсинга снимается.
+    </UiConfirm>
 
     <!-- Delete -->
-    <UiModal :open="Boolean(confirmDelete)" title="Удалить задачу?" size="sm" @update:open="confirmDelete = null">
-      <p class="muted">
-        История и возможность отката пропадут. Уже внесённые изменения в товарах и категориях останутся.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="confirmDelete = null">Отмена</UiButton>
-        <UiButton variant="danger" :loading="confirmDelete ? isBusy(confirmDelete, 'delete') : false" @click="removeTask">
-          Удалить
-        </UiButton>
-      </template>
-    </UiModal>
+    <UiConfirm
+      :open="Boolean(confirmDelete)"
+      title="Удалить задачу?"
+      :busy="confirmDelete ? isBusy(confirmDelete, 'delete') : false"
+      @update:open="confirmDelete = null"
+      @confirm="removeTask"
+    >
+      История и возможность отката пропадут. Уже внесённые изменения в товарах и категориях останутся.
+    </UiConfirm>
 
     <!-- Prompt editor -->
     <UiModal v-model:open="promptEditor" :title="editingPrompt ? 'Промпт' : 'Новый промпт'" size="md">
       <UiAlert v-if="promptError" tone="danger" class="block">{{ promptError }}</UiAlert>
-      <div class="form">
+      <div class="admin-form">
         <UiField label="Название" required for="pr-name">
           <UiInput id="pr-name" v-model="promptForm.name" />
         </UiField>
@@ -558,31 +578,10 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
 </template>
 
 <style scoped>
-.ai-page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p,
-.muted {
-  color: var(--text-muted);
+.admin-muted {
   font-size: var(--text-sm);
 }
 
-.head-actions,
 .toolbar,
 .actions {
   display: flex;
@@ -742,12 +741,6 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
   color: var(--text-strong);
   text-decoration: none;
   white-space: pre-wrap;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
 .block {

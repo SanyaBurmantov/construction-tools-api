@@ -18,7 +18,8 @@ type DuplicateProduct = {
   image: string | null
 }
 
-type DuplicateGroup = {
+/** Not `DuplicateGroup` from types/parsing — that is the data-quality report's name match. */
+type OfferDuplicateGroup = {
   signal: Signal
   confidence: Confidence
   key: string
@@ -26,13 +27,12 @@ type DuplicateGroup = {
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
-const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 
-const groups = ref<DuplicateGroup[]>([])
+const groups = ref<OfferDuplicateGroup[]>([])
 const loading = ref(true)
 const loadError = ref('')
-const busy = ref(false)
+const { run, busy } = useAdminAction()
 
 /** Chosen survivor per group; defaults to the one carrying the most offers. */
 const chosen = reactive<Record<string, string>>({})
@@ -41,7 +41,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    groups.value = await adminFetch<DuplicateGroup[]>('/offers/duplicates')
+    groups.value = await adminFetch<OfferDuplicateGroup[]>('/offers/duplicates')
     for (const group of groups.value) {
       if (!chosen[group.key]) {
         const best = [...group.products].sort((a, b) => b.offerCount - a.offerCount)[0]
@@ -59,61 +59,53 @@ onMounted(load)
 
 const confirmAuto = ref(false)
 
-async function rebuildKeys() {
-  busy.value = true
-  try {
-    const result = await adminFetch<{ processed: number }>('/offers/rebuild-keys', {
-      method: 'POST',
-    })
-    toast.success(`Ключи пересобраны у ${result.processed} товаров`)
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось пересобрать ключи'))
-  } finally {
-    busy.value = false
-  }
-}
+const rebuildKeys = () =>
+  run(() => adminFetch<{ processed: number }>('/offers/rebuild-keys', { method: 'POST' }), {
+    key: 'rebuild',
+    error: 'Не удалось пересобрать ключи',
+    success: result => `Ключи пересобраны у ${result.processed} товаров`,
+    after: load,
+  })
 
 async function autoMerge() {
-  busy.value = true
-  try {
-    const result = await adminFetch<{ groups: number, merged: number, skipped: number }>(
+  const done = await run(
+    () => adminFetch<{ groups: number, merged: number, skipped: number }>(
       '/offers/auto-merge',
       { method: 'POST' }
-    )
-    toast.success(
-      `Объединено товаров: ${result.merged}. Оставлено на ручное решение: ${result.skipped}`
-    )
-    confirmAuto.value = false
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Автослияние не удалось'))
-  } finally {
-    busy.value = false
-  }
+    ),
+    {
+      key: 'auto',
+      error: 'Автослияние не удалось',
+      success: result =>
+        `Объединено товаров: ${result.merged}. Оставлено на ручное решение: ${result.skipped}`,
+      after: load,
+    },
+  )
+  if (done) confirmAuto.value = false
 }
 
-/** Folds every other product in the group into the chosen survivor. */
-async function mergeGroup(group: DuplicateGroup) {
+/**
+ * Folds every other product in the group into the chosen survivor, one
+ * request per duplicate. Reloads whatever happened: when the third merge of
+ * five fails, two have already landed and the group on screen is stale.
+ */
+async function mergeGroup(group: OfferDuplicateGroup) {
   const targetId = chosen[group.key]
   if (!targetId) return
 
-  busy.value = true
-  try {
-    for (const product of group.products) {
-      if (product.id === targetId) continue
-      await adminFetch('/offers/merge', {
-        method: 'POST',
-        body: { targetId, duplicateId: product.id },
-      })
-    }
-    toast.success('Товары объединены')
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось объединить'))
-  } finally {
-    busy.value = false
-  }
+  await run(
+    async () => {
+      for (const product of group.products) {
+        if (product.id === targetId) continue
+        await adminFetch('/offers/merge', {
+          method: 'POST',
+          body: { targetId, duplicateId: product.id },
+        })
+      }
+    },
+    { key: `merge-${group.key}`, error: 'Не удалось объединить', success: 'Товары объединены' },
+  )
+  await load()
 }
 
 const SIGNAL_LABELS: Record<Signal, string> = {
@@ -141,21 +133,18 @@ const autoMergeableCount = computed(
 </script>
 
 <template>
-  <div class="admin-duplicates">
-    <header class="head">
-      <div>
-        <h1>Дубли товаров</h1>
-        <p>Один товар от разных поставщиков — одна карточка и несколько предложений</p>
-      </div>
-      <div class="head-actions">
-        <UiButton variant="secondary" :loading="busy" @click="rebuildKeys">
-          Пересобрать ключи
-        </UiButton>
-        <UiButton :disabled="!autoMergeableCount" @click="confirmAuto = true">
-          Объединить надёжные ({{ autoMergeableCount }})
-        </UiButton>
-      </div>
-    </header>
+  <div class="admin-page">
+    <AdminPageHead
+      title="Дубли товаров"
+      description="Один товар от разных поставщиков — одна карточка и несколько предложений"
+    >
+      <UiButton variant="secondary" :loading="busy === 'rebuild'" @click="rebuildKeys">
+        Пересобрать ключи
+      </UiButton>
+      <UiButton :disabled="!autoMergeableCount" @click="confirmAuto = true">
+        Объединить надёжные ({{ autoMergeableCount }})
+      </UiButton>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -175,7 +164,7 @@ const autoMergeableCount = computed(
       title="Дублей не найдено"
       description="Если каталог только что собран, сначала пересоберите ключи сопоставления."
     >
-      <UiButton variant="secondary" :loading="busy" @click="rebuildKeys">
+      <UiButton variant="secondary" :loading="busy === 'rebuild'" @click="rebuildKeys">
         Пересобрать ключи
       </UiButton>
     </UiEmpty>
@@ -190,7 +179,12 @@ const autoMergeableCount = computed(
             <span>{{ SIGNAL_LABELS[group.signal] }}</span>
             <code>{{ group.key }}</code>
           </div>
-          <UiButton size="sm" :loading="busy" @click="mergeGroup(group)">
+          <UiButton
+            size="sm"
+            :loading="busy === `merge-${group.key}`"
+            :disabled="Boolean(busy) && busy !== `merge-${group.key}`"
+            @click="mergeGroup(group)"
+          >
             Объединить в выбранный
           </UiButton>
         </header>
@@ -233,54 +227,28 @@ const autoMergeableCount = computed(
       </li>
     </ul>
 
-    <UiModal v-model:open="confirmAuto" title="Объединить надёжные дубли?" size="sm">
-      <p class="confirm-text">
+    <UiConfirm
+      v-model:open="confirmAuto"
+      title="Объединить надёжные дубли?"
+      confirm-label="Объединить"
+      tone="primary"
+      :busy="busy === 'auto'"
+      @confirm="autoMerge"
+    >
+      <p>
         Будут объединены только группы, совпавшие по штрихкоду или по паре
         «бренд + артикул» — {{ autoMergeableCount }} шт. Останется карточка
         с наибольшим числом предложений, остальные присоединятся к ней.
       </p>
-      <p class="confirm-text warn">
+      <p class="warn">
         Отзывы, характеристики и история цен переносятся, старые адреса начнут
         вести на выжившую карточку. Отменить слияние нельзя.
       </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="confirmAuto = false">Отмена</UiButton>
-        <UiButton :loading="busy" @click="autoMerge">Объединить</UiButton>
-      </template>
-    </UiModal>
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-duplicates {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
 .list {
   display: flex;
   flex-direction: column;
@@ -435,11 +403,7 @@ const autoMergeableCount = computed(
   color: var(--success-soft-text);
 }
 
-.confirm-text {
-  color: var(--text-muted);
-}
-
-.confirm-text.warn {
+.warn {
   margin-top: var(--space-3);
   color: var(--warning-soft-text);
   font-weight: 600;

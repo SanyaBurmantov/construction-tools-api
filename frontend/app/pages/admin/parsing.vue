@@ -13,6 +13,7 @@ import type {
   SourceDraft,
   SupplierSummary,
 } from '~/types/parsing'
+import type { Paginated } from '~/types/api'
 import type { ParserQueue } from '~/composables/useParserQueue'
 import { createParserQueue } from '~/composables/useParserQueue'
 
@@ -34,7 +35,7 @@ const nuxtApp = useNuxtApp()
 
 const control = ref<ParserOverview | null>(null)
 const jobs = ref<ParserJob[]>([])
-const jobsBusy = ref('')
+const { run: runJobAction, busy: jobsBusy } = useAdminAction()
 /** Polls while something is running, so a long crawl shows progress. */
 let jobsTimer: ReturnType<typeof setInterval> | null = null
 
@@ -51,25 +52,22 @@ async function loadJobs() {
  * Fires the job and returns at once — a tools.by catalog crawl runs for about
  * a quarter of an hour, so the button reports "запущено", not "готово".
  */
-async function runJob(job: ParserJob) {
-  jobsBusy.value = job.name
-  try {
-    const result = await adminFetch<{ started: boolean, reason?: string }>(
+const runJob = (job: ParserJob) =>
+  runJobAction(
+    () => adminFetch<{ started: boolean, reason?: string }>(
       `/parser/sources/${expandedSource.value}/jobs/${job.name}/run`,
       { method: 'POST' },
-    )
-    if (result.started) {
-      toast.success(`${job.label}: запущено, следите за статусом`)
-    } else {
-      toast.error(`${job.label}: уже выполняется`)
-    }
-    await loadJobs()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось запустить задание'))
-  } finally {
-    jobsBusy.value = ''
-  }
-}
+    ),
+    {
+      key: job.name,
+      error: 'Не удалось запустить задание',
+      after: (result) => {
+        if (result.started) toast.success(`${job.label}: запущено, следите за статусом`)
+        else toast.error(`${job.label}: уже выполняется`)
+        return loadJobs()
+      },
+    },
+  )
 
 const anyJobRunning = computed(() => jobs.value.some(job => job.isRunning))
 
@@ -89,26 +87,34 @@ onBeforeUnmount(() => {
   if (jobsTimer) clearInterval(jobsTimer)
 })
 
-const controlBusy = ref('')
+const { run: runControlAction, busy: controlBusy } = useAdminAction()
 /** Edited separately from `control` so typing doesn't fight a reload. */
 const drafts = reactive<Record<string, SourceDraft>>({})
+/** What each draft was last seeded from — tells an edited draft from a stale one. */
+const seededFrom: Record<string, SourceDraft> = {}
 /** Which source has its advanced settings open. */
 const expandedSource = ref('')
 
-async function loadControl() {
+/**
+ * `saved` names the source whose form was just stored: its draft is re-seeded
+ * even though it differs from the previous server values, so a saved value
+ * stops looking edited.
+ */
+async function loadControl(saved?: string) {
   if (!hasSession.value) return
   try {
     control.value = await adminFetch<ParserOverview>('/parser/overview')
-    // Re-seed drafts from the server so a saved value stops looking edited.
+    // Re-seed only the drafts nobody is editing. This runs on every 5 s poll
+    // while a job is running and after every action, and re-seeding them all
+    // wiped whatever was being typed into another source's form.
     for (const source of control.value.sources) {
-      drafts[source.code] = {
-        batchLimit: source.batchLimit,
-        requestDelayMs: source.requestDelayMs,
-        maxPages: source.maxPages,
-        categoryBatchLimit: source.categoryBatchLimit ?? 0,
-        categoryIncludeRegex: source.categoryFilters.include,
-        categoryExcludeRegex: source.categoryFilters.exclude,
+      const next = draftFromSource(source)
+      const draft = drafts[source.code]
+      const previous = seededFrom[source.code]
+      if (!draft || !previous || source.code === saved || sameDraft(draft, previous)) {
+        drafts[source.code] = { ...next }
       }
+      seededFrom[source.code] = next
     }
     // The queue tabs come from the same answer; a reload adds a source that
     // appeared and leaves the ones already loaded alone.
@@ -124,17 +130,13 @@ async function loadControl() {
   }
 }
 
-async function runControl(action: string, request: () => Promise<string>) {
-  controlBusy.value = action
-  try {
-    toast.success(await request())
-    await loadControl()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить настройки'))
-  } finally {
-    controlBusy.value = ''
-  }
-}
+const runControl = (action: string, request: () => Promise<string>, saved?: string) =>
+  runControlAction(request, {
+    key: action,
+    error: 'Не удалось изменить настройки',
+    success: message => message,
+    after: () => loadControl(saved),
+  })
 
 const toggleCron = (enabled: boolean) =>
   runControl('cron', async () => {
@@ -176,7 +178,7 @@ const saveSourceSettings = (code: string) =>
       },
     })
     return `${code}: настройки сохранены`
-  })
+  }, code)
 
 /* ------------------------------------------------------------------ queues */
 
@@ -244,7 +246,7 @@ const categoryRows = ref<CategoryRow[]>([])
 const categoryPagination = reactive({ page: 1, limit: 50, total: 0, pages: 0 })
 const categoryFilters = reactive({ search: '', status: '' })
 const categoryLoading = ref(false)
-const categoryBusy = ref('')
+const { run: runCategory, busy: categoryBusy } = useAdminAction()
 
 const categoryStats = computed(() =>
   categorySources.value.find(source => source.code === categorySource.value)?.categories ?? null
@@ -254,15 +256,14 @@ async function loadCategories() {
   if (!hasSession.value) return
   categoryLoading.value = true
   try {
-    const params = new URLSearchParams({ source: categorySource.value })
-    if (categoryFilters.search) params.set('search', categoryFilters.search)
-    if (categoryFilters.status) params.set('status', categoryFilters.status)
-    params.set('page', String(categoryPagination.page))
-    params.set('limit', String(categoryPagination.limit))
-
-    const response = await adminFetch<{ data: CategoryRow[], pagination: typeof categoryPagination }>(
-      `/parser/categories?${params}`
-    )
+    const response = await adminFetch<Paginated<CategoryRow>>('/parser/categories', {
+      params: compactParams({
+        source: categorySource.value,
+        ...categoryFilters,
+        page: categoryPagination.page,
+        limit: categoryPagination.limit,
+      }),
+    })
     categoryRows.value = response.data
     Object.assign(categoryPagination, response.pagination)
   } catch (error) {
@@ -272,17 +273,13 @@ async function loadCategories() {
   }
 }
 
-async function runCategoryAction(action: string, request: () => Promise<string>) {
-  categoryBusy.value = action
-  try {
-    toast.success(await request())
-    await Promise.all([loadCategories(), loadControl()])
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось выполнить действие'))
-  } finally {
-    categoryBusy.value = ''
-  }
-}
+const runCategoryAction = (action: string, request: () => Promise<string>) =>
+  runCategory(request, {
+    key: action,
+    error: 'Не удалось выполнить действие',
+    success: message => message,
+    after: () => Promise.all([loadCategories(), loadControl()]),
+  })
 
 const refreshCategories = () =>
   runCategoryAction('refresh', async () => {
@@ -381,9 +378,6 @@ async function loadOverview() {
     errors.value = nextErrors
     supplierSummary.value = nextSummary
     sources.value = nextSources
-    // The header's "Обновить состояние" is the one button an operator presses,
-    // so it has to refresh the switches too, not just the health cards.
-    await loadControl()
     if (!importForm.sourceId && nextSources.length === 1) importForm.sourceId = nextSources[0]!.id
   } catch (error) {
     toast.error(errorMessage(error, 'Не удалось загрузить состояние парсеров'))
@@ -392,15 +386,22 @@ async function loadOverview() {
   }
 }
 
-async function clearErrors() {
-  try {
-    await adminFetch('/queue/errors', { method: 'DELETE' })
-    toast.success('Лог ошибок очищен')
-    await loadOverview()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось очистить лог'))
-  }
-}
+/**
+ * The header's "Обновить состояние" is the one button an operator presses, so
+ * it refreshes the switches too, not just the health cards. Kept out of
+ * `loadOverview()` itself, which mount used to follow with a second
+ * `/parser/overview` of its own.
+ */
+const refreshState = () => Promise.all([loadOverview(), loadControl()])
+
+const { run: runPageAction } = useAdminAction()
+
+const clearErrors = () =>
+  runPageAction(() => adminFetch('/queue/errors', { method: 'DELETE' }), {
+    error: 'Не удалось очистить лог',
+    success: 'Лог ошибок очищен',
+    after: loadOverview,
+  })
 
 /* ---------------------------------------------------------------- import */
 
@@ -410,18 +411,18 @@ const importing = ref(false)
 async function importProduct() {
   if (!importForm.sourceId || !importForm.url) return
   importing.value = true
-  try {
-    const result = await adminFetch<{ product: { name: string } }>('/source-products/import', {
+  await runPageAction(
+    () => adminFetch<{ product: { name: string } }>('/source-products/import', {
       method: 'POST',
       body: { ...importForm },
-    })
-    toast.success(`Товар добавлен: ${result.product.name}`)
-    importForm.url = ''
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось добавить товар из источника'))
-  } finally {
-    importing.value = false
-  }
+    }),
+    {
+      error: 'Не удалось добавить товар из источника',
+      success: result => `Товар добавлен: ${result.product.name}`,
+      after: () => { importForm.url = '' },
+    },
+  )
+  importing.value = false
 }
 
 /* --------------------------------------------------------- data quality */
@@ -455,18 +456,15 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
 </script>
 
 <template>
-  <div class="admin-parsing">
-    <header class="head">
-      <div>
-        <h1>Парсинг</h1>
-        <p>Состояние кронов, очереди поставщиков и качество импортированных данных.</p>
-      </div>
-      <div class="head-actions">
-        <UiButton variant="secondary" size="sm" :loading="overviewLoading" @click="loadOverview()">
-          Обновить состояние
-        </UiButton>
-      </div>
-    </header>
+  <div class="admin-page admin-parsing">
+    <AdminPageHead
+      title="Парсинг"
+      description="Состояние кронов, очереди поставщиков и качество импортированных данных."
+    >
+      <UiButton variant="secondary" size="sm" :loading="overviewLoading" @click="refreshState()">
+        Обновить состояние
+      </UiButton>
+    </AdminPageHead>
 
     <AdminParsingSourceControl
       v-model:expanded-source="expandedSource"
@@ -533,32 +531,9 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
 </template>
 
 <style scoped>
-.admin-parsing {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 /*
  * The chrome every panel shares — card headers, paddings, the muted/danger
- * text, the stat strip, the toolbars and the pagers. It lives here, reaching
+ * text, the stat strip and the toolbars. It lives here, reaching
  * into the panels with `:deep()`, instead of being copied into nine scoped
  * stylesheets; each panel keeps only the styles that are its own.
  */
@@ -671,13 +646,5 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
 
 .admin-parsing :deep(.toolbar-filters .ui-select) {
   width: 160px;
-}
-
-.admin-parsing :deep(.pagination) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
 }
 </style>

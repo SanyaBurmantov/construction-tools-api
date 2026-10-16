@@ -8,7 +8,7 @@ const currentYear = new Date().getFullYear()
 
 <template>
   <footer class="site-footer">
-    <div class="footer-shell">
+    <div class="container footer-shell">
       <div class="footer-brand">
         <NuxtLink to="/" class="brand-link">
           <BrandLogo />
@@ -49,7 +49,7 @@ const currentYear = new Date().getFullYear()
       </div>
     </div>
 
-    <div class="footer-bottom">
+    <div class="container footer-bottom">
       <span>© {{ currentYear }} {{ company.name }}{{ unp ? `, УНП ${unp}` : '' }}</span>
       <span>Цены и наличие обновляются ежедневно.</span>
       <span class="footer-disclaimer">
@@ -63,14 +63,8 @@ const currentYear = new Date().getFullYear()
 <style scoped lang="scss">
 .site-footer {
   border-top: 1px solid var(--border-subtle);
-  background: white;
+  background: var(--surface-card);
   color: var(--text-muted);
-}
-
-.footer-shell,
-.footer-bottom {
-  width: min(1280px, calc(100% - 32px));
-  margin: 0 auto;
 }
 
 .footer-shell {
@@ -78,7 +72,7 @@ const currentYear = new Date().getFullYear()
   gap: 28px;
   padding: 36px 0;
 
-  @include media-breakpoint-up(md) {
+  @media (min-width: 640px) {
     grid-template-columns: minmax(0, 1.4fr) 220px 280px;
   }
 }
@@ -87,34 +81,14 @@ const currentYear = new Date().getFullYear()
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #101828;
+  color: var(--text-strong);
   text-decoration: none;
 
-  strong,
   small {
     display: block;
-  }
-
-  strong {
-    font-size: 20px;
-    font-weight: 900;
-  }
-
-  small {
     color: var(--text-muted);
     font-size: 12px;
   }
-}
-
-.brand-mark {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--brand);
-  color: white;
-  font-weight: 900;
 }
 
 .footer-brand p {
@@ -131,7 +105,7 @@ const currentYear = new Date().getFullYear()
 
   h2 {
     margin-bottom: 4px;
-    color: #101828;
+    color: var(--text-strong);
     font-size: 15px;
     font-weight: 900;
   }

@@ -1,26 +1,18 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
+import type { ProductDetail } from '~/types/api'
+import { toCardProduct } from '~/composables/useProductActions'
 import { company } from '~/data/company'
-import ProductGallery from '~/components/product/productGallery.vue'
-
-type Product = CatalogProduct & {
-  model?: string | null
-  descriptionShort?: string | null
-  descriptionFull?: string | null
-  images?: Array<{ id?: string, url: string, alt?: string | null }>
-  /** Aggregate only — supplier links and costs never leave the admin API. */
-  offers?: { count: number, inStockCount: number }
-}
 
 const route = useRoute()
 const config = useRuntimeConfig()
 const slug = computed(() => String(route.params.slug))
-const apiBase = import.meta.server ? config.apiBaseServer : config.public.apiBase
+const { apiBase, absoluteUrl } = useSite()
 
-const { data: product, status, error } = await useAsyncData<Product>(
+// The key follows the slug, so it alone re-runs the fetch on navigation.
+const { data: product, status, error } = await useAsyncData<ProductDetail>(
   () => `product:${slug.value}`,
-  () => $fetch(`${apiBase}/products/${slug.value}`),
-  { watch: [slug] }
+  () => $fetch(`${apiBase}/products/${slug.value}`)
 )
 
 if (error.value) {
@@ -41,6 +33,7 @@ if (error.value) {
 
 const fallbackProduct: CatalogProduct = { id: '', slug: '', name: '' }
 const {
+  currency,
   canBuy,
   inStock,
   availabilityLabel,
@@ -65,13 +58,12 @@ watch(() => product.value?.id, () => {
     name: value.name,
     image: value.images?.[0]?.url ?? null,
     price: value.priceValue ?? null,
-    currency: value.priceCurrency || 'BYN',
+    currency: currency.value,
   })
 }, { immediate: true })
 
 /* ---- Buy box ----------------------------------------------------------- */
 const quantity = ref(1)
-const currency = computed(() => product.value?.priceCurrency)
 
 const savings = computed(() => {
   if (!hasDiscount.value || !product.value) return 0
@@ -104,17 +96,23 @@ watch(() => product.value?.id, () => {
 }, { immediate: true })
 
 /* ---- Related ----------------------------------------------------------- */
+// Keyed by what the result depends on — the category and the product it
+// excludes — so a new product re-fetches without a deep `watch` on it. Rows
+// are cut to what a card renders (see `toCardProduct`).
 const { data: related } = await useAsyncData(
-  () => `related:${slug.value}`,
+  () => `related:${product.value?.category?.slug ?? ''}:${product.value?.id ?? ''}`,
   async () => {
     const categorySlug = product.value?.category?.slug
     if (!categorySlug) return []
     const response = await $fetch<{ data: CatalogProduct[] }>(`${apiBase}/products`, {
       params: { categorySlug, limit: 5 },
     }).catch(() => ({ data: [] }))
-    return response.data.filter((item) => item.id !== product.value?.id).slice(0, 4)
+    return response.data
+      .filter((item) => item.id !== product.value?.id)
+      .slice(0, 4)
+      .map(toCardProduct)
   },
-  { watch: [product], default: () => [] as CatalogProduct[] }
+  { default: () => [] as CatalogProduct[] }
 )
 
 /* ---- Breadcrumbs ------------------------------------------------------- */
@@ -135,8 +133,7 @@ const breadcrumbs = computed(() => {
 
 /* ---- SEO --------------------------------------------------------------- */
 const images = computed(() => product.value?.images ?? [])
-const siteBase = computed(() => String(config.public.siteUrl).replace(/\/$/, ''))
-const canonicalUrl = computed(() => `${siteBase.value}/product/${slug.value}`)
+const canonicalUrl = computed(() => absoluteUrl(`/product/${slug.value}`))
 const ogImage = computed(() => images.value[0]?.url || undefined)
 /**
  * Our own template, never the supplier's `descriptionShort` — on some sources
@@ -145,7 +142,7 @@ const ogImage = computed(() => images.value[0]?.url || undefined)
  */
 const metaDescription = computed(() => {
   const p = product.value
-  if (!p?.name) return 'Карточка товара Мультитул'
+  if (!p?.name) return 'Карточка товара Gost.by'
   return buildProductMetaDescription({
     name: p.name,
     brand: p.brand?.name,
@@ -157,17 +154,15 @@ const metaDescription = computed(() => {
 })
 
 useSeoMeta({
-  title: () => (product.value?.name ? `${product.value.name} | Мультитул` : 'Товар | Мультитул'),
+  title: () => (product.value?.name ? `${product.value.name} | Gost.by` : 'Товар | Gost.by'),
   description: () => metaDescription.value,
-  ogTitle: () => product.value?.name || 'Товар | Мультитул',
+  ogTitle: () => product.value?.name || 'Товар | Gost.by',
   ogDescription: () => metaDescription.value,
   ogType: 'website',
   ogUrl: () => canonicalUrl.value,
   ogImage: () => ogImage.value,
+  // Twitter falls back to the og:* tags for title, description and image.
   twitterCard: 'summary_large_image',
-  twitterTitle: () => product.value?.name || 'Товар | Мультитул',
-  twitterDescription: () => metaDescription.value,
-  twitterImage: () => ogImage.value,
 })
 
 useHead(() => {
@@ -190,7 +185,7 @@ useHead(() => {
     productLd.offers = {
       '@type': 'Offer',
       price: p.priceValue,
-      priceCurrency: p.priceCurrency || 'BYN',
+      priceCurrency: currency.value,
       availability:
         p.stockStatus === 'out_of_stock'
           ? 'https://schema.org/BackOrder'
@@ -321,9 +316,7 @@ useHead(() => {
                 :aria-pressed="isFavourite"
                 @click="toggleWishlist"
               >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20z" :fill="isFavourite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-                </svg>
+                <UiIcon name="heart" :filled="isFavourite" />
                 {{ isFavourite ? 'В избранном' : 'В избранное' }}
               </button>
 
@@ -334,17 +327,13 @@ useHead(() => {
                 :aria-pressed="isComparing"
                 @click="toggleCompare"
               >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 20V9m6 11V4m6 16v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                </svg>
+                <UiIcon name="compare" :stroke-width="1.8" />
                 {{ isComparing ? 'В сравнении' : 'Сравнить' }}
               </button>
             </div>
 
             <p v-if="(product.offers?.count ?? 0) > 1" class="offers-note">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
+              <UiIcon name="check" :stroke-width="2" />
               Лучшая цена из {{ pluralize(product.offers!.count, 'offerOf') }} поставщиков
             </p>
 
@@ -399,7 +388,7 @@ useHead(() => {
 
       <section v-if="related.length" class="related">
         <h2>Похожие товары</h2>
-        <div class="related-grid">
+        <div class="product-grid">
           <ProductCatalogCard
             v-for="item in related"
             :key="item.id"
@@ -714,12 +703,6 @@ useHead(() => {
 .related {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-}
-
-.related-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: var(--space-4);
 }
 

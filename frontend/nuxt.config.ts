@@ -27,7 +27,6 @@ export default defineNuxtConfig({
     quality: 80,
   },
   css: ['@/assets/scss/main.scss'],
-  ssr: true,
   app: {
     head: {
       htmlAttrs: { lang: 'ru' },
@@ -48,25 +47,16 @@ export default defineNuxtConfig({
       meta: [
         { name: 'color-scheme', content: 'light' },
         { name: 'theme-color', content: '#1d4ed8' },
-        { name: 'apple-mobile-web-app-title', content: 'Мультитул' },
+        { name: 'apple-mobile-web-app-title', content: 'Gost.by' },
         // Default social preview; pages with their own image override it.
         { property: 'og:image', content: '/og-image.png' },
         { property: 'og:image:width', content: '1200' },
         { property: 'og:image:height', content: '630' },
-        { property: 'og:site_name', content: 'Мультитул' },
+        { property: 'og:site_name', content: 'Gost.by' },
         { property: 'og:locale', content: 'ru_RU' },
         { name: 'twitter:image', content: '/og-image.png' },
       ],
     },
-  },
-  vite: {
-    css: {
-      preprocessorOptions: {
-        scss: {
-          additionalData: '@use "@/assets/scss/mixins.scss" as *;'
-        }
-      }
-    }
   },
   routeRules: {
     /**
@@ -102,6 +92,15 @@ export default defineNuxtConfig({
     // the catalogue itself.
     '/brand': { isr: 900, swr: 900 },
     '/brand/**': { isr: 900, swr: 900 },
+    '/sales': { swr: 300 },
+    // Static information pages: they change with a deploy, not with the
+    // catalogue, so an hour of cache costs nothing.
+    '/delivery': { swr: 3600 },
+    '/about': { swr: 3600 },
+    '/contacts': { swr: 3600 },
+    '/garantiya': { swr: 3600 },
+    '/usloviya': { swr: 3600 },
+    '/privacy': { swr: 3600 },
     '/cart': { ssr: false },
     '/checkout/**': { ssr: false },
     // Wishlist and comparison live in localStorage — nothing to render on the

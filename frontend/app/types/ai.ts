@@ -1,4 +1,5 @@
 /** Shapes of `/admin/ai/*` (backend `src/ai/`). */
+import type { ProductStatus } from '~/utils/product-status'
 
 export type AiEntity = 'PRODUCT' | 'CATEGORY'
 export type AiTaskStatus = 'QUEUED' | 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED'
@@ -35,7 +36,7 @@ export type AiProductRow = {
   name: string
   slug: string
   sku: string | null
-  status: 'DRAFT' | 'PUBLISHED' | 'HIDDEN' | 'ARCHIVED'
+  status: ProductStatus
   stockStatus: string | null
   image: string | null
   aiLockedFields: string[]
@@ -114,4 +115,12 @@ export const AI_ITEM_STATUS: Record<AiTaskItemStatus, { label: string, tone: 'ne
   UNCHANGED: { label: 'Без изменений', tone: 'neutral' },
   FAILED: { label: 'Ошибка', tone: 'danger' },
   REVERTED: { label: 'Откачено', tone: 'warning' },
+}
+
+/** What the shared picker screen needs of a row, product or category. */
+export type AiPickerRow = {
+  id: string
+  name: string
+  lengths: Record<string, number>
+  aiLockedFields?: string[]
 }

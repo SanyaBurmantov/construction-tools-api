@@ -1,20 +1,13 @@
 <script setup lang="ts">
 /**
- * The wordmark. Inline SVG rather than an <img> so the mark inherits the
- * surrounding colour — the footer renders it on a dark surface.
+ * The wordmark. Inline SVG rather than an <img> so the mark takes its colour
+ * from the brand token.
  */
-withDefaults(
-  defineProps<{
-    size?: 'sm' | 'md'
-    /** Inverts the wordmark for dark backgrounds. */
-    inverse?: boolean
-  }>(),
-  { size: 'md' }
-)
+withDefaults(defineProps<{ size?: 'sm' | 'md' }>(), { size: 'md' })
 </script>
 
 <template>
-  <span class="brand-logo" :class="[`size-${size}`, { 'is-inverse': inverse }]">
+  <span class="brand-logo" :class="`size-${size}`">
     <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
       <rect width="64" height="64" rx="14" fill="currentColor" />
       <path
@@ -66,17 +59,5 @@ withDefaults(
 
 .size-md .word {
   font-size: var(--text-lg);
-}
-
-.is-inverse {
-  color: #fff;
-}
-
-.is-inverse .glyph {
-  fill: var(--brand);
-}
-
-.is-inverse .word {
-  color: #fff;
 }
 </style>

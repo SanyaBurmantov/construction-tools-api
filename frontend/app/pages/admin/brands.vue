@@ -5,6 +5,7 @@ definePageMeta({ layout: 'admin' })
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
+const { run, busy } = useAdminAction()
 
 const brands = ref<AdminBrand[]>([])
 const loading = ref(false)
@@ -25,14 +26,17 @@ async function load() {
 
 onMounted(load)
 
+const sorted = computed(() =>
+  brands.value.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+)
+
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
-  const list = query
-    ? brands.value.filter(
-        (b) => b.name.toLowerCase().includes(query) || b.slug.toLowerCase().includes(query)
+  return query
+    ? sorted.value.filter(
+        b => b.name.toLowerCase().includes(query) || b.slug.toLowerCase().includes(query)
       )
-    : brands.value
-  return list.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    : sorted.value
 })
 
 /* ---- Editor ------------------------------------------------------------ */
@@ -50,23 +54,6 @@ const blankForm = () => ({
   seoDescription: '',
 })
 const form = reactive(blankForm())
-
-const TRANSLIT: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
-  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
-  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch',
-  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
-}
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .split('')
-    .map((char) => TRANSLIT[char] ?? char)
-    .join('')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 90)
 
 function openCreate() {
   editing.value = null
@@ -134,64 +121,62 @@ async function save() {
 /* ---- Merge & delete ---------------------------------------------------- */
 const merging = ref<AdminBrand | null>(null)
 const mergeTarget = ref('')
-const mergeBusy = ref(false)
 
 async function confirmMerge() {
-  if (!merging.value || !mergeTarget.value) return
-  mergeBusy.value = true
-  try {
-    await adminFetch(`/brands/${merging.value.id}/merge`, {
+  const brand = merging.value
+  if (!brand) return
+  if (!mergeTarget.value) {
+    toast.error('Выберите целевой бренд')
+    return
+  }
+  const done = await run(
+    () => adminFetch(`/brands/${brand.id}/merge`, {
       method: 'POST',
       body: { targetBrandId: mergeTarget.value },
-    })
-    toast.success('Бренды объединены')
+    }),
+    { key: 'merge', error: 'Не удалось объединить бренды', success: 'Бренды объединены', after: load },
+  )
+  if (done !== undefined) {
     merging.value = null
     mergeTarget.value = ''
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось объединить бренды'))
-  } finally {
-    mergeBusy.value = false
   }
 }
 
 const deleting = ref<AdminBrand | null>(null)
-const deletingBusy = ref(false)
 
 async function confirmDelete() {
-  if (!deleting.value) return
-  deletingBusy.value = true
-  try {
-    await adminFetch(`/brands/${deleting.value.id}`, { method: 'DELETE' })
-    toast.success('Бренд удалён')
-    deleting.value = null
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось удалить бренд'))
-  } finally {
-    deletingBusy.value = false
-  }
+  const brand = deleting.value
+  if (!brand) return
+  const done = await run(() => adminFetch(`/brands/${brand.id}`, { method: 'DELETE' }), {
+    key: 'delete',
+    error: 'Не удалось удалить бренд',
+    success: 'Бренд удалён',
+    after: load,
+  })
+  if (done !== undefined) deleting.value = null
 }
 
+// Every brand, not just the ones the search left on screen: the brand being
+// merged was found by typing its own name, which filtered the target out.
 const mergeOptions = computed(() =>
-  filtered.value
-    .filter((b) => b.id !== merging.value?.id)
-    .map((b) => ({ value: b.id, label: b.name }))
+  sorted.value
+    .filter(b => b.id !== merging.value?.id)
+    .map(b => ({ value: b.id, label: b.name }))
 )
 </script>
 
 <template>
-  <div class="admin-brands">
-    <header class="head">
-      <div>
-        <h1>Бренды</h1>
-        <p>{{ brands.length }} брендов в каталоге</p>
-      </div>
-      <div class="head-actions">
-        <UiInput v-model="search" placeholder="Найти бренд" size="sm" class="search" />
-        <UiButton @click="openCreate">Добавить</UiButton>
-      </div>
-    </header>
+  <div class="admin-page">
+    <AdminPageHead title="Бренды" :description="`${brands.length} брендов в каталоге`">
+      <UiInput
+        v-model="search"
+        placeholder="Найти бренд"
+        aria-label="Найти бренд"
+        size="sm"
+        class="search"
+      />
+      <UiButton @click="openCreate">Добавить</UiButton>
+    </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
@@ -241,7 +226,7 @@ const mergeOptions = computed(() =>
     >
       <UiAlert v-if="formError" tone="danger" class="form-error">{{ formError }}</UiAlert>
 
-      <div class="form">
+      <div class="admin-form">
         <UiField label="Название" required for="b-name">
           <UiInput id="b-name" v-model="form.name" />
         </UiField>
@@ -280,13 +265,16 @@ const mergeOptions = computed(() =>
       </template>
     </UiModal>
 
-    <UiModal
+    <UiConfirm
       :open="Boolean(merging)"
       title="Объединить бренды"
-      size="md"
+      confirm-label="Объединить"
+      tone="primary"
+      :busy="busy === 'merge'"
       @update:open="merging = null"
+      @confirm="confirmMerge"
     >
-      <p class="confirm-text">
+      <p class="merge-text">
         Все товары бренда «{{ merging?.name }}» переедут к выбранному бренду,
         а «{{ merging?.name }}» будет удалён. Так чистятся дубли от разных поставщиков.
       </p>
@@ -298,63 +286,22 @@ const mergeOptions = computed(() =>
           :options="mergeOptions"
         />
       </UiField>
+    </UiConfirm>
 
-      <template #footer>
-        <UiButton variant="ghost" @click="merging = null">Отмена</UiButton>
-        <UiButton :loading="mergeBusy" :disabled="!mergeTarget" @click="confirmMerge">
-          Объединить
-        </UiButton>
-      </template>
-    </UiModal>
-
-    <UiModal
+    <UiConfirm
       :open="Boolean(deleting)"
       title="Удалить бренд?"
-      size="sm"
+      :busy="busy === 'delete'"
       @update:open="deleting = null"
+      @confirm="confirmDelete"
     >
-      <p class="confirm-text">
-        «{{ deleting?.name }}» будет удалён. Если к нему привязаны товары,
-        API отклонит удаление — сначала объедините бренд с другим.
-      </p>
-      <template #footer>
-        <UiButton variant="ghost" @click="deleting = null">Отмена</UiButton>
-        <UiButton variant="danger" :loading="deletingBusy" @click="confirmDelete">Удалить</UiButton>
-      </template>
-    </UiModal>
+      «{{ deleting?.name }}» будет удалён. Если к нему привязаны товары,
+      API отклонит удаление — сначала объедините бренд с другим.
+    </UiConfirm>
   </div>
 </template>
 
 <style scoped>
-.admin-brands {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
-.head p {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.head-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
 .search {
   width: min(260px, 100%);
 }
@@ -446,18 +393,11 @@ const mergeOptions = computed(() =>
   gap: var(--space-1);
 }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
 .form-error {
   margin-bottom: var(--space-4);
 }
 
-.confirm-text {
+.merge-text {
   margin-bottom: var(--space-4);
-  color: var(--text-muted);
 }
 </style>

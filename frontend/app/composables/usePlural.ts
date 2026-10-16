@@ -48,6 +48,11 @@ export const PLURALS = {
   review: ['отзыв', 'отзыва', 'отзывов'],
   position: ['позиция', 'позиции', 'позиций'],
   subcategory: ['подкатегория', 'подкатегории', 'подкатегорий'],
+  category: ['категория', 'категории', 'категорий'],
+  /** After «в»: «в 1 категории», «в 5 категориях». */
+  categoryIn: ['категории', 'категориях', 'категориях'],
+  brand: ['бренд', 'бренда', 'брендов'],
+  order: ['заказ', 'заказа', 'заказов'],
   difference: ['отличие', 'отличия', 'отличий'],
   supplierPage: ['страница поставщика', 'страницы поставщика', 'страниц поставщика'],
 } as const satisfies Record<string, readonly [string, string, string]>
@@ -58,9 +63,4 @@ export type PluralNoun = keyof typeof PLURALS
 export function pluralize(count: number, noun: PluralNoun) {
   const [one, few, many] = PLURALS[noun]
   return withPlural(count, one, few, many)
-}
-
-/** Composable form, so templates can use it without an explicit import. */
-export function usePlural() {
-  return { plural, withPlural, pluralize, pluralForm }
 }

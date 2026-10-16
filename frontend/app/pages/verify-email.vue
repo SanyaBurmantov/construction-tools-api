@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { verifyEmail, refresh, isAuthenticated, errorMessage } = useAuth()
+const { verifyEmail, whenReady, isAuthenticated, errorMessage } = useAuth()
 const route = useRoute()
 
 const state = ref<'pending' | 'done' | 'failed'>('pending')
@@ -15,7 +15,7 @@ onMounted(async () => {
   }
   // The link is often opened on another device — knowing the session only
   // decides where the button below leads.
-  await refresh()
+  await whenReady()
   try {
     email.value = (await verifyEmail(token)).email
     state.value = 'done'
@@ -25,7 +25,7 @@ onMounted(async () => {
   }
 })
 
-useSeoMeta({ title: 'Подтверждение e-mail | Мультитул', robots: 'noindex,nofollow' })
+useSeoMeta({ title: 'Подтверждение e-mail | Gost.by', robots: 'noindex,nofollow' })
 </script>
 
 <template>

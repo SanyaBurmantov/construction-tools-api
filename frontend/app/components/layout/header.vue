@@ -23,7 +23,7 @@ type SuggestResponse = {
 const NAV_CATEGORY_LIMIT = 7
 
 const route = useRoute()
-const config = useRuntimeConfig()
+const { apiBase } = useSite()
 
 const cart = useCartStore()
 const wishlist = useWishlistStore()
@@ -41,12 +41,22 @@ onNuxtReady(loadMenu)
 
 const topCategories = computed(() => (tree.value || []).slice(0, NAV_CATEGORY_LIMIT))
 
-const navLinks = computed(() => [
+const navLinks = [
   { label: 'Каталог', to: '/catalog' },
   { label: 'Акции', to: '/sales' },
   { label: 'Бренды', to: '/brand' },
   { label: 'Доставка', to: '/delivery' },
   { label: 'Контакты', to: '/contacts' },
+]
+
+/**
+ * The guest lists start empty on the server and during hydration (the stores
+ * load from localStorage in `onNuxtReady`), so their counters need no
+ * <ClientOnly>: both renders agree, and the badge appears on the next tick.
+ */
+const listActions = computed(() => [
+  { to: '/compare', label: 'Сравнение', icon: 'compare' as const, count: compare.count },
+  { to: '/favorites', label: 'Избранное', icon: 'heart' as const, count: wishlist.count },
 ])
 
 /* ---- Search + live suggestions ---------------------------------------- */
@@ -86,7 +96,7 @@ watch(search, (value) => {
   suggestTimer = setTimeout(async () => {
     try {
       const result = await $fetch<SuggestResponse>(
-        `${config.public.apiBase}/products/suggest`,
+        `${apiBase}/products/suggest`,
         { params: { q: query } }
       )
       // The response may be stale if the user kept typing.
@@ -100,24 +110,14 @@ watch(search, (value) => {
   }, 250)
 })
 
-function onDocumentClick(event: MouseEvent) {
-  if (searchForm.value && !searchForm.value.contains(event.target as Node)) {
-    closeSuggest()
-  }
-}
-
-onMounted(() => document.addEventListener('click', onDocumentClick))
-onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocumentClick)
-  if (suggestTimer) clearTimeout(suggestTimer)
-})
-
 /* ---- Menus ------------------------------------------------------------- */
 const mobileNavOpen = ref(false)
 watch(mobileNavOpen, (open) => {
   if (open) loadMenu()
 })
 const catalogOpen = ref(false)
+const catalogTrigger = ref<{ $el?: HTMLElement } | null>(null)
+const megaInner = ref<HTMLElement | null>(null)
 
 /**
  * The catalogue menu shows one root's subcategories at a time instead of
@@ -165,13 +165,28 @@ watch(() => route.fullPath, () => {
   closeSuggest()
 })
 
-// Escape closes the catalogue menu — it covers the page, so a keyboard user
-// needs a way out that isn't "find the trigger again".
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') catalogOpen.value = false
+/** A click outside closes the search suggestions and the catalogue menu. */
+function onDocumentClick(event: MouseEvent) {
+  const target = event.target as Node
+  if (searchForm.value && !searchForm.value.contains(target)) closeSuggest()
+  // The trigger toggles the menu itself; counting it as "outside" would
+  // reopen-then-close it on the same click.
+  if (
+    catalogOpen.value
+    && !megaInner.value?.contains(target)
+    && !catalogTrigger.value?.$el?.contains(target)
+  ) {
+    catalogOpen.value = false
+  }
 }
-onMounted(() => document.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
+
+// Escape closes whatever floats over the page — the catalogue menu covers it,
+// so a keyboard user needs a way out that isn't "find the trigger again".
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  catalogOpen.value = false
+  closeSuggest()
+}
 
 /* ---- Compact header ----------------------------------------------------
  * The header is sticky, and at full height it keeps three rows on screen for
@@ -212,8 +227,15 @@ onMounted(() => {
   // jump on the first wheel tick.
   syncCompact()
   window.addEventListener('scroll', onScroll, { passive: true })
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onKeydown)
 })
-onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onKeydown)
+  if (suggestTimer) clearTimeout(suggestTimer)
+})
 </script>
 
 <template>
@@ -225,8 +247,8 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
           <a :href="company.phoneHref" class="phone">{{ company.phone }}</a>
           <NuxtLink to="/delivery">Доставка и оплата</NuxtLink>
           <NuxtLink to="/contacts">Контакты</NuxtLink>
-          <!-- The session lives in localStorage, so this can only be decided
-               on the client. -->
+          <!-- The session is an HttpOnly cookie SSR never sees, so this can
+               only be decided on the client. -->
           <ClientOnly>
             <NuxtLink v-if="isAdmin" to="/admin" class="admin-link">Админка</NuxtLink>
           </ClientOnly>
@@ -243,9 +265,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
           :aria-expanded="mobileNavOpen"
           @click="mobileNavOpen = true"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
+          <UiIcon name="menu" :size="22" :stroke-width="1.8" />
         </button>
 
         <NuxtLink to="/" class="logo" aria-label="Gost.by — на главную">
@@ -253,6 +273,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
         </NuxtLink>
 
         <UiButton
+          ref="catalogTrigger"
           class="catalog-trigger"
           variant="primary"
           :aria-expanded="catalogOpen"
@@ -261,9 +282,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
           @click="toggleCatalog"
         >
           <template #leading>
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-            </svg>
+            <UiIcon name="menu" :size="18" :stroke-width="2" />
           </template>
           Каталог
         </UiButton>
@@ -279,9 +298,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
               @focus="suggestOpen = hasSuggestions"
             >
               <template #leading>
-                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm7.5 14.5L16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-                </svg>
+                <UiIcon name="search" :size="18" :stroke-width="1.8" />
               </template>
               <template #trailing>
                 <button type="submit" class="search-submit">Найти</button>
@@ -354,49 +371,31 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
               class="action"
               :class="{ 'is-active': isAuthenticated }"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-              </svg>
+              <UiIcon name="user" />
               <span class="action-label is-account">
                 {{ isAuthenticated ? (user?.name || user?.login) : 'Войти' }}
               </span>
             </NuxtLink>
           </ClientOnly>
 
-          <NuxtLink to="/compare" class="action" :class="{ 'is-active': compare.count }">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 20V9m6 11V4m6 16v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
-            <span class="action-label">Сравнение</span>
-            <ClientOnly>
-              <span v-if="compare.count" class="counter">{{ compare.count }}</span>
-            </ClientOnly>
-          </NuxtLink>
-
-          <NuxtLink to="/favorites" class="action" :class="{ 'is-active': wishlist.count }">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 20s-7-4.5-7-9.5A3.5 3.5 0 0 1 12 8a3.5 3.5 0 0 1 7 2.5C19 15.5 12 20 12 20z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-            </svg>
-            <span class="action-label">Избранное</span>
-            <ClientOnly>
-              <span v-if="wishlist.count" class="counter">{{ wishlist.count }}</span>
-            </ClientOnly>
+          <NuxtLink
+            v-for="action in listActions"
+            :key="action.to"
+            :to="action.to"
+            class="action"
+            :class="{ 'is-active': action.count }"
+          >
+            <UiIcon :name="action.icon" />
+            <span class="action-label">{{ action.label }}</span>
+            <span v-if="action.count" class="counter">{{ action.count }}</span>
           </NuxtLink>
 
           <NuxtLink to="/cart" class="action" :class="{ 'is-active': cart.count }">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 4h2l2.4 10.4A2 2 0 0 0 9.35 16H17a2 2 0 0 0 1.95-1.55L20.5 8H6M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm8 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
+            <UiIcon name="cart" />
             <span class="action-label">
-              <ClientOnly>
-                <template #fallback>Корзина</template>
-                <template v-if="cart.count">{{ formatPrice(cart.totalPrice, cart.currency) }}</template>
-                <template v-else>Корзина</template>
-              </ClientOnly>
+              {{ cart.count ? formatPrice(cart.totalPrice, cart.currency) : 'Корзина' }}
             </span>
-            <ClientOnly>
-              <span v-if="cart.count" class="counter">{{ cart.count }}</span>
-            </ClientOnly>
+            <span v-if="cart.count" class="counter">{{ cart.count }}</span>
           </NuxtLink>
         </nav>
       </div>
@@ -422,8 +421,8 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
     <!-- Catalog mega menu: roots on the left, the selected root's
          subcategories on the right. -->
     <Transition name="fade">
-      <div v-if="catalogOpen" class="mega" @click.self="catalogOpen = false">
-        <div class="container mega-inner">
+      <div v-if="catalogOpen" class="mega">
+        <div ref="megaInner" class="container mega-inner">
           <div v-if="!menuTree.length" class="mega-empty">
             Каталог пока пуст.
           </div>
@@ -507,20 +506,11 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
               :aria-label="`Подкатегории: ${category.name}`"
               @click="toggleMobileCategory(category.id)"
             >
-              <svg
-                viewBox="0 0 20 20"
+              <UiIcon
+                name="chevron-down"
+                :stroke-width="1.8"
                 :class="{ 'is-open': expandedMobile.has(category.id) }"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6 8l4 4 4-4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
+              />
             </button>
           </div>
 
@@ -587,11 +577,6 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
     visibility 0s linear var(--duration-base);
 }
 
-.icon {
-  width: 18px;
-  height: 18px;
-}
-
 /* ---- Top bar ---- */
 .topbar {
   border-bottom: 1px solid var(--border-subtle);
@@ -642,11 +627,6 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
   border-radius: var(--radius-sm);
   color: var(--text-strong);
   place-items: center;
-}
-
-.burger svg {
-  width: 22px;
-  height: 22px;
 }
 
 .logo {
@@ -844,7 +824,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
   padding: 0 5px;
   border-radius: var(--radius-full);
   background: var(--sale);
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 11px;
   font-weight: 700;
   place-items: center;

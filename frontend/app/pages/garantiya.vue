@@ -1,21 +1,10 @@
 <script setup lang="ts">
 import { company } from '~/data/company'
 
-const config = useRuntimeConfig()
-const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
 const description =
-  'Гарантия и сервис в интернет-магазине Мультитул: гарантийный срок, требования при недостатках товара, обмен и возврат в течение 14 дней, как обратиться.'
+  'Гарантия и сервис в интернет-магазине Gost.by: гарантийный срок, требования при недостатках товара, обмен и возврат в течение 14 дней, как обратиться.'
 
-useSeoMeta({
-  title: 'Гарантия и сервис | Мультитул',
-  description,
-  ogTitle: 'Гарантия и сервис | Мультитул',
-  ogDescription: description
-})
-
-useHead({
-  link: [{ rel: 'canonical', href: `${siteUrl}/garantiya` }]
-})
+usePageSeo({ title: 'Гарантия и сервис', description, path: '/garantiya' })
 </script>
 
 <!--
@@ -93,6 +82,3 @@ useHead({
   </section>
 </template>
 
-<style scoped lang="scss">
-@use '@/assets/scss/legal-page.scss' as *;
-</style>

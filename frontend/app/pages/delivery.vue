@@ -1,21 +1,10 @@
 <script setup lang="ts">
 import { company } from '~/data/company'
 
-const config = useRuntimeConfig()
-const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
 const description =
-  'Способы оплаты и доставки в интернет-магазине Мультитул: самовывоз в Витебске, курьер, почта. Оплата наличными, картой или по счёту.'
+  'Способы оплаты и доставки в интернет-магазине Gost.by: самовывоз в Витебске, курьер, почта. Оплата наличными, картой или по счёту.'
 
-useSeoMeta({
-  title: 'Оплата и доставка | Мультитул',
-  description,
-  ogTitle: 'Оплата и доставка | Мультитул',
-  ogDescription: description
-})
-
-useHead({
-  link: [{ rel: 'canonical', href: `${siteUrl}/delivery` }]
-})
+usePageSeo({ title: 'Оплата и доставка', description, path: '/delivery' })
 </script>
 
 <template>
@@ -80,6 +69,3 @@ useHead({
   </section>
 </template>
 
-<style scoped lang="scss">
-@use '@/assets/scss/legal-page.scss' as *;
-</style>

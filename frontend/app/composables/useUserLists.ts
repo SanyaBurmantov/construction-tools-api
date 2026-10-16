@@ -30,8 +30,6 @@ export type UserListsPayload = {
 export function useUserLists() {
   const { authFetch } = useAuth()
 
-  const fetchLists = () => authFetch<UserLists>('/lists')
-
   /** Sign-in step: union of the browser lists and the stored ones. */
   const mergeLocal = (payload: UserListsPayload) =>
     authFetch<UserLists>('/lists/merge', { method: 'POST', body: payload })
@@ -40,5 +38,5 @@ export function useUserLists() {
   const replace = (payload: UserListsPayload) =>
     authFetch<UserLists>('/lists', { method: 'PUT', body: payload })
 
-  return { fetchLists, mergeLocal, replace }
+  return { mergeLocal, replace }
 }

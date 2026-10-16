@@ -15,6 +15,13 @@
     () => selectedImage.value && !failedImages.value.has(selectedImage.value.url)
   )
   const multiple = computed(() => props.images.length > 1)
+  const counter = computed(() => `${activeIndex.value + 1} / ${props.images.length}`)
+
+  /** Prev/next, drawn on the stage and again in the zoom modal. */
+  const ARROWS = [
+    { step: -1, class: 'is-prev', label: 'Предыдущее фото', icon: 'chevron-left' },
+    { step: 1, class: 'is-next', label: 'Следующее фото', icon: 'chevron-right' },
+  ] as const
   const prefersReducedMotion = ref(false)
 
   watch(
@@ -33,6 +40,8 @@
 
   onBeforeUnmount(() => document.removeEventListener('keydown', onZoomKeydown))
 
+  // The zoom modal is teleported out of this section, so its arrow keys reach
+  // only the document.
   function onZoomKeydown(event: KeyboardEvent) {
     if (zoomOpen.value && !event.defaultPrevented) onKeydown(event)
   }
@@ -117,35 +126,26 @@
           @error="failedImages.add(selectedImage.url)"
         >
         <span class="zoom-hint" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg>
+          <UiIcon name="expand" :size="18" :stroke-width="1.8" />
         </span>
       </button>
       <div v-else class="gallery-empty" role="img" :aria-label="`Нет фотографии: ${name}`">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8" />
-        </svg>
+        <UiIcon name="box" :size="72" :stroke-width="1.8" />
         <span>Фото пока нет</span>
       </div>
       <template v-if="multiple">
         <button
+          v-for="arrow in ARROWS"
+          :key="arrow.step"
           type="button"
-          class="gallery-arrow is-prev"
-          aria-label="Предыдущее фото"
-          @click="selectImage(activeIndex - 1)"
+          class="gallery-arrow"
+          :class="arrow.class"
+          :aria-label="arrow.label"
+          @click="selectImage(activeIndex + arrow.step)"
         >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+          <UiIcon :name="arrow.icon" :size="20" :stroke-width="1.8" />
         </button>
-        <button
-          type="button"
-          class="gallery-arrow is-next"
-          aria-label="Следующее фото"
-          @click="selectImage(activeIndex + 1)"
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" /></svg>
-        </button>
-        <span class="gallery-count" aria-live="polite" aria-atomic="true"
-          >{{ activeIndex + 1 }} / {{ images.length }}</span
-        >
+        <span class="gallery-count" aria-live="polite" aria-atomic="true">{{ counter }}</span>
       </template>
     </div>
 
@@ -175,7 +175,6 @@
     <UiModal v-model:open="zoomOpen" size="xl" :title="name">
       <div
         class="gallery-stage is-zoom"
-        @keydown="onKeydown"
         @touchstart.passive="onTouchStart"
         @touchend.passive="onTouchEnd"
         @touchcancel="touchStart = undefined"
@@ -193,24 +192,17 @@
         <div v-else class="gallery-empty">Фото пока нет</div>
         <template v-if="multiple">
           <button
+            v-for="arrow in ARROWS"
+            :key="arrow.step"
             type="button"
-            class="gallery-arrow is-prev"
-            aria-label="Предыдущее фото"
-            @click="selectImage(activeIndex - 1)"
+            class="gallery-arrow"
+            :class="arrow.class"
+            :aria-label="arrow.label"
+            @click="selectImage(activeIndex + arrow.step)"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg>
+            <UiIcon :name="arrow.icon" :size="20" :stroke-width="1.8" />
           </button>
-          <button
-            type="button"
-            class="gallery-arrow is-next"
-            aria-label="Следующее фото"
-            @click="selectImage(activeIndex + 1)"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" /></svg>
-          </button>
-          <span class="gallery-count" aria-live="polite" aria-atomic="true"
-            >{{ activeIndex + 1 }} / {{ images.length }}</span
-          >
+          <span class="gallery-count" aria-live="polite" aria-atomic="true">{{ counter }}</span>
         </template>
       </div>
     </UiModal>
@@ -230,7 +222,7 @@
     overflow: hidden;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
-    background: #fff;
+    background: var(--surface-card);
     touch-action: pan-y pinch-zoom;
   }
 
@@ -270,21 +262,6 @@
     gap: var(--space-3);
   }
 
-  .gallery-empty svg {
-    width: 72px;
-    height: 72px;
-  }
-
-  .gallery-arrow svg,
-  .gallery-empty svg,
-  .zoom-hint svg {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
   .zoom-hint {
     position: absolute;
     right: 16px;
@@ -294,14 +271,9 @@
     height: 32px;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    background: #fff;
+    background: var(--surface-card);
     color: var(--text-muted);
     place-items: center;
-  }
-
-  .zoom-hint svg {
-    width: 18px;
-    height: 18px;
   }
 
   .gallery-arrow {
@@ -313,7 +285,7 @@
     height: 40px;
     border: 1px solid var(--border-subtle);
     border-radius: 50%;
-    background: #fff;
+    background: var(--surface-card);
     color: var(--text-strong);
     box-shadow: var(--shadow-sm);
     transform: translateY(-50%);
@@ -326,11 +298,6 @@
   .gallery-arrow:hover {
     border-color: var(--brand);
     color: var(--brand);
-  }
-
-  .gallery-arrow svg {
-    width: 20px;
-    height: 20px;
   }
 
   .is-prev {
@@ -361,8 +328,6 @@
     margin-top: 12px;
     gap: 10px;
     overscroll-behavior-x: contain;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border-subtle) transparent;
     scroll-snap-type: x proximity;
   }
 
@@ -373,7 +338,7 @@
     padding: 8px;
     border: 2px solid var(--border-subtle);
     border-radius: var(--radius-sm);
-    background: #fff;
+    background: var(--surface-card);
     scroll-snap-align: center;
     transition: border-color var(--duration-fast);
   }
@@ -443,13 +408,6 @@
     }
     .zoom-image {
       padding: 32px 44px;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .gallery-arrow,
-    .gallery-thumbnail {
-      transition: none;
     }
   }
 </style>

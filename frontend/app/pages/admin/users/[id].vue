@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { AccountUser, CustomerType, UserRole } from '~/composables/useAuth'
-import type { Order, OrderItem, OrderStatus } from '~/types/api'
+import type { UserRole } from '~/composables/useAuth'
+import type { AdminUser, Order, OrderItem, OrderStatus } from '~/types/api'
 import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
 
 definePageMeta({ layout: 'admin' })
 
 type Response = {
-  user: AccountUser & { _count?: { sessions: number } }
+  user: AdminUser
   orders: Order[]
   stats: {
     total: number
@@ -18,8 +18,8 @@ type Response = {
 
 const route = useRoute()
 const { adminFetch, errorMessage, user: me } = useAdminApi()
+const { run, busy } = useAdminAction()
 const toast = useAppToast()
-const { formatPrice } = useFormatPrice()
 
 const userId = computed(() => String(route.params.id))
 const data = ref<Response | null>(null)
@@ -43,84 +43,49 @@ onMounted(load)
 const account = computed(() => data.value?.user ?? null)
 const isMe = computed(() => account.value?.id === me.value?.id)
 
-/* ---- Status labels ----------------------------------------------------- */
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  NEW: 'Новый',
-  CONFIRMED: 'Подтверждён',
-  PROCESSING: 'Собирается',
-  SHIPPED: 'Отправлен',
-  DELIVERED: 'Доставлен',
-  CANCELLED: 'Отменён',
-}
-
-const STATUS_TONE: Record<OrderStatus, 'neutral' | 'info' | 'warning' | 'success' | 'danger'> = {
-  NEW: 'info',
-  CONFIRMED: 'info',
-  PROCESSING: 'warning',
-  SHIPPED: 'warning',
-  DELIVERED: 'success',
-  CANCELLED: 'danger',
-}
-
-const DELIVERY_LABEL: Record<Order['deliveryMethod'], string> = {
-  PICKUP: 'Самовывоз',
-  COURIER: 'Курьер',
-  POST: 'Почта',
-}
-
-const PAYMENT_LABEL: Record<Order['paymentMethod'], string> = {
-  CASH: 'Наличными',
-  CARD: 'Картой',
-  INVOICE: 'По счёту',
-}
-
-const TYPE_LABEL: Record<CustomerType, string> = {
-  INDIVIDUAL: 'Физ. лицо',
-  COMPANY: 'Юр. лицо',
-}
-
-const ACTIVE_STATUSES: OrderStatus[] = ['NEW', 'CONFIRMED', 'PROCESSING', 'SHIPPED']
-
 /** Current orders first — that is what someone opening this page is chasing. */
 const currentOrders = computed(() =>
-  (data.value?.orders ?? []).filter(order => ACTIVE_STATUSES.includes(order.status))
+  (data.value?.orders ?? []).filter(order => isActiveOrder(order.status)),
 )
 const pastOrders = computed(() =>
-  (data.value?.orders ?? []).filter(order => !ACTIVE_STATUSES.includes(order.status))
+  (data.value?.orders ?? []).filter(order => !isActiveOrder(order.status)),
 )
 
 const expandedOrder = ref('')
 
 /* ---- Inline status change ---------------------------------------------- */
-const statusBusy = ref('')
+/**
+ * The select offers only the moves the order screen allows. Listing all six
+ * let an admin drag a shipped order back to «Новый» from here, which the
+ * order screen itself never permits.
+ */
+const statusOptions = (status: OrderStatus) =>
+  [status, ...nextOrderStatuses(status)].map(value => ({
+    value,
+    label: ORDER_STATUS_LABEL[value],
+  }))
 
-async function setStatus(order: Order, status: OrderStatus) {
-  statusBusy.value = order.id
-  try {
-    await adminFetch(`/orders/${order.id}/status`, { method: 'PATCH', body: { status } })
-    toast.success(`Заказ № ${order.number}: ${STATUS_LABEL[status]}`)
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось изменить статус'))
-  } finally {
-    statusBusy.value = ''
-  }
+function setStatus(order: Order, status: OrderStatus) {
+  if (status === order.status) return
+  return run(
+    () => adminFetch(`/orders/${order.id}/status`, { method: 'PATCH', body: { status } }),
+    {
+      key: order.id,
+      error: 'Не удалось изменить статус',
+      success: `Заказ № ${order.number}: ${ORDER_STATUS_LABEL[status]}`,
+      after: load,
+    },
+  )
 }
 
 /* ---- Account actions --------------------------------------------------- */
-const roleBusy = ref(false)
-
-async function patchAccount(body: Record<string, unknown>, message: string) {
-  roleBusy.value = true
-  try {
-    await adminFetch(`/users/${userId.value}`, { method: 'PATCH', body })
-    toast.success(message)
-    await load()
-  } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось сохранить изменения'))
-  } finally {
-    roleBusy.value = false
-  }
+function patchAccount(body: Record<string, unknown>, message: string) {
+  return run(() => adminFetch(`/users/${userId.value}`, { method: 'PATCH', body }), {
+    key: 'account',
+    error: 'Не удалось сохранить изменения',
+    success: message,
+    after: load,
+  })
 }
 
 const resetOpen = ref(false)
@@ -145,18 +110,18 @@ async function resetPassword() {
     newPassword.value = ''
     await load()
   } catch (error) {
+    // Inside the modal, next to the field — not a toast behind it.
     resetError.value = errorMessage(error, 'Не удалось изменить пароль')
   } finally {
     resetBusy.value = false
   }
 }
 
-
 const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администратор' : 'Покупатель')
 </script>
 
 <template>
-  <div class="admin-user">
+  <div class="admin-page">
     <div class="back">
       <NuxtLink to="/admin/users">← Все пользователи</NuxtLink>
     </div>
@@ -166,49 +131,46 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
     <UiSkeleton v-if="loading" height="420px" radius="var(--radius-md)" />
 
     <template v-else-if="account">
-      <header class="head">
-        <div>
-          <h1>{{ account.login }}</h1>
-          <p class="badges">
+      <AdminPageHead :title="account.login">
+        <template #description>
+          <span class="badges">
             <UiBadge :tone="account.role === 'ADMIN' ? 'brand' : 'neutral'" size="sm">
               {{ roleLabel(account.role) }}
             </UiBadge>
-            <UiBadge size="sm">{{ TYPE_LABEL[account.customerType] }}</UiBadge>
+            <UiBadge size="sm">{{ CUSTOMER_TYPE_LABEL[account.customerType] }}</UiBadge>
             <UiBadge v-if="!account.isActive" tone="danger" size="sm">Отключён</UiBadge>
             <UiBadge v-if="isMe" tone="info" size="sm">это вы</UiBadge>
-          </p>
-        </div>
+          </span>
+        </template>
 
-        <div class="head-actions">
-          <UiButton size="sm" variant="ghost" @click="resetOpen = true">
-            Сбросить пароль
-          </UiButton>
-          <UiButton
-            v-if="!isMe"
-            size="sm"
-            variant="ghost"
-            :loading="roleBusy"
-            @click="patchAccount(
-              { role: account.role === 'ADMIN' ? 'CUSTOMER' : 'ADMIN' },
-              account.role === 'ADMIN' ? 'Права администратора сняты' : 'Выданы права администратора'
-            )"
-          >
-            {{ account.role === 'ADMIN' ? 'Снять админа' : 'Сделать админом' }}
-          </UiButton>
-          <UiButton
-            v-if="!isMe"
-            size="sm"
-            variant="ghost"
-            :loading="roleBusy"
-            @click="patchAccount(
-              { isActive: !account.isActive },
-              account.isActive ? 'Учётная запись отключена' : 'Учётная запись включена'
-            )"
-          >
-            {{ account.isActive ? 'Отключить' : 'Включить' }}
-          </UiButton>
-        </div>
-      </header>
+        <UiButton size="sm" variant="ghost" @click="resetOpen = true">
+          Сбросить пароль
+        </UiButton>
+        <UiButton
+          v-if="!isMe"
+          size="sm"
+          variant="ghost"
+          :loading="busy === 'account'"
+          @click="patchAccount(
+            { role: account.role === 'ADMIN' ? 'CUSTOMER' : 'ADMIN' },
+            account.role === 'ADMIN' ? 'Права администратора сняты' : 'Выданы права администратора'
+          )"
+        >
+          {{ account.role === 'ADMIN' ? 'Снять админа' : 'Сделать админом' }}
+        </UiButton>
+        <UiButton
+          v-if="!isMe"
+          size="sm"
+          variant="ghost"
+          :loading="busy === 'account'"
+          @click="patchAccount(
+            { isActive: !account.isActive },
+            account.isActive ? 'Учётная запись отключена' : 'Учётная запись включена'
+          )"
+        >
+          {{ account.isActive ? 'Отключить' : 'Включить' }}
+        </UiButton>
+      </AdminPageHead>
 
       <div class="stats">
         <UiStat label="Заказов" :value="data?.stats.total ?? 0" />
@@ -233,7 +195,7 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
           </div>
           <div>
             <dt>Тип покупателя</dt>
-            <dd>{{ TYPE_LABEL[account.customerType] }}</dd>
+            <dd>{{ CUSTOMER_TYPE_LABEL[account.customerType] }}</dd>
           </div>
           <div v-if="account.companyName">
             <dt>Организация</dt>
@@ -279,11 +241,11 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
             <div class="order-head">
               <div class="order-title">
                 <strong>№ {{ order.number }}</strong>
-                <UiBadge :tone="STATUS_TONE[order.status]" size="sm">
-                  {{ STATUS_LABEL[order.status] }}
+                <UiBadge :tone="ORDER_STATUS_TONE[order.status]" size="sm">
+                  {{ ORDER_STATUS_LABEL[order.status] }}
                 </UiBadge>
               </div>
-              <span class="muted">{{ formatDateTime(order.createdAt) }}</span>
+              <span class="admin-muted small">{{ formatDateTime(order.createdAt) }}</span>
             </div>
 
             <dl class="order-facts">
@@ -317,15 +279,8 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
                 size="sm"
                 class="status-select"
                 :model-value="order.status"
-                :disabled="statusBusy === order.id"
-                :options="[
-                  { value: 'NEW', label: 'Новый' },
-                  { value: 'CONFIRMED', label: 'Подтверждён' },
-                  { value: 'PROCESSING', label: 'Собирается' },
-                  { value: 'SHIPPED', label: 'Отправлен' },
-                  { value: 'DELIVERED', label: 'Доставлен' },
-                  { value: 'CANCELLED', label: 'Отменён' }
-                ]"
+                :disabled="busy === order.id"
+                :options="statusOptions(order.status)"
                 @update:model-value="value => setStatus(order, value as OrderStatus)"
               />
             </div>
@@ -345,7 +300,7 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
                       variant="order"
                     />
                   </span>
-                  <span class="muted">
+                  <span class="admin-muted small">
                     {{ item.quantity }} × {{ formatPrice(item.unitPrice, order.currency) }}
                   </span>
                   <strong>{{ formatPrice(item.lineTotal, order.currency) }}</strong>
@@ -410,14 +365,14 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
           </template>
 
           <template #cell-status="{ row }">
-            <UiBadge :tone="STATUS_TONE[row.status as OrderStatus]" size="sm">
-              {{ STATUS_LABEL[row.status as OrderStatus] }}
+            <UiBadge :tone="ORDER_STATUS_TONE[row.status as OrderStatus]" size="sm">
+              {{ ORDER_STATUS_LABEL[row.status as OrderStatus] }}
             </UiBadge>
           </template>
 
           <template #cell-items="{ row }">
             <span>{{ row.items.length }} позиц.</span>
-            <p class="muted hint">
+            <p class="admin-muted hint">
               {{ row.items.map((item: OrderItem) => item.productName).join(', ') }}
             </p>
           </template>
@@ -453,12 +408,6 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
 </template>
 
 <style scoped>
-.admin-user {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
 .back a {
   color: var(--text-muted);
   font-size: var(--text-sm);
@@ -468,29 +417,11 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
   color: var(--text-link);
 }
 
-.head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.head h1 {
-  font-size: var(--text-2xl);
-}
-
 .badges {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   margin-top: var(--space-2);
-  gap: var(--space-2);
-}
-
-.head-actions {
-  display: flex;
-  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -642,8 +573,7 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
   gap: 2px;
 }
 
-.muted {
-  color: var(--text-muted);
+.small {
   font-size: var(--text-sm);
 }
 
