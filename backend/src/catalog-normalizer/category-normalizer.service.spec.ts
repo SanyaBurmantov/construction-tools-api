@@ -95,6 +95,12 @@ class FakePrisma {
     },
 
     count: () => Promise.resolve(this.categories.length),
+
+    delete: (args: { where: { id: string } }) => {
+      this.writes += 1;
+      this.categories = this.categories.filter((c) => c.id !== args.where.id);
+      return Promise.resolve({});
+    },
   };
 
   product = {
@@ -132,6 +138,28 @@ class FakePrisma {
       return Promise.resolve({ count: 0 });
     },
   };
+
+  productSpecification = {
+    deleteMany: () => Promise.resolve({ count: 0 }),
+  };
+
+  /** The prune query: empty, uncurated, unreferenced categories. */
+  $queryRaw = () =>
+    Promise.resolve(
+      this.categories
+        .filter(
+          (c) =>
+            c.slug !== FALLBACK_CATEGORY_SLUG &&
+            !this.hasProducts(c.id) &&
+            !this.hasChildren(c.id) &&
+            !c.mapped &&
+            !c.pricingRule,
+        )
+        .map((c) => ({ id: c.id })),
+    );
+
+  // Array transactions: the operations already ran when they were built.
+  $transaction = (ops: Promise<unknown>[]) => Promise.all(ops);
 
   categoryRedirect = {
     deleteMany: () => {

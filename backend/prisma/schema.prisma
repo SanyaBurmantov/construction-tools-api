@@ -46,9 +46,10 @@ model Category {
 
   products               Product[]
   specifications         Specification[]
-  mappedSourceCategories SourceCategory[]   @relation("MappedSourceCategory")
+  mappedSourceCategories SourceCategory[]    @relation("MappedSourceCategory")
   redirects              CategoryRedirect[]
   pricingRules           PricingRule[]
+  pathAliases            CategoryPathAlias[]
 
   @@index([parentId])
   @@index([isVisible, sortOrder])
@@ -65,17 +66,50 @@ model Brand {
   seoDescription String
   products       Product[]
   pricingRules   PricingRule[]
+  aliases        BrandAlias[]
+
+  /// Search and suggestions match brand names with ILIKE.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+/// Slug of a brand an admin merged into another one. `upsertBrand()` resolves
+/// the supplier's spelling through here before creating anything, so the
+/// next parse does not resurrect the merged-away brand and pull its products
+/// back to it.
+model BrandAlias {
+  slug    String @id
+  brandId String
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId])
+}
+
+/// A supplier breadcrumb chain (`pathKey` as the parser computes it) that now
+/// lives somewhere else, because an admin moved, re-slugged or merged the
+/// category it used to name. `CategoryTreeService.upsertBranch()` resolves
+/// through here first, so the next parse finds the category where the admin
+/// put it instead of recreating it at the supplier's position.
+model CategoryPathAlias {
+  pathKey    String   @id
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
 }
 
 model Specification {
-  id         String   @id @default(uuid())
-  name       String
-  key        String
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-  unit       String?
-  group      String?
-  filterable Boolean  @default(false)
+  id               String   @id @default(uuid())
+  name             String
+  key              String
+  categoryId       String
+  category         Category @relation(fields: [categoryId], references: [id])
+  unit             String?
+  group            String?
+  filterable       Boolean  @default(false)
+  /// Set when an admin decided `filterable` by hand (or via auto-select). The
+  /// nightly normalizer then leaves the row alone — it used to flip admin
+  /// choices back every night.
+  filterableLocked Boolean  @default(false)
 
   /// Source-independent identity of the characteristic, from
   /// `parser/spec-canonical.ts`. Facets group by this, NOT by `id`: `id` is
@@ -101,6 +135,15 @@ enum ProductStatus {
   PUBLISHED
   HIDDEN
   ARCHIVED
+}
+
+/// Who set a product's current status. SYSTEM statuses are the automation's
+/// to change (a new product published once priced, a delisted one hidden and
+/// brought back when an offer returns); ADMIN statuses are never touched by a
+/// parse.
+enum StatusSource {
+  SYSTEM
+  ADMIN
 }
 
 model Product {
@@ -132,6 +175,7 @@ model Product {
   stockStatus       String?
   stockQuantity     Int?
   status            ProductStatus          @default(PUBLISHED)
+  statusSource      StatusSource           @default(SYSTEM)
   descriptionShort  String?
   descriptionFull   String?
   seoTitle          String?
@@ -157,6 +201,9 @@ model Product {
   /// the daily refresh would otherwise put the supplier's text back within 24h.
   /// Reverting the task item unlocks them again.
   aiLockedFields    String[]               @default([])
+  /// Fields an admin edited by hand. Same protection as `aiLockedFields`:
+  /// the daily re-parse used to revert a corrected name or category.
+  lockedFields      String[]               @default([])
 
   cartItems CartItem[]
 
@@ -168,12 +215,19 @@ model Product {
   @@index([status, createdAt])
   @@index([status, name])
   @@index([status, ratingAvg])
+  @@index([status, updatedAt])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([appliedRuleId])
   @@index([priceReviewNeeded])
   @@index([matchBarcode])
   @@index([matchSku])
   @@index([matchModel])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([sku(ops: raw("gin_trgm_ops"))], type: Gin)
+  /// Search matches `model` with ILIKE too; without this the OR across
+  /// name/sku/model fell back to a sequential scan.
+  @@index([model(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 model ProductSpecification {
@@ -272,6 +326,8 @@ model SitemapsThTools {
   lastError   String?
   lastTriedAt DateTime?
   visitedAt   DateTime?
+
+  @@index([status, visitedAt])
 }
 
 model SitemapsDukon {
@@ -283,6 +339,8 @@ model SitemapsDukon {
   lastError   String?
   lastTriedAt DateTime?
   visitedAt   DateTime?
+
+  @@index([status, visitedAt])
 }
 
 model Sitemaps7745 {
@@ -294,6 +352,8 @@ model Sitemaps7745 {
   lastError   String?
   lastTriedAt DateTime?
   visitedAt   DateTime?
+
+  @@index([status, visitedAt])
 }
 
 model SitemapsToolsBy {
@@ -305,6 +365,8 @@ model SitemapsToolsBy {
   lastError   String?
   lastTriedAt DateTime?
   visitedAt   DateTime?
+
+  @@index([status, visitedAt])
 }
 
 enum OrderStatus {
@@ -381,6 +443,7 @@ model OrderItem {
   lineTotal    Float
 
   @@index([orderId])
+  @@index([productId])
 }
 
 model ParserError {
@@ -786,6 +849,7 @@ model CartItem {
   @@unique([userId, productId])
   @@index([userId])
   @@index([updatedAt])
+  @@index([productId])
 }
 
 /// Favourites and comparison are the same thing in storage: a set of products
@@ -810,6 +874,7 @@ model UserListItem {
   @@unique([userId, kind, productId])
   @@index([userId, kind])
   @@index([createdAt])
+  @@index([productId])
 }
 
 /// Who changed what in the admin panel.
@@ -853,6 +918,8 @@ model ErrorLog {
 
   @@index([createdAt])
   @@index([statusCode, createdAt])
+  @@index([lastSeenAt])
+  @@index([statusCode, lastSeenAt])
 }
 
 model AdminActionLog {

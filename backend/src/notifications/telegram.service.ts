@@ -9,6 +9,52 @@ const SEND_RETRIES = 1;
 /** Telegram rejects messages over 4096 chars. */
 const MAX_MESSAGE_LENGTH = 4000;
 
+/**
+ * Joins head + items + tail under Telegram's limit by dropping *items*, never
+ * the totals or the admin link. A plain `slice()` of the HTML could cut an
+ * entity or a `<b>` in half — Telegram then answers 400 "can't parse
+ * entities" and the order notification is lost — and on the large orders it
+ * affected it cut off «Итого», the line that matters most.
+ */
+export function fitMessage(
+  head: string[],
+  items: string[],
+  tail: string[],
+  limit = MAX_MESSAGE_LENGTH,
+): string {
+  const join = (lines: string[]) => lines.join('\n');
+  const full = join([...head, ...items, ...tail]);
+  if (full.length <= limit) return full;
+
+  // Head lines carry customer text (comment, address) that can be long on
+  // its own; cap each so the totals always fit. Escaped text never contains
+  // a raw `<`, so a cut can only split an `&amp;`-style entity (trimmed back
+  // off) or leave the label's `<b>` open (closed again).
+  const cap = (line: string, max: number) =>
+    `${line.slice(0, max).replace(/&[a-z#0-9]*$/i, '')}…`;
+  const safeHead = head.map((line) =>
+    line.length > 600 ? closeTags(cap(line, 600)) : line,
+  );
+
+  const kept: string[] = [];
+  let length = join([...safeHead, ...tail]).length + 40;
+  for (const line of items) {
+    if (length + line.length + 1 > limit) break;
+    kept.push(line);
+    length += line.length + 1;
+  }
+  const dropped = items.length - kept.length;
+  const more = dropped > 0 ? [`…и ещё ${dropped} поз.`] : [];
+  return join([...safeHead, ...kept, ...more, ...tail]);
+}
+
+/** Closes a `<b>` left open by truncation. */
+function closeTags(line: string): string {
+  const opened = (line.match(/<b>/g) ?? []).length;
+  const closed = (line.match(/<\/b>/g) ?? []).length;
+  return opened > closed ? `${line}</b>` : line;
+}
+
 export const DELIVERY_LABELS: Record<DeliveryMethod, string> = {
   PICKUP: 'Самовывоз',
   COURIER: 'Курьер',
@@ -112,36 +158,31 @@ export class TelegramService implements OnModuleInit {
 
     lines.push('');
     lines.push('<b>Состав заказа:</b>');
-    for (const item of order.items) {
-      lines.push(
+    const itemLines = order.items.map(
+      (item) =>
         `• ${this.escape(item.productName)} — ${item.quantity} × ${this.money(item.unitPrice, order.currency)} = ${this.money(item.lineTotal, order.currency)}`,
-      );
-    }
+    );
 
-    lines.push('');
-    lines.push(`Товары: ${this.money(order.itemsTotal, order.currency)}`);
+    const tail: string[] = [''];
+    tail.push(`Товары: ${this.money(order.itemsTotal, order.currency)}`);
     if (order.discountTotal > 0) {
       const promo = order.promoCodeLabel
         ? ` (${this.escape(order.promoCodeLabel)})`
         : '';
-      lines.push(
+      tail.push(
         `Скидка${promo}: −${this.money(order.discountTotal, order.currency)}`,
       );
     }
-    lines.push(
+    tail.push(
       `Доставка: ${order.deliveryCost > 0 ? this.money(order.deliveryCost, order.currency) : 'бесплатно'}`,
     );
-    lines.push(`<b>Итого: ${this.money(order.total, order.currency)}</b>`);
-
+    tail.push(`<b>Итого: ${this.money(order.total, order.currency)}</b>`);
     if (adminUrl) {
-      lines.push('');
-      lines.push(`${adminUrl}/admin/orders?order=${order.id}`);
+      tail.push('');
+      tail.push(`${adminUrl}/admin/orders?order=${order.id}`);
     }
 
-    const message = lines.join('\n');
-    return message.length > MAX_MESSAGE_LENGTH
-      ? `${message.slice(0, MAX_MESSAGE_LENGTH)}\n…`
-      : message;
+    return fitMessage(lines, itemLines, tail);
   }
 
   /**

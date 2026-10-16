@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
 import { CategoryQueueService } from './categories/category-queue.service';
 import {
@@ -180,6 +180,51 @@ export class ParserJobsService {
   }
 
   /**
+   * The job of this source that is running now, if any. Jobs of one source
+   * share one lock: «concurrency 1 per supplier» is the politeness rule, and
+   * th-tools' category crawl (:05) used to hit the shop at the same time as
+   * a product batch (:00/:30) that ran long.
+   */
+  private busyKey(code: string): string | undefined {
+    for (const key of this.running) {
+      if (key.startsWith(`${code}-`)) return key;
+    }
+    return undefined;
+  }
+
+  /**
+   * Synchronous variant for the legacy `/admin/queue/*` buttons, which wait
+   * for their batch. Same per-source lock as `start()` — they used to call
+   * the services directly and run alongside a cron batch on the same rows.
+   */
+  async runExclusive<T>(
+    code: string,
+    jobName: string,
+    label: string,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const key = `${code}-${jobName}`;
+    const busy = this.busyKey(code);
+    if (busy) {
+      throw new ConflictException(
+        `Сейчас выполняется задание ${busy} — дождитесь его окончания`,
+      );
+    }
+    this.running.add(key);
+    try {
+      await this.runtimeStatus.start(key, label);
+      const result = await run();
+      await this.runtimeStatus.success(key, result).catch(() => undefined);
+      return result;
+    } catch (error) {
+      await this.runtimeStatus.failure(key, error).catch(() => undefined);
+      throw error;
+    } finally {
+      this.running.delete(key);
+    }
+  }
+
+  /**
    * Starts a job and returns immediately. Progress and the outcome land in
    * `ParserRuntimeStatus`, which the admin already polls — a crawl that takes
    * a quarter of an hour cannot be an HTTP round-trip.
@@ -191,8 +236,9 @@ export class ParserJobsService {
     if (!job || !getParserSource(code)) {
       return { started: false, key, reason: 'unknown-job' };
     }
-    if (this.running.has(key)) {
-      return { started: false, key, reason: 'already-running' };
+    const busy = this.busyKey(code);
+    if (busy) {
+      return { started: false, key: busy, reason: 'already-running' };
     }
 
     this.running.add(key);
@@ -209,12 +255,15 @@ export class ParserJobsService {
   }
 
   private async execute(key: string, job: ParserJob) {
-    await this.runtimeStatus.start(key, job.label);
     try {
+      // Inside the try: a DB blip here used to skip the `finally`, leaving the
+      // key in `running` and the job answering "already-running" on every slot
+      // until the process restarted.
+      await this.runtimeStatus.start(key, job.label);
       const result = await job.run();
       await this.runtimeStatus.success(key, result);
     } catch (error) {
-      await this.runtimeStatus.failure(key, error);
+      await this.runtimeStatus.failure(key, error).catch(() => undefined);
       this.logger.error(
         `${key} failed`,
         error instanceof Error ? error.stack : String(error),
@@ -229,6 +278,14 @@ export class ParserJobsService {
    * never process the same queue at the same time.
    */
   runFromCron(code: string, jobName: string) {
-    return this.start(code, jobName);
+    const result = this.start(code, jobName);
+    if (!result.started && result.reason === 'already-running') {
+      // Visible on purpose: a slot skipped every time is the first sign that
+      // a batch outgrew its 30-minute window.
+      this.logger.log(
+        `${code}-${jobName}: slot skipped, ${result.key} is still running`,
+      );
+    }
+    return result;
   }
 }

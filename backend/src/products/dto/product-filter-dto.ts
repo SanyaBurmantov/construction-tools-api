@@ -1,12 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
-  IsString,
+  IsBoolean,
+  IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
-  IsIn,
-  IsBoolean,
-  Min,
+  IsString,
   Max,
+  MaxLength,
+  Min,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
@@ -17,6 +19,8 @@ export class ProductFilterDto {
   })
   @IsOptional()
   @IsString()
+  // Every variant becomes an ILIKE + trigram scan; nobody types more than this.
+  @MaxLength(100)
   search?: string;
 
   @ApiProperty({
@@ -113,8 +117,9 @@ export class ProductFilterDto {
   @ApiProperty({ required: false, description: 'Номер страницы', default: 1 })
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(10000)
   page?: number;
 
   @ApiProperty({
@@ -124,7 +129,7 @@ export class ProductFilterDto {
   })
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(100)
   limit?: number;

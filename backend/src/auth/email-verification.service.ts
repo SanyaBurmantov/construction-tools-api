@@ -1,13 +1,13 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { hashOpaqueToken } from './token-hash';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService, escapeHtml } from '../notifications/mail.service';
 
 const DEFAULT_TTL_HOURS = 48;
 
-/** Same scheme as session tokens (`AuthService.hashToken`). */
-const hashToken = (token: string) =>
-  createHash('sha256').update(token).digest('hex');
+/** Same scheme as session tokens — one definition in `token-hash.ts`. */
+const hashToken = hashOpaqueToken;
 
 /** The confirmation letter. Pure, so it is tested without SMTP. */
 export function buildVerificationMail(input: {
@@ -16,9 +16,10 @@ export function buildVerificationMail(input: {
   name?: string | null;
   ttlHours: number;
 }) {
-  const greeting = input.name
-    ? `Здравствуйте, ${input.name}!`
-    : 'Здравствуйте!';
+  // The name is user-supplied: capped so the letter cannot carry a paragraph
+  // of someone's spam to an address they typed in.
+  const name = input.name?.trim().slice(0, 40);
+  const greeting = name ? `Здравствуйте, ${name}!` : 'Здравствуйте!';
   const text = [
     greeting,
     '',

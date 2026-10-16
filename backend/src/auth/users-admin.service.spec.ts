@@ -43,10 +43,13 @@ function buildService(
       delete: jest.fn(() => Promise.resolve({})),
     },
     userSession: { deleteMany: sessionDeleteMany },
-  } as unknown as PrismaService;
+    $executeRaw: jest.fn(() => Promise.resolve(1)),
+  } as Record<string, unknown>;
+  // Interactive transactions run inline against the same mocks.
+  prisma.$transaction = jest.fn((fn: (tx: unknown) => unknown) => fn(prisma));
 
   return {
-    service: new UsersAdminService(prisma),
+    service: new UsersAdminService(prisma as unknown as PrismaService),
     update,
     create,
     sessionDeleteMany,
@@ -118,6 +121,17 @@ describe('UsersAdminService.update', () => {
     await service.update('u2', { password: 'new-super-secret' }, 'admin');
     expect(sessionDeleteMany).toHaveBeenCalledWith({
       where: { userId: 'u2' },
+    });
+  });
+
+  // Same rule as AuthService.changePassword: this device stays signed in.
+  it('keeps the acting session when an admin resets their own password', async () => {
+    const { service, sessionDeleteMany } = buildService({
+      user: { id: 'u1', role: UserRole.ADMIN, isActive: true },
+    });
+    await service.update('u1', { password: 'new-super-secret' }, 'u1', 's1');
+    expect(sessionDeleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', NOT: { id: 's1' } },
     });
   });
 

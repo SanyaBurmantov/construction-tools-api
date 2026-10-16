@@ -64,6 +64,15 @@ export class CategoryTreeService {
   ): Promise<UpsertedCategory> {
     const pathKey = categoryPathKey(pathSlugs);
 
+    // The supplier still spells the old chain of a category an admin moved,
+    // re-slugged or merged. Follow the alias to where it lives now — and
+    // leave it there: no parent "repair" for a deliberate move.
+    const alias = await this.prisma.categoryPathAlias.findUnique({
+      where: { pathKey },
+      select: { category: { select: { id: true, slug: true, pathKey: true } } },
+    });
+    if (alias) return alias.category;
+
     const existing = await this.prisma.category.findUnique({
       where: { pathKey },
       select: { id: true, slug: true, parentId: true, level: true },

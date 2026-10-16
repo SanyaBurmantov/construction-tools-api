@@ -1,4 +1,3 @@
-import { CreateProductDto } from './dto/create-product-dto';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -50,9 +49,18 @@ const SIMILARITY_THRESHOLD = 0.45;
 /** trigram matching needs a few characters to mean anything */
 const MIN_FUZZY_LENGTH = 4;
 
+/**
+ * The category as the storefront uses it (breadcrumb, related products).
+ * The whole row also carried `pathKey`/`path` — the supplier's breadcrumb
+ * slugs — and the admin's curation fields.
+ */
+const PUBLIC_CATEGORY_SELECT = {
+  select: { id: true, name: true, slug: true, parentId: true },
+} as const;
+
 const LIST_INCLUDE = {
   brand: true,
-  category: true,
+  category: PUBLIC_CATEGORY_SELECT,
   images: { orderBy: { order: 'asc' } },
   productSpecs: {
     include: { specification: true },
@@ -84,6 +92,11 @@ const ADMIN_ONLY_PRODUCT_FIELDS = [
   'matchBarcode',
   'matchSku',
   'matchModel',
+  // Which texts an AI or an admin rewrote, and who set the status, are
+  // editorial bookkeeping, not product data.
+  'aiLockedFields',
+  'lockedFields',
+  'statusSource',
 ] as const;
 
 type AdminOnlyProductField = (typeof ADMIN_ONLY_PRODUCT_FIELDS)[number];
@@ -97,34 +110,31 @@ function toPublicProduct<
   return rest as Omit<T, AdminOnlyProductField>;
 }
 
+const CATEGORY_CACHE_TTL_MS = 30_000;
+
+type CategoryIndexRow = {
+  id: string;
+  parentId: string | null;
+  slug: string;
+  isVisible: boolean;
+};
+
+/** User input inside a raw ILIKE pattern: `%` and `_` are literal. */
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 @Injectable()
 export class ProductService {
   constructor(private prisma: PrismaService) {}
-
-  async create(dto: CreateProductDto) {
-    return this.prisma.product.create({
-      data: {
-        slug: dto.slug,
-        name: dto.name,
-        categoryId: dto.categoryId,
-        brandId: dto.brandId,
-        priceValue: 0,
-        priceCurrency: 'BYN',
-        stockStatus: 'out_of_stock',
-        status: 'DRAFT',
-        seoTitle: dto.name,
-        seoDescription: dto.name,
-      },
-    });
-  }
 
   async getProductBySlug(slug: string) {
     const product = await this.prisma.product.findFirst({
       where: { slug, status: 'PUBLISHED' },
       include: {
         brand: true,
-        category: true,
-        images: true,
+        category: PUBLIC_CATEGORY_SELECT,
+        images: { orderBy: { order: 'asc' } },
         // Supplier rows are counted, never returned: they carry the purchase
         // URL and our cost, which must not leave the admin surface.
         sourceProducts: { select: { stock: true, price: true } },
@@ -239,9 +249,16 @@ export class ProductService {
     // Labels: rows sharing a key can disagree on spelling, so the label is the
     // most common `canonicalName` among them. The normalizer converges these,
     // but a freshly parsed row may still be the odd one out.
+    // One read serves both the labels and the id → key map used to fold the
+    // grouped counts below (it used to be two identical queries).
     const labelRows = await this.prisma.specification.findMany({
       where: { ...inScope, canonicalKey: { in: keys } },
-      select: { canonicalKey: true, canonicalName: true, canonicalUnit: true },
+      select: {
+        id: true,
+        canonicalKey: true,
+        canonicalName: true,
+        canonicalUnit: true,
+      },
     });
 
     const labels = this.pickSpecLabels(labelRows);
@@ -277,12 +294,7 @@ export class ProductService {
     // groupBy can only group by scalars, so the rows come back per
     // specification id and are folded into their canonical key here.
     const specKeyById = new Map(
-      (
-        await this.prisma.specification.findMany({
-          where: { ...inScope, canonicalKey: { in: keys } },
-          select: { id: true, canonicalKey: true },
-        })
-      ).map((row) => [row.id, row.canonicalKey as string]),
+      labelRows.map((row) => [row.id, row.canonicalKey as string]),
     );
 
     const counts = new Map<string, Map<string, number>>();
@@ -719,19 +731,18 @@ export class ProductService {
     );
     if (!fuzzable.length) return [];
 
-    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT p."id"
-      FROM "Product" p
-      WHERE p."status" = 'PUBLISHED'
-        AND (${Prisma.join(
-          fuzzable.map(
-            (variant) =>
-              Prisma.sql`word_similarity(${variant}, p."name") > ${SIMILARITY_THRESHOLD}`,
-          ),
-          ' OR ',
-        )})
-      LIMIT ${FUZZY_MATCH_LIMIT}
-    `);
+    const rows = await this.withTrigramThreshold((tx) =>
+      tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT p."id"
+        FROM "Product" p
+        WHERE p."status" = 'PUBLISHED'
+          AND (${Prisma.join(
+            fuzzable.map((variant) => Prisma.sql`${variant} <% p."name"`),
+            ' OR ',
+          )})
+        LIMIT ${FUZZY_MATCH_LIMIT}
+      `),
+    );
     return rows.map((row) => row.id);
   }
 
@@ -750,10 +761,10 @@ export class ProductService {
     if (!variants.length) return [];
 
     const matchClauses = variants.map((variant) => {
-      const like = `%${variant}%`;
+      const like = `%${escapeLike(variant)}%`;
       const fuzzy =
         variant.length >= MIN_FUZZY_LENGTH
-          ? Prisma.sql`OR word_similarity(${variant}, p."name") > ${SIMILARITY_THRESHOLD}`
+          ? Prisma.sql`OR ${variant} <% p."name"`
           : Prisma.empty;
       return Prisma.sql`(
         p."name" ILIKE ${like}
@@ -765,8 +776,8 @@ export class ProductService {
     });
 
     const rankClauses = variants.map((variant) => {
-      const like = `%${variant}%`;
-      const prefix = `${variant}%`;
+      const like = `%${escapeLike(variant)}%`;
+      const prefix = `${escapeLike(variant)}%`;
       const fuzzy =
         variant.length >= MIN_FUZZY_LENGTH
           ? Prisma.sql`(word_similarity(${variant}, p."name") * 50)::int`
@@ -782,20 +793,40 @@ export class ProductService {
       )`;
     });
 
-    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      SELECT p."id"
-      FROM "Product" p
-      LEFT JOIN "Brand" b ON b."id" = p."brandId"
-      WHERE p."status" = 'PUBLISHED' AND (${Prisma.join(matchClauses, ' OR ')})
-      ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."name" ASC
-      LIMIT ${limit}
-    `);
+    const rows = await this.withTrigramThreshold((tx) =>
+      tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT p."id"
+        FROM "Product" p
+        LEFT JOIN "Brand" b ON b."id" = p."brandId"
+        WHERE p."status" = 'PUBLISHED' AND (${Prisma.join(matchClauses, ' OR ')})
+        ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."name" ASC
+        LIMIT ${limit}
+      `),
+    );
     return rows.map((row) => row.id);
+  }
+
+  /**
+   * Runs a query with `pg_trgm.word_similarity_threshold` set for this
+   * transaction only, so the typo-tolerant match can be written as the
+   * `<%` operator. `word_similarity(a, b) > x` is a function call the GIN
+   * trigram index on `name` cannot serve — every search was a sequential
+   * scan of the catalogue; the operator form is an index lookup.
+   */
+  private withTrigramThreshold<T>(
+    query: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('pg_trgm.word_similarity_threshold', ${String(SIMILARITY_THRESHOLD)}, true)`;
+      return query(tx);
+    });
   }
 
   /** Live header suggestions: top products, categories and brands for a query. */
   async suggest(query: string) {
-    const term = query?.trim() ?? '';
+    // Header autocomplete: capped like `search` so one request cannot carry a
+    // page of text into the trigram scan.
+    const term = (query?.trim() ?? '').slice(0, 100);
     if (term.length < 2) {
       return { products: [], categories: [], brands: [] };
     }
@@ -868,9 +899,7 @@ export class ProductService {
     /** Categories the facet reports on, each with its descendants. */
     facetScope: Array<{ id: string; descendants: string[] }>;
   }> {
-    const categories = await this.prisma.category.findMany({
-      select: { id: true, parentId: true, slug: true, isVisible: true },
-    });
+    const categories = await this.categoryIndex();
 
     const childrenByParent = new Map<string, string[]>();
     for (const category of categories) {
@@ -879,15 +908,19 @@ export class ProductService {
       list.push(category.id);
       childrenByParent.set(key, list);
     }
+    // The seen-set guards against a parentId cycle (raw SQL edits, an old
+    // parser repair), which would otherwise hang the event loop on every
+    // catalogue request.
     const descendantsOf = (id: string) => {
-      const ids: string[] = [];
+      const seen = new Set<string>();
       const queue = [id];
       while (queue.length) {
         const current = queue.shift() as string;
-        ids.push(current);
+        if (seen.has(current)) continue;
+        seen.add(current);
         queue.push(...(childrenByParent.get(current) ?? []));
       }
-      return ids;
+      return [...seen];
     };
 
     const target =
@@ -929,6 +962,32 @@ export class ProductService {
           descendants: descendantsOf(id),
         })),
     };
+  }
+
+  private categoryCache: {
+    promise: Promise<CategoryIndexRow[]>;
+    expiresAt: number;
+  } | null = null;
+
+  /**
+   * Every category's id/parent/slug/visibility, shared for a few seconds.
+   * Every `/products` call needs it to expand a category filter into its
+   * subtree, and filter changes on the storefront are client-side requests
+   * Nitro does not cache.
+   */
+  private categoryIndex(): Promise<CategoryIndexRow[]> {
+    const now = Date.now();
+    if (this.categoryCache && this.categoryCache.expiresAt > now) {
+      return this.categoryCache.promise;
+    }
+    const promise = this.prisma.category.findMany({
+      select: { id: true, parentId: true, slug: true, isVisible: true },
+    });
+    this.categoryCache = { promise, expiresAt: now + CATEGORY_CACHE_TTL_MS };
+    promise.catch(() => {
+      if (this.categoryCache?.promise === promise) this.categoryCache = null;
+    });
+    return promise;
   }
 
   /** The category a `categoryId` / `categorySlug` filter points at. */

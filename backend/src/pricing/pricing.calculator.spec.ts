@@ -76,6 +76,42 @@ describe('computePrice', () => {
     );
     expect(price).toBeGreaterThanOrEqual(100);
   });
+
+  // 100 * 1.1 is 110.00000000000001 in floating point; ceil on that noise
+  // used to add a whole step.
+  it('is not pushed a step up by floating-point noise', () => {
+    expect(
+      computePrice(100, rule({ markupPercent: 10, rounding: 'INTEGER' })),
+    ).toBe(110);
+    expect(
+      computePrice(100, rule({ markupPercent: 10, rounding: 'TENS' })),
+    ).toBe(110);
+    expect(
+      computePrice(100, rule({ markupPercent: 10, rounding: 'CHARM_90' })),
+    ).toBe(109.9);
+    expect(
+      computePrice(200, rule({ markupPercent: 10, rounding: 'INTEGER' })),
+    ).toBe(220);
+  });
+
+  it('keeps the minimum margin when charm rounding goes down', () => {
+    // 140 + 10 = 150 -> 149.90 would leave a margin of 9.90.
+    expect(
+      computePrice(
+        140,
+        rule({ markupPercent: 0, minMargin: 10, rounding: 'CHARM_90' }),
+      ),
+    ).toBe(150.9);
+  });
+});
+
+describe('resolveRule tie-break', () => {
+  it('prefers the newest of two unbounded rules', () => {
+    const older = rule({ id: 'old', createdAt: new Date('2026-01-01') });
+    const newer = rule({ id: 'new', createdAt: new Date('2026-02-01') });
+    expect(resolveRule([older, newer], 100, context)?.id).toBe('new');
+    expect(resolveRule([newer, older], 100, context)?.id).toBe('new');
+  });
 });
 
 describe('applyRounding', () => {

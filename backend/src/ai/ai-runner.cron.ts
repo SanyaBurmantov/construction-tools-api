@@ -36,7 +36,9 @@ export class AiRunnerCron {
         const task = await this.ai.nextRunnableTask();
         if (!task) return;
         const outcome = await this.ai.runBatch(task);
-        if (outcome === 'rate-limited') return;
+        // An error usually repeats (bad model id, provider down): one wasted
+        // request per tick is enough, not AI_BATCHES_PER_TICK of the 50/day.
+        if (outcome === 'rate-limited' || outcome === 'error') return;
       }
     } catch (error) {
       this.logger.error(`AI runner failed: ${(error as Error).message}`);

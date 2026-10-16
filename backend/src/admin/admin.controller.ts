@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -29,8 +30,6 @@ import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
 import { AdminMapSourceCategoryDto } from './dto/admin-map-source-category.dto';
-import { AdminDukonSitemapQueryDto } from './dto/admin-dukon-sitemap-query.dto';
-import { Admin7745SitemapQueryDto } from './dto/admin-7745-sitemap-query.dto';
 import { OrdersService } from '../orders/orders.service';
 import {
   AdminOrderQueryDto,
@@ -70,7 +69,10 @@ import {
   AdminUpdateUserDto,
   AdminUserQueryDto,
 } from '../auth/dto/admin-user.dto';
-import { ActingAdminId } from '../auth/current-user.decorator';
+import {
+  ActingAdminId,
+  CurrentSessionId,
+} from '../auth/current-user.decorator';
 import { AdminActionLogService } from '../audit/admin-action-log.service';
 import { AuditQueryDto } from '../audit/dto/audit-query.dto';
 import { ErrorLogService } from '../errors/error-log.service';
@@ -198,42 +200,42 @@ export class AdminController {
 
   @Get('queue')
   getQueueStats() {
-    return this.adminService.getQueueStats();
+    return this.adminService.queueStats('th-tools');
   }
 
   @Get('queue/dukon')
   getDukonQueueStats() {
-    return this.adminService.getDukonQueueStats();
+    return this.adminService.queueStats('dukon');
   }
 
   @Get('queue/dukon/sitemaps')
-  getDukonSitemaps(@Query() query: AdminDukonSitemapQueryDto) {
-    return this.adminService.getDukonSitemaps(query);
+  getDukonSitemaps(@Query() query: AdminSitemapQueryDto) {
+    return this.adminService.queueRows('dukon', query);
   }
 
   @Get('queue/7745')
   get7745QueueStats() {
-    return this.adminService.get7745QueueStats();
+    return this.adminService.queueStats('7745');
   }
 
   @Get('queue/7745/sitemaps')
-  get7745Sitemaps(@Query() query: Admin7745SitemapQueryDto) {
-    return this.adminService.get7745Sitemaps(query);
+  get7745Sitemaps(@Query() query: AdminSitemapQueryDto) {
+    return this.adminService.queueRows('7745', query);
   }
 
   @Get('queue/tools-by')
   getToolsByQueueStats() {
-    return this.adminService.getToolsByQueueStats();
+    return this.adminService.queueStats('tools-by');
   }
 
   @Get('queue/tools-by/sitemaps')
   getToolsBySitemaps(@Query() query: AdminSitemapQueryDto) {
-    return this.adminService.getToolsBySitemaps(query);
+    return this.adminService.queueRows('tools-by', query);
   }
 
   @Get('queue/sitemaps')
   getSitemaps(@Query() query: AdminSitemapQueryDto) {
-    return this.adminService.getSitemaps(query);
+    return this.adminService.queueRows('th-tools', query);
   }
 
   @Get('queue/errors')
@@ -272,82 +274,82 @@ export class AdminController {
 
   @Post('queue/refresh-sitemaps')
   refreshSitemaps() {
-    return this.adminService.refreshSitemaps();
+    return this.adminService.refreshQueue('th-tools');
   }
 
   @Post('queue/process')
-  processQueuedProducts(@Body('limit') limit?: number) {
-    return this.adminService.processQueuedProducts(limit || 25);
+  processQueuedProducts(@Body('limit') limit?: unknown) {
+    return this.adminService.processQueue('th-tools', limit);
   }
 
   @Post('queue/sitemaps/retry-problems')
   retryProblemSitemaps() {
-    return this.adminService.retryProblemSitemaps();
+    return this.adminService.retryQueueProblems('th-tools');
   }
 
   @Post('queue/sitemaps/:id/retry')
   retrySitemap(@Param('id') id: string) {
-    return this.adminService.retrySitemap(id);
+    return this.adminService.retryQueueRow('th-tools', id);
   }
 
   @Post('queue/dukon/refresh-sitemaps')
   refreshDukonSitemaps() {
-    return this.adminService.refreshDukonSitemaps();
+    return this.adminService.refreshQueue('dukon');
   }
 
   @Post('queue/dukon/process')
-  processDukonQueuedProducts(@Body('limit') limit?: number) {
-    return this.adminService.processDukonQueuedProducts(limit || 25);
+  processDukonQueuedProducts(@Body('limit') limit?: unknown) {
+    return this.adminService.processQueue('dukon', limit);
   }
 
   @Post('queue/dukon/sitemaps/retry-problems')
   retryProblemDukonSitemaps() {
-    return this.adminService.retryProblemDukonSitemaps();
+    return this.adminService.retryQueueProblems('dukon');
   }
 
   @Post('queue/dukon/sitemaps/:id/retry')
   retryDukonSitemap(@Param('id') id: string) {
-    return this.adminService.retryDukonSitemap(id);
+    return this.adminService.retryQueueRow('dukon', id);
   }
 
   @Post('queue/7745/refresh-sitemaps')
   refresh7745Sitemaps() {
-    return this.adminService.refresh7745Sitemaps();
+    return this.adminService.refreshQueue('7745');
   }
 
   @Post('queue/7745/process')
-  process7745QueuedProducts(@Body('limit') limit?: number) {
-    return this.adminService.process7745QueuedProducts(limit || 25);
+  process7745QueuedProducts(@Body('limit') limit?: unknown) {
+    return this.adminService.processQueue('7745', limit);
   }
 
   @Post('queue/7745/sitemaps/retry-problems')
   retryProblem7745Sitemaps() {
-    return this.adminService.retryProblem7745Sitemaps();
+    return this.adminService.retryQueueProblems('7745');
   }
 
   @Post('queue/7745/sitemaps/:id/retry')
   retry7745Sitemap(@Param('id') id: string) {
-    return this.adminService.retry7745Sitemap(id);
+    return this.adminService.retryQueueRow('7745', id);
   }
 
   @Post('queue/tools-by/refresh-sitemaps')
   refreshToolsBySitemaps() {
-    return this.adminService.refreshToolsBySitemaps();
+    return this.adminService.refreshQueue('tools-by');
   }
 
   @Post('queue/tools-by/process')
-  processToolsByQueuedProducts(@Body('limit') limit?: number) {
-    return this.adminService.processToolsByQueuedProducts(limit || 25);
+  processToolsByQueuedProducts(@Body('limit') limit?: unknown) {
+    return this.adminService.processQueue('tools-by', limit);
   }
 
   @Post('queue/tools-by/sitemaps/retry-problems')
   retryProblemToolsBySitemaps() {
-    return this.adminService.retryProblemToolsBySitemaps();
+    return this.adminService.retryQueueProblems('tools-by');
   }
 
   @Post('queue/tools-by/sitemaps/:id/retry')
   retryToolsBySitemap(@Param('id') id: string) {
-    return this.adminService.retryToolsBySitemap(id);
+    return this.adminService.retryQueueRow('tools-by', id);
   }
 
   @Post('categories')
@@ -545,9 +547,18 @@ export class AdminController {
   @Patch('specifications/:id/filterable')
   setSpecificationFilterable(
     @Param('id') id: string,
-    @Body('filterable') filterable: boolean,
+    @Body('filterable') filterable: unknown,
   ) {
-    return this.specsAdminService.setFilterable(id, Boolean(filterable));
+    // `Boolean("false")` is true: accept a real boolean or its string form,
+    // nothing else.
+    if (filterable !== true && filterable !== false) {
+      if (filterable === 'true' || filterable === 'false') {
+        filterable = filterable === 'true';
+      } else {
+        throw new BadRequestException('filterable должен быть true или false');
+      }
+    }
+    return this.specsAdminService.setFilterable(id, filterable as boolean);
   }
 
   /** Enables every specification matching the "useful filter" heuristic. */
@@ -642,8 +653,9 @@ export class AdminController {
     @Param('id') id: string,
     @Body() dto: AdminUpdateUserDto,
     @ActingAdminId() actorId?: string,
+    @CurrentSessionId() sessionId?: string,
   ) {
-    return this.usersAdminService.update(id, dto, actorId);
+    return this.usersAdminService.update(id, dto, actorId, sessionId);
   }
 
   @Delete('users/:id')

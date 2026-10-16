@@ -28,6 +28,13 @@ export type FetchWithTimeoutOptions = {
  * transient failures are retried before giving up. Honors `Retry-After` when
  * the server sends it.
  *
+ * The timeout covers the **body** too. The response is read in full before
+ * the timer is cleared and handed back as a buffered `Response`, so the
+ * caller's `res.text()` / `res.json()` resolve immediately. Clearing the timer
+ * once headers arrived left the body read unbounded: a stalled stream (an LLM
+ * that pads with whitespace and then hangs, a supplier dropping mid-page) hung
+ * the parser batch or the AI runner until the process restarted.
+ *
  * Backwards compatible: the third argument may still be a plain `timeoutMs`
  * number.
  */
@@ -51,12 +58,16 @@ export async function fetchWithTimeout(
       const res = await fetch(url, { ...init, signal: controller.signal });
 
       if (attempt < retries && RETRYABLE_STATUS.has(res.status)) {
-        lastError = new Error(`Retryable HTTP ${res.status} for ${url}`);
+        // Release the socket instead of leaving the unread body attached.
+        await res.body?.cancel().catch(() => undefined);
+        lastError = new Error(
+          `Retryable HTTP ${res.status} for ${redactUrl(url)}`,
+        );
         await sleep(retryDelay(attempt, retryBaseMs, res));
         continue;
       }
 
-      return res;
+      return await bufferResponse(res);
     } catch (error) {
       // Network error or timeout abort — retry while attempts remain.
       lastError = error;
@@ -75,9 +86,41 @@ export async function fetchWithTimeout(
       ? lastError.message
       : String(lastError);
   throw new Error(
-    `Failed to fetch ${url} after ${retries + 1} attempts (timeout ${timeoutMs}ms): ${reason}`,
+    `Failed to fetch ${redactUrl(url)} after ${retries + 1} attempts (timeout ${timeoutMs}ms): ${reason}`,
     { cause: lastError },
   );
+}
+
+/**
+ * Reads the body while the abort timer is still running and returns an
+ * equivalent, already-buffered Response. `url` and `redirected` are kept —
+ * a supplier redirecting a dead product to its home page is a signal.
+ */
+async function bufferResponse(res: Response): Promise<Response> {
+  const body = await res.arrayBuffer();
+  const buffered = new Response(
+    // A null-body status (204/304) must not be given a body.
+    [101, 204, 205, 304].includes(res.status) ? null : body,
+    { status: res.status, statusText: res.statusText, headers: res.headers },
+  );
+  Object.defineProperty(buffered, 'url', { value: res.url });
+  Object.defineProperty(buffered, 'redirected', { value: res.redirected });
+  return buffered;
+}
+
+/**
+ * The URL as it may appear in an error message: no query string and no
+ * credential path segment. Telegram puts the bot token in the path
+ * (`/bot<TOKEN>/sendMessage`), and these messages end up in container logs.
+ */
+export function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/bot[^/]+/, '/bot***');
+    return `${parsed.origin}${path}`;
+  } catch {
+    return '[unparseable url]';
+  }
 }
 
 function retryDelay(attempt: number, baseMs: number, res?: Response): number {

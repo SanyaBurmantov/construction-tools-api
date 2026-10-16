@@ -314,10 +314,16 @@ export class CategoryQueueService {
     });
     if (!source) return;
 
-    // SourceCategory.path is the breadcrumb slug chain, so `hasEvery` on the
-    // supplier URL slugs matches the branch and everything under it.
+    // The branch and everything under it, by slug-chain *prefix*. `hasEvery`
+    // was order-insensitive and not a prefix match: switching off
+    // `/category/prochee/` switched off every branch with «prochee» anywhere
+    // in its chain.
+    const key = path.join('/');
     await this.prisma.sourceCategory.updateMany({
-      where: { sourceId: source.id, path: { hasEvery: path } },
+      where: {
+        sourceId: source.id,
+        OR: [{ externalId: key }, { externalId: { startsWith: `${key}/` } }],
+      },
       data: { isEnabled },
     });
   }

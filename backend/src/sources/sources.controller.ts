@@ -12,9 +12,8 @@ export class SourceController {
    * Supplier list for the catalogue facet — id, name and code only, and
    * **admin-only**: which supplier carries what is our business, not the
    * customer's, so the «Поставщик» filter is rendered for an ADMIN session
-   * alone (`CatalogView` fetches this only then). The counts in
-   * `GET /products` `facets.sources` stay public but are keyed by id, which
-   * says nothing without this list.
+   * alone (`CatalogView` fetches this only then), and `GET /products`
+   * honours `?sourceCode=` for an ADMIN session only.
    */
   @Get()
   @UseGuards(AdminGuard)

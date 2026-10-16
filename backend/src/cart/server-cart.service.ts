@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -175,34 +176,20 @@ export class ServerCartService {
     const incoming = this.normalize(dto);
 
     if (incoming.size) {
-      const existing = await this.prisma.cartItem.findMany({
-        where: { userId },
-        select: { productId: true, quantity: true },
-      });
-      const existingQuantity = new Map(
-        existing.map((row) => [row.productId, row.quantity]),
-      );
       const orderable = await this.orderableProducts([...incoming.keys()]);
-
-      const writes: Prisma.PrismaPromise<unknown>[] = [];
-      for (const [productId, quantity] of incoming) {
-        if (!orderable.has(productId)) continue;
-        const current = existingQuantity.get(productId);
-        if (current == null) {
-          writes.push(
-            this.prisma.cartItem.create({
-              data: { userId, productId, quantity },
-            }),
-          );
-        } else if (quantity > current) {
-          writes.push(
-            this.prisma.cartItem.update({
-              where: { userId_productId: { userId, productId } },
-              data: { quantity },
-            }),
-          );
-        }
-      }
+      // One upsert per line, keeping the larger quantity in SQL. Read-then-
+      // create raced a second tab's merge (or a PUT) inserting the same
+      // (userId, productId): P2002, the whole merge rolled back, 500.
+      const writes = [...incoming]
+        .filter(([productId]) => orderable.has(productId))
+        .map(
+          ([productId, quantity]) => this.prisma.$executeRaw`
+            INSERT INTO "CartItem" ("id", "userId", "productId", "quantity", "createdAt", "updatedAt")
+            VALUES (${randomUUID()}, ${userId}, ${productId}, ${quantity}, NOW(), NOW())
+            ON CONFLICT ("userId", "productId") DO UPDATE
+            SET "quantity" = GREATEST("CartItem"."quantity", EXCLUDED."quantity"),
+                "updatedAt" = NOW()`,
+        );
       if (writes.length) await this.prisma.$transaction(writes);
     }
 
@@ -225,9 +212,16 @@ export class ServerCartService {
     const ttlDays = Number.isFinite(days) && days > 0 ? days : DEFAULT_TTL_DAYS;
     const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
 
-    const { count } = await this.prisma.cartItem.deleteMany({
-      where: { updatedAt: { lte: cutoff } },
-    });
+    // Whole carts, by their newest line. Per-line pruning removed the lines a
+    // sign-in merge happened not to touch from a cart that was otherwise in
+    // active use.
+    const count = await this.prisma.$executeRaw`
+      DELETE FROM "CartItem" c
+      WHERE c."userId" IN (
+        SELECT "userId" FROM "CartItem"
+        GROUP BY "userId"
+        HAVING MAX("updatedAt") <= ${cutoff}
+      )`;
     if (count) this.logger.log(`Removed ${count} stale cart line(s)`);
     return count;
   }

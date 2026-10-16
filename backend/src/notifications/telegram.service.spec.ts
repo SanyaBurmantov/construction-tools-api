@@ -1,4 +1,8 @@
-import { TelegramService, OrderNotification } from './telegram.service';
+import {
+  TelegramService,
+  OrderNotification,
+  fitMessage,
+} from './telegram.service';
 
 function buildOrder(
   overrides: Partial<OrderNotification> = {},
@@ -192,6 +196,43 @@ describe('TelegramService', () => {
     const message = new TelegramService().buildMessage(buildOrder({ items }));
 
     expect(message.length).toBeLessThanOrEqual(4096);
-    expect(message.endsWith('…')).toBe(true);
+    // Items are dropped; the totals survive.
+    expect(message).toMatch(/…и ещё \d+ поз\./);
+    expect(message).toContain('Итого');
+  });
+});
+
+describe('fitMessage', () => {
+  const head = [
+    '<b>Новый заказ</b>',
+    '<b>Комментарий:</b> ' + 'а'.repeat(2000),
+  ];
+  const items = Array.from(
+    { length: 200 },
+    (_, i) => `• Товар ${i} — 1 × 10 = 10`,
+  );
+  const tail = [
+    '',
+    '<b>Итого: 2000 BYN</b>',
+    'https://gost.by/admin/orders?order=1',
+  ];
+
+  it('drops items, never the totals or the admin link', () => {
+    const message = fitMessage(head, items, tail, 4000);
+    expect(message.length).toBeLessThanOrEqual(4000);
+    expect(message).toContain('<b>Итого: 2000 BYN</b>');
+    expect(message).toContain('/admin/orders?order=1');
+    expect(message).toMatch(/…и ещё \d+ поз\./);
+  });
+
+  it('keeps tags balanced when a long comment is cut', () => {
+    const message = fitMessage(head, items, tail, 4000);
+    const opened = (message.match(/<b>/g) ?? []).length;
+    const closed = (message.match(/<\/b>/g) ?? []).length;
+    expect(opened).toBe(closed);
+  });
+
+  it('leaves a short message alone', () => {
+    expect(fitMessage(['a'], ['b'], ['c'])).toBe('a\nb\nc');
   });
 });

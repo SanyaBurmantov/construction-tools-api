@@ -1,4 +1,3 @@
-import { CreateCategoryDto } from './dto/create-category.dto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,6 +10,14 @@ type CategoryShowcase = { price: number; url: string };
 /** How long a built artwork map is reused. Supplier prices move daily. */
 const SHOWCASE_TTL_MS = 15 * 60 * 1000;
 
+/** Short: an admin edit shows up within seconds, and ISR caches longer. */
+const TREE_CACHE_TTL_MS = 30_000;
+
+type CountedTree = {
+  nodes: Map<string, CategoryTreeNode>;
+  roots: CategoryTreeNode[];
+};
+
 @Injectable()
 export class CategoriesService {
   private readonly logger = new Logger(CategoriesService.name);
@@ -22,32 +29,6 @@ export class CategoriesService {
     null;
 
   constructor(private prisma: PrismaService) {}
-
-  async create(dto: CreateCategoryDto) {
-    const parent = dto.parentId
-      ? await this.prisma.category.findUnique({ where: { id: dto.parentId } })
-      : null;
-
-    return this.prisma.category.create({
-      data: {
-        name: dto.name,
-        slug: dto.slug,
-        parentId: dto.parentId,
-        description: dto.description,
-        level: parent ? parent.level + 1 : 0,
-        path: parent ? [...parent.path, dto.slug] : [dto.slug],
-        // Identity must match what the parsers build, or a hand-made category
-        // and a parsed one at the same place in the tree become two rows.
-        pathKey: parent ? `${parent.pathKey}/${dto.slug}` : dto.slug,
-        seoTitle: dto.name,
-        seoDescription: dto.description || dto.name,
-      },
-    });
-  }
-
-  findAll() {
-    return this.prisma.category.findMany();
-  }
 
   /**
    * Category tree for storefront navigation. Counts include descendants;
@@ -206,10 +187,34 @@ export class CategoriesService {
     }
   }
 
-  private async buildCountedTree(): Promise<{
-    nodes: Map<string, CategoryTreeNode>;
-    roots: CategoryTreeNode[];
-  }> {
+  private treeCache: {
+    promise: Promise<CountedTree>;
+    expiresAt: number;
+  } | null = null;
+
+  /**
+   * The counted tree, shared for a few seconds. Building it reads every
+   * category and groups every published product, and it ran on each
+   * `/categories/tree` and `/categories/:slug` — the client-side menu fetch
+   * and category pages outside Nitro's cache included. Callers only read it
+   * (`pruneUnlistable` copies), so sharing is safe; the promise is cached, so
+   * concurrent requests wait for one build instead of starting their own.
+   */
+  private buildCountedTree(): Promise<CountedTree> {
+    const now = Date.now();
+    if (this.treeCache && this.treeCache.expiresAt > now) {
+      return this.treeCache.promise;
+    }
+    const promise = this.buildCountedTreeUncached();
+    this.treeCache = { promise, expiresAt: now + TREE_CACHE_TTL_MS };
+    // A failed build must not be served for the whole TTL.
+    promise.catch(() => {
+      if (this.treeCache?.promise === promise) this.treeCache = null;
+    });
+    return promise;
+  }
+
+  private async buildCountedTreeUncached(): Promise<CountedTree> {
     const [categories, counts] = await Promise.all([
       this.prisma.category.findMany({
         select: {

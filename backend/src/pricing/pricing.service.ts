@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PricingRule } from '@prisma/client';
+import { pickBestOffer } from '../offers/best-offer';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   RuleContext,
@@ -11,6 +12,8 @@ import {
 
 /** Rules change rarely but are read on every parsed product. */
 const RULES_CACHE_TTL_MS = 60_000;
+/** The category tree (~3k rows) is walked for every priced product. */
+const PARENTS_CACHE_TTL_MS = 60_000;
 
 export type PricingDecision = {
   price: number | null;
@@ -24,6 +27,10 @@ export type PricingDecision = {
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
   private rulesCache: { rules: PricingRule[]; expiresAt: number } | null = null;
+  private parentsCache: {
+    parents: Map<string, string | null>;
+    expiresAt: number;
+  } | null = null;
 
   constructor(private prisma: PrismaService) {}
 
@@ -48,24 +55,47 @@ export class PricingService {
     this.rulesCache = null;
   }
 
+  private async categoryParents(): Promise<Map<string, string | null>> {
+    const now = Date.now();
+    if (this.parentsCache && this.parentsCache.expiresAt > now) {
+      return this.parentsCache.parents;
+    }
+    const rows = await this.prisma.category.findMany({
+      select: { id: true, parentId: true },
+    });
+    const parents = new Map(rows.map((row) => [row.id, row.parentId]));
+    this.parentsCache = { parents, expiresAt: now + PARENTS_CACHE_TTL_MS };
+    return parents;
+  }
+
   /**
    * The product's own category plus every ancestor, so a rule written on a
    * parent category applies to the whole subtree.
+   *
+   * Walks `parentId`, not `path`: `path` holds the parser's breadcrumb slugs,
+   * which are not the public slugs (those fall back to `parent-leaf`, `-2`…),
+   * so matching `slug IN path` picked up same-named categories in unrelated
+   * branches and missed renamed ancestors.
    */
   private async categoryChain(categoryId: string | null): Promise<string[]> {
     if (!categoryId) return [];
-    const category = await this.prisma.category.findUnique({
-      where: { id: categoryId },
-      select: { id: true, path: true },
-    });
-    if (!category) return [];
-
-    // `path` holds the slug chain from the root.
-    const ancestors = await this.prisma.category.findMany({
-      where: { slug: { in: category.path } },
-      select: { id: true },
-    });
-    return [...new Set([category.id, ...ancestors.map((c) => c.id)])];
+    const parents = await this.categoryParents();
+    if (!parents.has(categoryId)) {
+      // Created after the cache was filled.
+      this.parentsCache = null;
+      if (!(await this.categoryParents()).has(categoryId)) return [];
+    }
+    const map = this.parentsCache!.parents;
+    const chain: string[] = [];
+    // The visited set guards against a parentId cycle hanging the loop.
+    for (
+      let id: string | null | undefined = categoryId;
+      id && !chain.includes(id);
+      id = map.get(id)
+    ) {
+      chain.push(id);
+    }
+    return chain;
   }
 
   /** Decides a price without writing anything. */
@@ -124,7 +154,15 @@ export class PricingService {
   async applyCost(
     productId: string,
     cost: number,
-    options: { oldCost?: number | null } = {},
+    options: {
+      oldCost?: number | null;
+      /**
+       * Keep the product's current "was" price instead of deriving one from
+       * `oldCost` — for a recalculation that has no supplier snapshot to read
+       * the discount from.
+       */
+      preserveOldPrice?: boolean;
+    } = {},
   ): Promise<PricingDecision> {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
@@ -136,6 +174,7 @@ export class PricingService {
         priceValue: true,
         oldPrice: true,
         pricingMode: true,
+        priceReviewNeeded: true,
         sourceProducts: { select: { sourceId: true } },
       },
     });
@@ -157,15 +196,37 @@ export class PricingService {
     // leave the price the admin chose alone.
     if (decision.reason === 'manual') {
       if (product.costPrice !== cost) {
-        await this.prisma.product.update({
-          where: { id: productId },
-          data: { costPrice: cost },
-        });
+        await this.prisma.$transaction([
+          this.prisma.product.update({
+            where: { id: productId },
+            data: { costPrice: cost },
+          }),
+          this.prisma.priceHistory.create({
+            data: {
+              productId,
+              costPrice: cost,
+              oldPrice: product.priceValue,
+              newPrice: product.priceValue,
+              reason: 'manual',
+            },
+          }),
+        ]);
       }
       return decision;
     }
 
     if (decision.blocked) {
+      // The product keeps its old cost, so every re-parse of the same typo
+      // trips the guard again. One history row per distinct rejected cost is
+      // enough for the review screen.
+      const lastBlocked = await this.prisma.priceHistory.findFirst({
+        where: { productId, reason: 'blocked_spike' },
+        orderBy: { createdAt: 'desc' },
+        select: { costPrice: true },
+      });
+      if (product.priceReviewNeeded && lastBlocked?.costPrice === cost) {
+        return decision;
+      }
       this.logger.warn(
         `Cost jump on product ${productId}: ${product.costPrice} -> ${cost}, price kept for review`,
       );
@@ -190,17 +251,40 @@ export class PricingService {
     // A supplier's own "was" price has to go through the same markup, otherwise
     // it would sit below our marked-up price and the discount badge would
     // either vanish or misrepresent a saving that isn't ours.
-    const oldPrice =
+    let oldPrice =
       options.oldCost != null && options.oldCost > cost
         ? computePrice(options.oldCost, decision.rule)
         : null;
+    if (options.preserveOldPrice) oldPrice = product.oldPrice;
+    // A "was" price at or under the new price is not a discount.
+    if (
+      oldPrice != null &&
+      decision.price != null &&
+      oldPrice <= decision.price
+    ) {
+      oldPrice = null;
+    }
 
     const costChanged = product.costPrice !== cost;
     const priceChanged = product.priceValue !== decision.price;
     // Also write when the "was" price needs clearing: a supplier that stopped
     // discounting would otherwise leave a phantom discount on the card forever.
     const oldPriceChanged = product.oldPrice !== oldPrice;
-    if (!costChanged && !priceChanged && !oldPriceChanged) return decision;
+    // A sane cost arriving after a flagged one means the supplier fixed the
+    // typo: the review is moot, and leaving the flag would let "accept" adopt
+    // the stale typo later.
+    const clearsReview = product.priceReviewNeeded;
+    if (!costChanged && !priceChanged && !oldPriceChanged && !clearsReview) {
+      return decision;
+    }
+
+    if (!costChanged && !priceChanged && !oldPriceChanged) {
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { priceReviewNeeded: false },
+      });
+      return decision;
+    }
 
     await this.prisma.$transaction([
       this.prisma.product.update({
@@ -210,6 +294,7 @@ export class PricingService {
           priceValue: decision.price,
           oldPrice,
           appliedRuleId: decision.rule?.id ?? null,
+          priceReviewNeeded: false,
         },
       }),
       this.prisma.priceHistory.create({
@@ -277,7 +362,15 @@ export class PricingService {
     for (;;) {
       const batch = await this.prisma.product.findMany({
         where,
-        select: { id: true, costPrice: true, priceValue: true },
+        select: {
+          id: true,
+          costPrice: true,
+          priceValue: true,
+          sourceProducts: {
+            where: { price: { not: null, gt: 0 } },
+            select: { price: true, stock: true, specifications: true },
+          },
+        },
         orderBy: { id: 'asc' },
         take: 200,
         ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -285,10 +378,19 @@ export class PricingService {
       if (!batch.length) break;
 
       for (const product of batch) {
-        // The cost hasn't moved, so the spike guard can't trip here — this only
-        // re-applies whatever the rules now say.
         const before = product.priceValue;
-        const decision = await this.applyCost(product.id, product.costPrice!);
+        // Re-read the supplier's "was" price from the offer the product is
+        // priced from. Calling applyCost without it computed oldPrice = null
+        // and wiped every discount in the catalogue on each recalculation.
+        const offer = pickBestOffer(product.sourceProducts);
+        const decision =
+          offer && offer.price === product.costPrice
+            ? await this.applyCost(product.id, offer.price, {
+                oldCost: offer.oldPrice,
+              })
+            : await this.applyCost(product.id, product.costPrice!, {
+                preserveOldPrice: true,
+              });
         processed += 1;
         if (decision.price !== before) updated += 1;
       }
@@ -316,6 +418,7 @@ export class PricingService {
         brandId: true,
         costPrice: true,
         priceValue: true,
+        pricingMode: true,
         sourceProducts: { select: { sourceId: true } },
       },
     });
@@ -329,17 +432,33 @@ export class PricingService {
       return { ok: true as const, price: product.priceValue };
     }
 
-    // The rejected cost lives in the audit trail, not on the product.
-    const pending = await this.prisma.priceHistory.findFirst({
-      where: { productId, reason: 'blocked_spike' },
-      orderBy: { createdAt: 'desc' },
-      select: { costPrice: true },
-    });
-    const cost = pending?.costPrice ?? product.costPrice;
-    if (cost == null) {
+    // The rejected cost lives in the audit trail, not on the product — but only
+    // while it is the latest word: a normal parse recorded after it means the
+    // supplier corrected itself, and adopting the old typo would be wrong.
+    const [pending, lastAccepted] = await Promise.all([
+      this.prisma.priceHistory.findFirst({
+        where: { productId, reason: 'blocked_spike' },
+        orderBy: { createdAt: 'desc' },
+        select: { costPrice: true, createdAt: true },
+      }),
+      this.prisma.priceHistory.findFirst({
+        where: { productId, reason: { not: 'blocked_spike' } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+    ]);
+    const pendingIsCurrent =
+      pending != null &&
+      (!lastAccepted || pending.createdAt > lastAccepted.createdAt);
+    const cost = pendingIsCurrent ? pending.costPrice : product.costPrice;
+    if (cost == null || product.pricingMode === 'MANUAL') {
+      // A hand-priced product keeps its price; only the cost is adopted.
       await this.prisma.product.update({
         where: { id: productId },
-        data: { priceReviewNeeded: false },
+        data: {
+          priceReviewNeeded: false,
+          ...(cost != null ? { costPrice: cost } : {}),
+        },
       });
       return { ok: true as const, price: product.priceValue };
     }
@@ -359,6 +478,9 @@ export class PricingService {
         data: {
           costPrice: cost,
           priceValue: decision.price,
+          // The old "was" price belonged to the old cost; the next parse
+          // brings the supplier's current one.
+          oldPrice: null,
           appliedRuleId: decision.rule?.id ?? null,
           priceReviewNeeded: false,
         },

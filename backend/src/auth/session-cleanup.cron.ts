@@ -16,7 +16,10 @@ export class SessionCleanupCron {
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
   async handle() {
-    await this.auth.purgeExpiredSessions();
-    await this.emailVerification.purgeExpired();
+    // Independent purges: one failing must not skip the other for a day.
+    await Promise.allSettled([
+      this.auth.purgeExpiredSessions(),
+      this.emailVerification.purgeExpired(),
+    ]);
   }
 }

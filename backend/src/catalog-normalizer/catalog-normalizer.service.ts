@@ -37,7 +37,8 @@ export type CatalogNormalizeReport = {
 @Injectable()
 export class CatalogNormalizerService {
   private readonly logger = new Logger(CatalogNormalizerService.name);
-  private running: Promise<CatalogNormalizeReport> | null = null;
+  private running: Promise<unknown> | null = null;
+  private runningDry = false;
 
   constructor(
     private readonly specs: SpecNormalizerService,
@@ -57,20 +58,58 @@ export class CatalogNormalizerService {
   async run(
     options: { dryRun?: boolean } = {},
   ): Promise<CatalogNormalizeReport> {
-    if (this.running) {
-      this.logger.log('Normalization already running — joining it');
-      return this.running;
-    }
+    const dryRun = options.dryRun ?? false;
+    return this.exclusive(dryRun, `full${dryRun ? ' (dry)' : ''}`, () =>
+      this.execute(dryRun),
+    );
+  }
 
-    this.running = this.execute(options.dryRun ?? false).finally(() => {
+  /** One pass on its own (admin buttons), under the same lock as `run`. */
+  runStep(step: 'specs' | 'categories', dryRun: boolean) {
+    return this.exclusive<unknown>(
+      dryRun,
+      `${step}${dryRun ? ' (dry)' : ''}`,
+      () =>
+        step === 'specs'
+          ? this.specs.normalize(dryRun)
+          : this.categories.normalize(dryRun),
+    );
+  }
+
+  /**
+   * Same-mode callers join the run in progress. A *different* mode waits for
+   * it and then runs: joining a dry run used to hand the nightly cron a
+   * "done" report while nothing had been applied. The single-step endpoints
+   * used to bypass the lock altogether.
+   */
+  private async exclusive<T>(
+    dryRun: boolean,
+    label: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    while (this.running) {
+      if (this.runningDry === dryRun && label.startsWith('full')) {
+        this.logger.log('Normalization already running — joining it');
+        return this.running as Promise<T>;
+      }
+      this.logger.log(`Normalization ${label} waits for the run in progress`);
+      await this.running.catch(() => undefined);
+    }
+    this.runningDry = dryRun;
+    const promise = task().finally(() => {
       this.running = null;
     });
-    return this.running;
+    this.running = promise;
+    return promise;
   }
 
   private async execute(dryRun: boolean): Promise<CatalogNormalizeReport> {
     const startedAt = Date.now();
-    await this.status.start(CATALOG_NORMALIZE_KEY, CATALOG_NORMALIZE_LABEL);
+    // A dry run writes nothing, so it must not count as the nightly run in
+    // health either — only real runs touch ParserRuntimeStatus.
+    if (!dryRun) {
+      await this.status.start(CATALOG_NORMALIZE_KEY, CATALOG_NORMALIZE_LABEL);
+    }
 
     try {
       // Categories first: it hides filtered-out products and merges
@@ -91,10 +130,10 @@ export class CatalogNormalizerService {
         categories,
         durationMs: Date.now() - startedAt,
       };
-      await this.status.success(CATALOG_NORMALIZE_KEY, report);
+      if (!dryRun) await this.status.success(CATALOG_NORMALIZE_KEY, report);
       return report;
     } catch (error) {
-      await this.status.failure(CATALOG_NORMALIZE_KEY, error);
+      if (!dryRun) await this.status.failure(CATALOG_NORMALIZE_KEY, error);
       throw error;
     }
   }

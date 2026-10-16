@@ -2,6 +2,16 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CategoryMergeService } from './category-merge.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+type Row = {
+  id: string;
+  name: string;
+  parentId: string | null;
+  slug: string;
+  pathKey: string;
+  level: number;
+  path: string[];
+};
+
 // дерево: root ─ child ─ grandchild; other — отдельный корень
 const categories = [
   {
@@ -38,8 +48,18 @@ const categories = [
   },
 ];
 
-function buildService(rows = categories) {
+function buildService(input: Array<Omit<Row, 'pathKey'>> = categories) {
+  // Parser identity starts out as the slug chain, as the parsers write it.
+  const rows: Row[] = input.map((row) => ({
+    ...row,
+    pathKey: row.path.join('/'),
+  }));
   const tx = {
+    categoryPathAlias: {
+      deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      upsert: jest.fn(() => Promise.resolve({})),
+    },
     product: { updateMany: jest.fn(() => Promise.resolve({ count: 7 })) },
     sourceCategory: {
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
@@ -61,6 +81,7 @@ function buildService(rows = categories) {
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
     category: {
+      findUnique: jest.fn(() => Promise.resolve(null)),
       update: jest.fn(() => Promise.resolve({})),
       delete: jest.fn(() => Promise.resolve({})),
     },
@@ -227,6 +248,27 @@ describe('CategoryMergeService deep merge', () => {
     );
     expect(tx.category.delete).toHaveBeenCalledWith({
       where: { id: 'supplier-engine' },
+    });
+    // The supplier's breadcrumb chains keep resolving after the merge.
+    expect(tx.categoryPathAlias.upsert).toHaveBeenCalledWith({
+      where: {
+        pathKey: 'specialnyi-instrument/specialnyi-instrument-dvigatel',
+      },
+      create: {
+        pathKey: 'specialnyi-instrument/specialnyi-instrument-dvigatel',
+        categoryId: 'canon-engine',
+      },
+      update: { categoryId: 'canon-engine' },
+    });
+    expect(tx.categoryPathAlias.upsert).toHaveBeenCalledWith({
+      where: {
+        pathKey: 'specialnyi-instrument/specialnyi-instrument-dvigatel/svechi',
+      },
+      create: {
+        pathKey: 'specialnyi-instrument/specialnyi-instrument-dvigatel/svechi',
+        categoryId: 'supplier-plugs',
+      },
+      update: { categoryId: 'supplier-plugs' },
     });
     expect(tx.category.delete).toHaveBeenCalledWith({
       where: { id: 'supplier' },

@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { InternalAwareThrottlerGuard } from './common/guards/internal-aware-throttler.guard';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { CategoriesModule } from './categories/categories.module';
-import { SpecificationsModule } from './specifications/specifications.module';
 import { BrandsModule } from './brands/brands.module';
 import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
@@ -51,7 +51,6 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
     ErrorsModule,
     ProductsModule,
     CategoriesModule,
-    SpecificationsModule,
     BrandsModule,
     SourcesModule,
     ParserModule,
@@ -69,7 +68,7 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
   controllers: [AppController],
   providers: [
     ParserRuntimeStatusService,
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: InternalAwareThrottlerGuard },
     // Global because admin routes live in six controllers across four modules;
     // it logs only mutating calls in admin scope, so the cost on the public
     // storefront is one Set lookup per request.

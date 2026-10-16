@@ -3,7 +3,7 @@ import { Type } from 'class-transformer';
 import {
   IsEnum,
   IsIn,
-  IsNumber,
+  IsInt,
   IsOptional,
   IsString,
   Max,
@@ -15,14 +15,15 @@ export class ReviewQueryDto {
   @ApiProperty({ required: false, default: 1 })
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(10000)
   page?: number;
 
   @ApiProperty({ required: false, default: 10 })
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
   @Max(50)
   limit?: number;

@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
+import { pickBestOffer } from './best-offer';
 import { ProductMergeService } from './product-merge.service';
 import {
   MatchConfidence,
   MatchSignal,
   compareProducts,
+  isAutoMergeable,
 } from './product-matching';
 
 export type DuplicateGroup = {
@@ -37,13 +39,7 @@ export class OffersService {
     private merge: ProductMergeService,
   ) {}
 
-  /**
-   * Best available supplier cost for a product.
-   *
-   * In-stock offers win outright: a cheaper offer nobody can fulfil is not a
-   * real price. Falls back to the cheapest offer of any kind so a fully
-   * out-of-stock product still has a cost to price from.
-   */
+  /** Best available supplier cost for a product (see `pickBestOffer`). */
   async bestOfferCost(productId: string): Promise<number | null> {
     return (await this.bestOffer(productId))?.price ?? null;
   }
@@ -53,41 +49,7 @@ export class OffersService {
       where: { productId, price: { not: null, gt: 0 } },
       select: { price: true, stock: true, specifications: true },
     });
-    if (!offers.length) return null;
-
-    const inStock = offers.filter((offer) => offer.stock);
-    const pool = inStock.length ? inStock : offers;
-    const offer = pool.reduce((best, item) =>
-      (item.price as number) < (best.price as number) ? item : best,
-    );
-    const snapshot = offer.specifications;
-    const metadata =
-      snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
-        ? snapshot.source
-        : undefined;
-    const oldPrice =
-      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
-        ? metadata.oldPrice
-        : undefined;
-    const availability =
-      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
-        ? (metadata.stockStatus ?? metadata.inStock)
-        : undefined;
-    const stockStatus = offer.stock
-      ? 'in_stock'
-      : availability === 'preorder'
-        ? 'preorder'
-        : availability === false || availability === 'out_of_stock'
-          ? 'out_of_stock'
-          : 'unknown';
-    return {
-      stockStatus,
-      price: offer.price as number,
-      oldPrice:
-        typeof oldPrice === 'number' && Number.isFinite(oldPrice)
-          ? oldPrice
-          : null,
-    };
+    return pickBestOffer(offers);
   }
 
   /**
@@ -105,7 +67,31 @@ export class OffersService {
       where: { id: productId },
       data: { stockStatus: offer.stockStatus },
     });
+    await this.publishIfReady(productId);
     return result;
+  }
+
+  /**
+   * The automatic half of the publication rules: a product the *system* put
+   * in DRAFT (just created) or HIDDEN (every offer delisted) goes on sale as
+   * soon as it has a live offer and a price. Nothing an admin set is touched
+   * (`statusSource = ADMIN`), and ARCHIVED never comes back on its own.
+   *
+   * This replaces the per-batch `publishDraftProducts()` that republished
+   * everything in DRAFT — including what an admin had parked there — and is
+   * what lets a product a supplier briefly 404'd return by itself.
+   */
+  private async publishIfReady(productId: string) {
+    const published = await this.prisma.product.updateMany({
+      where: {
+        id: productId,
+        statusSource: 'SYSTEM',
+        status: { in: ['DRAFT', 'HIDDEN'] },
+        priceValue: { gt: 0 },
+      },
+      data: { status: 'PUBLISHED' },
+    });
+    return published.count > 0;
   }
 
   /**
@@ -132,9 +118,13 @@ export class OffersService {
   async delistOffer(sourceId: string, url: string) {
     const offer = await this.prisma.sourceProduct.findUnique({
       where: { sourceId_url: { sourceId, url } },
-      select: { id: true, productId: true },
+      select: { id: true, productId: true, price: true },
     });
-    if (!offer) return { delisted: false, productHidden: false };
+    // Unknown, or already withdrawn by an earlier pass (the weekly re-check
+    // of SKIPPED rows lands here again): nothing to do.
+    if (!offer || offer.price == null) {
+      return { delisted: false, productHidden: false };
+    }
 
     await this.prisma.sourceProduct.update({
       where: { id: offer.id },
@@ -153,15 +143,17 @@ export class OffersService {
     }
 
     // Nobody carries it any more. Hide rather than delete: reviews, order
-    // history and the slug redirect all still point here. ARCHIVED and an
-    // admin's own HIDDEN are left alone — this must not resurrect or reclassify
-    // a decision a human already made.
+    // history and the slug redirect all still point here. Only a status the
+    // system set is changed, and it stays SYSTEM — so `publishIfReady` brings
+    // the product back when a supplier lists it again. Anything an admin
+    // decided (statusSource ADMIN) is left as it is.
     const product = await this.prisma.product.findUnique({
       where: { id: offer.productId },
-      select: { status: true },
+      select: { status: true, statusSource: true },
     });
     const hideable =
-      product?.status === 'PUBLISHED' || product?.status === 'DRAFT';
+      product?.statusSource === 'SYSTEM' &&
+      (product.status === 'PUBLISHED' || product.status === 'DRAFT');
 
     await this.prisma.product.update({
       where: { id: offer.productId },
@@ -175,19 +167,6 @@ export class OffersService {
       `Product ${offer.productId} has no live offers left — hidden from the storefront`,
     );
     return { delisted: true, productHidden: hideable };
-  }
-
-  /** Public view: how many suppliers carry this, and is any of them in stock. */
-  async publicOfferSummary(productId: string) {
-    const offers = await this.prisma.sourceProduct.findMany({
-      where: { productId, price: { not: null, gt: 0 } },
-      select: { stock: true },
-    });
-
-    return {
-      offerCount: offers.length,
-      inStockCount: offers.filter((offer) => offer.stock).length,
-    };
   }
 
   /** Admin view: every offer with supplier, price and freshness. */
@@ -264,13 +243,24 @@ export class OffersService {
       },
     });
 
-    const best = await this.bestOfferCost(productId);
+    // Same rule the price is computed by: in stock wins, and with nothing in
+    // stock the cheapest offer of any kind is still the one priced from — it
+    // used to be marked nowhere.
+    const best = pickBestOffer(
+      offers.map((offer) => ({ ...offer, specifications: null })),
+    );
+    const anyInStock = offers.some(
+      (offer) => offer.stock && offer.price != null && offer.price > 0,
+    );
     return {
       data: offers.map((offer) => ({
         ...offer,
-        isBest: best != null && offer.price === best && offer.stock,
+        isBest:
+          best != null &&
+          offer.price === best.price &&
+          (offer.stock || !anyInStock),
       })),
-      bestCost: best,
+      bestCost: best?.price ?? null,
     };
   }
 
@@ -386,15 +376,56 @@ export class OffersService {
     let skipped = 0;
 
     for (const group of groups) {
-      if (group.confidence !== 'exact' && group.confidence !== 'strong') {
+      if (!isAutoMergeable(group)) {
         skipped += 1;
         continue;
       }
 
-      // Keep the product carrying the most offers; on a tie, the richer card.
-      const [target, ...duplicates] = [...group.products].sort(
+      // Products an admin hid or archived are a human decision: they are
+      // neither folded away automatically nor allowed to absorb a live card.
+      const states = new Map(
+        (
+          await this.prisma.product.findMany({
+            where: { id: { in: group.products.map((p) => p.id) } },
+            select: {
+              id: true,
+              status: true,
+              statusSource: true,
+              _count: {
+                select: {
+                  sourceProducts: { where: { price: { not: null, gt: 0 } } },
+                },
+              },
+            },
+          })
+        ).map((row) => [row.id, row]),
+      );
+      const candidates = group.products.filter((product) => {
+        const state = states.get(product.id);
+        return (
+          state &&
+          !(
+            state.statusSource === 'ADMIN' &&
+            (state.status === 'HIDDEN' || state.status === 'ARCHIVED')
+          )
+        );
+      });
+      if (candidates.length < 2) {
+        skipped += 1;
+        continue;
+      }
+
+      // Survivor: on sale first, then the most *live* offers (a dead offer
+      // with no price is not worth keeping a card for), then the richer card.
+      const live = (id: string) => states.get(id)?._count.sourceProducts ?? 0;
+      const onSale = (id: string) =>
+        states.get(id)?.status === 'PUBLISHED' ? 1 : 0;
+      const [target, ...duplicates] = [...candidates].sort(
         (a, b) =>
-          b.offerCount - a.offerCount || (b.image ? 1 : 0) - (a.image ? 1 : 0),
+          onSale(b.id) - onSale(a.id) ||
+          live(b.id) - live(a.id) ||
+          b.offerCount - a.offerCount ||
+          (b.image ? 1 : 0) - (a.image ? 1 : 0),
       );
       if (!target) continue;
 

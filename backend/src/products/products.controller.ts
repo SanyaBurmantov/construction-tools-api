@@ -1,4 +1,7 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
+import type { AuthenticatedRequest } from '../auth/auth-request';
 import { ProductService } from './products.service';
 import { ApiTags } from '@nestjs/swagger';
 import { ProductFilterDto } from './dto/product-filter-dto';
@@ -8,8 +11,22 @@ import { ProductFilterDto } from './dto/product-filter-dto';
 export class ProductController {
   constructor(private service: ProductService) {}
 
+  /**
+   * `sourceCode` (which supplier carries what) is internal: it is honoured for
+   * an ADMIN session only and silently dropped for everyone else — hiding the
+   * facet in the UI was not enough while the public API still filtered by it.
+   * The session can only come from the browser's cookie, so the SSR fetch
+   * behind cached storefront HTML never has one.
+   */
+  @UseGuards(OptionalAuthGuard)
   @Get()
-  getAll(@Query() filter: ProductFilterDto) {
+  getAll(
+    @Query() filter: ProductFilterDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    if (request.authUser?.role !== UserRole.ADMIN) {
+      filter.sourceCode = undefined;
+    }
     return this.service.findAllFiltered(filter);
   }
 

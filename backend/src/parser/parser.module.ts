@@ -9,7 +9,6 @@ import { Supplier7745ParserService } from './sites/7745-source.parser';
 import { Supplier7745Cron } from './sites/7745.cron';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
 import { ToolsByCron } from './sites/tools-by.cron';
-import { ParserController } from './parser.controller';
 import { ParserAdminController } from './parser-admin.controller';
 import { ParserLogService } from './parser-log.service';
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
@@ -51,7 +50,7 @@ import { OffersModule } from '../offers/offers.module';
     AdminGuard,
   ],
   imports: [SitemapsModule, OffersModule, NotificationsModule],
-  controllers: [ParserController, ParserAdminController],
+  controllers: [ParserAdminController],
   // AdminModule consumes these instead of re-providing them: a parser service
   // constructed in two modules means every new dependency has to be registered
   // twice, and forgetting one only shows up as a DI error at boot.

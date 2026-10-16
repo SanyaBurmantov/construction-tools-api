@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { AuthService } from '../auth/auth.service';
 import { readSessionToken } from '../auth/auth-request';
 import type { AuthenticatedRequest } from '../auth/auth-request';
@@ -13,6 +14,15 @@ import {
   assertNotCrossSite,
   clearStaleSessionCookie,
 } from '../auth/session-cookie';
+
+/**
+ * Constant-time comparison. Hashing first gives both sides the same length,
+ * which timingSafeEqual requires, without leaking the configured length.
+ */
+function sameSecret(given: string, expected: string): boolean {
+  const digest = (value: string) => createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(given), digest(expected));
+}
 
 /**
  * Two ways into `/admin/*`:
@@ -37,7 +47,7 @@ export class AdminGuard implements CanActivate {
     if (headerToken) {
       if (!configuredToken)
         throw new UnauthorizedException('ADMIN_TOKEN is not configured');
-      if (headerToken !== configuredToken)
+      if (!sameSecret(headerToken, configuredToken))
         throw new UnauthorizedException('Invalid admin token');
       request.adminToken = true;
       return true;

@@ -89,9 +89,12 @@ describe('fetchWithTimeout', () => {
   });
 
   it('gives up after exhausting retries and returns the last response', async () => {
+    // A fresh Response per call: a real fetch never hands out a consumed body.
     const fetchMock = jest
       .fn()
-      .mockResolvedValue(new Response('busy', { status: 503 }));
+      .mockImplementation(() =>
+        Promise.resolve(new Response('busy', { status: 503 })),
+      );
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const res = await fetchWithTimeout(
@@ -101,6 +104,7 @@ describe('fetchWithTimeout', () => {
     );
 
     expect(res.status).toBe(503);
+    await expect(res.text()).resolves.toBe('busy');
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
   it('reports the failing URL, exhausted attempts and timeout while preserving the cause', async () => {
@@ -118,5 +122,43 @@ describe('fetchWithTimeout', () => {
       cause,
     });
     expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  // The timer used to be cleared once headers arrived, leaving res.text()
+  // unbounded on a stalled stream.
+  it('times out a body that stalls after the headers', async () => {
+    global.fetch = jest.fn((_url: string, init: RequestInit) => {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('partial'));
+          init.signal?.addEventListener('abort', () =>
+            controller.error(new Error('aborted')),
+          );
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    }) as unknown as typeof fetch;
+
+    await expect(
+      fetchWithTimeout(
+        'http://example.test',
+        {},
+        { timeoutMs: 50, retries: 0 },
+      ),
+    ).rejects.toThrow('Failed to fetch');
+  });
+
+  it('keeps the bot token out of error messages', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.reject(new Error('ECONNRESET')),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      fetchWithTimeout(
+        'https://api.telegram.org/bot123:SECRET/sendMessage?x=1',
+        {},
+        { retries: 0 },
+      ),
+    ).rejects.toThrow('https://api.telegram.org/bot***/sendMessage after');
   });
 });

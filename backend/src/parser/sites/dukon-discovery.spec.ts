@@ -20,10 +20,15 @@ describe('Dukon discovery coverage and sitemap fallback', () => {
   it('crawls the entire catalog rather than only tool sets', async () => {
     const crawl = jest
       .spyOn(service, 'discoverCatalogBranch')
-      .mockResolvedValue({ visitedPages: 2, discoveredProducts: 12 });
+      .mockResolvedValue({
+        visitedPages: 2,
+        discoveredProducts: 12,
+        failedPages: 0,
+      });
     expect(await service.discoverCatalogUrls()).toEqual({
       visitedPages: 2,
       discoveredProducts: 12,
+      failedPages: 0,
     });
     expect(crawl).toHaveBeenCalledWith('https://dukon.by/catalog/');
   });
@@ -32,9 +37,11 @@ describe('Dukon discovery coverage and sitemap fallback', () => {
     jest
       .spyOn(service as unknown as DiscoveryAccess, 'fetchText')
       .mockRejectedValue(new Error('Sitemap HTTP 404'));
-    jest
-      .spyOn(service, 'discoverCatalogUrls')
-      .mockResolvedValue({ visitedPages: 2, discoveredProducts: 12 });
+    jest.spyOn(service, 'discoverCatalogUrls').mockResolvedValue({
+      visitedPages: 2,
+      discoveredProducts: 12,
+      failedPages: 0,
+    });
     const stats = { queued: 12, visited: 0, failed: 0, skipped: 0, total: 12 };
     jest.spyOn(service, 'getQueueStats').mockResolvedValue(stats);
     expect(await service.refreshSitemaps()).toEqual(stats);
@@ -44,9 +51,11 @@ describe('Dukon discovery coverage and sitemap fallback', () => {
     jest
       .spyOn(service as unknown as DiscoveryAccess, 'fetchText')
       .mockRejectedValue(new Error('Sitemap HTTP 404'));
-    jest
-      .spyOn(service, 'discoverCatalogUrls')
-      .mockResolvedValue({ visitedPages: 1, discoveredProducts: 0 });
+    jest.spyOn(service, 'discoverCatalogUrls').mockResolvedValue({
+      visitedPages: 1,
+      discoveredProducts: 0,
+      failedPages: 0,
+    });
     await expect(service.refreshSitemaps()).rejects.toThrow('Sitemap HTTP 404');
   });
 
@@ -60,9 +69,11 @@ describe('Dukon discovery coverage and sitemap fallback', () => {
     jest
       .spyOn(service as unknown as DiscoveryAccess, 'enqueueUrls')
       .mockResolvedValue(undefined);
-    jest
-      .spyOn(service, 'discoverCatalogUrls')
-      .mockResolvedValue({ visitedPages: 40, discoveredProducts: 0 });
+    jest.spyOn(service, 'discoverCatalogUrls').mockResolvedValue({
+      visitedPages: 40,
+      discoveredProducts: 0,
+      failedPages: 0,
+    });
 
     await expect(service.refreshSitemaps()).rejects.toThrow(
       'walked 40 pages and found no product links',
@@ -76,9 +87,11 @@ describe('Dukon discovery coverage and sitemap fallback', () => {
     jest
       .spyOn(service as unknown as DiscoveryAccess, 'enqueueUrls')
       .mockResolvedValue(undefined);
-    jest
-      .spyOn(service, 'discoverCatalogUrls')
-      .mockResolvedValue({ visitedPages: 40, discoveredProducts: 7 });
+    jest.spyOn(service, 'discoverCatalogUrls').mockResolvedValue({
+      visitedPages: 40,
+      discoveredProducts: 7,
+      failedPages: 0,
+    });
     const stats = { queued: 7, visited: 0, failed: 0, skipped: 0, total: 7 };
     jest.spyOn(service, 'getQueueStats').mockResolvedValue(stats);
 
@@ -89,12 +102,11 @@ describe('Dukon discovery coverage and sitemap fallback', () => {
 describe('Dukon batch monitoring', () => {
   it('reports saved, skipped, failed and deleted items for a completed batch', async () => {
     const prisma = {
-      sitemapsDukon: {
-        findMany: () =>
-          Promise.resolve(
-            ['saved', 'skipped', 'failed', 'deleted'].map((url) => ({ url })),
-          ),
-      },
+      // The batch claims its rows (UPDATE … RETURNING url).
+      $queryRaw: () =>
+        Promise.resolve(
+          ['saved', 'skipped', 'failed', 'deleted'].map((url) => ({ url })),
+        ),
     };
     const settings = { getRequestDelayMs: () => Promise.resolve(0) };
     const service = new DukonParserService(
@@ -108,7 +120,6 @@ describe('Dukon batch monitoring', () => {
     jest
       .spyOn(service, 'cleanupStoredProductImages')
       .mockResolvedValue({ count: 0 });
-    jest.spyOn(service, 'publishDraftProducts').mockResolvedValue({ count: 0 });
     jest.spyOn(service, 'getQueueStats').mockResolvedValue({
       queued: 0,
       visited: 1,
