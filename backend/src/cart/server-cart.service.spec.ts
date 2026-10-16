@@ -73,7 +73,11 @@ function buildService(
       return Promise.resolve(args.data);
     },
   );
-  const createCalls: Array<{ productId: string; quantity: number }> = [];
+  const createCalls: Array<{
+    userId?: string;
+    productId: string;
+    quantity: number;
+  }> = [];
   const update = jest.fn(
     (args: {
       where: { userId_productId: { productId: string } };
@@ -87,8 +91,33 @@ function buildService(
     },
   );
   const updateCalls: Array<{ productId: string; quantity: number }> = [];
+  const purgeCutoffs: Date[] = [];
+  // Emulates the two raw statements: the merge upsert (keeping the larger
+  // quantity, as GREATEST does) and the whole-cart purge.
+  const executeRaw = jest.fn(
+    (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join('?');
+      if (sql.includes('INSERT INTO "CartItem"')) {
+        expect(sql).toContain('GREATEST');
+        const [, userId, productId, quantity] = values as [
+          string,
+          string,
+          string,
+          number,
+        ];
+        const existing = stored.find((row) => row.productId === productId);
+        if (!existing) createCalls.push({ userId, productId, quantity });
+        else if (quantity > existing.quantity)
+          updateCalls.push({ productId, quantity });
+        return Promise.resolve(1);
+      }
+      purgeCutoffs.push(values[0] as Date);
+      return Promise.resolve(0);
+    },
+  );
 
   const prisma = {
+    $executeRaw: executeRaw,
     cartItem: {
       findMany: jest.fn((args: { select?: unknown }) =>
         Promise.resolve(
@@ -122,6 +151,7 @@ function buildService(
     createManyCalls,
     createCalls,
     updateCalls,
+    purgeCutoffs,
   };
 }
 
@@ -321,23 +351,21 @@ describe('ServerCartService.purgeStale', () => {
 
   it('deletes by a cutoff derived from CART_TTL_DAYS', async () => {
     process.env.CART_TTL_DAYS = '10';
-    const { service, deleteManyCalls } = buildService();
+    const { service, purgeCutoffs } = buildService();
 
     await service.purgeStale();
 
-    const where = deleteManyCalls[0] as { updatedAt: { lte: Date } };
-    const days = (Date.now() - where.updatedAt.lte.getTime()) / 86_400_000;
+    const days = (Date.now() - purgeCutoffs[0].getTime()) / 86_400_000;
     expect(Math.round(days)).toBe(10);
   });
 
   it('falls back to 90 days for a nonsense value', async () => {
     process.env.CART_TTL_DAYS = 'not-a-number';
-    const { service, deleteManyCalls } = buildService();
+    const { service, purgeCutoffs } = buildService();
 
     await service.purgeStale();
 
-    const where = deleteManyCalls[0] as { updatedAt: { lte: Date } };
-    const days = (Date.now() - where.updatedAt.lte.getTime()) / 86_400_000;
+    const days = (Date.now() - purgeCutoffs[0].getTime()) / 86_400_000;
     expect(Math.round(days)).toBe(90);
   });
 });

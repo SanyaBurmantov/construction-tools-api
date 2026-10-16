@@ -72,13 +72,20 @@ export function resolveRule(
     const scope = SCOPE_WEIGHT[b.scope] - SCOPE_WEIGHT[a.scope];
     if (scope !== 0) return scope;
     if (b.priority !== a.priority) return b.priority - a.priority;
-    const band = bandWidth(a) - bandWidth(b);
-    if (band !== 0) return band;
+    // Two unbounded bands are equally wide; `Infinity - Infinity` is NaN, which
+    // would skip the newest-wins tie-break below.
+    const widthA = bandWidth(a);
+    const widthB = bandWidth(b);
+    if (widthA !== widthB) return widthA < widthB ? -1 : 1;
     return b.createdAt.getTime() - a.createdAt.getTime();
   })[0];
 }
 
-export function applyRounding(value: number, mode: RoundingMode): number {
+export function applyRounding(raw: number, mode: RoundingMode): number {
+  // Snap to kopecks first: 100 * 1.1 is 110.00000000000001 in floating point,
+  // and Math.ceil on that noise used to move the price a whole step up
+  // (111 instead of 110, 120 instead of 110 for TENS).
+  const value = round2(raw);
   switch (mode) {
     case 'INTEGER':
       return Math.ceil(value);
@@ -113,11 +120,17 @@ export function computePrice(cost: number, rule: PricingRule | null): number {
     price = cost + rule.minMargin;
   }
 
-  price = applyRounding(price, rule.rounding);
+  const floor = round2(cost + (rule.minMargin ?? 0));
+  const rounded = applyRounding(price, rule.rounding);
 
-  // Rounding down (CHARM_90 on a value just above a whole unit) must never
-  // push the price under cost.
-  return price < cost ? round2(cost) : price;
+  // CHARM_90/99 round *down* from the next whole unit, which can land under
+  // the minimum margin (150 -> 149.90) or, just above a whole unit, under cost.
+  // One more step up restores the floor and keeps the charm ending.
+  if (rounded < floor && rule.rounding.startsWith('CHARM')) {
+    const stepped = applyRounding(rounded + 1, rule.rounding);
+    if (stepped >= floor) return stepped;
+  }
+  return rounded < floor ? floor : rounded;
 }
 
 export function margin(price: number | null, cost: number | null) {

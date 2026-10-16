@@ -1,70 +1,10 @@
 import * as cheerio from 'cheerio';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DukonParserService } from './dukon.parser';
+// The helpers are plain functions now; the spec calls them directly.
+import * as parser from './dukon.parse';
 
-type DukonParserTestAccess = {
-  parseSpecs: ($: cheerio.CheerioAPI) => { name: string; value: string }[];
-  findSpecValue: (
-    specs: { name: string; value: string }[],
-    needle: string,
-  ) => string | undefined;
-  parsePrice: (value: string) => number | undefined;
-  parseDescription: ($: cheerio.CheerioAPI) => string;
-  parseImages: (
-    $: cheerio.CheerioAPI,
-    name: string,
-    jsonLdImages?: string[],
-  ) => { url: string; alt: string; order: number }[];
-  parseJsonLdProduct: ($: cheerio.CheerioAPI) => {
-    sku?: string;
-    mpn?: string;
-    brand?: string;
-    price?: number;
-    currency?: string;
-    availability?: string;
-    images: string[];
-  };
-  parseStockStatus: (
-    $: cheerio.CheerioAPI,
-    jsonLdAvailability?: string,
-  ) => string;
-  parseDescriptionShort: (
-    $: cheerio.CheerioAPI,
-    descriptionFull: string,
-  ) => string | undefined;
-  parseCurrentCategoryNames: ($: cheerio.CheerioAPI) => string[];
-  parseCatalogProductUrls: ($: cheerio.CheerioAPI) => string[];
-  parseCatalogPaginationUrls: (
-    $: cheerio.CheerioAPI,
-    pageUrl: string,
-  ) => string[];
-  parseChildCategoryLinks: (
-    $: cheerio.CheerioAPI,
-  ) => { name: string; url: string }[];
-  isProductPage: ($: cheerio.CheerioAPI) => boolean;
-  resolveBrand: (
-    $: cheerio.CheerioAPI,
-    specs: { name: string; value: string }[],
-    jsonLdBrand: string | undefined,
-    breadcrumbs: string[],
-  ) => string | undefined;
-};
-
-describe('DukonParserService parsing helpers', () => {
-  // All six dependencies, even though the helpers under test touch none of
-  // them: the spec was built with two and only compiled because specs were
-  // excluded from the type check. The first test to call something that reaches
-  // a dependency would have failed on `undefined` instead of saying so.
-  const service = new DukonParserService(
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-  );
-  const parser = service as unknown as DukonParserTestAccess;
+describe('dukon.parse helpers', () => {
   const html = readFileSync(
     join(__dirname, 'fixtures', 'dukon-product.html'),
     'utf8',

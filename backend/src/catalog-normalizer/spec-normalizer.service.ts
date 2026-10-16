@@ -494,7 +494,13 @@ export class SpecNormalizerService {
     for (const batch of chunk(enable, CHUNK)) {
       filtersEnabled += await this.prisma.specification
         .updateMany({
-          where: { canonicalKey: { in: batch }, filterable: false },
+          // filterableLocked: an admin decided this row by hand; the
+          // heuristic used to flip it back every night.
+          where: {
+            canonicalKey: { in: batch },
+            filterable: false,
+            filterableLocked: false,
+          },
           data: { filterable: true },
         })
         .then((result) => result.count);
@@ -502,7 +508,11 @@ export class SpecNormalizerService {
     for (const batch of chunk(disable, CHUNK)) {
       filtersDisabled += await this.prisma.specification
         .updateMany({
-          where: { canonicalKey: { in: batch }, filterable: true },
+          where: {
+            canonicalKey: { in: batch },
+            filterable: true,
+            filterableLocked: false,
+          },
           data: { filterable: false },
         })
         .then((result) => result.count);

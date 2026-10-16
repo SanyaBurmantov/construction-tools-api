@@ -5,11 +5,6 @@ import { CategoriesService } from './categories.service';
 export class CategoriesController {
   constructor(private service: CategoriesService) {}
 
-  @Get()
-  getAll() {
-    return this.service.findAll();
-  }
-
   // Must precede the ':slug' route so '/categories/tree' isn't treated as a slug.
   //
   // `?depth=N` cuts the tree after N levels (1 = roots only) — the storefront

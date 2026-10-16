@@ -9,7 +9,9 @@
  *
  * Unavailable means: no answer at all (connection refused, DNS, timeout — an
  * `ofetch` rejection without a status) or a 5xx from the API or from Caddy in
- * front of it. A 4xx is the API working and saying no, so it is not an outage.
+ * front of it. A 4xx is the API working and saying no, so it is not an outage —
+ * except 429: «слишком много запросов» is the API refusing to answer, and
+ * rendering it as «не найдено» would tell search engines the page is gone.
  */
 export function isApiUnavailable(error: unknown): boolean {
   if (!error) return false
@@ -21,7 +23,7 @@ export function isApiUnavailable(error: unknown): boolean {
   }
   const status = candidate.statusCode ?? candidate.status ?? candidate.response?.status
 
-  if (typeof status === 'number') return status >= 500
+  if (typeof status === 'number') return status >= 500 || status === 429
 
   return true
 }

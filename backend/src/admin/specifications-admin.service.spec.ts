@@ -64,7 +64,7 @@ describe('SpecificationsAdminService identity filters', () => {
     await service.setFilterable('article', false);
     expect(prisma.specification.update).toHaveBeenCalledWith({
       where: { id: 'article' },
-      data: { filterable: false },
+      data: { filterable: false, filterableLocked: true },
     });
   });
 
@@ -74,7 +74,7 @@ describe('SpecificationsAdminService identity filters', () => {
     await service.setFilterable('power', true);
     expect(prisma.specification.update).toHaveBeenCalledWith({
       where: { id: 'power' },
-      data: { filterable: true },
+      data: { filterable: true, filterableLocked: true },
     });
   });
 });

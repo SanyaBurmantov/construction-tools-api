@@ -67,10 +67,13 @@ function buildService() {
       groupBy: jest.fn(() => Promise.resolve([])),
     },
     $queryRaw: queryRaw,
-  } as unknown as PrismaService;
+    $executeRaw: jest.fn(() => Promise.resolve(1)),
+  } as Record<string, unknown>;
+  // Interactive transactions (the trigram-threshold wrapper) run inline.
+  prisma.$transaction = jest.fn((fn: (tx: unknown) => unknown) => fn(prisma));
   return {
-    service: new ProductService(prisma),
-    prisma,
+    service: new ProductService(prisma as unknown as PrismaService),
+    prisma: prisma as unknown as PrismaService,
     productCount,
     productFindMany,
     productGroupBy,

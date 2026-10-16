@@ -130,8 +130,13 @@ export class AuthController {
     return this.auth.getProfile(user.id);
   }
 
+  /**
+   * Throttled because an e-mail change sends a letter from the shop's SMTP
+   * box: unlimited, one account could relay mail to arbitrary addresses.
+   */
   @ApiBearerAuth()
   @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60 * 60 * 1000 } })
   @Patch('me')
   updateProfile(
     @CurrentUser() user: AuthenticatedUser,

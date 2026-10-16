@@ -88,9 +88,10 @@ export class SpecificationsAdminService {
       );
     }
 
+    // Locked: the nightly normalizer leaves a hand-made choice alone.
     return this.prisma.specification.update({
       where: { id },
-      data: { filterable },
+      data: { filterable, filterableLocked: true },
     });
   }
 
@@ -116,7 +117,8 @@ export class SpecificationsAdminService {
   async disableAll(categoryId?: string) {
     const result = await this.prisma.specification.updateMany({
       where: { filterable: true, ...(categoryId ? { categoryId } : {}) },
-      data: { filterable: false },
+      // An explicit "switch them all off" is a decision, not a default.
+      data: { filterable: false, filterableLocked: true },
     });
     return { disabled: result.count };
   }

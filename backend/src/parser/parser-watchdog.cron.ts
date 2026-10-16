@@ -104,8 +104,12 @@ export class ParserWatchdogCron {
     health: string;
     maxAgeHours: number | null;
     failureRate?: number | null;
-    lastBatch?: { processed: number; failed: number } | null;
+    lastBatch?: { processed: number; failed: number; delisted?: number } | null;
   }) {
+    const delisted = job.lastBatch?.delisted ?? 0;
+    if (job.lastBatch && delisted * 2 > job.lastBatch.processed) {
+      return `Поставщик снял ${delisted} из ${job.lastBatch.processed} товаров за одну пачку — проверьте, не сменились ли адреса`;
+    }
     if (job.lastBatch && job.failureRate) {
       return `${job.lastBatch.failed} из ${job.lastBatch.processed} URL с ошибкой (${Math.round(job.failureRate * 100)}%)`;
     }

@@ -10,6 +10,7 @@ type ProductRow = {
   priceValue: number | null;
   oldPrice: number | null;
   pricingMode: 'AUTO' | 'MANUAL';
+  priceReviewNeeded?: boolean;
   sourceProducts: { sourceId: string }[];
 };
 
@@ -38,6 +39,7 @@ function globalRule(overrides: Partial<PricingRule> = {}): PricingRule {
 function buildService(
   product: ProductRow | null,
   rules: PricingRule[] = [globalRule()],
+  lastHistory: { costPrice: number | null } | null = null,
 ) {
   const productUpdate = jest.fn(() => Promise.resolve({}));
   const historyCreate = jest.fn(() => Promise.resolve({}));
@@ -56,6 +58,7 @@ function buildService(
     },
     priceHistory: {
       create: historyCreate,
+      findFirst: jest.fn(() => Promise.resolve(lastHistory)),
     },
     // Transactions run their operations eagerly in these mocks, so the calls
     // are already recorded by the time $transaction is invoked.
@@ -115,7 +118,16 @@ describe('PricingService.applyCost', () => {
       where: { id: 'p1' },
       data: { costPrice: 120 },
     });
-    expect(historyCreate).not.toHaveBeenCalled();
+    // The cost change is still written to history; the price is not moved.
+    expect(historyCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          costPrice: 120,
+          oldPrice: 150,
+          newPrice: 150,
+        }),
+      }),
+    );
   });
 
   // A supplier typo must not reach the storefront.
@@ -142,6 +154,47 @@ describe('PricingService.applyCost', () => {
         }),
       }),
     );
+  });
+
+  // Every re-parse of the same typo trips the guard again.
+  it('records one history row per rejected cost, not one per parse', async () => {
+    const { service, productUpdate, historyCreate } = buildService(
+      { ...baseProduct, priceReviewNeeded: true },
+      [globalRule()],
+      { costPrice: 1000 },
+    );
+
+    const decision = await service.applyCost('p1', 1000);
+
+    expect(decision.blocked).toBe(true);
+    expect(productUpdate).not.toHaveBeenCalled();
+    expect(historyCreate).not.toHaveBeenCalled();
+  });
+
+  // The supplier fixed its typo: "accept" must not adopt the stale value later.
+  it('clears the review flag when a sane cost arrives', async () => {
+    const { service, productUpdate } = buildService({
+      ...baseProduct,
+      priceReviewNeeded: true,
+    });
+
+    await service.applyCost('p1', 100);
+
+    expect(productUpdate).toHaveBeenCalledWith({
+      where: { id: 'p1' },
+      data: { priceReviewNeeded: false },
+    });
+  });
+
+  it('keeps the stored old price when asked to preserve it', async () => {
+    const { service, productUpdate } = buildService({
+      ...baseProduct,
+      oldPrice: 300,
+    });
+
+    await service.applyCost('p1', 100, { preserveOldPrice: true });
+
+    expect(productUpdate).not.toHaveBeenCalled();
   });
 
   it('accepts a large jump on a product that had no cost yet', async () => {

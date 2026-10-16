@@ -67,7 +67,10 @@ function buildService(
                   .filter(
                     (row) => !args.where?.kind || row.kind === args.where.kind,
                   )
-                  .map((row) => ({ productId: row.productId }))
+                  .map((row) => ({
+                    productId: row.productId,
+                    product: { status: row.product.status },
+                  }))
               : rows,
           ),
       ),

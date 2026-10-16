@@ -95,7 +95,9 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   on the server — storefront HTML is cached and shared), and `?source=` in the
   URL is **ignored for everyone else** — hiding the facet while the parameter
   still filtered meant an admin's link could quietly show a customer one
-  supplier's goods with nothing in the UI saying so. `GET /products` carries no
+  supplier's goods with nothing in the UI saying so. The API enforces it too:
+  `GET /products` runs under `OptionalAuthGuard` and drops `sourceCode` unless
+  the session is an ADMIN (it used to filter for anyone with curl). `GET /products` carries no
   `facets.sources` at all: counting it was one semi-join over `SourceProduct`
   per supplier on every listing *and* every client-side filter change (those
   are not cached), for numbers only an admin would ever see — so the admin
@@ -117,6 +119,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   everything else → `frontend:3000`. Client calls use base `/api`
   (`NUXT_PUBLIC_API_BASE`); SSR calls go through the Nuxt server route
   `frontend/server/api/[...path].ts` → `API_BASE_SERVER` (`http://backend:8000`).
+  SSR therefore reaches the backend from the frontend container's private
+  address for every visitor; the global throttler skips private/loopback
+  peers (`InternalAwareThrottlerGuard`) — they all shared one 120/min bucket,
+  and a crawler pushed SSR into 429s rendered as 404s. Browser traffic comes
+  through Caddy and is throttled by its real IP. The storefront treats a 429
+  like a 5xx (`isApiUnavailable`).
 - **Frontend ISR**: `nuxt.config.ts` `routeRules` — home `swr: 60`, catalog
   `swr: 30`, product/brand `swr: 900`, `/sales` `swr: 300`, the info pages
   (`/delivery`, `/about`, `/contacts`, `/garantiya`, `/usloviya`, `/privacy`)
@@ -144,30 +152,53 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   and deliberately does **not** retry 404/403. Parsers throw `ParserHttpError`
   so a 404/410 is distinguishable: it means the supplier delisted the product,
   and `OffersService.delistOffer()` withdraws the offer, re-prices from whoever
-  still carries it, and hides the product only when no live offer remains
-  (never touching an `ARCHIVED`/`HIDDEN` decision a human made). Batches report
+  still carries it, and hides the product only when no live offer remains.
+  A URL that is *skipped* (not a product page any more, a category since
+  excluded or switched off) withdraws its offer the same way. **Who set a
+  status is recorded** (`Product.statusSource`: `SYSTEM` | `ADMIN`): a delist
+  hides only a SYSTEM status, and `OffersService.publishIfReady()` puts a
+  SYSTEM `DRAFT`/`HIDDEN` product back on sale as soon as it has a live offer
+  and a price — a supplier's brief 404 no longer hides a product forever, and
+  nothing an admin decided is touched. A batch where most URLs were delisted
+  is reported `ERROR` (a supplier 404ing everything would otherwise empty the
+  catalogue while the failure rate stayed at zero). Batches report
   per-run counters (`BatchResult`), which is what lets `getHealth()` call a job
   `ERROR` when most of a run failed — a run that fails on every URL still
   *finishes*, so staleness alone reported the classic silent parser death as
   healthy. `ParserWatchdogCron` (:07/:37, off the parsing slots) is also what keeps the
   catalogue fresh: `QueueRecoveryService` requeues every `DONE` row older than
   `PARSER_REFRESH_AFTER_HOURS` (24) for **all** sources, keeping `visitedAt`,
-  so never-seen URLs go first and then the stalest snapshots. That — not the
-  monthly `revalidate` job — is what re-reads prices; `revalidate` resets the
-  *whole* queue including deliberate `SKIPPED` rows, which is why it is a
-  manual "after a parser fix" button. The watchdog also requeues
+  so never-seen URLs go first and then the stalest snapshots. That is what
+  re-reads prices. It also requeues `SKIPPED` rows older than
+  `PARSER_SKIPPED_RECHECK_DAYS` (7), so a relisted product or a loosened
+  category filter comes back without anyone pressing a button, requeues
   `FAILED` rows with `attempts < PARSER_MAX_ATTEMPTS` older than
-  `PARSER_RETRY_AFTER_MINUTES`, and alerts Telegram once per breakage — it
-  remembers what it already reported so an unhealthy job does not re-alert every
-  15 minutes.
+  `PARSER_RETRY_AFTER_MINUTES`, parks a `PENDING` row that used up its
+  attempts without ever finishing (the URL that OOMs the process), and alerts
+  Telegram once per breakage. **Everything runs on its own** — the monthly
+  `revalidate` cron stays on purpose (it keeps `visitedAt`, so the re-read is
+  still stalest-first); the rule for new work is "no step may require a human
+  to press a button".
+  Batches **claim** their rows (`claimQueueBatch`, `UPDATE … FOR UPDATE SKIP
+  LOCKED` with `lastTriedAt` as a 60-minute lease), so two workers never parse
+  the same offer; and all jobs of one source share one lock in
+  `ParserJobsService` (concurrency 1 per supplier), including the synchronous
+  `/admin/queue/*` buttons (`runExclusive`). The old mutating GET triggers
+  (`/products-from-sitemap-initial`, `/sitemap-initial`) are gone. A run left
+  `RUNNING` by a killed process is marked failed at boot, and a run `RUNNING`
+  for over 6 h is reported `ERROR`. `fetchWithTimeout` reads the **body**
+  inside the timeout too (it returns a buffered `Response`), and keeps the
+  Telegram bot token out of its error messages.
 - **Not every characteristic becomes a filter.** `shouldBeFilterable()`
   (`parser/spec-filterable.ts`) decides `Specification.filterable` when a spec
   first appears in a category. Parsers used to set it to `true` unconditionally,
   which turned "Штрихкод" (unique per product) and "Производитель" (a legal
   address) into catalogue facets. Identity/paperwork names are blocked by list,
   and any value over 60 characters is treated as prose. It is only the default:
-  admins flip specs in `/admin/specifications`, and `auto-select` still applies
-  the distinct-value heuristic over real data. The same module has three tiers:
+  admins flip specs in `/admin/specifications` — a hand-made choice sets
+  `Specification.filterableLocked`, and the nightly normalizer leaves locked
+  rows alone (it used to flip admin choices back every night) — and
+  `auto-select` still applies the distinct-value heuristic over real data. The same module has three tiers:
   **supplier paperwork** (`isSupplierPaperworkSpec`: «Поставщик»,
   «Импортер/Продавец», «Производитель», the supplier's «Код») is stripped from
   every **public** product payload by `publicSpecs()` — it stays in the DB and
@@ -191,7 +222,18 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   «запчасти…», «без товарного знака», «Измерители», «-»…) — the product gets
   no brand. `BrandCleanupService` removes such rows imported earlier (on boot
   and `POST /admin/parser/clean-brands`); brand identity is the slug, so case
-  variants are already one row.
+  variants are already one row. A brand an admin **merged** away leaves a
+  `BrandAlias(slug → survivor)` that `upsertBrand()` resolves first, or the
+  next parse recreated it and pulled its products back.
+  **Admin corrections survive the re-parse**: every parser-owned field an admin
+  edits (`name`, `categoryId`, `brandId`, descriptions, SEO, sku/model/barcode)
+  joins `Product.lockedFields`, which `save()` skips exactly like
+  `aiLockedFields`. "Удалить" in the admin **archives** the product
+  (`ARCHIVED`, `statusSource: ADMIN`): a hard delete cascaded away customer
+  reviews and price history, and the next parse recreated the product anyway.
+  A new product and a stub of its `SourceProduct` are created in one
+  transaction, so a parse that fails later cannot leave an orphan that the
+  retry duplicates as `slug-2`.
 - **Category identity is `Category.pathKey`, not `slug`.** `pathKey` is the full
   slug chain (`aksessuary/avtolampy/narva`); `slug` is only the public URL.
   Parsers must build the tree through `CategoryTreeService.upsertBranch()`
@@ -200,8 +242,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   one category and the first branch to parse won the parent. The slug still
   prefers the bare leaf (existing URLs don't move) and only falls back to
   `parent-leaf` → full chain → numbered when another branch already holds it.
-  Anything that re-parents a category must update `pathKey` too, or the next
-  parse recreates the row at its old position — see `category-merge.service.ts`.
+  Anything that re-parents, re-slugs or merges a category must go through
+  `categories/category-path-alias.ts` (`rekeyCategory`, `moveCategoryAliases`):
+  the new `pathKey` is written and the **old one is kept in
+  `CategoryPathAlias`**, which `upsertBranch()` checks first — the supplier
+  still spells the old breadcrumb chain, and without the alias the next parse
+  recreated the branch at its old position and pulled its products back (the
+  root cause of the «Двигатель» duplicates). An alias hit is never "repaired"
+  back to the supplier's parent.
   **Same-named siblings are one category.** The nightly root merge re-keys moved
   children, so the parser kept re-creating the supplier branch and the next
   merge parked it beside the canonical one — prod grew six «Двигатель» under one
@@ -247,7 +295,8 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `isFeatured` pins it into the home page grid. None of this touches `pathKey`,
   so the parsers keep upserting the same rows. Admin edits that *do* move a
   category (`parentId`, `slug`) rebuild `path`/`level`/`pathKey` for the whole
-  subtree and leave the old slug behind as a `CategoryRedirect`.
+  subtree (old keys kept as aliases, see above) and leave the old slug behind
+  as a `CategoryRedirect`.
   Frontend: one `components/ui/UiCategoryCard.vue` renders every "link to a
   category" (`tile` / `row` / `chip`) — home grid, catalogue, brand page — and
   `composables/useCategoryTree.ts` is the single tree fetch (one shared
@@ -339,6 +388,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `Review` and `PriceHistory` is **mandatory, not tidiness**: both cascade on
   delete, so skipping them would silently destroy customer reviews. The merged
   slug becomes a `ProductRedirect`, and the product page turns that into a 301.
+  Customers' stored carts, wishlists and comparisons (also cascading) are
+  moved too, a duplicate's MANUAL price, field locks and pending review are
+  carried over (`mergedState()`), and auto-merge never folds away or into a
+  product an admin hid or archived — the survivor is the one on sale with the
+  most live offers.
   **`Product.costPrice` comes from the cheapest offer**, not from whichever
   parser ran last — in-stock offers outrank a cheaper unavailable one. Parsers
   call `offers.onProductParsed(productId)` *after* saving their SourceProduct.
@@ -353,8 +407,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   subtree. Pure arithmetic sits in `pricing.calculator.ts` with no DB access,
   so it is directly testable.
   **Invariant: `PricingService` is the sole owner of `Product.priceValue` and
-  `oldPrice`.** Parsers must NOT write either in their upsert `update` branch —
-  they call `pricing.applyCost(productId, cost)` after the upsert instead.
+  `oldPrice`.** `ProductIdentityService.save()` strips prices, `status` and the
+  lock columns from whatever a parser passes, and creates a new product as
+  `DRAFT` with no price — it is published by `publishIfReady()` once
+  `applyCost` has priced it (it used to go live at the raw supplier cost). An
+  admin typing a price makes the product `MANUAL` and writes `PriceHistory`.
+  Rounding snaps to kopecks before rounding up (100 × 1.1 is
+  110.00000000000001, which `Math.ceil` turned into 111); a CATEGORY rule
+  covers the subtree by walking `parentId` (not `path`, which holds the
+  parser's slugs); "recalculate all" re-reads the supplier's "was" price from
+  the best offer instead of wiping every discount.
   Writing the price in the parser would clobber MANUAL prices, and writing
   `costPrice` there would defeat the spike guard, which compares old cost to new.
   Guards worth knowing: a cost change beyond
@@ -371,7 +433,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   discounted — that's what `onSale` and the `/sales` page filter on.
   `PromoCode` (`promo/` module) is validated at `POST /promo-codes/validate` for
   the checkout preview and **re-evaluated** inside `POST /orders`, so an
-  exhausted or expired code is still rejected at order time. Admin CRUD lives
+  exhausted or expired code is still rejected at order time. The use is
+  claimed with a conditional `UPDATE … WHERE "usedCount" < "maxUses"` inside
+  the order transaction (the check alone let N parallel checkouts spend a
+  single-use code N times), `POST /orders` has its own `@Throttle` (10/min),
+  and cancelling an order gives the use back. Order status moves forward only
+  (cancellation allowed until it ends; DELIVERED/CANCELLED are final) —
+  enforced by `canMoveOrder()`, not just the admin UI. Admin CRUD lives
   under `/admin/promo-codes`. `listAvailable()` is what the account's
   «Доступные промокоды» section lists: active, in-window, not exhausted and
   `isPublic` — turn that flag off for a code meant for one person and it keeps
@@ -516,8 +584,10 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   routes live in six controllers across four modules) and records a request
   when it is mutating **and** in admin scope: an ADMIN session, the
   `x-admin-token` header, or a path under `/admin` — that last one is what
-  also captures attempts the guard rejected, which is half the point of an
-  audit. Reads are not logged, or the log would be dashboard polling. Bodies
+  meant to capture attempts the guard rejected — but guards run *before*
+  interceptors, so a rejected request never reaches it; those 401/403s on
+  `/admin` are recorded by the exception filter into the error log instead.
+  Reads are not logged, or the log would be dashboard polling. Bodies
   are stored with `password`/`token`/`secret`/`authorization` replaced by
   `[redacted]`, long arrays summarised and the whole thing truncated at 4 KB:
   it is evidence of what changed, not a replayable payload. A failed audit
@@ -528,8 +598,10 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   through `APP_FILTER` in `AppModule` (not `useGlobalFilters` in `main.ts`) so
   it can be given `ErrorLogService` by DI — the response it sends is unchanged.
   What it keeps: **every 5xx**, plus the client errors an **admin-scope**
-  request was answered with (400/405/409/413/415/422 — not 401/403/404, which
-  are the normal noise of a public API and are already in the audit trail).
+  request was answered with (400/405/409/413/415/422), plus **401/403 on
+  `/admin` paths** — the only record of rejected admin attempts. A non-HTTP
+  error's own message goes to the log only; the client gets
+  `Internal server error` (it used to receive Prisma's invocation text).
   Bodies go through the audit's own redaction, so a password cannot land in a
   table an admin reads, and a stack is kept for 5xx only. Two bounds, both
   deliberate: a repeat of the same `status+method+path+message` inside 60 s
@@ -607,7 +679,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   возвращает старое значение только там, где поле всё ещё равно записанному ИИ.
   **`Product.aiLockedFields`**: поля, переписанные ИИ, `ProductIdentityService.save()`
   вырезает из `update` при перепарсинге — иначе суточный refresh вернул бы
-  текст поставщика. Откат снимает блокировку. Ключ — `OPENROUTER_API_KEY`
+  текст поставщика. Откат снимает блокировку только с полей, которые реально
+  восстановил. Запись в сущность и в item — одна транзакция по свежему
+  чтению (не по контексту двухминутной давности). Ответ модели чистится тем же
+  `supplier-text.ts`. Из админки можно выбрать только `:free`-модель; 429 —
+  пауза на весь ключ, а не на одну задачу; после ошибки пачки тик
+  останавливается (не жжёт суточную квоту). Ключ — `OPENROUTER_API_KEY`
   (пусто = выключено), модель по умолчанию `OPENROUTER_MODEL`, с цепочкой
   запасных `:free`-моделей в `openrouter.client.ts`.
 
@@ -680,7 +757,12 @@ and the product parser skips (not fails) anything whose breadcrumb chain hits a
 disabled row — so an admin toggle stops the import, not just the crawl.
 
 Canonical, complete example to copy from: **`backend/src/parser/sites/7745-source.parser.ts`**
-(service) + `7745.parser.ts` (pure parse fn) + `7745.cron.ts` (cron).
+(service) + `7745.parser.ts` (pure parse fn) + `7745.cron.ts` (cron). Every
+supplier service **extends `parser/supplier-queue-parser.ts`**, which owns the
+queue (stats, listing, retry, revalidate, claimed batches, per-URL outcome,
+delist/withdraw) — a parser supplies only `parseProductUrl`, `canonicalUrl`,
+`isSkippedError` and the `supplier` info. dukon's pure HTML functions live in
+`dukon.parse.ts`.
 
 **tools.by specifics** (`tools.parser.ts` pure + `tools-by-source.parser.ts`
 service + `tools-by.cron.ts`). Our supplier, catalogue export agreed with them —

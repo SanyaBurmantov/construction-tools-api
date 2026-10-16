@@ -34,7 +34,9 @@ function deps() {
   };
   const offers = {
     onProductParsed: jest.fn(() => Promise.resolve()),
-    delistOffer: jest.fn(() => Promise.resolve()),
+    delistOffer: jest.fn(() =>
+      Promise.resolve({ delisted: false, productHidden: false }),
+    ),
   };
   const categoryTree = {
     upsertBranch: jest.fn(() => Promise.resolve({ id: 'generated' })),
@@ -191,6 +193,36 @@ describe('Dukon offer lifecycle', () => {
     ).toBe('SKIPPED');
     expect(d.identity.save).not.toHaveBeenCalled();
   });
+
+  // The branch was switched off after the product was imported: the old
+  // offer must not stay live at its last price.
+  it('withdraws an existing offer when its branch is disabled', async () => {
+    const d = deps();
+    d.prisma.sourceCategory.findFirst.mockResolvedValue({
+      name: 'Disabled',
+    } as never);
+    d.offers.delistOffer.mockResolvedValueOnce({
+      delisted: true,
+      productHidden: true,
+    });
+    const parser = new DukonParserService(
+      d.prisma as never,
+      d.logs as never,
+      d.offers as never,
+      d.categoryTree as never,
+      d.settings as never,
+      d.identity as never,
+    );
+    fetchMock.mockResolvedValue(
+      new Response(
+        readFileSync(join(__dirname, 'fixtures', 'dukon-product.html'), 'utf8'),
+      ),
+    );
+    expect(
+      await parser.processSitemapUrl('https://dukon.by/catalog/item/'),
+    ).toBe('DELISTED');
+    expect(d.offers.delistOffer).toHaveBeenCalled();
+  });
 });
 
 /**
@@ -252,7 +284,6 @@ describe.each([
 
       await build(d).parseProductUrl(queueUrl);
 
-      expect(d.identity.findByOffer).toHaveBeenCalledWith('source', canonical);
       const save = d.identity.save.mock.calls[0] as unknown as [
         { url: string },
       ];

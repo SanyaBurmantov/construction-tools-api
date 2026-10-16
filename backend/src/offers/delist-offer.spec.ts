@@ -3,19 +3,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ProductMergeService } from './product-merge.service';
 
-type Offer = { id: string; productId: string | null };
+type Offer = { id: string; productId: string | null; price?: number | null };
 
 function createService(options: {
   offer?: Offer | null;
   remainingOffers?: number;
   productStatus?: string;
+  statusSource?: 'SYSTEM' | 'ADMIN';
 }) {
   const productUpdates: Record<string, unknown>[] = [];
   const offerUpdates: Record<string, unknown>[] = [];
 
   const prisma = {
     sourceProduct: {
-      findUnique: jest.fn(() => Promise.resolve(options.offer ?? null)),
+      // A live offer has a price; `price: null` means already withdrawn.
+      findUnique: jest.fn(() =>
+        Promise.resolve(options.offer ? { price: 10, ...options.offer } : null),
+      ),
       update: jest.fn(({ data }: { data: Record<string, unknown> }) => {
         offerUpdates.push(data);
         return Promise.resolve({});
@@ -25,7 +29,10 @@ function createService(options: {
     },
     product: {
       findUnique: jest.fn(() =>
-        Promise.resolve({ status: options.productStatus ?? 'PUBLISHED' }),
+        Promise.resolve({
+          status: options.productStatus ?? 'PUBLISHED',
+          statusSource: options.statusSource ?? 'SYSTEM',
+        }),
       ),
       update: jest.fn(({ data }: { data: Record<string, unknown> }) => {
         productUpdates.push(data);
@@ -94,6 +101,33 @@ describe('OffersService.delistOffer', () => {
 
     expect(result.productHidden).toBe(false);
     expect(productUpdates[0]).toEqual({ stockStatus: 'out_of_stock' });
+  });
+
+  // An admin chose to keep it on sale; a delist marks it out of stock only.
+  it('leaves a status an admin set alone', async () => {
+    const { service, productUpdates } = createService({
+      offer: { id: 'o1', productId: 'p1' },
+      remainingOffers: 0,
+      statusSource: 'ADMIN',
+    });
+
+    const result = await service.delistOffer('s1', 'https://x/1');
+
+    expect(result.productHidden).toBe(false);
+    expect(productUpdates[0]).toEqual({ stockStatus: 'out_of_stock' });
+  });
+
+  // The weekly re-check of SKIPPED rows lands on withdrawn offers again.
+  it('does nothing for an offer that is already withdrawn', async () => {
+    const { service, offerUpdates } = createService({
+      offer: { id: 'o1', productId: 'p1', price: null },
+    });
+
+    await expect(service.delistOffer('s1', 'https://x/1')).resolves.toEqual({
+      delisted: false,
+      productHidden: false,
+    });
+    expect(offerUpdates).toHaveLength(0);
   });
 
   it('does nothing for a URL we never had an offer for', async () => {

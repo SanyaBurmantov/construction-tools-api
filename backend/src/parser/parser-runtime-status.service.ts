@@ -1,10 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 // How many historical ParserRun rows to keep per key. Older rows are pruned
 // after each run so the table stays bounded (mirrors ParserLogService).
 const MAX_RUNS_PER_KEY = 100;
+
+// A run still marked RUNNING after this long is reported as ERROR. The longest
+// legitimate job (the tools.by catalogue crawl) finishes well inside it.
+const STUCK_RUN_HOURS = 6;
 
 /**
  * Share of hard failures in the last run above which a job counts as broken.
@@ -18,6 +22,14 @@ const FAILURE_RATE_THRESHOLD = Number(
 );
 /** Below this many URLs a batch is too small for a rate to mean anything. */
 const MIN_BATCH_FOR_RATE = 5;
+
+/**
+ * Share of delisted URLs in one batch above which the job is flagged. Delists
+ * hide products automatically, so a supplier that suddenly 404s everything (a
+ * URL scheme change, a WAF) would empty the catalogue batch by batch while
+ * the failure rate stayed at zero.
+ */
+const DELIST_RATE_THRESHOLD = 0.5;
 
 export type PriceFreshness = {
   sourceCode: string;
@@ -69,7 +81,7 @@ function positiveSetting(value: string | undefined, fallback: number) {
 }
 
 @Injectable()
-export class ParserRuntimeStatusService {
+export class ParserRuntimeStatusService implements OnApplicationBootstrap {
   private readonly logger = new Logger(ParserRuntimeStatusService.name);
 
   // Maps a parser key to its currently-RUNNING ParserRun, so success()/failure()
@@ -80,6 +92,45 @@ export class ParserRuntimeStatusService {
   >();
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Nothing survives a restart, so anything still marked running was killed
+   * mid-run — most often by the container's `mem_limit` OOM during a crawl.
+   * Left alone, `isRunning` stayed true until the next run, health reported
+   * RUNNING (which counts as ok), and the watchdog never alerted: exactly the
+   * silent parser death the health check exists to catch.
+   */
+  async onApplicationBootstrap() {
+    const reason = 'Прервано перезапуском процесса (OOM или деплой)';
+    try {
+      const now = new Date();
+      const [statuses, runs] = await this.prisma.$transaction([
+        this.prisma.parserRuntimeStatus.updateMany({
+          where: { isRunning: true },
+          data: {
+            isRunning: false,
+            finishedAt: now,
+            lastErrorAt: now,
+            lastError: reason,
+            failures: { increment: 1 },
+          },
+        }),
+        this.prisma.parserRun.updateMany({
+          where: { status: 'RUNNING' },
+          data: { status: 'FAILED', finishedAt: now, error: reason },
+        }),
+      ]);
+      if (statuses.count || runs.count) {
+        this.logger.warn(
+          `Reset ${statuses.count} job status(es) and ${runs.count} run(s) left RUNNING by the previous process`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Could not reset interrupted parser runs: ${this.message(error)}`,
+      );
+    }
+  }
 
   async start(key: string, label: string) {
     const startedAt = new Date();
@@ -279,15 +330,26 @@ export class ParserRuntimeStatusService {
           ? batch.failed / batch.processed
           : 0;
       const isFailingHard = rate > FAILURE_RATE_THRESHOLD;
+      const delistRate =
+        batch && batch.processed >= MIN_BATCH_FOR_RATE
+          ? batch.delisted / batch.processed
+          : 0;
+      const isMassDelisting = delistRate > DELIST_RATE_THRESHOLD;
 
       return {
         ...status,
         maxAgeHours: jobMaxAgeHours,
         failureRate: batch ? Number(rate.toFixed(3)) : null,
         lastBatch: batch,
+        // A run that has been "running" for hours is hung (a stalled request,
+        // a lost process the boot reset could not see); RUNNING counts as
+        // healthy, so it must not be allowed to hide that.
         health: status.isRunning
-          ? 'RUNNING'
-          : hasError || isFailingHard
+          ? status.startedAt &&
+            now - status.startedAt.getTime() > STUCK_RUN_HOURS * 3_600_000
+            ? 'ERROR'
+            : 'RUNNING'
+          : hasError || isFailingHard || isMassDelisting
             ? 'ERROR'
             : isStale
               ? 'STALE'
@@ -397,14 +459,20 @@ export class ParserRuntimeStatusService {
     const batch = (result as { batch?: unknown }).batch;
     if (!batch || typeof batch !== 'object') return null;
 
-    const { processed, failed } = batch as {
+    const { processed, failed, delisted } = batch as {
       processed?: unknown;
       failed?: unknown;
+      delisted?: unknown;
     };
     if (typeof processed !== 'number' || typeof failed !== 'number')
       return null;
 
-    return { ...(batch as Record<string, number>), processed, failed };
+    return {
+      ...(batch as Record<string, number>),
+      processed,
+      failed,
+      delisted: typeof delisted === 'number' ? delisted : 0,
+    };
   }
 
   private toJson(value: unknown) {

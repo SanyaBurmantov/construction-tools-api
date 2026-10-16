@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DeliveryMethod, Prisma } from '@prisma/client';
+import { DeliveryMethod, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
@@ -17,8 +17,12 @@ import { TelegramService } from '../notifications/telegram.service';
 import { MailService } from '../notifications/mail.service';
 import { buildOrderMail } from '../notifications/order-mail';
 import { ServerCartService } from '../cart/server-cart.service';
+import { withoutPlaceholderImages } from '../common/utils/product-images';
 
 const DEFAULT_CURRENCY = 'BYN';
+/** Same cap as a single order line and as POST /cart/validate. */
+const MAX_LINE_QUANTITY = 999;
+const MAX_INT4 = 2_147_483_647;
 
 /**
  * Who placed the order, when it came from an account. Admin-only: the public
@@ -63,19 +67,23 @@ export class OrdersService {
    * orders keep it null. It is the sole way an order joins «История заказов».
    */
   async createOrder(dto: CreateOrderDto, userId?: string) {
-    // Collapse duplicate productIds into summed quantities.
+    // Collapse duplicate productIds into summed quantities, capped like a
+    // single line (and like POST /cart/validate, so the totals agree).
     const quantities = new Map<string, number>();
     for (const item of dto.items) {
       quantities.set(
         item.productId,
-        (quantities.get(item.productId) ?? 0) + item.quantity,
+        Math.min(
+          MAX_LINE_QUANTITY,
+          (quantities.get(item.productId) ?? 0) + item.quantity,
+        ),
       );
     }
 
     const productIds = [...quantities.keys()];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds }, status: 'PUBLISHED' },
-      include: { images: { orderBy: { order: 'asc' }, take: 1 } },
+      include: { images: { orderBy: { order: 'asc' } } },
     });
     const productById = new Map(products.map((p) => [p.id, p]));
 
@@ -108,7 +116,7 @@ export class OrdersService {
         productName: product.name,
         productSlug: product.slug,
         productSku: product.sku ?? null,
-        productImage: product.images[0]?.url ?? null,
+        productImage: withoutPlaceholderImages(product.images)[0]?.url ?? null,
         unitPrice,
         // Only a genuine markdown counts, not a stale oldPrice below the price.
         unitOldPrice:
@@ -190,10 +198,21 @@ export class OrdersService {
       });
 
       if (promoCodeId) {
-        await tx.promoCode.update({
-          where: { id: promoCodeId },
-          data: { usedCount: { increment: 1 } },
-        });
+        // The usage check in evaluate() ran outside this transaction, so N
+        // parallel checkouts with a single-use code would all pass it. The
+        // conditional increment is the real gate: only one of them gets the
+        // row, the rest roll back. Raw SQL because Prisma cannot compare two
+        // columns in a where.
+        const claimed = await tx.$executeRaw`
+          UPDATE "PromoCode"
+          SET "usedCount" = "usedCount" + 1, "updatedAt" = NOW()
+          WHERE "id" = ${promoCodeId}
+            AND "isActive"
+            AND ("maxUses" IS NULL OR "usedCount" < "maxUses")
+        `;
+        if (claimed !== 1) {
+          throw new BadRequestException('Промокод исчерпан');
+        }
       }
 
       return created;
@@ -292,8 +311,10 @@ export class OrdersService {
         { customerPhone: { contains: search, mode: 'insensitive' } },
         { customerEmail: { contains: search, mode: 'insensitive' } },
       ];
+      // Order numbers are INT4: a phone number typed into the same box would
+      // overflow it and fail the whole query.
       const asNumber = Number(search.replace(/[^0-9]/g, ''));
-      if (Number.isInteger(asNumber) && asNumber > 0) {
+      if (Number.isInteger(asNumber) && asNumber > 0 && asNumber <= MAX_INT4) {
         or.push({ number: asNumber });
       }
       where.OR = or;
@@ -325,12 +346,52 @@ export class OrdersService {
     return order;
   }
 
+  /**
+   * Forward moves (skipping steps is fine) and cancellation of an active
+   * order. DELIVERED and CANCELLED are final: reopening a cancelled order
+   * would also have to re-claim its promo use and re-check its prices. The
+   * storefront only ever offered these moves; the API now enforces them.
+   *
+   * Cancelling gives the promo use back, so a single-use code is not burnt
+   * by an order that never happened.
+   */
   async updateStatus(id: string, dto: AdminUpdateOrderStatusDto) {
-    await this.getOrder(id);
-    return this.prisma.order.update({
-      where: { id },
-      data: { status: dto.status },
-      include: { items: true },
+    const order = await this.getOrder(id);
+    if (order.status === dto.status) return order;
+    if (!canMoveOrder(order.status, dto.status)) {
+      throw new BadRequestException(
+        `Нельзя перевести заказ из «${order.status}» в «${dto.status}»`,
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.order.update({
+        where: { id },
+        data: { status: dto.status },
+        include: { items: true },
+      });
+      if (dto.status === OrderStatus.CANCELLED && order.promoCodeId) {
+        await tx.$executeRaw`
+          UPDATE "PromoCode" SET "usedCount" = GREATEST("usedCount" - 1, 0)
+          WHERE "id" = ${order.promoCodeId}`;
+      }
+      return updated;
     });
   }
+}
+
+const ORDER_FLOW: OrderStatus[] = [
+  OrderStatus.NEW,
+  OrderStatus.CONFIRMED,
+  OrderStatus.PROCESSING,
+  OrderStatus.SHIPPED,
+  OrderStatus.DELIVERED,
+];
+
+/** Pure, so the rule is tested without a database. */
+export function canMoveOrder(from: OrderStatus, to: OrderStatus): boolean {
+  if (from === OrderStatus.DELIVERED || from === OrderStatus.CANCELLED) {
+    return false;
+  }
+  if (to === OrderStatus.CANCELLED) return true;
+  return ORDER_FLOW.indexOf(to) > ORDER_FLOW.indexOf(from);
 }

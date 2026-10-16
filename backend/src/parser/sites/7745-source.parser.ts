@@ -1,28 +1,20 @@
 import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
 import { XMLParser } from 'fast-xml-parser';
+import { SupplierInfo, SupplierQueueParser } from '../supplier-queue-parser';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
-import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ParserLogService } from '../parser-log.service';
-import { ParserHttpError, isGoneError } from '../parser-http.error';
-import {
-  BatchOutcome,
-  BatchResult,
-  countOutcome,
-  emptyBatchResult,
-} from '../batch-result';
+import { ParserHttpError } from '../parser-http.error';
 import { OffersService } from '../../offers/offers.service';
 import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
 import { ParserSettingsService } from '../parser-settings.service';
 import { parse7745 } from './7745.parser';
 
-type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 
 const SOURCE_CODE = '7745';
@@ -38,17 +30,28 @@ class Skipped7745ProductError extends Error {
 }
 
 @Injectable()
-export class Supplier7745ParserService {
-  private readonly logger = new Logger(Supplier7745ParserService.name);
+export class Supplier7745ParserService extends SupplierQueueParser {
+  protected readonly logger = new Logger(Supplier7745ParserService.name);
+  protected readonly supplier: SupplierInfo = {
+    code: '7745',
+    name: SOURCE_NAME,
+    baseUrl: SOURCE_BASE_URL,
+  };
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly parserLogService: ParserLogService,
-    private readonly offers: OffersService,
-    private readonly categoryTree: CategoryTreeService,
-    private readonly settings: ParserSettingsService,
-    private readonly identity: ProductIdentityService,
-  ) {}
+    prisma: PrismaService,
+    parserLogService: ParserLogService,
+    offers: OffersService,
+    categoryTree: CategoryTreeService,
+    settings: ParserSettingsService,
+    identity: ProductIdentityService,
+  ) {
+    super(prisma, parserLogService, offers, categoryTree, settings, identity);
+  }
+
+  protected isSkippedError(error: unknown) {
+    return error instanceof Skipped7745ProductError;
+  }
 
   async refreshSitemaps() {
     await this.upsertSource();
@@ -61,187 +64,6 @@ export class Supplier7745ParserService {
     }
 
     return this.getQueueStats();
-  }
-
-  async getQueueStats() {
-    const [queued, visited, failed, skipped] = await Promise.all([
-      this.prisma.sitemaps7745.count({ where: { status: 'PENDING' } }),
-      this.prisma.sitemaps7745.count({ where: { status: 'DONE' } }),
-      this.prisma.sitemaps7745.count({ where: { status: 'FAILED' } }),
-      this.prisma.sitemaps7745.count({ where: { status: 'SKIPPED' } }),
-    ]);
-
-    return {
-      queued,
-      visited,
-      failed,
-      skipped,
-      total: queued + visited + failed + skipped,
-    };
-  }
-
-  async getSitemaps(query: {
-    search?: string;
-    status?: QueueStatus;
-    page?: number;
-    limit?: number;
-  }) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 25;
-    const where = {
-      ...(query.search
-        ? { url: { contains: query.search, mode: 'insensitive' as const } }
-        : {}),
-      ...(query.status === 'PROBLEM'
-        ? { status: { in: ['FAILED', 'SKIPPED'] } }
-        : query.status
-          ? { status: query.status }
-          : {}),
-    };
-
-    const [data, total] = await Promise.all([
-      this.prisma.sitemaps7745.findMany({
-        where,
-        orderBy: [{ status: 'asc' }, { url: 'asc' }],
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.sitemaps7745.count({ where }),
-    ]);
-
-    return {
-      data,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    };
-  }
-
-  async retrySitemap(id: string) {
-    return this.prisma.sitemaps7745.update({
-      where: { id },
-      data: {
-        isVisited: false,
-        status: 'PENDING',
-        lastError: null,
-        visitedAt: null,
-      },
-    });
-  }
-
-  async retryProblemSitemaps() {
-    return this.prisma.sitemaps7745.updateMany({
-      where: { status: { in: ['FAILED', 'SKIPPED'] } },
-      data: {
-        isVisited: false,
-        status: 'PENDING',
-        lastError: null,
-        visitedAt: null,
-      },
-    });
-  }
-
-  /**
-   * Puts the whole queue back to PENDING so every product is read again.
-   *
-   * Needed after a parser fix that changed what gets saved — products lost to
-   * the old slug-collision bug, for instance, only reappear on a re-read.
-   * `attempts` is reset too: these rows get a clean slate, not the watchdog's
-   * three-strikes budget from a previous life.
-   */
-  async revalidateAllSitemaps() {
-    return this.prisma.sitemaps7745.updateMany({
-      data: {
-        isVisited: false,
-        status: 'PENDING',
-        attempts: 0,
-        lastError: null,
-        lastTriedAt: null,
-        visitedAt: null,
-      },
-    });
-  }
-
-  async processSitemapsBatch(limit = 30, concurrency = 1) {
-    await this.publishDraftProducts();
-
-    const urls = await this.prisma.sitemaps7745.findMany({
-      where: { status: 'PENDING' },
-      orderBy: [{ visitedAt: { sort: 'asc', nulls: 'first' } }, { url: 'asc' }],
-      take: limit,
-    });
-
-    const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
-    const batch: BatchResult = emptyBatchResult();
-
-    await runWithConcurrency(urls, concurrency, async (entry) => {
-      await this.sleep(delayMs);
-      countOutcome(batch, await this.processSitemapUrl(entry.url));
-    });
-
-    return { ...(await this.getQueueStats()), batch };
-  }
-
-  async processSitemapUrl(url: string): Promise<BatchOutcome> {
-    await this.prisma.sitemaps7745.updateMany({
-      where: { url },
-      data: { attempts: { increment: 1 }, lastTriedAt: new Date() },
-    });
-
-    try {
-      const product = await this.parseProductUrl(url);
-      await this.prisma.sitemaps7745.updateMany({
-        where: { url },
-        data: {
-          isVisited: true,
-          status: 'DONE',
-          lastError: null,
-          visitedAt: new Date(),
-        },
-      });
-      void product;
-      return 'DONE';
-    } catch (error) {
-      // The supplier removed this product: withdraw the offer and re-price
-      // whatever is left, instead of leaving a dead price on the storefront.
-      if (isGoneError(error)) {
-        const source = await this.upsertSource();
-        await this.offers.delistOffer(source.id, this.canonicalUrl(url));
-        await this.prisma.sitemaps7745.updateMany({
-          where: { url },
-          data: {
-            isVisited: true,
-            status: 'SKIPPED',
-            lastError: 'Removed by supplier (404)',
-            visitedAt: new Date(),
-          },
-        });
-        this.logger.log(`Delisted ${url}: gone from supplier`);
-        return 'DELISTED';
-      }
-
-      const isSkipped = error instanceof Skipped7745ProductError;
-      if (!isSkipped) {
-        await this.parserLogService.addError(url, error);
-      }
-      await this.prisma.sitemaps7745.updateMany({
-        where: { url },
-        data: {
-          isVisited: true,
-          status: isSkipped ? 'SKIPPED' : 'FAILED',
-          lastError: error instanceof Error ? error.message : String(error),
-          visitedAt: new Date(),
-        },
-      });
-      // Through the Logger, like every other parser: the container log has one
-      // format, and `console` also bypasses the error log behind /admin/errors.
-      const message = error instanceof Error ? error.message : String(error);
-      if (isSkipped) {
-        this.logger.debug(`Skipped ${url}: ${message}`);
-      } else {
-        this.logger.warn(`Failed ${url}: ${message}`);
-      }
-
-      return isSkipped ? 'SKIPPED' : 'FAILED';
-    }
   }
 
   async parseProductUrl(url: string) {
@@ -291,22 +113,6 @@ export class Supplier7745ParserService {
       ? await this.identity.upsertBrand(brandName)
       : undefined;
     const slug = this.productSlug(parsed.name, sku);
-    // Status of the product THIS offer belongs to. Looking it up by slug
-    // could republish an unrelated product that merely shares the name.
-    const existingProductId = await this.identity.findByOffer(
-      source.id,
-      offerUrl,
-    );
-    const existingProduct = existingProductId
-      ? await this.prisma.product.findUnique({
-          where: { id: existingProductId },
-          select: { status: true },
-        })
-      : null;
-    const statusUpdate =
-      existingProduct?.status === 'DRAFT'
-        ? { status: 'PUBLISHED' as const }
-        : {};
     const seoTitle = this.parseMeta($, 'og:title') || parsed.name;
     const seoDescription =
       this.parseMeta($, 'description') || parsed.description || parsed.name;
@@ -330,7 +136,6 @@ export class Supplier7745ParserService {
       baseSlug: slug,
       data: {
         update: {
-          ...statusUpdate,
           name: parsed.name,
           sku,
           model,
@@ -360,7 +165,6 @@ export class Supplier7745ParserService {
           barcode,
           brandId,
           categoryId,
-          priceValue: parsed.price,
           priceCurrency: 'BYN',
           stockStatus:
             parsed.inStock === undefined
@@ -368,7 +172,6 @@ export class Supplier7745ParserService {
               : parsed.inStock
                 ? 'in_stock'
                 : 'out_of_stock',
-          status: 'PUBLISHED',
           descriptionShort: seoDescription,
           descriptionFull: parsed.description,
           seoTitle,
@@ -451,16 +254,6 @@ export class Supplier7745ParserService {
       seoDescription:
         this.parseMeta($, 'description') || parsed.description || parsed.name,
     };
-  }
-
-  async publishDraftProducts() {
-    return this.prisma.product.updateMany({
-      where: {
-        status: 'DRAFT',
-        sourceProducts: { some: { source: { code: SOURCE_CODE } } },
-      },
-      data: { status: 'PUBLISHED' },
-    });
   }
 
   private async saveSourceProduct(
@@ -652,14 +445,6 @@ export class Supplier7745ParserService {
     };
   }
 
-  private upsertSource() {
-    return this.prisma.source.upsert({
-      where: { code: SOURCE_CODE },
-      update: { name: SOURCE_NAME, url: SOURCE_BASE_URL },
-      create: { name: SOURCE_NAME, code: SOURCE_CODE, url: SOURCE_BASE_URL },
-    });
-  }
-
   private parseSitemapUrls(xml: string) {
     const parser = new XMLParser({ ignoreAttributes: false });
     const parsed = parser.parse(xml) as {
@@ -794,21 +579,13 @@ export class Supplier7745ParserService {
     return `${SOURCE_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
   }
 
-  private canonicalUrl(url: string) {
+  protected canonicalUrl(url: string) {
     const parsed = new URL(this.absoluteUrl(url));
     parsed.hash = '';
     return parsed.toString();
   }
 
-  private toJson(value: unknown): Prisma.InputJsonValue {
-    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-  }
-
   private clean(value: string) {
     return value.replace(/\s+/g, ' ').trim();
-  }
-
-  private sleep(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

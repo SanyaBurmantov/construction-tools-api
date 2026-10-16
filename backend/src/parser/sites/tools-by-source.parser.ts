@@ -2,19 +2,13 @@ import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
+import { SupplierInfo, SupplierQueueParser } from '../supplier-queue-parser';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
-import { runWithConcurrency } from '../../common/utils/run-with-concurrency';
 import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
 import { ParserLogService } from '../parser-log.service';
-import { ParserHttpError, isGoneError } from '../parser-http.error';
-import {
-  BatchOutcome,
-  BatchResult,
-  countOutcome,
-  emptyBatchResult,
-} from '../batch-result';
+import { ParserHttpError } from '../parser-http.error';
 import { OffersService } from '../../offers/offers.service';
 import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
@@ -35,6 +29,8 @@ type CatalogPage = {
   url: string;
   snapshot?: string;
   session?: CatalogSession;
+  /** Failed fetches of this entry; it is dropped after a few (see below). */
+  failures?: number;
 };
 type SavedCatalogPage = Omit<CatalogPage, 'session'> & {
   session?: { csrfToken: string; cookies: [string, string][] };
@@ -44,9 +40,14 @@ type CatalogCrawlState = {
   pageQueue: SavedCatalogPage[];
 };
 
-type QueueStatus = 'PENDING' | 'DONE' | 'FAILED' | 'SKIPPED' | 'PROBLEM';
-
 const SOURCE_CODE = 'tools-by';
+/** Attempts at one catalogue page before the crawl gives up on it. */
+const MAX_PAGE_FAILURES = 3;
+/**
+ * Failures in a row, across different pages, after which the site is taken to
+ * be down: the crawl stops (resumably) instead of burning every entry's budget.
+ */
+const MAX_CONSECUTIVE_FAILURES = 5;
 /**
  * Pages between crawl-state checkpoints.
  *
@@ -74,17 +75,28 @@ class SkippedToolsByProductError extends Error {
 }
 
 @Injectable()
-export class ToolsByParserService {
-  private readonly logger = new Logger(ToolsByParserService.name);
+export class ToolsByParserService extends SupplierQueueParser {
+  protected readonly logger = new Logger(ToolsByParserService.name);
+  protected readonly supplier: SupplierInfo = {
+    code: 'tools-by',
+    name: SOURCE_NAME,
+    baseUrl: SOURCE_BASE_URL,
+  };
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly parserLogService: ParserLogService,
-    private readonly offers: OffersService,
-    private readonly categoryTree: CategoryTreeService,
-    private readonly settings: ParserSettingsService,
-    private readonly identity: ProductIdentityService,
-  ) {}
+    prisma: PrismaService,
+    parserLogService: ParserLogService,
+    offers: OffersService,
+    categoryTree: CategoryTreeService,
+    settings: ParserSettingsService,
+    identity: ProductIdentityService,
+  ) {
+    super(prisma, parserLogService, offers, categoryTree, settings, identity);
+  }
+
+  protected isSkippedError(error: unknown) {
+    return error instanceof SkippedToolsByProductError;
+  }
 
   async refreshSitemaps() {
     await this.upsertSource();
@@ -132,86 +144,122 @@ export class ToolsByParserService {
       }
     };
 
+    let consecutiveFailures = 0;
+    // Entries that failed in this run went to the back of the queue; reaching
+    // one again means everything left has been tried once — stop there rather
+    // than hammer the same pages, and retry on the next run.
+    const failedThisRun = new Set<CatalogPage>();
+    let firstFailure: unknown;
     try {
       while (pageQueue.length && fetchedPages < maxPages) {
         const entry = pageQueue[0];
         if (!entry) continue;
-        let html: string;
-        let snapshot: string | undefined;
-        let session: CatalogSession;
-        if (entry.snapshot && entry.session) {
-          let result: { html: string; snapshot: string };
-          try {
-            result = await this.loadMore(
-              entry.url,
-              entry.snapshot,
-              entry.session,
-            );
-          } catch (error) {
-            if (
-              error instanceof ParserHttpError &&
-              error.status === 419 &&
-              !renewedSessions.has(entry.url)
-            ) {
-              // CSRF sessions can expire between daily runs. Keep the signed
-              // pagination snapshot and get fresh cookies on the next request.
-              entry.session = undefined;
+        if (failedThisRun.has(entry)) break;
+        let advanced = false;
+        try {
+          let html: string;
+          let snapshot: string | undefined;
+          let session: CatalogSession;
+          if (entry.snapshot && entry.session) {
+            let result: { html: string; snapshot: string };
+            try {
+              result = await this.loadMore(
+                entry.url,
+                entry.snapshot,
+                entry.session,
+              );
+            } catch (error) {
+              if (
+                error instanceof ParserHttpError &&
+                error.status === 419 &&
+                !renewedSessions.has(entry.url)
+              ) {
+                // CSRF sessions can expire between daily runs. Keep the signed
+                // pagination snapshot and get fresh cookies on the next request.
+                entry.session = undefined;
+                fetchedPages += 1;
+                await checkpoint();
+                await this.sleep(delayMs);
+                continue;
+              }
+              throw error;
+            }
+            html = result.html;
+            snapshot = result.snapshot;
+            session = entry.session;
+          } else {
+            const result = await this.fetchCatalogPage(entry.url);
+            if (entry.snapshot) {
+              entry.session = result.session;
+              renewedSessions.add(entry.url);
               fetchedPages += 1;
               await checkpoint();
               await this.sleep(delayMs);
               continue;
             }
-            throw error;
+            html = result.html;
+            session = result.session;
+            snapshot = this.catalogSnapshot(cheerio.load(html));
           }
-          html = result.html;
-          snapshot = result.snapshot;
-          session = entry.session;
-        } else {
-          const result = await this.fetchCatalogPage(entry.url);
-          if (entry.snapshot) {
-            entry.session = result.session;
-            renewedSessions.add(entry.url);
-            fetchedPages += 1;
-            await checkpoint();
-            await this.sleep(delayMs);
-            continue;
-          }
-          html = result.html;
-          session = result.session;
-          snapshot = this.catalogSnapshot(cheerio.load(html));
-        }
-        fetchedPages += 1;
-        const $ = cheerio.load(html);
-        const pageProductUrls = this.parseProductLinks($);
-        pageProductUrls.forEach((url) => productUrls.add(url));
-        await this.enqueueUrls(pageProductUrls);
+          fetchedPages += 1;
+          const $ = cheerio.load(html);
+          const pageProductUrls = this.parseProductLinks($);
+          pageProductUrls.forEach((url) => productUrls.add(url));
+          await this.enqueueUrls(pageProductUrls);
 
-        // Advance only after the product URLs are saved. Replaying a page after
-        // a crash is safe: enqueueUrls uses idempotent upserts.
-        pageQueue.shift();
-        visitedPages.add(entry.url);
-        for (const catalogUrl of this.parseCatalogLinks($)) {
-          if (!visitedPages.has(catalogUrl) && !queuedPages.has(catalogUrl)) {
-            queuedPages.add(catalogUrl);
-            pageQueue.push({ url: catalogUrl });
+          // Advance only after the product URLs are saved. Replaying a page after
+          // a crash is safe: enqueueUrls uses idempotent upserts.
+          pageQueue.shift();
+          advanced = true;
+          consecutiveFailures = 0;
+          visitedPages.add(entry.url);
+          for (const catalogUrl of this.parseCatalogLinks($)) {
+            if (!visitedPages.has(catalogUrl) && !queuedPages.has(catalogUrl)) {
+              queuedPages.add(catalogUrl);
+              pageQueue.push({ url: catalogUrl });
+            }
           }
-        }
-        if (snapshot && this.readSnapshot(snapshot)?.data.show_more_button) {
-          // Round-robin: visit other categories before loading the next 25 items.
-          const previousLoaded = entry.snapshot
-            ? this.readSnapshot(entry.snapshot)?.data.loaded
-            : undefined;
-          const loaded = this.readSnapshot(snapshot)?.data.loaded;
-          if (
-            previousLoaded !== undefined &&
-            loaded !== undefined &&
-            loaded <= previousLoaded
-          ) {
-            throw new Error(
-              `Tools.by loadMore did not advance the catalog: ${entry.url}`,
+          if (snapshot && this.readSnapshot(snapshot)?.data.show_more_button) {
+            // Round-robin: visit other categories before loading the next 25 items.
+            const previousLoaded = entry.snapshot
+              ? this.readSnapshot(entry.snapshot)?.data.loaded
+              : undefined;
+            const loaded = this.readSnapshot(snapshot)?.data.loaded;
+            if (
+              previousLoaded !== undefined &&
+              loaded !== undefined &&
+              loaded <= previousLoaded
+            ) {
+              throw new Error(
+                `Tools.by loadMore did not advance the catalog: ${entry.url}`,
+              );
+            }
+            pageQueue.push({ url: entry.url, snapshot, session });
+          }
+        } catch (error) {
+          // One bad entry used to be thrown before `shift()`, saved back as
+          // the head of the queue, and retried first on every later run — a
+          // single removed category blocked the only discovery path tools.by
+          // has, forever. Now the entry is retried at the back of the queue a
+          // few times and then dropped; a 404/410 is dropped at once.
+          if (advanced) throw error;
+          consecutiveFailures++;
+          firstFailure ??= error;
+          const gone =
+            error instanceof ParserHttpError &&
+            (error.status === 404 || error.status === 410);
+          entry.failures = (entry.failures ?? 0) + 1;
+          pageQueue.shift();
+          if (gone || entry.failures >= MAX_PAGE_FAILURES) {
+            visitedPages.add(entry.url);
+            this.logger.warn(
+              `Catalog page dropped after ${entry.failures} failure(s): ${entry.url} — ${error instanceof Error ? error.message : String(error)}`,
             );
+          } else {
+            failedThisRun.add(entry);
+            pageQueue.push(entry);
           }
-          pageQueue.push({ url: entry.url, snapshot, session });
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) throw error;
         }
         await checkpoint();
         await this.sleep(delayMs);
@@ -223,6 +271,19 @@ export class ToolsByParserService {
       // run starts a fresh pass. A periodic checkpoint alone guarantees
       // neither, which is why the save used to sit inside the loop.
       await this.saveCatalogCrawl(visitedPages, pageQueue);
+    }
+
+    if (failedThisRun.size) {
+      // The pass went on past the failing pages, but the run still reports
+      // the failure so health shows it until the page recovers or is dropped.
+      const reason =
+        firstFailure instanceof Error
+          ? firstFailure.message
+          : String(firstFailure);
+      throw new Error(
+        `Tools.by catalog: ${failedThisRun.size} page(s) failed and will be retried next run: ${reason}`,
+        { cause: firstFailure },
+      );
     }
 
     return {
@@ -266,186 +327,6 @@ export class ToolsByParserService {
     });
   }
 
-  async getQueueStats() {
-    const [queued, visited, failed, skipped] = await Promise.all([
-      this.prisma.sitemapsToolsBy.count({ where: { status: 'PENDING' } }),
-      this.prisma.sitemapsToolsBy.count({ where: { status: 'DONE' } }),
-      this.prisma.sitemapsToolsBy.count({ where: { status: 'FAILED' } }),
-      this.prisma.sitemapsToolsBy.count({ where: { status: 'SKIPPED' } }),
-    ]);
-
-    return {
-      queued,
-      visited,
-      failed,
-      skipped,
-      total: queued + visited + failed + skipped,
-    };
-  }
-
-  async getSitemaps(query: {
-    search?: string;
-    status?: QueueStatus;
-    page?: number;
-    limit?: number;
-  }) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 25;
-    const where = {
-      ...(query.search
-        ? { url: { contains: query.search, mode: 'insensitive' as const } }
-        : {}),
-      ...(query.status === 'PROBLEM'
-        ? { status: { in: ['FAILED', 'SKIPPED'] } }
-        : query.status
-          ? { status: query.status }
-          : {}),
-    };
-
-    const [data, total] = await Promise.all([
-      this.prisma.sitemapsToolsBy.findMany({
-        where,
-        orderBy: [{ status: 'asc' }, { url: 'asc' }],
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.sitemapsToolsBy.count({ where }),
-    ]);
-
-    return {
-      data,
-      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-    };
-  }
-
-  async retrySitemap(id: string) {
-    return this.prisma.sitemapsToolsBy.update({
-      where: { id },
-      data: {
-        isVisited: false,
-        status: 'PENDING',
-        lastError: null,
-        visitedAt: null,
-      },
-    });
-  }
-
-  async retryProblemSitemaps() {
-    return this.prisma.sitemapsToolsBy.updateMany({
-      where: { status: { in: ['FAILED', 'SKIPPED'] } },
-      data: {
-        isVisited: false,
-        status: 'PENDING',
-        lastError: null,
-        visitedAt: null,
-      },
-    });
-  }
-
-  /**
-   * Puts the whole queue back to PENDING so every product is read again.
-   *
-   * Needed after a parser fix that changed what gets saved — products lost to
-   * the old slug-collision bug, for instance, only reappear on a re-read.
-   * `attempts` is reset too: these rows get a clean slate, not the watchdog's
-   * three-strikes budget from a previous life.
-   */
-  async revalidateAllSitemaps() {
-    return this.prisma.sitemapsToolsBy.updateMany({
-      data: {
-        isVisited: false,
-        status: 'PENDING',
-        attempts: 0,
-        lastError: null,
-        lastTriedAt: null,
-        visitedAt: null,
-      },
-    });
-  }
-
-  async processSitemapsBatch(limit = 30, concurrency = 1) {
-    const urls = await this.prisma.sitemapsToolsBy.findMany({
-      where: { status: 'PENDING' },
-      orderBy: [{ visitedAt: { sort: 'asc', nulls: 'first' } }, { url: 'asc' }],
-      take: limit,
-    });
-
-    const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
-
-    const batch: BatchResult = emptyBatchResult();
-
-    await runWithConcurrency(urls, concurrency, async (entry) => {
-      await this.sleep(delayMs);
-      countOutcome(batch, await this.processSitemapUrl(entry.url));
-    });
-
-    return { ...(await this.getQueueStats()), batch };
-  }
-
-  async processSitemapUrl(url: string): Promise<BatchOutcome> {
-    await this.prisma.sitemapsToolsBy.updateMany({
-      where: { url },
-      data: { attempts: { increment: 1 }, lastTriedAt: new Date() },
-    });
-
-    try {
-      const product = await this.parseProductUrl(url);
-      await this.prisma.sitemapsToolsBy.updateMany({
-        where: { url },
-        data: {
-          isVisited: true,
-          status: 'DONE',
-          lastError: null,
-          visitedAt: new Date(),
-        },
-      });
-      void product;
-      return 'DONE';
-    } catch (error) {
-      // The supplier removed this product: withdraw the offer and re-price
-      // whatever is left, instead of leaving a dead price on the storefront.
-      if (isGoneError(error)) {
-        const source = await this.upsertSource();
-        await this.offers.delistOffer(source.id, this.canonicalUrl(url));
-        await this.prisma.sitemapsToolsBy.updateMany({
-          where: { url },
-          data: {
-            isVisited: true,
-            status: 'SKIPPED',
-            lastError: 'Removed by supplier (404)',
-            visitedAt: new Date(),
-          },
-        });
-        this.logger.log(`Delisted ${url}: gone from supplier`);
-        return 'DELISTED';
-      }
-
-      // A filtered-out category is an expected outcome, not a failure — it must
-      // not fill the error log or show up as a broken URL in the admin.
-      const isSkipped = error instanceof SkippedToolsByProductError;
-      if (!isSkipped) await this.parserLogService.addError(url, error);
-
-      await this.prisma.sitemapsToolsBy.updateMany({
-        where: { url },
-        data: {
-          isVisited: true,
-          status: isSkipped ? 'SKIPPED' : 'FAILED',
-          lastError: error instanceof Error ? error.message : String(error),
-          visitedAt: new Date(),
-        },
-      });
-
-      const message = error instanceof Error ? error.message : String(error);
-      if (isSkipped) {
-        this.logger.debug(`Skipped ${url}: ${message}`);
-      } else {
-        this.logger.warn(`Failed ${url}: ${message}`);
-      }
-
-      return isSkipped ? 'SKIPPED' : 'FAILED';
-    }
-  }
-
   async parseProductUrl(url: string) {
     /**
      * The offer's identity, and it has to be the *canonical* URL.
@@ -485,22 +366,6 @@ export class ToolsByParserService {
       ? await this.identity.upsertBrand(brandName)
       : undefined;
     const slug = this.productSlug(parsed.name, sku);
-    // Status of the product THIS offer belongs to. Looking it up by slug
-    // could republish an unrelated product that merely shares the name.
-    const existingProductId = await this.identity.findByOffer(
-      source.id,
-      offerUrl,
-    );
-    const existingProduct = existingProductId
-      ? await this.prisma.product.findUnique({
-          where: { id: existingProductId },
-          select: { status: true },
-        })
-      : null;
-    const statusUpdate =
-      existingProduct?.status === 'DRAFT'
-        ? { status: 'PUBLISHED' as const }
-        : {};
     const seoTitle = parsed.name;
     const seoDescription = parsed.description || parsed.name;
     const images = parsed.images.map((image, order) => ({
@@ -521,7 +386,6 @@ export class ToolsByParserService {
       baseSlug: slug,
       data: {
         update: {
-          ...statusUpdate,
           name: parsed.name,
           sku,
           barcode: parsed.barcode,
@@ -546,10 +410,8 @@ export class ToolsByParserService {
           model: parsed.model,
           brandId,
           categoryId,
-          priceValue: parsed.price,
           priceCurrency: 'BYN',
           stockStatus: this.stockStatus(parsed.inStock),
-          status: 'PUBLISHED',
           descriptionShort: seoDescription,
           descriptionFull: parsed.description,
           seoTitle,
@@ -858,29 +720,6 @@ export class ToolsByParserService {
     };
   }
 
-  private upsertSource() {
-    return this.prisma.source.upsert({
-      where: { code: SOURCE_CODE },
-      update: { name: SOURCE_NAME, url: SOURCE_BASE_URL },
-      create: { name: SOURCE_NAME, code: SOURCE_CODE, url: SOURCE_BASE_URL },
-    });
-  }
-
-  private parseBreadcrumbs($: cheerio.CheerioAPI) {
-    return $('.breadcrumb [itemprop="item"]')
-      .map((_, el) => {
-        const href = $(el).attr('href') || '';
-        if (!href.includes('/catalog/') || href.includes('brand_id')) return '';
-        return this.clean($(el).find('[itemprop="name"]').text());
-      })
-      .get()
-      .filter(Boolean);
-  }
-
-  private parseBrand($: cheerio.CheerioAPI) {
-    return this.clean($('.brand a, .product__brand a').first().text());
-  }
-
   private parseProductLinks($: cheerio.CheerioAPI) {
     const urls = new Set<string>();
 
@@ -1053,27 +892,10 @@ export class ToolsByParserService {
     }
   }
 
-  private findSpecValue(
-    specs: { name: string; value: string }[],
-    needles: string[],
-  ) {
-    return specs.find((spec) =>
-      needles.some((needle) => spec.name.toLowerCase().includes(needle)),
-    )?.value;
-  }
-
   private productSlug(name: string, sku?: string) {
     const base = generateSlug(name);
     const suffix = sku ? generateSlug(sku) : '';
     return suffix && !base.includes(suffix) ? `${base}-${suffix}` : base;
-  }
-
-  private parseMeta($: cheerio.CheerioAPI, name: string) {
-    return this.clean(
-      $(`meta[name="${name}"], meta[property="${name}"]`)
-        .first()
-        .attr('content') || '',
-    );
   }
 
   private async fetchText(url: string) {
@@ -1089,22 +911,14 @@ export class ToolsByParserService {
     return `${SOURCE_BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
   }
 
-  private canonicalUrl(url: string) {
+  protected canonicalUrl(url: string) {
     const parsed = new URL(this.absoluteUrl(url));
     parsed.search = '';
     parsed.hash = '';
     return parsed.toString();
   }
 
-  private toJson(value: unknown): Prisma.InputJsonValue {
-    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-  }
-
   private clean(value: string) {
     return value.replace(/\s+/g, ' ').trim();
-  }
-
-  private sleep(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

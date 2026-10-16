@@ -269,6 +269,35 @@ describe('Tools.by catalog discovery', () => {
   // the queue, each paginating entry carrying its ~4 KB Livewire snapshot. It
   // used to be re-serialised and upserted after every page, so a 2000-page run
   // rewrote a multi-megabyte blob 2000 times, growing as the pass progressed.
+  // A removed category used to stay at the head of the saved queue and fail
+  // first on every later run, blocking discovery for good.
+  it('drops a catalogue page that keeps failing instead of blocking the crawl', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(root))
+      .mockRejectedValueOnce(new Error('timeout'));
+    await expect(service.discoverCatalogUrls()).rejects.toThrow('timeout');
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValueOnce(new Error('timeout'));
+    await expect(createService().discoverCatalogUrls()).rejects.toThrow(
+      'timeout',
+    );
+    // Third strike: the page is dropped and the pass completes.
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValueOnce(new Error('timeout'));
+    await expect(createService().discoverCatalogUrls()).resolves.toMatchObject({
+      remainingPages: 0,
+    });
+    expect(state).toBeNull();
+  });
+
+  it('drops a 404 catalogue page at once', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(root))
+      .mockResolvedValueOnce(new Response('', { status: 404 }));
+    await service.discoverCatalogUrls().catch(() => undefined);
+    expect(state).toBeNull();
+  });
+
   it('does not rewrite the crawl state once per fetched page', async () => {
     const manyCategories = `<div wire:snapshot="${escapeAttr(
       JSON.stringify({

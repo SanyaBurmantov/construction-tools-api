@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { OrdersService } from './orders.service';
+import { OrdersService, canMoveOrder } from './orders.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PromoService } from '../promo/promo.service';
@@ -51,10 +51,11 @@ function buildService(products: ProductRow[], promoCode?: PromoCode) {
       items: data.items?.create ?? [],
     };
   });
-  const promoUpdateMock = jest.fn(() => Promise.resolve({}));
+  // The conditional "claim one use" UPDATE; 1 row = the code had a use left.
+  const promoUpdateMock = jest.fn(() => Promise.resolve(1));
   const tx = {
     order: { create: createMock },
-    promoCode: { update: promoUpdateMock },
+    $executeRaw: promoUpdateMock,
   };
   const prisma = {
     product: {
@@ -284,6 +285,34 @@ describe('OrdersService.createOrder', () => {
     };
     expect(data.discountTotal).toBe(30);
     expect(data.total).toBe(0);
+  });
+
+  // Parallel checkouts all pass evaluate(); the conditional increment decides.
+  it('rejects the order when the last use was taken concurrently', async () => {
+    const { service, promoUpdateMock } = buildService(
+      [
+        {
+          id: 'p1',
+          name: 'Бур',
+          slug: 'bur',
+          status: 'PUBLISHED',
+          priceValue: 30,
+          priceCurrency: 'BYN',
+          images: [],
+        },
+      ],
+      buildPromoCode({ maxUses: 1 }),
+    );
+    promoUpdateMock.mockResolvedValueOnce(0);
+
+    await expect(
+      service.createOrder({
+        ...baseCustomer,
+        deliveryMethod: 'PICKUP',
+        items: [{ productId: 'p1', quantity: 1 }],
+        promoCode: 'SALE10',
+      }),
+    ).rejects.toThrow('Промокод исчерпан');
   });
 
   it('rejects an expired promo code', async () => {
@@ -601,5 +630,22 @@ describe('OrdersService.createOrder', () => {
         items: [{ productId: 'p1', quantity: 1 }],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('canMoveOrder', () => {
+  it('allows forward moves, including skipping a step', () => {
+    expect(canMoveOrder('NEW', 'CONFIRMED')).toBe(true);
+    expect(canMoveOrder('NEW', 'SHIPPED')).toBe(true);
+  });
+
+  it('allows cancelling an active order', () => {
+    expect(canMoveOrder('SHIPPED', 'CANCELLED')).toBe(true);
+  });
+
+  it('refuses to move backwards or out of a final status', () => {
+    expect(canMoveOrder('SHIPPED', 'NEW')).toBe(false);
+    expect(canMoveOrder('CANCELLED', 'NEW')).toBe(false);
+    expect(canMoveOrder('DELIVERED', 'CANCELLED')).toBe(false);
   });
 });

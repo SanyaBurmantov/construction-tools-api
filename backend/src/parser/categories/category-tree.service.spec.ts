@@ -13,6 +13,7 @@ describe('CategoryTreeService navigation roots', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       categoryRedirect: { findUnique: jest.fn().mockResolvedValue(null) },
+      categoryPathAlias: { findUnique: jest.fn().mockResolvedValue(null) },
     } as never);
     await expect(
       service.upsertBranch([' ГЛАВНАЯ ', 'Каталог']),
@@ -43,6 +44,7 @@ describe('CategoryTreeService navigation roots', () => {
           Promise.resolve(where.slug === 'dreli' ? { slug: 'dreli' } : null),
         ),
       },
+      categoryPathAlias: { findUnique: jest.fn().mockResolvedValue(null) },
     } as never);
     await expect(service.upsertBranch(['Дрели'])).resolves.toMatchObject({
       slug: 'dreli-2',
@@ -61,7 +63,8 @@ describe('CategoryTreeService same-named siblings', () => {
     parentId: string | null;
   };
 
-  function serviceWith(rows: Row[]) {
+  function serviceWith(rows: Row[], aliases: Record<string, string> = {}) {
+    const update = jest.fn();
     const create = jest.fn(
       ({ data }: { data: Omit<Row, 'id'> & { level: number } }) => {
         const row = { ...data, id: `new-${data.slug}` };
@@ -82,11 +85,21 @@ describe('CategoryTreeService same-named siblings', () => {
           ),
         ),
         create,
-        update: jest.fn(),
+        update,
       },
       categoryRedirect: { findUnique: jest.fn().mockResolvedValue(null) },
+      categoryPathAlias: {
+        findUnique: jest.fn(({ where }: { where: { pathKey: string } }) => {
+          const row = rows.find((r) => r.id === aliases[where.pathKey]);
+          return Promise.resolve(row ? { category: row } : null);
+        }),
+      },
     };
-    return { service: new CategoryTreeService(prisma as never), create };
+    return {
+      service: new CategoryTreeService(prisma as never),
+      create,
+      update,
+    };
   }
 
   it('reuses a moved branch instead of minting «Двигатель-2»', async () => {
@@ -193,5 +206,36 @@ describe('CategoryTreeService same-named siblings', () => {
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(leaf).toMatchObject({ slug: 'ankery', pathKey: 'krepezh/ankery' });
+  });
+
+  // An admin moved «Дрели» under «Электроинструмент»; the supplier still
+  // spells the old chain. The alias must win, with no parent "repair".
+  it('follows the alias of a category an admin moved', async () => {
+    const { service, create, update } = serviceWith(
+      [
+        {
+          id: 'power',
+          name: 'Электроинструмент',
+          slug: 'elektroinstrument',
+          pathKey: 'elektroinstrument',
+          parentId: null,
+        },
+        {
+          id: 'drills',
+          name: 'Дрели',
+          slug: 'dreli',
+          pathKey: 'elektroinstrument/dreli',
+          parentId: 'power',
+        },
+      ],
+      { 'instrument/dreli': 'drills' },
+    );
+
+    const leaf = await service.upsertBranch(['Инструмент', 'Дрели']);
+
+    expect(leaf?.id).toBe('drills');
+    // Only the supplier root «Инструмент» is new; the moved leaf stays put.
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(update).not.toHaveBeenCalled();
   });
 });

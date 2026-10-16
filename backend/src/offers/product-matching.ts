@@ -161,6 +161,8 @@ export function compareProducts(
   return null;
 }
 
-export function isAutoMergeable(candidate: MatchCandidate): boolean {
+export function isAutoMergeable(
+  candidate: Pick<MatchCandidate, 'confidence'>,
+): boolean {
   return candidate.confidence === 'exact' || candidate.confidence === 'strong';
 }

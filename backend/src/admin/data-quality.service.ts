@@ -89,19 +89,18 @@ export class DataQualityService {
         }),
         sampleProducts(this.prisma, SAMPLE_LIMIT, PUBLISHED, stale),
       ]),
+      // Three narrow columns per product. The nested offers+source join used
+      // to come along for all ~52k rows on every request, only to label the
+      // handful of duplicates shown — it is fetched for those alone below.
       this.prisma.product.findMany({
         where: published,
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          brandId: true,
-          sourceProducts: { select: { source: { select: { name: true } } } },
-        },
+        select: { id: true, name: true, slug: true, brandId: true },
       }),
     ]);
 
-    const duplicates = this.findDuplicateGroups(allForNameChecks);
+    const duplicates = await this.withSources(
+      this.findDuplicateGroups(allForNameChecks),
+    );
     const allCaps = allForNameChecks.filter((product) =>
       this.isShoutyName(product.name),
     );
@@ -145,7 +144,6 @@ export class DataQualityService {
       name: string;
       slug: string;
       brandId: string | null;
-      sourceProducts: Array<{ source: { name: string } }>;
     }>,
   ): DuplicateGroup[] {
     const groups = new Map<string, DuplicateGroup['products']>();
@@ -158,9 +156,7 @@ export class DataQualityService {
         id: product.id,
         name: product.name,
         slug: product.slug,
-        sources: [
-          ...new Set(product.sourceProducts.map((item) => item.source.name)),
-        ],
+        sources: [],
       });
       groups.set(key, list);
     }
@@ -169,6 +165,30 @@ export class DataQualityService {
       .filter(([, list]) => list.length > 1)
       .map(([key, list]) => ({ key: key.split('::')[1], products: list }))
       .sort((a, b) => b.products.length - a.products.length);
+  }
+
+  /** Fills in supplier names for the groups the report actually shows. */
+  private async withSources(groups: DuplicateGroup[]) {
+    const shown = groups.slice(0, SAMPLE_LIMIT);
+    const ids = shown.flatMap((group) => group.products.map((p) => p.id));
+    if (!ids.length) return groups;
+    const offers = await this.prisma.sourceProduct.findMany({
+      where: { productId: { in: ids } },
+      select: { productId: true, source: { select: { name: true } } },
+    });
+    const byProduct = new Map<string, Set<string>>();
+    for (const offer of offers) {
+      if (!offer.productId) continue;
+      const names = byProduct.get(offer.productId) ?? new Set<string>();
+      names.add(offer.source.name);
+      byProduct.set(offer.productId, names);
+    }
+    for (const group of shown) {
+      for (const product of group.products) {
+        product.sources = [...(byProduct.get(product.id) ?? [])];
+      }
+    }
+    return groups;
   }
 
   /** Supplier names that are all caps read badly on the storefront. */

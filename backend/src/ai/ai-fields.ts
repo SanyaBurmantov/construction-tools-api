@@ -1,3 +1,7 @@
+import {
+  sanitizeSupplierText,
+  sanitizeSupplierTitle,
+} from '../parser/supplier-text';
 import { AiEntity } from '@prisma/client';
 
 /**
@@ -210,6 +214,15 @@ export function cleanValue(
   if (field.key !== 'descriptionFull' && field.key !== 'description') {
     text = text.replace(/\s+/g, ' ');
   }
+  // The prompt carries supplier text, and a model happily copies its sales
+  // boilerplate — a competitor's phone, «купить в Минске». The parse-side
+  // cleaner never sees AI output, and the field is then locked against the
+  // re-parse, so the same filter runs here.
+  text = (
+    field.key === 'seoTitle' || field.key === 'name'
+      ? sanitizeSupplierTitle(text)
+      : sanitizeSupplierText(text)
+  ).trim();
   if (!text) return undefined;
   if (text.length > field.maxLength) {
     const cut = text.slice(0, field.maxLength);
