@@ -173,7 +173,9 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `PARSER_SKIPPED_RECHECK_DAYS` (7), so a relisted product or a loosened
   category filter comes back without anyone pressing a button, requeues
   `FAILED` rows with `attempts < PARSER_MAX_ATTEMPTS` older than
-  `PARSER_RETRY_AFTER_MINUTES`, parks a `PENDING` row that used up its
+  `PARSER_RETRY_AFTER_MINUTES`, gives the ones that used up their attempts a fresh
+  budget after `PARSER_FAILED_RECHECK_DAYS` (3) — an 11-day th-tool.by outage
+  left 16k URLs FAILED for good otherwise — except a row that crashed the process, parks a `PENDING` row that used up its
   attempts without ever finishing (the URL that OOMs the process), and alerts
   Telegram once per breakage. **Everything runs on its own** — the monthly
   `revalidate` cron stays on purpose (it keeps `visitedAt`, so the re-read is
