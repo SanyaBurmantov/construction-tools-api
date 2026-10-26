@@ -2,7 +2,10 @@ import { ParserJobsService } from './parser-jobs.service';
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
 import { ParserSettingsService } from './parser-settings.service';
 
-function createService(run: () => Promise<unknown>) {
+function createService(
+  run: () => Promise<unknown>,
+  processRun: () => Promise<unknown> = run,
+) {
   const started: string[] = [];
   const finished: string[] = [];
 
@@ -25,7 +28,11 @@ function createService(run: () => Promise<unknown>) {
     getBatchLimit: jest.fn(() => Promise.resolve(30)),
   } as unknown as ParserSettingsService;
 
-  const toolsBy = { refreshSitemaps: run, processSitemapsBatch: run };
+  const toolsBy = {
+    refreshSitemaps: run,
+    processSitemapsBatch: processRun,
+    revalidateAllSitemaps: run,
+  };
   const service = new ParserJobsService(
     runtimeStatus,
     settings,
@@ -87,6 +94,96 @@ describe('ParserJobsService', () => {
 
     expect(finished).toEqual(['ok:tools-by-refresh']);
     expect(service.isRunning('tools-by-refresh')).toBe(false);
+  });
+
+  it('queues a daily refresh instead of skipping it when a batch holds the source', async () => {
+    let releaseProcess: () => void = () => {};
+    const processBlocked = new Promise<void>((resolve) => {
+      releaseProcess = resolve;
+    });
+    const refreshRun = jest.fn(() => Promise.resolve('crawled'));
+    const { service, started, finished } = createService(
+      refreshRun,
+      () => processBlocked,
+    );
+
+    service.start('tools-by', 'process');
+    expect(service.isRunning('tools-by-process')).toBe(true);
+
+    expect(
+      service.runFromCron('tools-by', 'refresh', { waitForLock: true }),
+    ).toEqual({ started: true, key: 'tools-by-refresh' });
+    expect(refreshRun).not.toHaveBeenCalled();
+    expect(started).toEqual(['tools-by-process']);
+
+    // A second cron tick while the first refresh is waiting must not queue it
+    // twice or start a parallel crawl.
+    expect(
+      service.runFromCron('tools-by', 'refresh', { waitForLock: true }),
+    ).toEqual({
+      started: false,
+      key: 'tools-by-refresh',
+      reason: 'already-running',
+    });
+
+    releaseProcess();
+    await flush();
+    await flush();
+
+    expect(refreshRun).toHaveBeenCalledTimes(1);
+    expect(finished).toEqual(['ok:tools-by-process', 'ok:tools-by-refresh']);
+  });
+
+  it('frees a queued refresh when the blocking batch fails', async () => {
+    let rejectProcess: (error: Error) => void = () => {};
+    const processBlocked = new Promise<void>((_, reject) => {
+      rejectProcess = reject;
+    });
+    const refreshRun = jest.fn(() => Promise.resolve('crawled'));
+    const { service, finished } = createService(
+      refreshRun,
+      () => processBlocked,
+    );
+
+    service.start('tools-by', 'process');
+    service.runFromCron('tools-by', 'refresh', { waitForLock: true });
+
+    rejectProcess(new Error('supplier down'));
+    await flush();
+    await flush();
+
+    expect(refreshRun).toHaveBeenCalledTimes(1);
+    expect(finished).toEqual(['fail:tools-by-process', 'ok:tools-by-refresh']);
+  });
+
+  // Two queued jobs of one source must run one after the other. Each used to
+  // count the other as busy, so both waited forever and, being pending, kept
+  // every later slot of the source skipped until a restart.
+  it('runs two queued jobs of one source in order instead of deadlocking', async () => {
+    let releaseProcess: () => void = () => {};
+    const processBlocked = new Promise<void>((resolve) => {
+      releaseProcess = resolve;
+    });
+    const { service, finished } = createService(
+      () => Promise.resolve('done'),
+      () => processBlocked,
+    );
+
+    service.start('tools-by', 'process');
+    service.runFromCron('tools-by', 'refresh', { waitForLock: true });
+    service.runFromCron('tools-by', 'revalidate', { waitForLock: true });
+    expect(service.isWaiting('tools-by-refresh')).toBe(true);
+    expect(service.isWaiting('tools-by-revalidate')).toBe(true);
+
+    releaseProcess();
+    for (let i = 0; i < 5; i++) await flush();
+
+    expect(finished).toEqual([
+      'ok:tools-by-process',
+      'ok:tools-by-refresh',
+      'ok:tools-by-revalidate',
+    ]);
+    expect(service.isWaiting('tools-by-revalidate')).toBe(false);
   });
 
   it('records a failure and still frees the lock', async () => {

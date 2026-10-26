@@ -1,8 +1,13 @@
 import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import * as cheerio from 'cheerio';
-import { SupplierInfo, SupplierQueueParser } from '../supplier-queue-parser';
+import {
+  CatalogCrawlEntry,
+  MAX_CATALOG_PAGE_FAILURES,
+  MAX_CONSECUTIVE_CATALOG_FAILURES,
+  SupplierInfo,
+  SupplierQueueParser,
+} from '../supplier-queue-parser';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
@@ -25,29 +30,19 @@ type CatalogSnapshot = {
   memo: { name: string };
 };
 type CatalogSession = { csrfToken: string; cookies: Map<string, string> };
-type CatalogPage = {
-  url: string;
+type CatalogPage = CatalogCrawlEntry & {
   snapshot?: string;
   session?: CatalogSession;
-  /** Failed fetches of this entry; it is dropped after a few (see below). */
-  failures?: number;
 };
 type SavedCatalogPage = Omit<CatalogPage, 'session'> & {
   session?: { csrfToken: string; cookies: [string, string][] };
 };
-type CatalogCrawlState = {
+type SavedCatalogCrawlState = {
   visitedPages: string[];
   pageQueue: SavedCatalogPage[];
 };
 
 const SOURCE_CODE = 'tools-by';
-/** Attempts at one catalogue page before the crawl gives up on it. */
-const MAX_PAGE_FAILURES = 3;
-/**
- * Failures in a row, across different pages, after which the site is taken to
- * be down: the crawl stops (resumably) instead of burning every entry's budget.
- */
-const MAX_CONSECUTIVE_FAILURES = 5;
 /**
  * Pages between crawl-state checkpoints.
  *
@@ -116,10 +111,7 @@ export class ToolsByParserService extends SupplierQueueParser {
   async discoverCatalogUrls() {
     const maxPages = await this.settings.getMaxPages(SOURCE_CODE);
     const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
-    const saved = await this.prisma.parserCatalogCrawl.findUnique({
-      where: { sourceCode: SOURCE_CODE },
-    });
-    const state = saved?.state as CatalogCrawlState | undefined;
+    const state = await this.loadCatalogCrawlState<SavedCatalogCrawlState>();
     const visitedPages = new Set<string>(state?.visitedPages ?? []);
     const pageQueue: CatalogPage[] = state
       ? state.pageQueue.map((entry) => ({
@@ -250,7 +242,7 @@ export class ToolsByParserService extends SupplierQueueParser {
             (error.status === 404 || error.status === 410);
           entry.failures = (entry.failures ?? 0) + 1;
           pageQueue.shift();
-          if (gone || entry.failures >= MAX_PAGE_FAILURES) {
+          if (gone || entry.failures >= MAX_CATALOG_PAGE_FAILURES) {
             visitedPages.add(entry.url);
             this.logger.warn(
               `Catalog page dropped after ${entry.failures} failure(s): ${entry.url} — ${error instanceof Error ? error.message : String(error)}`,
@@ -259,7 +251,8 @@ export class ToolsByParserService extends SupplierQueueParser {
             failedThisRun.add(entry);
             pageQueue.push(entry);
           }
-          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) throw error;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_CATALOG_FAILURES)
+            throw error;
         }
         await checkpoint();
         await this.sleep(delayMs);
@@ -294,18 +287,11 @@ export class ToolsByParserService extends SupplierQueueParser {
     };
   }
 
-  private async saveCatalogCrawl(
+  private saveCatalogCrawl(
     visitedPages: Set<string>,
     pageQueue: CatalogPage[],
   ) {
-    if (!pageQueue.length) {
-      // A completed crawl starts a fresh catalog pass next time.
-      await this.prisma.parserCatalogCrawl.deleteMany({
-        where: { sourceCode: SOURCE_CODE },
-      });
-      return;
-    }
-    const state: CatalogCrawlState = {
+    return this.saveCatalogCrawlState<SavedCatalogCrawlState>({
       visitedPages: [...visitedPages],
       pageQueue: pageQueue.map((entry) => ({
         ...entry,
@@ -316,14 +302,6 @@ export class ToolsByParserService extends SupplierQueueParser {
             }
           : undefined,
       })),
-    };
-    const data = {
-      state: JSON.parse(JSON.stringify(state)) as Prisma.InputJsonValue,
-    };
-    await this.prisma.parserCatalogCrawl.upsert({
-      where: { sourceCode: SOURCE_CODE },
-      create: { sourceCode: SOURCE_CODE, ...data },
-      update: data,
     });
   }
 

@@ -1,6 +1,31 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import { fileURLToPath } from 'node:url'
 
+/**
+ * Яндекс.Метрика. Только в production-сборке: `npm run dev` иначе писал бы
+ * localhost-визиты в боевой счётчик. Счётчик сам отслеживает переходы через
+ * History API, так что SPA-навигация считается без ручных `ym('hit')`.
+ * Хосты, которые он грузит и куда шлёт данные, открыты в CSP (deploy/Caddyfile).
+ */
+const YANDEX_METRIKA_ID = 113800110
+const isProdBuild = process.env.NODE_ENV === 'production'
+const metrikaHead = isProdBuild
+  ? {
+      script: [
+        {
+          key: 'yandex-metrika',
+          innerHTML: `(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href,accurateTrackBounce:true,trackLinks:true});`,
+        },
+      ],
+      noscript: [
+        {
+          key: 'yandex-metrika-noscript',
+          innerHTML: `<div><img src="https://mc.yandex.ru/watch/${YANDEX_METRIKA_ID}" style="position:absolute; left:-9999px;" alt="" /></div>`,
+        },
+      ],
+    }
+  : {}
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: process.env.NODE_ENV !== 'production' },
@@ -56,6 +81,7 @@ export default defineNuxtConfig({
         { property: 'og:locale', content: 'ru_RU' },
         { name: 'twitter:image', content: '/og-image.png' },
       ],
+      ...metrikaHead,
     },
   },
   routeRules: {

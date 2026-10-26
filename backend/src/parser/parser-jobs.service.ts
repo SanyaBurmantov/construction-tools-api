@@ -23,6 +23,16 @@ export type JobRunResult =
   | { started: true; key: string }
   | { started: false; key: string; reason: 'already-running' | 'unknown-job' };
 
+export type CronRunOptions = {
+  /**
+   * Wait for the source's current job to finish instead of skipping the slot.
+   * Used by the daily catalogue crawls: a 300-product batch starts at :50 and
+   * can still be running at :00, which used to make every daily refresh a
+   * no-op (`start()` answered `already-running`).
+   */
+  waitForLock?: boolean;
+};
+
 /**
  * One place that knows how to start a parser job, whether the trigger is a cron
  * or an admin pressing a button.
@@ -37,6 +47,10 @@ export type JobRunResult =
 export class ParserJobsService {
   private readonly logger = new Logger(ParserJobsService.name);
   private readonly running = new Set<string>();
+  /** Cron jobs waiting for the source lock; they count as busy for later slots. */
+  private readonly pending = new Set<string>();
+  /** Wake-ups keyed by source code, resolved whenever one of its jobs ends. */
+  private readonly waiters = new Map<string, Array<() => void>>();
 
   constructor(
     private readonly runtimeStatus: ParserRuntimeStatusService,
@@ -129,8 +143,9 @@ export class ParserJobsService {
         return [
           {
             name: 'refresh',
-            label: 'Загрузить sitemap',
-            description: 'Sitemap плюс обход всех разделов каталога.',
+            label: 'Обойти каталог и бренды',
+            description:
+              'Sitemap поставщика устарел: новые товары находятся обходом дерева каталога и страниц брендов (по 15 товаров на страницу). Обход возобновляется с места остановки.',
             run: () => this.dukon.refreshSitemaps(),
           },
           {
@@ -179,17 +194,63 @@ export class ParserJobsService {
     return this.running.has(key);
   }
 
+  /** A cron job queued behind the source lock (see `startWhenFree`). */
+  isWaiting(key: string) {
+    return this.pending.has(key);
+  }
+
   /**
    * The job of this source that is running now, if any. Jobs of one source
    * share one lock: «concurrency 1 per supplier» is the politeness rule, and
    * th-tools' category crawl (:05) used to hit the shop at the same time as
    * a product batch (:00/:30) that ran long.
    */
-  private busyKey(code: string): string | undefined {
+  private busyKey(code: string, ignoreKey?: string): string | undefined {
     for (const key of this.running) {
-      if (key.startsWith(`${code}-`)) return key;
+      if (key !== ignoreKey && key.startsWith(`${code}-`)) return key;
+    }
+    for (const key of this.pending) {
+      if (key !== ignoreKey && key.startsWith(`${code}-`)) return key;
     }
     return undefined;
+  }
+
+  /**
+   * Whether a queued job may take the source now: nothing of the source is
+   * running and no job queued before it is still waiting. Checking `busyKey`
+   * here instead would make two queued jobs of one source wait for each other
+   * forever — and, being pending, block every later slot of that source too.
+   * `pending` is a Set, so iteration order is queue order.
+   */
+  private isTurnOf(code: string, key: string) {
+    for (const running of this.running) {
+      if (running.startsWith(`${code}-`)) return false;
+    }
+    for (const queued of this.pending) {
+      if (queued === key) return true;
+      if (queued.startsWith(`${code}-`)) return false;
+    }
+    return true;
+  }
+
+  /** A finished job may be what the queued refresh was waiting for. */
+  private notifySourceFree(code: string) {
+    const waiters = this.waiters.get(code);
+    if (!waiters) return;
+    this.waiters.delete(code);
+    for (const wake of waiters) wake();
+  }
+
+  private begin(code: string, key: string, job: ParserJob) {
+    this.running.add(key);
+    // Deliberately not awaited. The catch is mandatory: an unhandled rejection
+    // here would take the whole process down.
+    void this.execute(code, key, job).catch((error) => {
+      this.logger.error(
+        `${key} crashed outside its own error handling`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    });
   }
 
   /**
@@ -221,6 +282,7 @@ export class ParserJobsService {
       throw error;
     } finally {
       this.running.delete(key);
+      this.notifySourceFree(code);
     }
   }
 
@@ -241,20 +303,61 @@ export class ParserJobsService {
       return { started: false, key: busy, reason: 'already-running' };
     }
 
-    this.running.add(key);
-    // Deliberately not awaited. The catch is mandatory: an unhandled rejection
-    // here would take the whole process down.
-    void this.execute(key, job).catch((error) => {
-      this.logger.error(
-        `${key} crashed outside its own error handling`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    });
-
+    this.begin(code, key, job);
     return { started: true, key };
   }
 
-  private async execute(key: string, job: ParserJob) {
+  /**
+   * Starts a cron job, optionally waiting for the source instead of skipping.
+   *
+   * The pending entry counts as busy immediately, so the next process slot
+   * cannot start while the refresh is waiting — otherwise the batch could take
+   * the lock again and the refresh would wait another 30 minutes.
+   */
+  private startWhenFree(code: string, jobName: string): JobRunResult {
+    const key = `${code}-${jobName}`;
+    const job = this.jobsFor(code).find((item) => item.name === jobName);
+
+    if (!job || !getParserSource(code)) {
+      return { started: false, key, reason: 'unknown-job' };
+    }
+    if (this.running.has(key) || this.pending.has(key)) {
+      return { started: false, key, reason: 'already-running' };
+    }
+    const busy = this.busyKey(code);
+    if (!busy) return this.start(code, jobName);
+
+    this.pending.add(key);
+    this.logger.log(`${key}: waiting for ${busy} to finish`);
+    void this.waitThenRun(code, key, job);
+    return { started: true, key };
+  }
+
+  private async waitThenRun(code: string, key: string, job: ParserJob) {
+    try {
+      while (!this.isTurnOf(code, key)) {
+        await new Promise<void>((resolve) => {
+          const waiters = this.waiters.get(code) ?? [];
+          waiters.push(resolve);
+          this.waiters.set(code, waiters);
+        });
+      }
+    } catch (error) {
+      this.pending.delete(key);
+      this.logger.error(
+        `${key} crashed while waiting for the source lock`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return;
+    }
+
+    // No await between the re-check and `begin`, so no cron slot can steal the
+    // source between the waiter waking up and the refresh taking the lock.
+    this.pending.delete(key);
+    this.begin(code, key, job);
+  }
+
+  private async execute(code: string, key: string, job: ParserJob) {
     try {
       // Inside the try: a DB blip here used to skip the `finally`, leaving the
       // key in `running` and the job answering "already-running" on every slot
@@ -270,6 +373,7 @@ export class ParserJobsService {
       );
     } finally {
       this.running.delete(key);
+      this.notifySourceFree(code);
     }
   }
 
@@ -277,7 +381,8 @@ export class ParserJobsService {
    * Cron entry point. Same guard, so a scheduled run and a button press can
    * never process the same queue at the same time.
    */
-  runFromCron(code: string, jobName: string) {
+  runFromCron(code: string, jobName: string, options: CronRunOptions = {}) {
+    if (options.waitForLock) return this.startWhenFree(code, jobName);
     const result = this.start(code, jobName);
     if (!result.started && result.reason === 'already-running') {
       // Visible on purpose: a slot skipped every time is the first sign that

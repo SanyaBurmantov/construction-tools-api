@@ -22,7 +22,9 @@ export class DukonCron {
   @Cron('0 0 6 * * *')
   async refreshSitemap() {
     if (!(await this.settings.isSourceCronEnabled(SOURCE_CODE))) return;
-    this.jobs.runFromCron(SOURCE_CODE, 'refresh');
+    // The :50 process batch can still be running at :00. Skipping the daily
+    // crawl meant discovery never ran; wait for the batch instead.
+    this.jobs.runFromCron(SOURCE_CODE, 'refresh', { waitForLock: true });
   }
 
   @Cron('0 0 12 1 * *')

@@ -99,6 +99,124 @@ describe('dukon.parse helpers', () => {
     ]);
   });
 
+  it('parses brand-page cards and PAGEN_2 pagination', () => {
+    const brand = cheerio.load(`
+      <div class="js-element" data-detail="/catalog/telezhki/one/"></div>
+      <div class="js-element" data-detail="/catalog/telezhki/two/"></div>
+      <div class="ajaxpages">
+        <a data-navpagecount="4"></a>
+      </div>
+      <div id="paginator">
+        <a href="/brands/nordberg/?PAGEN_2=2">2</a>
+      </div>
+    `);
+
+    expect(parser.parseCatalogProductUrls(brand)).toEqual([
+      'https://dukon.by/catalog/telezhki/one/',
+      'https://dukon.by/catalog/telezhki/two/',
+    ]);
+    expect(
+      parser.parseCatalogPaginationUrls(
+        brand,
+        'https://dukon.by/brands/nordberg/',
+      ),
+    ).toEqual([
+      'https://dukon.by/brands/nordberg/?PAGEN_2=2',
+      'https://dukon.by/brands/nordberg/?PAGEN_2=3',
+      'https://dukon.by/brands/nordberg/?PAGEN_2=4',
+    ]);
+  });
+
+  it('parses the brand index and its pagination count', () => {
+    const index = cheerio.load(`
+      <div class="js-element" data-detail="/brands/nordberg/"></div>
+      <a href="/brands/other-brand/">Other</a>
+      <a href="/brands/?PAGEN_2=2">2</a>
+      <div id="paginator">
+        <font class="text">1 - 20 из 141</font>
+      </div>
+    `);
+
+    expect(parser.parseBrandLinks(index)).toEqual([
+      'https://dukon.by/brands/nordberg/',
+      'https://dukon.by/brands/other-brand/',
+    ]);
+    expect(
+      parser.parseCatalogPaginationUrls(index, 'https://dukon.by/brands/'),
+    ).toEqual([
+      'https://dukon.by/brands/?PAGEN_2=2',
+      'https://dukon.by/brands/?PAGEN_2=3',
+      'https://dukon.by/brands/?PAGEN_2=4',
+      'https://dukon.by/brands/?PAGEN_2=5',
+      'https://dukon.by/brands/?PAGEN_2=6',
+      'https://dukon.by/brands/?PAGEN_2=7',
+      'https://dukon.by/brands/?PAGEN_2=8',
+    ]);
+  });
+
+  it('ignores offsite brand and pagination links', () => {
+    const page = cheerio.load(`
+      <a href="https://evil.example/brands/nordberg/">Nordberg</a>
+      <div data-detail="https://evil.example/brands/other/"></div>
+      <a href="https://evil.example/brands/nordberg/?PAGEN_2=2">2</a>
+      <div id="paginator">
+        <a href="https://evil.example/brands/?PAGEN_2=9">9</a>
+      </div>
+    `);
+
+    expect(parser.parseBrandLinks(page)).toEqual([]);
+    expect(
+      parser.parseCatalogPaginationUrls(page, 'https://dukon.by/brands/'),
+    ).toEqual([]);
+    expect(parser.parseCatalogProductUrls(page)).toEqual([]);
+    expect(
+      parser.parsePaginationParam(
+        cheerio.load(`
+          <div id="paginator">
+            <a href="https://evil.example/catalog/x/?PAGEN_2=9">9</a>
+          </div>
+        `),
+        'https://dukon.by/catalog/x/',
+      ),
+    ).toBe('PAGEN_1');
+  });
+
+  it('does not treat PAGEN_2 pagination links as categories', () => {
+    const page = cheerio.load(`
+      <a class="psection" href="/catalog/instrumenty/?PAGEN_2=3">3</a>
+      <a class="psection" href="/catalog/instrumenty/">Инструменты</a>
+    `);
+
+    expect(parser.hasPagination('https://dukon.by/catalog/x/?PAGEN_2=3')).toBe(
+      true,
+    );
+    expect(
+      parser.parseCatalogCategoryUrls(page, 'https://dukon.by/catalog/'),
+    ).toEqual(['https://dukon.by/catalog/instrumenty/']);
+  });
+
+  it('does not regenerate every page number on a paginated page', () => {
+    const page = cheerio.load(`
+      <div class="ajaxpages"><a data-navpagecount="100"></a></div>
+      <div id="paginator">
+        <a href="/catalog/x/?PAGEN_1=1">1</a>
+        <a href="/catalog/x/?PAGEN_1=3">3</a>
+        <a href="/catalog/x/?PAGEN_1=100">100</a>
+      </div>
+    `);
+
+    expect(
+      parser.parseCatalogPaginationUrls(
+        page,
+        'https://dukon.by/catalog/x/?PAGEN_1=2',
+      ),
+    ).toEqual([
+      'https://dukon.by/catalog/x/?PAGEN_1=1',
+      'https://dukon.by/catalog/x/?PAGEN_1=3',
+      'https://dukon.by/catalog/x/?PAGEN_1=100',
+    ]);
+  });
+
   describe('brand', () => {
     const spec = (name: string, value: string) => ({ name, value });
     const empty = cheerio.load('<html></html>');

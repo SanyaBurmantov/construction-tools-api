@@ -149,6 +149,8 @@ export class ParserAdminController {
         label: job.label,
         description: job.description,
         isRunning: this.jobs.isRunning(key) || (status?.isRunning ?? false),
+        // Queued behind the source lock: not started, but not idle either.
+        isWaiting: this.jobs.isWaiting(key),
         health: status?.health ?? null,
         lastSuccessAt: status?.lastSuccessAt ?? null,
         lastError: status?.lastError ?? null,

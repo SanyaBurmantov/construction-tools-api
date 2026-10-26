@@ -29,6 +29,23 @@ export type SupplierInfo = {
   baseUrl: string;
 };
 
+/** One listing page in a resumable catalogue crawl. */
+export type CatalogCrawlEntry = { url: string; failures?: number };
+
+export type CatalogCrawlState = {
+  visitedPages: string[];
+  pageQueue: unknown[];
+};
+
+/** Attempts at one catalogue page before the crawl gives up on it. */
+export const MAX_CATALOG_PAGE_FAILURES = 3;
+
+/**
+ * Failures in a row, across different pages, after which the site is taken to
+ * be down: the crawl stops (resumably) instead of burning every entry's budget.
+ */
+export const MAX_CONSECUTIVE_CATALOG_FAILURES = 5;
+
 /**
  * Everything a supplier parser does with its URL queue, written once.
  *
@@ -251,6 +268,39 @@ export abstract class SupplierQueueParser {
     return this.queue.updateMany({
       where: { url },
       data: { isVisited: true, status, lastError, visitedAt: new Date() },
+    });
+  }
+
+  /* ----------------------------------------------- catalog crawl state ---- */
+
+  /**
+   * The resumable catalogue crawl lives in one JSON row per source. Both
+   * catalog-crawling parsers (dukon, tools.by) read and write it through these
+   * two methods so the storage format and the "empty queue clears the row"
+   * rule cannot drift apart.
+   */
+  protected async loadCatalogCrawlState<T>(): Promise<T | undefined> {
+    const saved = await this.prisma.parserCatalogCrawl.findUnique({
+      where: { sourceCode: this.supplier.code },
+    });
+    return (saved?.state as T | undefined) ?? undefined;
+  }
+
+  protected async saveCatalogCrawlState<T extends CatalogCrawlState>(
+    state: T,
+  ): Promise<void> {
+    if (!state.pageQueue.length) {
+      // A completed crawl starts a fresh pass next time.
+      await this.prisma.parserCatalogCrawl.deleteMany({
+        where: { sourceCode: this.supplier.code },
+      });
+      return;
+    }
+    const data = { state: this.toJson(state) };
+    await this.prisma.parserCatalogCrawl.upsert({
+      where: { sourceCode: this.supplier.code },
+      create: { sourceCode: this.supplier.code, ...data },
+      update: data,
     });
   }
 

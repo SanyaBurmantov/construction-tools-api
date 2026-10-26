@@ -88,6 +88,14 @@ export const PARSER_SOURCES = [
     envMaxPages: 'DUKON_DISCOVERY_MAX_PAGES',
     defaultRequestDelayMs: 3000,
     defaultMaxPages: 5000,
+    /**
+     * The catalogue is ~100k products across ~10k listing pages, so the old
+     * default of 30 every half hour (1440/day) meant a first import took
+     * months — and a brand with 200 pages showed a handful of products while
+     * the queue was still crawling through the alphabet. 300 at a 3 s
+     * politeness delay is ~17 min per batch and fits two slots an hour.
+     */
+    defaultBatchLimit: 300,
     hasCategoryQueue: false,
     defaultEnabled: true,
   },

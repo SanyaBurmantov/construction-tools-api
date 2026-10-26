@@ -183,7 +183,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   LOCKED` with `lastTriedAt` as a 60-minute lease), so two workers never parse
   the same offer; and all jobs of one source share one lock in
   `ParserJobsService` (concurrency 1 per supplier), including the synchronous
-  `/admin/queue/*` buttons (`runExclusive`). The old mutating GET triggers
+  `/admin/queue/*` buttons (`runExclusive`). The daily crawls are started with
+  `runFromCron(…, { waitForLock: true })`: they queue behind a running batch
+  instead of skipping the slot, queued jobs of one source run in arrival order
+  (`isTurnOf`), and `/admin/parsing` shows a queued one as «Ждёт окончания батча». The daily `refresh` crons pass
+  `waitForLock`, so a 300-product batch that is still running at 06:00 queues
+  the catalogue crawl behind it instead of skipping it — otherwise discovery
+  never ran, because the watchdog keeps the queue non-empty. Other cron slots
+  still skip a busy source on purpose. The old mutating GET triggers
   (`/products-from-sitemap-initial`, `/sitemap-initial`) are gone. A run left
   `RUNNING` by a killed process is marked failed at boot, and a run `RUNNING`
   for over 6 h is reported `ERROR`. `fetchWithTimeout` reads the **body**
@@ -796,6 +803,20 @@ it are cleaned by `ProductTextCleanupService` a minute after boot (idempotent;
 `PRODUCT_TEXT_CLEANUP_ON_BOOT=false` to skip, `POST /admin/parser/clean-product-texts`
 to re-run) — the same tested function rather than a SQL copy of it.
 
+**dukon.by specifics.** Its sitemap is stale (286 URLs; brand Nordberg showed
+29 products against ~3k), so discovery is the catalog crawl: `/brands/` (141
+brands over 8 `PAGEN_2` pages, 15 products per brand page) and `/catalog/`
+(667 categories, 24 cards per `PAGEN_1` page). Brand cards are
+`js-element[data-detail]`, not `.prod-list__item`. The crawl is resumable
+(`ParserCatalogCrawl`, shared load/save in `SupplierQueueParser`) because a
+full pass is ~10k pages and `DUKON_DISCOVERY_MAX_PAGES` (5000) cannot hold one;
+brand pages are discovered first so a resumed pass keeps finding new products.
+A page that fails transiently is deferred with an attempt count and dropped
+after 3 (`MAX_CATALOG_PAGE_FAILURES`), and the run still reports ERROR rather
+than SUCCESS when anything was deferred or dropped. `dukon.parse.ts` filters
+off-site `/brands/` and paginator links, and `PAGEN_2` is pagination, not a
+category.
+
 **Which sources are real.** `th-tool.by`, `dukon.by` and `tools.by` are actual
 suppliers.
 **`7745.by` is not** — it was a sample site from the client and survives only as
@@ -823,7 +844,10 @@ supplier also carries car accessories, bikes, garden and toiletries;
 - Match the surrounding NestJS style: `@Injectable()` services, constructor DI,
   Prisma via `PrismaService`. Pure HTML→data functions are kept separate from the
   DB-writing service and unit-tested against fixtures in `sites/fixtures/`.
-- Keep parser HTTP polite: real user-agent, request delay, batch ≤ 30, concurrency 1.
+- Keep parser HTTP polite: real user-agent, request delay, concurrency 1. Batch
+  size is per source (`cron.<code>.batchLimit`): dukon and th-tools use 300, but
+  a batch is just how long a run lasts — the 3 s delay and one request at a time
+  are what keep the rate polite.
 - Slugs via `common/utils/generate-slug.ts`; bounded concurrency via
   `common/utils/run-with-concurrency.ts`.
 
