@@ -29,6 +29,9 @@ www.{$DOMAIN} {
   # так что внедрённый скрипт не может ни отправить токен наружу, ни
   # подгрузить чужой код. img-src открыт на https: — фото товаров и баннеры
   # приходят с доменов поставщиков.
+  # Единственное исключение — Яндекс.Метрика (nuxt.config.ts): её скрипт,
+  # отправка хитов/вебвизора (connect, в т.ч. wss) и фрейм карты кликов
+  # открыты на домены Метрики, и только на них.
   header {
     Strict-Transport-Security "max-age=31536000; includeSubDomains"
     X-Content-Type-Options "nosniff"
@@ -36,7 +39,7 @@ www.{$DOMAIN} {
     Referrer-Policy "strict-origin-when-cross-origin"
     Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
     Cross-Origin-Opener-Policy "same-origin"
-    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com https://yastatic.net; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com wss://mc.yandex.ru wss://mc.yandex.by wss://mc.yandex.com https://mc.webvisor.org https://mc.webvisor.com; frame-src 'self' blob: https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     -X-Powered-By
     -Server
   }
