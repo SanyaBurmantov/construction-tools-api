@@ -29,6 +29,26 @@ describe('Supplier snapshots refresh', () => {
       ([arg]) => arg.where.status === 'PENDING' && arg.data.status === 'FAILED',
     )![0];
     expect(parked.where).toMatchObject({ attempts: { gte: 3 } });
+    // An outage burns every URL's attempts; they get a fresh budget after a
+    // few days — except a URL that crashed the process.
+    const revive = calls.find(
+      ([arg]) =>
+        arg.where.status === 'FAILED' &&
+        (arg.where as { attempts?: { gte?: number } }).attempts?.gte === 3,
+    )![0];
+    expect(revive.where).toMatchObject({
+      lastTriedAt: { lt: expect.any(Date) as Date },
+      OR: [
+        { lastError: null },
+        {
+          lastError: {
+            not: expect.stringContaining('ни разу не завершился') as string,
+          },
+        },
+      ],
+    });
+    expect(revive.data).toMatchObject({ status: 'PENDING', attempts: 0 });
+    expect(result.revived['th-tools']).toBe(2);
     const refresh = calls.find(([arg]) => arg.where.status === 'DONE')![0];
     expect(refresh.where).toMatchObject({
       visitedAt: { lt: expect.any(Date) as Date },

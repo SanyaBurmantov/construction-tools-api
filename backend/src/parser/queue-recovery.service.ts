@@ -31,13 +31,26 @@ function recoverySettings() {
      * means the problem is the page or the parser.
      */
     maxAttempts: envNumber('PARSER_MAX_ATTEMPTS', 3),
+    /**
+     * FAILED rows that used up their attempts get a fresh budget after this
+     * long. Three failed runs usually mean a bad page — but th-tool.by was
+     * unreachable for eleven days (Oct 2026) and 16k URLs burned all three
+     * attempts on "fetch failed"; without this they stayed dead for good.
+     */
+    failedRecheckDays: envNumber('PARSER_FAILED_RECHECK_DAYS', 3),
   };
 }
+
+/** Set on a URL that crashed the process; such a row is never retried. */
+const NEVER_FINISHED_ERROR =
+  'Разбор этого URL ни разу не завершился (процесс падал или зависал)';
 
 /**
  * Keeps every supplier queue moving without anyone pressing a button:
  *
- * - FAILED rows with attempts left are retried after a pause;
+ * - FAILED rows with attempts left are retried after a pause, and the ones
+ *   that used them up get a fresh budget every few days (a supplier outage
+ *   fails every URL; it must not leave them dead once the site is back);
  * - DONE rows older than a day are refreshed (that is what re-reads prices);
  * - SKIPPED rows are re-checked weekly, so a relisted product or a loosened
  *   category filter is picked up automatically;
@@ -61,11 +74,15 @@ export class QueueRecoveryService {
     const skippedCutoff = new Date(
       now - settings.skippedRecheckDays * 86_400_000,
     );
+    const failedCutoff = new Date(
+      now - settings.failedRecheckDays * 86_400_000,
+    );
 
     const results: Record<string, number> = {};
     const refreshed: Record<string, number> = {};
     const rechecked: Record<string, number> = {};
     const parked: Record<string, number> = {};
+    const revived: Record<string, number> = {};
 
     for (const source of PARSER_SOURCES) {
       const table = queueTable(this.prisma, source.code);
@@ -76,8 +93,7 @@ export class QueueRecoveryService {
           where: { status: 'PENDING', attempts: { gte: settings.maxAttempts } },
           data: {
             status: 'FAILED',
-            lastError:
-              'Разбор этого URL ни разу не завершился (процесс падал или зависал)',
+            lastError: NEVER_FINISHED_ERROR,
           },
         })
       ).count;
@@ -94,6 +110,28 @@ export class QueueRecoveryService {
             status: 'PENDING',
             isVisited: false,
             visitedAt: null,
+            lastTriedAt: null,
+          },
+        })
+      ).count;
+
+      // Exhausted rows, except the ones that crashed the process: retrying
+      // those would take the backend down every few days.
+      revived[source.code] = (
+        await table.updateMany({
+          where: {
+            status: 'FAILED',
+            attempts: { gte: settings.maxAttempts },
+            lastTriedAt: { lt: failedCutoff },
+            OR: [
+              { lastError: null },
+              { lastError: { not: NEVER_FINISHED_ERROR } },
+            ],
+          },
+          data: {
+            status: 'PENDING',
+            isVisited: false,
+            attempts: 0,
             lastTriedAt: null,
           },
         })
@@ -156,6 +194,7 @@ export class QueueRecoveryService {
       refreshed,
       rechecked,
       parked,
+      revived,
       categoriesRefreshed: categoriesRefreshed.count,
     };
   }
