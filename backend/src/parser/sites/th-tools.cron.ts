@@ -22,7 +22,9 @@ export class ThToolsCron {
   @Cron('0 40 6 * * *')
   async refreshSitemap() {
     if (!(await this.settings.isSourceCronEnabled(SOURCE_CODE))) return;
-    this.jobs.runFromCron(SOURCE_CODE, 'refresh');
+    // The 06:30 batch can still hold the source at 06:40; wait instead of
+    // skipping the daily sitemap refresh.
+    this.jobs.runFromCron(SOURCE_CODE, 'refresh', { waitForLock: true });
   }
 
   @Cron('0 5 * * * *')

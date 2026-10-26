@@ -279,6 +279,9 @@ function toggleExpanded(code: string) {
 
           <div class="job-state">
             <UiBadge v-if="job.isRunning" tone="info" size="sm">Выполняется</UiBadge>
+            <UiBadge v-else-if="job.isWaiting" tone="neutral" size="sm">
+              Ждёт окончания батча
+            </UiBadge>
             <UiBadge
               v-else-if="job.health"
               :tone="HEALTH_TONE[job.health] || 'neutral'"
@@ -292,11 +295,11 @@ function toggleExpanded(code: string) {
           <UiButton
             size="sm"
             variant="secondary"
-            :disabled="job.isRunning"
+            :disabled="job.isRunning || job.isWaiting"
             :loading="jobsBusy === job.name"
             @click="emit('run-job', job)"
           >
-            {{ job.isRunning ? 'Идёт…' : 'Запустить' }}
+            {{ job.isRunning ? 'Идёт…' : job.isWaiting ? 'В очереди' : 'Запустить' }}
           </UiButton>
         </div>
 

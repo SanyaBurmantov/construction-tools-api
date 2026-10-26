@@ -33,7 +33,9 @@ export class ToolsByCron {
   @Cron('0 20 5 * * *')
   async refreshCatalog() {
     if (!(await this.isEnabled())) return;
-    this.jobs.runFromCron(SOURCE_CODE, 'refresh');
+    // The :10 batch runs for ~15 minutes, so the crawl used to collide with
+    // it and be skipped. Wait for the source instead.
+    this.jobs.runFromCron(SOURCE_CODE, 'refresh', { waitForLock: true });
   }
 
   /** Periodically refresh prices even when discovery finds no new URLs. */

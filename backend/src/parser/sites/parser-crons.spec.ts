@@ -5,10 +5,15 @@ import { ThToolsCron } from './th-tools.cron';
 import { Supplier7745Cron } from './7745.cron';
 
 describe.each([
-  { Cron: DukonCron, code: 'dukon', refresh: '0 0 6 * * *' },
-  { Cron: ThToolsCron, code: 'th-tools', refresh: '0 40 6 * * *' },
-  { Cron: Supplier7745Cron, code: '7745', refresh: '0 20 6 * * *' },
-])('$code scheduled imports', ({ Cron, code, refresh }) => {
+  { Cron: DukonCron, code: 'dukon', refresh: '0 0 6 * * *', waits: true },
+  { Cron: ThToolsCron, code: 'th-tools', refresh: '0 40 6 * * *', waits: true },
+  {
+    Cron: Supplier7745Cron,
+    code: '7745',
+    refresh: '0 20 6 * * *',
+    waits: false,
+  },
+])('$code scheduled imports', ({ Cron, code, refresh, waits }) => {
   it('uses the same guarded job runner as manual imports', async () => {
     const runFromCron = jest.fn();
     const cron = new Cron(
@@ -19,7 +24,7 @@ describe.each([
     await cron.refreshSitemap();
     expect(runFromCron.mock.calls).toEqual([
       [code, 'process'],
-      [code, 'refresh'],
+      waits ? [code, 'refresh', { waitForLock: true }] : [code, 'refresh'],
     ]);
   });
   it('preserves the daily refresh schedule', () => {

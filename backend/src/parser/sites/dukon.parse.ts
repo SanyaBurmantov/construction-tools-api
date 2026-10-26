@@ -30,6 +30,23 @@ export type ParsedJsonLdProduct = {
 };
 
 export const DUKON_BASE_URL = 'https://dukon.by';
+/** The supplier's own brand index. Each brand page lists all of its products. */
+export const DUKON_BRANDS_URL = `${DUKON_BASE_URL}/brands/`;
+
+export type DukonPageKind = 'catalog' | 'brand-index' | 'brand';
+
+/**
+ * Dukon's catalogue and brand pages share a domain but not a layout: the
+ * catalogue has 24 cards/page, a brand page 15, and its pagination is
+ * `PAGEN_2` where the catalogue uses `PAGEN_1`. The crawl therefore has to
+ * know which kind of page it is looking at.
+ */
+export function dukonPageKind(url: string): DukonPageKind {
+  const pathname = new URL(absoluteUrl(url)).pathname;
+  if (pathname === '/brands' || pathname === '/brands/') return 'brand-index';
+  if (pathname.startsWith('/brands/')) return 'brand';
+  return 'catalog';
+}
 
 /** Longer than this and the "brand" is an address or a description. */
 const MAX_BRAND_LENGTH = 40;
@@ -102,15 +119,31 @@ export function parseChildCategoryLinks($: cheerio.CheerioAPI) {
 export function parseCatalogProductUrls($: cheerio.CheerioAPI) {
   const urls = new Set<string>();
 
+  // Brand pages (and the brand index) use `js-element[data-detail]` cards
+  // instead of the catalogue's `.prod-list__item`. Taking every `data-detail`
+  // that points into `/catalog/` covers both layouts; brand links are filtered
+  // out by `isCatalogUrl`.
+  $('[data-detail]').each((_, el) => {
+    const detailUrl = $(el).attr('data-detail');
+    if (!detailUrl) return;
+    const url = absoluteUrl(detailUrl);
+    if (isCatalogUrl(url)) urls.add(url);
+  });
+
   $('.prod-list__item').each((_, el) => {
     const detailUrl = $(el).attr('data-detail');
-    if (detailUrl) urls.add(absoluteUrl(detailUrl));
+    if (detailUrl) {
+      const url = absoluteUrl(detailUrl);
+      if (isCatalogUrl(url)) urls.add(url);
+    }
 
     $(el)
       .find('a.prod-name, .prod-preview a')
       .each((__, link) => {
         const href = $(link).attr('href');
-        if (href) urls.add(absoluteUrl(href));
+        if (!href) return;
+        const url = absoluteUrl(href);
+        if (isCatalogUrl(url)) urls.add(url);
       });
   });
 
@@ -139,31 +172,122 @@ export function parseCatalogCategoryUrls(
   return [...urls];
 }
 
+/** True only for pages on the supplier's own host, never a lookalike link. */
+export function isDukonUrl(url: string) {
+  try {
+    const hostname = new URL(absoluteUrl(url)).hostname;
+    return hostname === 'dukon.by' || hostname === 'www.dukon.by';
+  } catch {
+    return false;
+  }
+}
+
+/** Brand links on the `/brands/` index: `/brands/<slug>/`, never pagination. */
+export function parseBrandLinks($: cheerio.CheerioAPI) {
+  const urls = new Set<string>();
+  const add = (href: string | undefined) => {
+    if (!href) return;
+    const url = new URL(absoluteUrl(href));
+    if (!isDukonUrl(url.toString())) return;
+    const slug = url.pathname.replace(/^\/brands\//, '').replace(/\/$/, '');
+    if (!url.pathname.startsWith('/brands/') || !slug || slug.includes('/')) {
+      return;
+    }
+    url.protocol = 'https:';
+    url.hostname = 'dukon.by';
+    url.search = '';
+    url.hash = '';
+    urls.add(url.toString());
+  };
+
+  $('a[href*="/brands/"], [data-detail*="/brands/"]').each((_, el) =>
+    add($(el).attr('href') || $(el).attr('data-detail')),
+  );
+
+  return [...urls];
+}
+
+/** Dukon numbers catalogue pages with `PAGEN_1` and brand pages with `PAGEN_2`. */
+export function parsePaginationParam(
+  $: cheerio.CheerioAPI,
+  pageUrl: string,
+): 'PAGEN_1' | 'PAGEN_2' {
+  const href = $('#paginator a[href*="PAGEN_"]').first().attr('href');
+  if (href && isDukonUrl(href)) {
+    if (href.includes('PAGEN_2=')) return 'PAGEN_2';
+    if (href.includes('PAGEN_1=')) return 'PAGEN_1';
+  }
+  return dukonPageKind(pageUrl) === 'catalog' ? 'PAGEN_1' : 'PAGEN_2';
+}
+
+/**
+ * Page count for listings without `data-navpagecount` (the brand index).
+ * The paginator links only the first few and last pages, so take the highest
+ * linked page as a floor and, on page 1, also compute the count from the
+ * "1 - 20 из 141" summary. The summary is only trustworthy on page 1: on the
+ * last page it reads "141 - 141 из 141", which would imply 141 pages.
+ */
+function parsePaginatorPageCount($: cheerio.CheerioAPI) {
+  let linkedMax = 0;
+  $('#paginator a[href*="PAGEN_"]').each((_, el) => {
+    const href = $(el).attr('href');
+    if (!href || !isDukonUrl(href)) return;
+    const match = href.match(/PAGEN_\d+=(\d+)/);
+    if (match) linkedMax = Math.max(linkedMax, Number(match[1]));
+  });
+
+  const match = clean($('#paginator').text()).match(
+    /(\d+)\s*-\s*(\d+)\s+из\s+(\d+)/,
+  );
+  if (!match || match[1] !== '1') return linkedMax;
+
+  const perPage = Number(match[2]);
+  const total = Number(match[3]);
+  if (perPage <= 0 || !Number.isFinite(total)) return linkedMax;
+  return Math.max(linkedMax, Math.ceil(total / perPage));
+}
+
 export function parseCatalogPaginationUrls(
   $: cheerio.CheerioAPI,
   pageUrl: string,
 ) {
+  if (!isDukonUrl(pageUrl)) return [];
   const urls = new Set<string>();
-  const pageCount = Number(
+  const param = parsePaginationParam($, pageUrl);
+  let pageCount = Number(
     $('.ajaxpages [data-navpagecount]').first().attr('data-navpagecount'),
   );
+  if (!Number.isFinite(pageCount) || pageCount <= 1) {
+    pageCount = parsePaginatorPageCount($);
+  }
 
-  if (Number.isFinite(pageCount) && pageCount > 1) {
+  // Only the first page needs every page number generated. O(n²) rebuilding
+  // on page 2…n just produced the same URLs over and over; those pages carry
+  // links to their neighbours and the last page in the paginator.
+  const currentPage = new URL(pageUrl).searchParams.get(param);
+  if (
+    (!currentPage || currentPage === '1') &&
+    Number.isFinite(pageCount) &&
+    pageCount > 1
+  ) {
     for (let page = 2; page <= pageCount; page += 1) {
-      urls.add(withPageNumber(pageUrl, page));
+      urls.add(withPageNumber(pageUrl, page, param));
     }
   }
 
-  $('#paginator a[href*="PAGEN_1="]').each((_, el) => {
+  $('#paginator a[href*="PAGEN_"]').each((_, el) => {
     const href = $(el).attr('href');
-    if (href) urls.add(absoluteUrl(href));
+    if (!href) return;
+    const url = absoluteUrl(href);
+    if (isDukonUrl(url)) urls.add(url);
   });
 
   return [...urls];
 }
 
 export function isCatalogUrl(url: string) {
-  return url.startsWith(`${DUKON_BASE_URL}/catalog/`);
+  if (!isDukonUrl(url)) return false;
+  return new URL(absoluteUrl(url)).pathname.startsWith('/catalog/');
 }
 
 export function isInsideCatalogBranch(url: string, rootUrl: string) {
@@ -173,12 +297,19 @@ export function isInsideCatalogBranch(url: string, rootUrl: string) {
 }
 
 export function hasPagination(url: string) {
-  return url.includes('PAGEN_1=');
+  return /PAGEN_\d+=/.test(url);
 }
 
-export function withPageNumber(url: string, page: number) {
+export function withPageNumber(
+  url: string,
+  page: number,
+  param: 'PAGEN_1' | 'PAGEN_2' = 'PAGEN_1',
+) {
   const parsed = new URL(url);
-  parsed.searchParams.set('PAGEN_1', String(page));
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (/^PAGEN_\d+$/.test(key)) parsed.searchParams.delete(key);
+  }
+  parsed.searchParams.set(param, String(page));
   return parsed.toString();
 }
 

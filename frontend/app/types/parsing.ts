@@ -156,6 +156,8 @@ export type ParserJob = {
   label: string
   description: string
   isRunning: boolean
+  /** A daily crawl queued until the source's current batch ends. */
+  isWaiting?: boolean
   health: 'OK' | 'RUNNING' | 'ERROR' | 'STALE' | null
   lastSuccessAt: string | null
   lastError: string | null

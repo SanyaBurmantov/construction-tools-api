@@ -1,9 +1,17 @@
 import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
-import { SupplierInfo, SupplierQueueParser } from '../supplier-queue-parser';
+import {
+  CatalogCrawlEntry,
+  MAX_CATALOG_PAGE_FAILURES,
+  MAX_CONSECUTIVE_CATALOG_FAILURES,
+  SupplierInfo,
+  SupplierQueueParser,
+} from '../supplier-queue-parser';
 import {
   DUKON_BASE_URL,
+  DUKON_BRANDS_URL,
+  DukonPageKind,
   DukonStockStatus,
   ParsedJsonLdProduct,
   parseSitemapUrls,
@@ -12,8 +20,9 @@ import {
   parseCatalogProductUrls,
   parseCatalogCategoryUrls,
   parseCatalogPaginationUrls,
+  parseBrandLinks,
+  dukonPageKind,
   isCatalogUrl,
-  isInsideCatalogBranch,
   parseSpecs,
   isProductPage,
   resolveBrand,
@@ -49,10 +58,28 @@ import { sanitizeSupplierText, sanitizeSupplierTitle } from '../supplier-text';
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 
 const SOURCE_CODE = 'dukon';
-/** Failed catalogue pages in a row after which the site is taken to be down. */
-const MAX_CONSECUTIVE_PAGE_FAILURES = 5;
 const DUKON_SITEMAP_URL = `${DUKON_BASE_URL}/sitemap-iblock-7.xml`;
 const DUKON_CATALOG_ROOT_URLS = [`${DUKON_BASE_URL}/catalog/`];
+/**
+ * Pages between crawl-state checkpoints. The state is one JSON blob holding
+ * visited listing URLs plus the queue; a pass at Dukon is ~10k pages, so
+ * writing it on every fetch would mean hundreds of megabytes of writes a day.
+ * Replaying a page is safe (`enqueueUrls` is idempotent), so a coarser
+ * checkpoint only costs a few refetches after a crash. At 200 pages a pass
+ * writes the ~1 MB state a few dozen times instead of a few hundred.
+ */
+const CRAWL_CHECKPOINT_PAGES = 200;
+
+type DukonCrawlPage = CatalogCrawlEntry;
+type DukonCrawlState = {
+  visitedPages: string[];
+  pageQueue: DukonCrawlPage[];
+};
+/** The first version of this state stored bare URL strings in the queue. */
+type LegacyDukonCrawlState = {
+  visitedPages?: string[];
+  pageQueue?: Array<string | DukonCrawlPage>;
+};
 
 class NonProductPageError extends Error {
   constructor(message: string) {
@@ -96,17 +123,21 @@ export class DukonParserService extends SupplierQueueParser {
       );
     }
     const discovered = await this.discoverCatalogUrls();
-    if (sitemapError && !discovered.discoveredProducts) throw sitemapError;
+    if (sitemapError && !discovered.discoveredProducts) {
+      throw sitemapError;
+    }
 
-    // Both legs of the crawl key off the shop's theme classes — `.prod-list__item`
-    // for the listing, `a.psection` / `.catmenu a` for the navigation — because
+    // The crawl keys off the shop's theme classes — `data-detail` cards for
+    // products, `a.psection` / `.catmenu a` for the navigation — because
     // dukon's product and category URLs share one shape (`/catalog/<a>/<b>/`),
     // so unlike th-tool.by there is nothing in the URL itself to tell them
     // apart. A re-theme therefore looks like a crawl that walks pages and
     // extracts nothing; and because the sitemap leg keeps answering, the run
     // would record SUCCESS while the catalogue quietly stopped growing. That is
     // the silent parser death this project reports on everywhere else.
-    if (discovered.visitedPages > 0 && !discovered.discoveredProducts) {
+    // The brand index and the catalogue root are navigation only, hence
+    // `productListingPages` rather than "no products anywhere".
+    if (discovered.productListingPages > 0 && !discovered.discoveredProducts) {
       throw new Error(
         `Dukon catalog crawl walked ${discovered.visitedPages} pages and found no product links — the listing selectors no longer match the shop's markup`,
       );
@@ -115,88 +146,203 @@ export class DukonParserService extends SupplierQueueParser {
     return this.getQueueStats();
   }
 
+  /**
+   * One resumable pass over two product listings that Dukon exposes:
+   *
+   * - `/catalog/` — the category tree, 24 products per page;
+   * - `/brands/` — 141 brand pages, 15 products per page. This is the complete
+   *   per-brand enumeration and is what made a brand look "half missing":
+   *   the catalogue crawl only reached the first pages of each branch before
+   *   its page cap, so a brand with 200+ pages of products showed a handful.
+   *
+   * The pass is persisted in `ParserCatalogCrawl`, because the whole listing is
+   * ~10k pages and `DUKON_DISCOVERY_MAX_PAGES` (5000) cannot hold a full pass.
+   * Without state every daily run restarted at the same root and re-read the
+   * same first 5000 pages; everything after them was never queued at all.
+   * A drained queue clears the row, so the next run starts a fresh pass.
+   */
   async discoverCatalogUrls() {
-    let visitedPages = 0;
-    let discoveredProducts = 0;
-    let failedPages = 0;
-
-    for (const categoryUrl of DUKON_CATALOG_ROOT_URLS) {
-      const result = await this.discoverCatalogBranch(categoryUrl);
-      visitedPages += result.visitedPages;
-      discoveredProducts += result.discoveredProducts;
-      failedPages += result.failedPages;
-    }
-
-    return { visitedPages, discoveredProducts, failedPages };
-  }
-
-  async discoverCatalogBranch(rootUrl: string) {
     const maxPages = await this.settings.getMaxPages(SOURCE_CODE);
     const delayMs = await this.settings.getRequestDelayMs(SOURCE_CODE);
-    const root = absoluteUrl(rootUrl);
     const source = await this.upsertSource();
-    const visitedPages = new Set<string>();
+    const saved = await this.loadCatalogCrawlState<LegacyDukonCrawlState>();
+    const visitedPages = new Set<string>(saved?.visitedPages ?? []);
+    // Brands first: a brand page is a complete product list for that brand,
+    // while the catalogue repeats products across parent and leaf categories.
+    const rawQueue = saved?.pageQueue ?? [];
+    const pageQueue: DukonCrawlPage[] = rawQueue.length
+      ? rawQueue.map((entry) =>
+          typeof entry === 'string' ? { url: entry } : { ...entry },
+        )
+      : [
+          { url: DUKON_BRANDS_URL },
+          ...DUKON_CATALOG_ROOT_URLS.map((url) => ({ url })),
+        ];
+    const queuedPages = new Set([
+      ...visitedPages,
+      ...pageQueue.map((entry) => entry.url),
+    ]);
     const productUrls = new Set<string>();
-    const categoryQueue = [root];
-    // Membership for the queue: `categoryQueue.includes()` was a linear scan
-    // per link on a crawl of up to thousands of pages.
-    const queued = new Set<string>(categoryQueue);
+    // Pages that failed transiently in this run. They are kept out of the
+    // live queue so they cannot block the pages discovered behind them, and
+    // are put back for the next run; an entry is dropped after
+    // MAX_CATALOG_PAGE_FAILURES attempts, so one permanently broken page
+    // cannot stop every later pass.
+    const deferredPages: DukonCrawlPage[] = [];
+    let deferredCount = 0;
+    let firstFailure: unknown;
+    let productListingPages = 0;
+    let fetchedPages = 0;
     let failedPages = 0;
+    let exhaustedPages = 0;
     let consecutiveFailures = 0;
+    let lastCheckpoint = 0;
+    const save = () =>
+      this.saveCatalogCrawlState<DukonCrawlState>({
+        visitedPages: [...visitedPages],
+        pageQueue: [...pageQueue, ...deferredPages],
+      });
+    const checkpoint = async () => {
+      if (fetchedPages - lastCheckpoint >= CRAWL_CHECKPOINT_PAGES) {
+        lastCheckpoint = fetchedPages;
+        await save();
+      }
+    };
 
-    while (categoryQueue.length && visitedPages.size < maxPages) {
-      const pageUrl = categoryQueue.shift();
-      if (!pageUrl || visitedPages.has(pageUrl)) continue;
-      visitedPages.add(pageUrl);
+    // Persist the frontier before fetching: a crash must not lose the seed.
+    await save();
 
-      // One page failing (a removed category, a 403 on one URL) used to abort
-      // the whole crawl of up to 5000 pages. It is now skipped and logged;
-      // only a run of failures — the site being down — stops the branch.
-      let html: string;
-      try {
-        html = await this.fetchText(pageUrl);
-        consecutiveFailures = 0;
-      } catch (error) {
-        failedPages++;
-        consecutiveFailures++;
-        this.logger.warn(
-          `Dukon catalog page skipped: ${pageUrl} — ${error instanceof Error ? error.message : String(error)}`,
-        );
-        if (consecutiveFailures >= MAX_CONSECUTIVE_PAGE_FAILURES) throw error;
+    try {
+      while (pageQueue.length && fetchedPages < maxPages) {
+        const entry = pageQueue[0];
+        if (!entry) {
+          pageQueue.shift();
+          continue;
+        }
+        if (visitedPages.has(entry.url)) {
+          pageQueue.shift();
+          continue;
+        }
+
+        let advanced = false;
+        try {
+          const html = await this.fetchText(entry.url);
+          fetchedPages++;
+          const $ = cheerio.load(html);
+          const kind: DukonPageKind = dukonPageKind(entry.url);
+          const pathname = new URL(entry.url).pathname;
+          // A brand page and any catalogue page below the root must contain
+          // product cards; the root and the brand index are navigation only.
+          if (
+            kind === 'brand' ||
+            (kind === 'catalog' && pathname !== '/catalog/')
+          ) {
+            productListingPages++;
+          }
+          if (kind === 'catalog') {
+            await this.saveDiscoveredCategories($, source.id, entry.url);
+          }
+
+          const pageProductUrls = parseCatalogProductUrls($);
+          await this.enqueueUrls(pageProductUrls);
+          pageProductUrls.forEach((url) => productUrls.add(url));
+
+          const nextPages = new Set<string>(
+            parseCatalogPaginationUrls($, entry.url),
+          );
+          if (kind === 'brand-index') {
+            for (const brandUrl of parseBrandLinks($)) {
+              nextPages.add(brandUrl);
+            }
+          }
+          if (kind === 'catalog') {
+            for (const categoryUrl of parseCatalogCategoryUrls(
+              $,
+              DUKON_CATALOG_ROOT_URLS[0],
+            )) {
+              nextPages.add(categoryUrl);
+            }
+          }
+
+          // Advance only after the product URLs are saved. Replaying a page
+          // after a crash is safe: enqueueUrls is idempotent.
+          pageQueue.shift();
+          visitedPages.add(entry.url);
+          advanced = true;
+          consecutiveFailures = 0;
+
+          for (const nextPage of nextPages) {
+            if (!visitedPages.has(nextPage) && !queuedPages.has(nextPage)) {
+              queuedPages.add(nextPage);
+              pageQueue.push({ url: nextPage });
+            }
+          }
+        } catch (error) {
+          // An error after the page was committed is a code/DB problem, not a
+          // bad page: rethrow it without charging the entry another attempt.
+          if (advanced) throw error;
+
+          failedPages++;
+          consecutiveFailures++;
+          firstFailure ??= error;
+          const gone =
+            error instanceof ParserHttpError &&
+            (error.status === 404 || error.status === 410);
+          entry.failures = (entry.failures ?? 0) + 1;
+          pageQueue.shift();
+
+          if (gone || entry.failures >= MAX_CATALOG_PAGE_FAILURES) {
+            // A removed category/brand is dropped at once; a page that keeps
+            // failing is given up on rather than retried forever.
+            visitedPages.add(entry.url);
+            if (!gone) exhaustedPages++;
+            this.logger.warn(
+              `Dukon page dropped after ${entry.failures} failure(s): ${entry.url} — ${error instanceof Error ? error.message : String(error)}`,
+            );
+          } else {
+            deferredPages.push(entry);
+            deferredCount++;
+          }
+
+          // The entry is in the queue (or marked visited) before this throws,
+          // so the finally-write below cannot lose it.
+          if (consecutiveFailures >= MAX_CONSECUTIVE_CATALOG_FAILURES) {
+            throw error;
+          }
+        }
+
+        await checkpoint();
         await this.sleep(delayMs);
-        continue;
       }
-      const $ = cheerio.load(html);
-      await this.saveDiscoveredCategories($, source.id, pageUrl);
-      const pageProductUrls = parseCatalogProductUrls($);
-      pageProductUrls.forEach((url) => productUrls.add(url));
-      await this.enqueueUrls(pageProductUrls);
+    } finally {
+      // Must land on every exit path: a thrown request keeps its queue entry
+      // on disk, and a drained queue clears the row for a fresh pass.
+      pageQueue.push(...deferredPages);
+      deferredPages.length = 0;
+      await save();
+    }
 
-      for (const paginationUrl of parseCatalogPaginationUrls($, pageUrl)) {
-        if (
-          isInsideCatalogBranch(paginationUrl, root) &&
-          !visitedPages.has(paginationUrl) &&
-          !queued.has(paginationUrl)
-        ) {
-          queued.add(paginationUrl);
-          categoryQueue.push(paginationUrl);
-        }
-      }
-
-      for (const categoryUrl of parseCatalogCategoryUrls($, root)) {
-        if (!visitedPages.has(categoryUrl) && !queued.has(categoryUrl)) {
-          queued.add(categoryUrl);
-          categoryQueue.push(categoryUrl);
-        }
-      }
-
-      await this.sleep(delayMs);
+    if (deferredCount || exhaustedPages) {
+      // The pass went on past the failing pages, but the run still reports the
+      // failure so health stops showing SUCCESS while discovery is degraded.
+      const reason =
+        firstFailure instanceof Error
+          ? firstFailure.message
+          : String(firstFailure);
+      throw new Error(
+        `Dukon catalog: ${deferredCount} page(s) failed and will be retried next run, ${exhaustedPages} dropped after ${MAX_CATALOG_PAGE_FAILURES} failures: ${reason}`,
+        { cause: firstFailure },
+      );
     }
 
     return {
-      visitedPages: visitedPages.size,
+      visitedPages: fetchedPages,
       discoveredProducts: productUrls.size,
       failedPages,
+      deferredPages: deferredCount,
+      exhaustedPages,
+      productListingPages,
+      remainingPages: pageQueue.length,
     };
   }
 
