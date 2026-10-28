@@ -417,10 +417,13 @@ onBeforeUnmount(() => {
         </div>
 
         <nav class="actions" aria-label="Аккаунт, избранное, сравнение и корзина">
+          <!-- The server renders the guest link in its place: an empty slot
+               that fills in after hydration pushed the icons onto another
+               row on phones (CLS 0.25 on the home page). -->
           <ClientOnly>
             <NuxtLink
               :to="isAuthenticated ? '/account' : '/login'"
-              class="action"
+              class="action is-account-action"
               :class="{ 'is-active': isAuthenticated }"
             >
               <UiIcon name="user" />
@@ -428,6 +431,12 @@ onBeforeUnmount(() => {
                 {{ isAuthenticated ? (user?.name || user?.login) : 'Войти' }}
               </span>
             </NuxtLink>
+            <template #fallback>
+              <NuxtLink to="/login" class="action is-account-action">
+                <UiIcon name="user" />
+                <span class="action-label is-account">Войти</span>
+              </NuxtLink>
+            </template>
           </ClientOnly>
 
           <NuxtLink
@@ -1311,9 +1320,13 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 960px) {
+  /* `.mainbar-inner` raises the specificity over UiButton's own
+     `display: inline-flex`: at equal weight the stylesheet order decides, and
+     in the server HTML UiButton's comes later, so the button showed until
+     hydration and then vanished, shifting the whole header. */
   .topbar,
   .navbar,
-  .catalog-trigger {
+  .mainbar-inner .catalog-trigger {
     display: none;
   }
 
@@ -1334,6 +1347,14 @@ onBeforeUnmount(() => {
 
   .logo {
     margin-right: auto;
+  }
+}
+
+/* The bottom navigation carries «Кабинет» on these widths; without the
+   duplicate the actions fit beside the logo instead of taking a row. */
+@media (max-width: 860px) {
+  .is-account-action {
+    display: none;
   }
 }
 
