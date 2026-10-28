@@ -150,6 +150,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/catalog/`). `server/middleware/canonical-url.ts` 301s every other form
   (query kept; `/api`, `/_*`, files with an extension untouched), matching the
   canonicals and the sitemap — so write internal links without the slash.
+  **No render-blocking CSS**: `features.inlineStyles: true` inlines every SSR
+  style (global `main.scss` included) and `server/plugins/defer-unused-css.ts`
+  turns the remaining `<link rel=stylesheet>` — CSS of components imported but
+  not rendered (`<ClientOnly>`, `v-if`) — into `preload`; Vite's import helper
+  attaches it on the client. Keep component styles `scoped` for that to hold.
   Manrope is self-hosted from `public/fonts/` (no Google Fonts, and the CSP in
   `deploy/Caddyfile` no longer allows it). That cache lives in the
   frontend's heap, and Nitro's stock production driver never evicts — a crawl
