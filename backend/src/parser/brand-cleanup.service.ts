@@ -7,6 +7,7 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { isRealBrandName } from './brand-name';
+import { runsBackgroundJobs } from '../common/utils/process-role';
 
 /** Wait for the app to settle (migrations, crons) before scanning. */
 const BOOT_DELAY_MS = 90_000;
@@ -50,6 +51,8 @@ export class BrandCleanupService
   constructor(private readonly prisma: PrismaService) {}
 
   onApplicationBootstrap() {
+    // Boot passes belong to the worker: the API restarting must not repeat them.
+    if (!runsBackgroundJobs()) return;
     if (process.env.BRAND_CLEANUP_ON_BOOT === 'false') return;
     this.timer = setTimeout(() => {
       this.run().catch((error: unknown) =>

@@ -11,13 +11,26 @@ import { ToolsByParserService } from './sites/tools-by-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
 import { Supplier7745ParserService } from './sites/7745-source.parser';
 
+/** What an admin request may pass to a job. */
+export type JobParams = {
+  /** A manual batch size; a manual batch also runs one URL at a time. */
+  limit?: number;
+};
+
 export type ParserJob = {
   /** Suffix after the source code; the runtime status key is `<code>-<name>`. */
   name: string;
   label: string;
   description: string;
-  run: () => Promise<unknown>;
+  /** Run by an endpoint of its own, not listed as a button on the jobs panel. */
+  hidden?: boolean;
+  run: (params?: JobParams) => Promise<unknown>;
 };
+
+/** How a job ended, for whoever asked for it (an admin request). */
+export type JobOutcome =
+  | { ok: true; result: unknown }
+  | { ok: false; error: string };
 
 export type JobRunResult =
   | { started: true; key: string }
@@ -88,21 +101,31 @@ export class ParserJobsService {
             label: 'Обойти категории',
             description:
               'Идёт по страницам категорий и находит товары, которых нет в sitemap.',
-            run: async () =>
+            run: async (params) =>
               this.categoryQueue.processBatch(
                 code,
-                await this.settings.getCategoryBatchLimit(code),
+                params?.limit ??
+                  (await this.settings.getCategoryBatchLimit(code)),
               ),
+          },
+          {
+            name: 'categories-refresh',
+            label: 'Пополнить очередь категорий',
+            description: 'Читает категории из sitemap поставщика.',
+            hidden: true,
+            run: () => this.categoryQueue.refresh(code),
           },
           {
             name: 'process',
             label: 'Разобрать пачку',
             description: 'Берёт из очереди пачку URL и сохраняет товары.',
-            run: async () =>
-              this.thTools.processSitemapsBatch(
-                await this.settings.getBatchLimit(code),
-                2,
-              ),
+            run: async (params) =>
+              params?.limit
+                ? this.thTools.processSitemapsBatch(params.limit, 1)
+                : this.thTools.processSitemapsBatch(
+                    await this.settings.getBatchLimit(code),
+                    2,
+                  ),
           },
           {
             name: 'revalidate',
@@ -125,9 +148,9 @@ export class ParserJobsService {
             name: 'process',
             label: 'Разобрать пачку',
             description: 'Берёт из очереди пачку URL и сохраняет товары.',
-            run: async () =>
+            run: async (params) =>
               this.toolsBy.processSitemapsBatch(
-                await this.settings.getBatchLimit(code),
+                params?.limit ?? (await this.settings.getBatchLimit(code)),
                 1,
               ),
           },
@@ -152,9 +175,9 @@ export class ParserJobsService {
             name: 'process',
             label: 'Разобрать пачку',
             description: 'Берёт из очереди пачку URL и сохраняет товары.',
-            run: async () =>
+            run: async (params) =>
               this.dukon.processSitemapsBatch(
-                await this.settings.getBatchLimit(code),
+                params?.limit ?? (await this.settings.getBatchLimit(code)),
                 1,
               ),
           },
@@ -178,9 +201,9 @@ export class ParserJobsService {
             name: 'process',
             label: 'Разобрать пачку',
             description: 'Пример-источник, включать не нужно.',
-            run: async () =>
+            run: async (params) =>
               this.supplier7745.processSitemapsBatch(
-                await this.settings.getBatchLimit(code),
+                params?.limit ?? (await this.settings.getBatchLimit(code)),
                 1,
               ),
           },
@@ -241,15 +264,21 @@ export class ParserJobsService {
     for (const wake of waiters) wake();
   }
 
-  private begin(code: string, key: string, job: ParserJob) {
+  private begin(
+    code: string,
+    key: string,
+    job: ParserJob,
+    params?: JobParams,
+  ): Promise<JobOutcome> {
     this.running.add(key);
-    // Deliberately not awaited. The catch is mandatory: an unhandled rejection
+    // Callers do not await it. The catch is mandatory: an unhandled rejection
     // here would take the whole process down.
-    void this.execute(code, key, job).catch((error) => {
+    return this.execute(code, key, job, params).catch((error: unknown) => {
       this.logger.error(
         `${key} crashed outside its own error handling`,
         error instanceof Error ? error.stack : String(error),
       );
+      return { ok: false, error: errorMessage(error) } as const;
     });
   }
 
@@ -291,11 +320,11 @@ export class ParserJobsService {
    * `ParserRuntimeStatus`, which the admin already polls — a crawl that takes
    * a quarter of an hour cannot be an HTTP round-trip.
    */
-  start(code: string, jobName: string): JobRunResult {
+  start(code: string, jobName: string, params?: JobParams): JobRunResult {
     const key = `${code}-${jobName}`;
-    const job = this.jobsFor(code).find((item) => item.name === jobName);
+    const job = this.findJob(code, jobName);
 
-    if (!job || !getParserSource(code)) {
+    if (!job) {
       return { started: false, key, reason: 'unknown-job' };
     }
     const busy = this.busyKey(code);
@@ -303,8 +332,38 @@ export class ParserJobsService {
       return { started: false, key: busy, reason: 'already-running' };
     }
 
-    this.begin(code, key, job);
+    void this.begin(code, key, job, params);
     return { started: true, key };
+  }
+
+  findJob(code: string, jobName: string): ParserJob | undefined {
+    if (!getParserSource(code)) return undefined;
+    return this.jobsFor(code).find((item) => item.name === jobName);
+  }
+
+  /**
+   * An admin request handed over by the API (`ParserJobRequestService`): it
+   * queues behind the source lock like a waiting cron job, in arrival order,
+   * and resolves with the outcome once the job has run.
+   */
+  runRequested(
+    code: string,
+    jobName: string,
+    params?: JobParams,
+  ): Promise<JobOutcome> {
+    const key = `${code}-${jobName}`;
+    const job = this.findJob(code, jobName);
+    if (!job) {
+      return Promise.resolve({ ok: false, error: `Unknown job ${key}` });
+    }
+    if (this.running.has(key) || this.pending.has(key)) {
+      return Promise.resolve({
+        ok: false,
+        error: `Задание ${key} уже выполняется`,
+      });
+    }
+    if (!this.busyKey(code)) return this.begin(code, key, job, params);
+    return this.enqueue(code, key, job, params);
   }
 
   /**
@@ -316,24 +375,39 @@ export class ParserJobsService {
    */
   private startWhenFree(code: string, jobName: string): JobRunResult {
     const key = `${code}-${jobName}`;
-    const job = this.jobsFor(code).find((item) => item.name === jobName);
+    const job = this.findJob(code, jobName);
 
-    if (!job || !getParserSource(code)) {
+    if (!job) {
       return { started: false, key, reason: 'unknown-job' };
     }
     if (this.running.has(key) || this.pending.has(key)) {
       return { started: false, key, reason: 'already-running' };
     }
-    const busy = this.busyKey(code);
-    if (!busy) return this.start(code, jobName);
+    if (!this.busyKey(code)) return this.start(code, jobName);
 
-    this.pending.add(key);
-    this.logger.log(`${key}: waiting for ${busy} to finish`);
-    void this.waitThenRun(code, key, job);
+    void this.enqueue(code, key, job);
     return { started: true, key };
   }
 
-  private async waitThenRun(code: string, key: string, job: ParserJob) {
+  /** Queues a job behind the source lock; resolves once it has run. */
+  private enqueue(
+    code: string,
+    key: string,
+    job: ParserJob,
+    params?: JobParams,
+  ): Promise<JobOutcome> {
+    this.pending.add(key);
+    this.logger.log(`${key}: waiting for ${this.busyKey(code, key)} to finish`);
+    void this.runtimeStatus.markWaiting(key, job.label, true);
+    return this.waitThenRun(code, key, job, params);
+  }
+
+  private async waitThenRun(
+    code: string,
+    key: string,
+    job: ParserJob,
+    params?: JobParams,
+  ): Promise<JobOutcome> {
     try {
       while (!this.isTurnOf(code, key)) {
         await new Promise<void>((resolve) => {
@@ -344,33 +418,42 @@ export class ParserJobsService {
       }
     } catch (error) {
       this.pending.delete(key);
+      void this.runtimeStatus.markWaiting(key, job.label, false);
       this.logger.error(
         `${key} crashed while waiting for the source lock`,
         error instanceof Error ? error.stack : String(error),
       );
-      return;
+      return { ok: false, error: errorMessage(error) };
     }
 
     // No await between the re-check and `begin`, so no cron slot can steal the
     // source between the waiter waking up and the refresh taking the lock.
+    // (`runtimeStatus.start` clears the waiting mark.)
     this.pending.delete(key);
-    this.begin(code, key, job);
+    return this.begin(code, key, job, params);
   }
 
-  private async execute(code: string, key: string, job: ParserJob) {
+  private async execute(
+    code: string,
+    key: string,
+    job: ParserJob,
+    params?: JobParams,
+  ): Promise<JobOutcome> {
     try {
       // Inside the try: a DB blip here used to skip the `finally`, leaving the
       // key in `running` and the job answering "already-running" on every slot
       // until the process restarted.
       await this.runtimeStatus.start(key, job.label);
-      const result = await job.run();
+      const result = await job.run(params);
       await this.runtimeStatus.success(key, result);
+      return { ok: true, result };
     } catch (error) {
       await this.runtimeStatus.failure(key, error).catch(() => undefined);
       this.logger.error(
         `${key} failed`,
         error instanceof Error ? error.stack : String(error),
       );
+      return { ok: false, error: errorMessage(error) };
     } finally {
       this.running.delete(key);
       this.notifySourceFree(code);
@@ -393,4 +476,8 @@ export class ParserJobsService {
     }
     return result;
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

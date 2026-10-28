@@ -18,6 +18,8 @@ import { CategoryQueueService } from './categories/category-queue.service';
 import { CategoryTreeService } from './categories/category-tree.service';
 import { QueueRecoveryService } from './queue-recovery.service';
 import { ParserJobsService } from './parser-jobs.service';
+import { ParserJobRequestService } from './parser-job-request.service';
+import { WorkerHeartbeatService } from './worker-heartbeat.service';
 import { ParserWatchdogCron } from './parser-watchdog.cron';
 import { ProductTextCleanupService } from './product-text-cleanup.service';
 import { BrandCleanupService } from './brand-cleanup.service';
@@ -42,6 +44,8 @@ import { OffersModule } from '../offers/offers.module';
     ProductIdentityService,
     QueueRecoveryService,
     ParserJobsService,
+    ParserJobRequestService,
+    WorkerHeartbeatService,
     ParserWatchdogCron,
     ProductTextCleanupService,
     BrandCleanupService,
@@ -66,6 +70,7 @@ import { OffersModule } from '../offers/offers.module';
     ProductIdentityService,
     QueueRecoveryService,
     ParserJobsService,
+    ParserJobRequestService,
     CategoryQueueService,
     CategoryTreeService,
   ],

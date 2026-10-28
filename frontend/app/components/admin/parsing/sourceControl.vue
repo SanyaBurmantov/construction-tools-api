@@ -69,6 +69,18 @@ const banner = computed(() => {
   const overview = props.control
   if (!overview) return { tone: 'info' as const, title: 'Загружаем состояние парсинга…', text: '' }
 
+  // Before everything else: with the worker down no switch below does
+  // anything, and every status on the page is frozen at its last value.
+  if (overview.worker && !overview.worker.alive) {
+    return {
+      tone: 'danger' as const,
+      title: 'Воркер парсеров не отвечает',
+      text: overview.worker.lastSeenAt
+        ? `Последний сигнал — ${formatDateTime(overview.worker.lastSeenAt)}. Кроны, парсеры и ИИ-задачи стоят, запуск вручную не сработает, пока он не поднимется.`
+        : 'Воркер ещё ни разу не выходил на связь. Кроны, парсеры и ИИ-задачи не работают.',
+    }
+  }
+
   if (!overview.cronEnabled) {
     return {
       tone: 'danger' as const,

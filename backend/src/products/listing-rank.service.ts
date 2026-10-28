@@ -8,6 +8,7 @@ import { Cron } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PLACEHOLDER_IMAGE_MARKERS } from '../common/utils/product-images';
+import { runsBackgroundJobs } from '../common/utils/process-role';
 
 const BOOT_DELAY_MS = 120_000;
 
@@ -32,6 +33,7 @@ export class ListingRankService
   constructor(private readonly prisma: PrismaService) {}
 
   onApplicationBootstrap() {
+    if (!runsBackgroundJobs()) return;
     this.timer = setTimeout(() => void this.refresh(), BOOT_DELAY_MS);
     this.timer.unref();
   }

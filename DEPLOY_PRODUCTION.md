@@ -73,6 +73,8 @@ baseline. New schema changes must be added as migrations and committed.
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend
+# parsers, crons and AI tasks run in their own container (PROCESS_ROLE=worker)
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f worker
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f frontend
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f caddy
 docker compose --env-file .env.prod -f docker-compose.prod.yml down

@@ -28,6 +28,14 @@ what the cron checks. Env (`PARSER_CRON_ENABLED`, `<CODE>_CRON_ENABLED`,
 `<CODE>_CRON_BATCH_LIMIT`) is only the default until a row exists.
 
 Schedules: process every 30 min, refresh sitemap daily, category crawl hourly.
+All of it runs in the **worker** container (`construction-tools-worker`,
+`PROCESS_ROLE=worker`), not in the API — parser logs are
+`docker compose … logs -f worker`. An admin button or a `/admin/queue/*` curl
+is written to `ParserJobRequest`, which the worker claims within ~3 s; the
+synchronous endpoints wait for it (up to 20 min, then 504 while the job keeps
+running). 503 «Воркер парсеров не отвечает» means no heartbeat for 3 min —
+check `docker ps` / the worker logs. Locally (`npm run start:dev`,
+`PROCESS_ROLE` unset) everything still runs in one process.
 State is persisted in `ParserRuntimeStatus`, so health survives restarts.
 
 **"Очередь стоит" is usually one of three things**, in order of likelihood:

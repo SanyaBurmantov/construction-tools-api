@@ -1,6 +1,6 @@
 ---
 name: deploy-prod
-description: Build and deploy the construction-tools-api production stack (db + backend + frontend + Caddy) with Docker Compose, and verify it. Use when asked to deploy, ship to prod, build prod images, set up the server, or troubleshoot the prod stack / migrations / TLS.
+description: Build and deploy the construction-tools-api production stack (db + backend + worker + frontend + Caddy) with Docker Compose, and verify it. Use when asked to deploy, ship to prod, build prod images, set up the server, or troubleshoot the prod stack / migrations / TLS.
 ---
 
 # Deploy to production
@@ -76,7 +76,7 @@ Intermittent 502s: check `docker inspect -f '{{.RestartCount}} {{.State.OOMKille
 
 ## Useful
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f <backend|frontend|caddy>
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f <backend|worker|frontend|caddy>
 docker compose --env-file .env.prod -f docker-compose.prod.yml down        # stop (keep data)
 docker system prune -f                                                     # reclaim build-cache disk
 ```

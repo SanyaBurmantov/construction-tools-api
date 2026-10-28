@@ -396,34 +396,34 @@ enum PaymentMethod {
 }
 
 model Order {
-  id              String         @id @default(uuid())
-  number          Int            @unique @default(autoincrement())
-  status          OrderStatus    @default(NEW)
+  id                 String         @id @default(uuid())
+  number             Int            @unique @default(autoincrement())
+  status             OrderStatus    @default(NEW)
   /// Set only when the order was placed from a signed-in account — guest
   /// checkout stays the default, so this is null for most rows. It is what
   /// the "История заказов" section of the account lists. Deliberately NOT
   /// matched by phone or e-mail afterwards: anyone could register with
   /// someone else's phone and read their orders.
-  user            User?          @relation(fields: [userId], references: [id])
-  userId          String?
-  customerName    String
-  customerPhone   String
-  customerEmail   String?
-  comment         String?
-  deliveryMethod  DeliveryMethod @default(PICKUP)
-  deliveryAddress String?
-  paymentMethod   PaymentMethod  @default(CASH)
+  user               User?          @relation(fields: [userId], references: [id])
+  userId             String?
+  customerName       String
+  customerPhone      String
+  customerEmail      String?
+  comment            String?
+  deliveryMethod     DeliveryMethod @default(PICKUP)
+  deliveryAddress    String?
+  paymentMethod      PaymentMethod  @default(CASH)
   /// Who the invoice is made out to — a snapshot taken at checkout, like the
   /// line prices. Reading it through `user` lost it as soon as the company
   /// edited its profile or deleted the account. Null for a private buyer.
-  payerType       CustomerType?
-  payerName       String?
+  payerType          CustomerType?
+  payerName          String?
   /// УНП.
-  payerTaxId      String?
-  payerAddress    String?
-  payerAccount    String?
-  payerBankName   String?
-  payerBankBic    String?
+  payerTaxId         String?
+  payerAddress       String?
+  payerAccount       String?
+  payerBankName      String?
+  payerBankBic       String?
   /// Where the buyer came from — «yandex / cpc», «google / organic»,
   /// «direct» (attribution/traffic-source.ts, last non-direct touch).
   trafficSource      String?
@@ -431,18 +431,18 @@ model Order {
   firstTrafficSource String?
   /// Both raw touches (UTM tags, click ids, referrer host, landing page).
   attribution        Json?
-  currency        String         @default("BYN")
-  itemsTotal      Float          @default(0)
-  deliveryCost    Float          @default(0)
-  discountTotal   Float          @default(0)
-  total           Float          @default(0)
-  promoCode       PromoCode?     @relation(fields: [promoCodeId], references: [id])
-  promoCodeId     String?
+  currency           String         @default("BYN")
+  itemsTotal         Float          @default(0)
+  deliveryCost       Float          @default(0)
+  discountTotal      Float          @default(0)
+  total              Float          @default(0)
+  promoCode          PromoCode?     @relation(fields: [promoCodeId], references: [id])
+  promoCodeId        String?
   /// Snapshot of the code as typed, kept readable if the PromoCode is deleted.
-  promoCodeLabel  String?
-  items           OrderItem[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  promoCodeLabel     String?
+  items              OrderItem[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([status])
   @@index([createdAt])
@@ -520,7 +520,40 @@ model ParserRuntimeStatus {
   runs          Int       @default(0)
   successes     Int       @default(0)
   failures      Int       @default(0)
+  /// Queued behind its source's lock in the worker («Ждёт окончания батча»);
+  /// cleared when the job starts. In the DB because the API renders it.
+  waitingSince  DateTime?
   updatedAt     DateTime  @updatedAt
+}
+
+enum ParserJobRequestStatus {
+  /// Written by the API, not yet seen by the worker.
+  PENDING
+  /// Claimed by the worker: queued behind the source lock or running.
+  TAKEN
+  DONE
+  FAILED
+}
+
+/// A parser job an admin asked for. The API process never parses: it writes
+/// the request here, the worker claims it (`ParserJobRequestService`) and runs
+/// it under the same per-source lock as the crons, then records the outcome —
+/// which is what the synchronous `/admin/queue/*` buttons wait for.
+model ParserJobRequest {
+  id         String                 @id @default(uuid())
+  sourceCode String
+  jobName    String
+  /// Job parameters, e.g. `{ "limit": 25 }` for a manual batch.
+  params     Json?
+  status     ParserJobRequestStatus @default(PENDING)
+  result     Json?
+  error      String?
+  createdAt  DateTime               @default(now())
+  takenAt    DateTime?
+  finishedAt DateTime?
+
+  @@index([status, createdAt])
+  @@index([sourceCode, status])
 }
 
 enum ReviewStatus {
@@ -1103,36 +1136,36 @@ enum LeadStatus {
 /// A request from a would-be customer that is not an order yet. Orders have
 /// their own table; this is what a manager calls back on.
 model Lead {
-  id          String     @id @default(uuid())
-  number      Int        @unique @default(autoincrement())
-  kind        LeadKind
-  status      LeadStatus @default(NEW)
-  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userId      String?
-  companyName String?
+  id                 String     @id @default(uuid())
+  number             Int        @unique @default(autoincrement())
+  kind               LeadKind
+  status             LeadStatus @default(NEW)
+  user               User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId             String?
+  companyName        String?
   /// УНП.
-  taxId       String?
-  contactName String?
-  phone       String?
-  email       String?
-  message     String?
+  taxId              String?
+  contactName        String?
+  phone              String?
+  email              String?
+  message            String?
   /// The product a question is about (snapshot name kept if it is deleted).
-  productId   String?
-  productName String?
-  productSlug String?
+  productId          String?
+  productName        String?
+  productSlug        String?
   /// Quote lines as priced when the quote was made: [{productId, name, slug,
   /// sku, quantity, unitPrice, lineTotal}].
-  items       Json?
-  total       Float?
-  currency    String?
+  items              Json?
+  total              Float?
+  currency           String?
   /// Salted hash of the requester's IP, for the per-IP limit — never the IP.
-  ipHash      String?
+  ipHash             String?
   /// Same as Order: last non-direct source, first source, raw touches.
   trafficSource      String?
   firstTrafficSource String?
   attribution        Json?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
   @@index([status, createdAt])
   @@index([createdAt])
@@ -1154,4 +1187,3 @@ model PurchaseList {
 
   @@index([userId, updatedAt])
 }
-

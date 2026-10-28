@@ -137,6 +137,8 @@ export type ParserOverview = {
   globalOverriddenInDb: boolean
   isRunning: boolean
   health: { ok: boolean, maxAgeHours: number }
+  /** The process that runs every job; silent for 3 min = not alive. */
+  worker: { alive: boolean, lastSeenAt: string | null }
   sources: ParserSourceOverview[]
 }
 

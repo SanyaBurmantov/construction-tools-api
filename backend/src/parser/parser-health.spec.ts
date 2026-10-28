@@ -3,9 +3,20 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const MINUTE = 60_000;
 
-function serviceWith(rows: unknown[], freshness: unknown[] = []) {
+function serviceWith(
+  rows: unknown[],
+  freshness: unknown[] = [],
+  workerSeenAt: Date | null = new Date(),
+) {
   const prisma = {
     parserRuntimeStatus: { findMany: jest.fn(() => Promise.resolve(rows)) },
+    siteSetting: {
+      findUnique: jest.fn(() =>
+        Promise.resolve(
+          workerSeenAt ? { value: workerSeenAt.toISOString() } : null,
+        ),
+      ),
+    },
     $queryRaw: jest.fn(() => Promise.resolve(freshness)),
   } as unknown as PrismaService;
   return new ParserRuntimeStatusService(prisma);
@@ -28,6 +39,25 @@ const job = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('parser health', () => {
+  it('is not ok when the worker has stopped beating, whatever the jobs say', async () => {
+    const health = await serviceWith(
+      [job()],
+      [],
+      new Date(Date.now() - 10 * MINUTE),
+    ).getHealth();
+
+    expect(health.worker.alive).toBe(false);
+    expect(health.ok).toBe(false);
+    expect(health.jobs[0].health).toBe('OK');
+  });
+
+  it('is not ok when no worker has ever beaten', async () => {
+    const health = await serviceWith([job()], [], null).getHealth();
+
+    expect(health.worker).toEqual({ alive: false, lastSeenAt: null });
+    expect(health.ok).toBe(false);
+  });
+
   it('is OK for a recent successful run', async () => {
     const health = await serviceWith([
       job({ lastResult: { batch: { processed: 300, failed: 2 } } }),
