@@ -50,6 +50,15 @@ export default defineNuxtConfig({
     screens: { card: 300, cardx2: 600, gallery: 480, galleryx2: 960 },
     format: ['webp'],
     quality: 80,
+    /**
+     * IPX takes the photo's `max-age` from the supplier's own response and
+     * that header wins over the `/_ipx/**` route rule below: th-tool.by says
+     * 300 s, so every gallery photo was re-fetched after five minutes
+     * (PageSpeed: «время жизни кеша 5 мин»). Ignore theirs, send a week.
+     */
+    ipx: {
+      http: { maxAge: 604800, ignoreCacheControl: true },
+    },
   },
   css: ['@/assets/scss/main.scss'],
   app: {
@@ -63,11 +72,14 @@ export default defineNuxtConfig({
         { rel: 'shortcut icon', href: '/favicon.ico' },
         { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
         { rel: 'manifest', href: '/site.webmanifest' },
-        // Self-hosted Manrope (see assets/scss/main.scss). Only the cyrillic
-        // subset is preloaded: it is the one every page needs for its first
-        // paint, and the latin file follows from the stylesheet. `crossorigin`
-        // is required even same-origin, or the preload is fetched twice.
+        // Self-hosted Manrope (see assets/scss/main.scss). Both subsets are
+        // preloaded: the latin one is not optional on a Russian page — it
+        // holds the digits, spaces and punctuation, so «50 000+ позиций» in
+        // the hero waited for it at the end of HTML → CSS → font (PageSpeed:
+        // 2.3 s on the critical path, the LCP element). `crossorigin` is
+        // required even same-origin, or the preload is fetched twice.
         { rel: 'preload', as: 'font', type: 'font/woff2', href: '/fonts/manrope-cyrillic.woff2', crossorigin: '' },
+        { rel: 'preload', as: 'font', type: 'font/woff2', href: '/fonts/manrope-latin.woff2', crossorigin: '' },
       ],
       meta: [
         { name: 'color-scheme', content: 'light' },

@@ -6,9 +6,9 @@
    variable font, so one file per subset covers every weight we use (500–900
    in the styles; the axis stops at 800). Only latin + cyrillic are shipped;
    `unicode-range` makes the browser fetch a subset only when a page needs it.
-   The cyrillic file is preloaded from nuxt.config.ts — it is what every
-   storefront page renders first. It used to be an `@import` of Google Fonts:
-   HTML → entry.css → fonts.googleapis.com → fonts.gstatic.com, three
+   Both files are preloaded from nuxt.config.ts — a Russian page needs the
+   latin one too, for digits, spaces and punctuation. It used to be an
+   `@import` of Google Fonts: HTML → entry.css → fonts.googleapis.com → fonts.gstatic.com, three
    sequential round trips to two third-party hosts before any text settled. */
 @font-face {
   font-family: 'Manrope';
