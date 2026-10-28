@@ -110,18 +110,48 @@ class FakePrisma {
     }
 
     if (sql.includes('SET "specificationId"')) {
+      // Postgres semantics, not row-at-a-time: `NOT EXISTS` sees the table as
+      // it was before the statement, and the unique key is enforced on the
+      // result. A row-by-row fake saw its own earlier moves and hid the bug
+      // where two losers of one product both landed on the survivor.
       const [survivor, losers] = params as [string, string[]];
-      for (const row of this.values) {
-        if (!losers.includes(row.specificationId)) continue;
-        const taken = this.values.some(
-          (other) =>
-            other.productId === row.productId &&
-            other.specificationId === survivor,
-        );
-        if (taken) continue;
+      const taken = new Set(
+        this.values
+          .filter((row) => row.specificationId === survivor)
+          .map((row) => row.productId),
+      );
+      const candidates = this.values.filter(
+        (row) =>
+          losers.includes(row.specificationId) && !taken.has(row.productId),
+      );
+      const picked = sql.includes('DISTINCT ON')
+        ? [
+            ...candidates
+              .sort(
+                (a, b) =>
+                  Number(a.valueNorm === null) - Number(b.valueNorm === null) ||
+                  a.id.localeCompare(b.id),
+              )
+              .reduce(
+                (first, row) =>
+                  first.has(row.productId)
+                    ? first
+                    : first.set(row.productId, row),
+                new Map<string, ValueRow>(),
+              )
+              .values(),
+          ]
+        : candidates;
+      for (const row of picked) {
+        if (taken.has(row.productId)) {
+          throw new Error(
+            `23505: Key ("productId", "specificationId")=(${row.productId}, ${survivor}) already exists.`,
+          );
+        }
+        taken.add(row.productId);
         row.specificationId = survivor;
       }
-      return Promise.resolve(0);
+      return Promise.resolve(picked.length);
     }
 
     throw new Error(`unexpected $executeRaw: ${sql.trim().slice(0, 60)}`);
@@ -392,6 +422,32 @@ describe('SpecNormalizerService', () => {
     const weight = prisma.specs.find((row) => row.canonicalName === 'Вес');
     expect(weight?.canonicalKey).toBe('ves~kg');
     expect(weight?.canonicalUnit).toBe('кг');
+  });
+
+  it('merges three spellings when a product carries two losers', async () => {
+    // The production failure: s1 is the survivor (most uses), p9 has values
+    // under both s2 and s3 and none under s1, so both would move onto s1.
+    const specs = [
+      spec('s1', 'cat-1', 'Мощность, Вт'),
+      spec('s2', 'cat-1', 'Мощность ( Вт )'),
+      spec('s3', 'cat-1', 'Мощность Вт'),
+    ];
+    const values = [
+      value('v1', 'p1', 's1', '750 Вт'),
+      value('v2', 'p2', 's1', '900 Вт'),
+      value('v3', 'p3', 's1', '1000 Вт'),
+      value('v4', 'p9', 's2', '1200'),
+      value('v5', 'p9', 's3', '1200 Вт'),
+    ];
+    const prisma = new FakePrisma(specs, values);
+
+    const report = await service(prisma).normalize();
+
+    expect(report.specsMerged).toBe(2);
+    expect(prisma.specs.map((row) => row.id)).toEqual(['s1']);
+    const p9 = prisma.values.filter((row) => row.productId === 'p9');
+    expect(p9).toHaveLength(1);
+    expect(p9[0].specificationId).toBe('s1');
   });
 
   it('keeps sweeping after deleting the last row of a page', async () => {
