@@ -20,6 +20,17 @@ import { withoutPlaceholderImages } from '../common/utils/product-images';
  */
 const SEARCH_MATCH_LIMIT = 20_000;
 
+/**
+ * `total` and the facets of a listing, per filter set. They do not depend on
+ * the page or the sort, and computing them is most of a listing's cost: a
+ * count plus a groupBy per dimension (category, brand, price, specs) over the
+ * whole filtered catalogue — ~0.5 s on production for every page turn and
+ * sort change. The catalogue changes when parsers run, so two minutes stale
+ * is invisible; prices on the cards themselves are never cached here.
+ */
+const FACETS_CACHE_TTL_MS = 120_000;
+const FACETS_CACHE_MAX_ENTRIES = 300;
+
 /** Repeated searches (autocomplete, filter changes) reuse the id list. */
 const SEARCH_CACHE_TTL_MS = 60_000;
 const SEARCH_CACHE_MAX_ENTRIES = 100;
@@ -54,6 +65,32 @@ const MIN_FUZZY_LENGTH = 4;
  * barcode are not that product. Suppliers store a second code beside the main
  * one as `4810992031625 (4811207007213)`, so both positions are matched.
  */
+/**
+ * The cache key of a listing's total + facets: every filter that changes
+ * them, and nothing that does not (page, limit, sort). Pure.
+ */
+export function facetsCacheKey(filter: ProductFilterDto): string {
+  return JSON.stringify([
+    filter.categorySlug ?? null,
+    filter.categoryId ?? null,
+    filter.brandId
+      ? filter.brandId
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+          .sort()
+          .join(',')
+      : null,
+    filter.sourceCode ?? null,
+    filter.priceMin ?? null,
+    filter.priceMax ?? null,
+    Boolean(filter.inStock),
+    Boolean(filter.onSale),
+    filter.specs ?? null,
+    filter.search?.trim().toLowerCase() || null,
+  ]);
+}
+
 export function barcodeTerm(term: string): string | null {
   const digits = term.replace(/[\s-]/g, '');
   return /^\d{8,14}$/.test(digits) ? digits : null;
@@ -528,24 +565,15 @@ export class ProductService {
     // no explicit sort + active search → keep the relevance ranking
     const useRelevance = !filter.sortBy && searchTerm !== undefined;
 
-    const specFacets = await this.buildSpecFacets(
-      categoryIds,
-      specSelections,
-      buildWhere,
-    );
+    const computeSummary = async () => {
+      const specFacets = await this.buildSpecFacets(
+        categoryIds,
+        specSelections,
+        buildWhere,
+      );
 
-    const [total, products, categoryCounts, brandCounts, price] =
-      await Promise.all([
+      const [total, categoryCounts, brandCounts, price] = await Promise.all([
         this.prisma.product.count({ where }),
-        useRelevance && searchTerm
-          ? this.findPageByRelevance(where, rankedIds ?? undefined, skip, limit)
-          : this.prisma.product.findMany({
-              where,
-              skip,
-              take: limit,
-              orderBy,
-              include: LIST_INCLUDE,
-            }),
         this.prisma.product.groupBy({
           by: ['categoryId'],
           where: buildWhere('category'),
@@ -563,53 +591,68 @@ export class ProductService {
         }),
       ]);
 
-    // Per-leaf counts, folded into one subtree total per category the sidebar
-    // renders. The frontend used to do this fold itself, which is why the map
-    // had to carry every category in the catalogue.
-    const leafCounts = new Map(
-      categoryCounts.map((item) => [item.categoryId, item._count._all]),
-    );
-    const facets = {
-      // Categories that match nothing in the current context are left out
-      // entirely rather than reported as `0`. A zero is not a filter the
-      // visitor can use: the storefront rendered those rows as "Дрели 0",
-      // links to a grid guaranteed to be empty.
-      categories: Object.fromEntries(
-        facetScope
-          .map(
-            (node) =>
-              [
-                node.id,
-                node.descendants.reduce(
-                  (sum, id) => sum + (leafCounts.get(id) ?? 0),
-                  0,
-                ),
-              ] as const,
-          )
-          .filter(([, count]) => count > 0),
-      ),
-      brands: Object.fromEntries(
-        brandCounts
-          .filter((item) => item.brandId)
-          .map((item) => [item.brandId as string, item._count._all]),
-      ),
-      /**
-       * No `sources` facet on purpose. The «Поставщик» filter is admin-only
-       * (which supplier carries what is internal), so counting it cost four
-       * semi-joins over `SourceProduct` on every listing — and on every filter
-       * change, which Nitro does not cache — to produce numbers nobody but an
-       * admin could ever see. The admin facet renders the supplier list from
-       * `GET /sources` without counts.
-       */
-      priceRange:
-        price._min.priceValue !== null
-          ? {
-              min: Math.floor(price._min.priceValue),
-              max: Math.ceil(price._max.priceValue ?? price._min.priceValue),
-            }
-          : null,
-      specs: specFacets,
+      // Per-leaf counts, folded into one subtree total per category the sidebar
+      // renders. The frontend used to do this fold itself, which is why the map
+      // had to carry every category in the catalogue.
+      const leafCounts = new Map(
+        categoryCounts.map((item) => [item.categoryId, item._count._all]),
+      );
+      const facets = {
+        // Categories that match nothing in the current context are left out
+        // entirely rather than reported as `0`. A zero is not a filter the
+        // visitor can use: the storefront rendered those rows as "Дрели 0",
+        // links to a grid guaranteed to be empty.
+        categories: Object.fromEntries(
+          facetScope
+            .map(
+              (node) =>
+                [
+                  node.id,
+                  node.descendants.reduce(
+                    (sum, id) => sum + (leafCounts.get(id) ?? 0),
+                    0,
+                  ),
+                ] as const,
+            )
+            .filter(([, count]) => count > 0),
+        ),
+        brands: Object.fromEntries(
+          brandCounts
+            .filter((item) => item.brandId)
+            .map((item) => [item.brandId as string, item._count._all]),
+        ),
+        /**
+         * No `sources` facet on purpose. The «Поставщик» filter is admin-only
+         * (which supplier carries what is internal), so counting it cost four
+         * semi-joins over `SourceProduct` on every listing — and on every filter
+         * change, which Nitro does not cache — to produce numbers nobody but an
+         * admin could ever see. The admin facet renders the supplier list from
+         * `GET /sources` without counts.
+         */
+        priceRange:
+          price._min.priceValue !== null
+            ? {
+                min: Math.floor(price._min.priceValue),
+                max: Math.ceil(price._max.priceValue ?? price._min.priceValue),
+              }
+            : null,
+        specs: specFacets,
+      };
+      return { total, facets };
     };
+
+    const [products, { total, facets }] = await Promise.all([
+      useRelevance && searchTerm
+        ? this.findPageByRelevance(where, rankedIds ?? undefined, skip, limit)
+        : this.prisma.product.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy,
+            include: LIST_INCLUDE,
+          }),
+      this.cachedSummary(facetsCacheKey(filter), computeSummary),
+    ]);
 
     const data = products.map((product) => {
       const { _count, ...rest } = product;
@@ -718,6 +761,39 @@ export class ProductService {
       );
     }
     return { OR: substring };
+  }
+
+  /** filter set → { total, facets }. Insertion order doubles as LRU order. */
+  private readonly summaryCache = new Map<
+    string,
+    { at: number; value: Promise<unknown> }
+  >();
+
+  /**
+   * Shares one computation of `total` + facets among every request for the
+   * same filter set within FACETS_CACHE_TTL_MS — concurrent ones included, so
+   * a crawler paging through a category computes them once, not per page.
+   */
+  private cachedSummary<T>(key: string, compute: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    const hit = this.summaryCache.get(key);
+    if (hit && now - hit.at < FACETS_CACHE_TTL_MS) {
+      this.summaryCache.delete(key);
+      this.summaryCache.set(key, hit);
+      return hit.value as Promise<T>;
+    }
+    const value = compute();
+    const entry = { at: now, value };
+    this.summaryCache.set(key, entry);
+    // A failure is not remembered: the next request recomputes.
+    value.catch(() => {
+      if (this.summaryCache.get(key) === entry) this.summaryCache.delete(key);
+    });
+    while (this.summaryCache.size > FACETS_CACHE_MAX_ENTRIES) {
+      const oldest = this.summaryCache.keys().next().value as string;
+      this.summaryCache.delete(oldest);
+    }
+    return value;
   }
 
   /** term → ranked ids, for a minute. Insertion order doubles as LRU order. */
