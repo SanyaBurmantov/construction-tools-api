@@ -352,8 +352,8 @@ export function resolveBrand(
   breadcrumbs: string[],
 ) {
   const candidates = [
-    findSpecValue(specs, 'производитель'),
-    findSpecValue(specs, 'бренд'),
+    findBrandSpec(specs, 'производитель'),
+    findBrandSpec(specs, 'бренд'),
     jsonLdBrand,
     parseBrand($),
   ];
@@ -397,6 +397,20 @@ export function parseBrand($: cheerio.CheerioAPI) {
   );
 
   return text.replace(/^Производитель:\s*/, '') || undefined;
+}
+
+/**
+ * A spec whose *name* is the word — «Производитель», «Производитель / бренд»,
+ * «Бренд:» — not one that merely contains it. `findSpecValue`'s substring
+ * match took «Производительность» (a compressor's air flow) for the maker:
+ * dukon's compressors became brands «420 литров/мин», «1650/1400/1100 л/мин».
+ */
+export function findBrandSpec(
+  specs: { name: string; value: string }[],
+  word: string,
+) {
+  const pattern = new RegExp(`^${word}(?:$|[\\s/:,(])`, 'i');
+  return specs.find((spec) => pattern.test(spec.name.trim()))?.value;
 }
 
 export function findSpecValue(

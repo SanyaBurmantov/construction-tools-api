@@ -313,6 +313,17 @@ describe('ProductService.findAllFiltered', () => {
     expect(productCount).toHaveBeenCalledTimes(2);
   });
 
+  it('puts complete cards first in the default order', async () => {
+    const { service, productFindMany } = buildService();
+
+    await service.findAllFiltered({});
+
+    const args = productFindMany.mock.calls[0][0] as never as {
+      orderBy: unknown;
+    };
+    expect(args.orderBy).toEqual([{ listingRank: 'desc' }, { name: 'asc' }]);
+  });
+
   // Prisma rejects `nulls` on non-nullable columns, so only priceValue and
   // ratingAvg may carry it.
   it('omits the nulls option when sorting by a non-nullable column', async () => {

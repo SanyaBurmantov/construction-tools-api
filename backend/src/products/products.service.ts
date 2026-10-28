@@ -184,7 +184,9 @@ export class ProductService {
         images: { orderBy: { order: 'asc' } },
         // Supplier rows are counted, never returned: they carry the purchase
         // URL and our cost, which must not leave the admin surface.
-        sourceProducts: { select: { stock: true, price: true } },
+        sourceProducts: {
+          select: { stock: true, price: true, lastSync: true },
+        },
         productSpecs: {
           include: { specification: true },
         },
@@ -235,6 +237,15 @@ export class ProductService {
         count: priced.length,
         inStockCount: priced.filter((offer) => offer.stock).length,
       },
+      /**
+       * When the price was last checked against a supplier — the newest
+       * offer sync. Shown as «Цена обновлена …» and the base of the
+       * JSON-LD `priceValidUntil`. Null for a product with no offer.
+       */
+      priceCheckedAt:
+        priced
+          .map((offer) => offer.lastSync)
+          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
     };
   }
 
@@ -550,8 +561,12 @@ export class ProductService {
     // instead of leading the list as NULLs.
     const NULLABLE_SORT_FIELDS = new Set<string>(['priceValue', 'ratingAvg']);
 
-    const orderBy: Prisma.ProductOrderByWithRelationInput = (() => {
-      if (!filter.sortBy) return { name: 'asc' };
+    const orderBy:
+      | Prisma.ProductOrderByWithRelationInput
+      | Prisma.ProductOrderByWithRelationInput[] = (() => {
+      // Default order: complete cards (photo, description) first, then by
+      // name — see ListingRankService.
+      if (!filter.sortBy) return [{ listingRank: 'desc' }, { name: 'asc' }];
 
       const field = SORT_FIELDS[filter.sortBy];
       const direction = filter.sortOrder ?? 'asc';
@@ -713,7 +728,7 @@ export class ProductService {
         await this.prisma.product.findMany({
           where,
           select: { id: true },
-          orderBy: { name: 'asc' },
+          orderBy: [{ listingRank: 'desc' }, { name: 'asc' }],
           skip,
           take: limit,
         })
@@ -904,7 +919,7 @@ export class ProductService {
         FROM "Product" p
         LEFT JOIN "Brand" b ON b."id" = p."brandId"
         WHERE p."status" = 'PUBLISHED' AND p."id" IN (SELECT "id" FROM matched)
-        ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."name" ASC
+        ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."listingRank" DESC, p."name" ASC
         LIMIT ${SEARCH_MATCH_LIMIT + 1}
       `),
     );

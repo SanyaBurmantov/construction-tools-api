@@ -62,6 +62,17 @@ const NOT_A_BRAND = new Set([
  */
 const SPARE_PARTS = /^запчаст[иь](?=$|[\s\-–—,.:/])/;
 
+/**
+ * A measurement, not a maker: «420 литров/мин», «1650/1400/1100 л/мин»,
+ * «2,7-3,3 л/мин», «130 кг/час» — a compressor's air flow that a substring
+ * match on «Производитель…ность» put in the brand column (dukon) — and bare
+ * numbers («390», «1 910»). Numbered trademarks (K2, WD-40, 3TON, M7,
+ * Рубин-7, UNIVERSAL 9000) have letters and survive.
+ */
+const MEASUREMENT =
+  /^[\d\s.,/\-–—]+\s*(?:л|литр[а-яё]*|l|кг|kg|м3|м³|куб\.?\s*м|m3|г|g|т|t)\s*\/\s*(?:мин|min|час|ч|h|сек|с|s)\.?$/;
+const BARE_NUMBER = /^[\d\s.,/\-–—]+$/;
+
 /** Longer than this is a legal address or a sentence, not a trademark. */
 const MAX_BRAND_LENGTH = 50;
 
@@ -86,6 +97,7 @@ export function normalizeBrandName(
   const folded = fold(name);
   if (NOT_A_BRAND.has(folded)) return null;
   if (SPARE_PARTS.test(folded)) return null;
+  if (MEASUREMENT.test(folded) || BARE_NUMBER.test(folded)) return null;
 
   return name;
 }

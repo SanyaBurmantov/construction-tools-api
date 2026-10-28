@@ -232,6 +232,22 @@ describe('dukon.parse helpers', () => {
       ).toBe('Nordberg');
     });
 
+    // «Производительность» contains «производитель»: a compressor's air flow
+    // became the brand «420 литров/мин».
+    it('does not take «Производительность» for the manufacturer', () => {
+      expect(
+        parser.resolveBrand(
+          empty,
+          [
+            spec('Производительность', '420 литров/мин'),
+            spec('Производитель / бренд', 'Fubag'),
+          ],
+          undefined,
+          [],
+        ),
+      ).toBe('Fubag');
+    });
+
     it('rejects a legal entity and falls through to the next candidate', () => {
       // dukon's "Производитель" is frequently the company record. A wrong brand
       // is worse than none: brand+sku is one of only two signals that auto-merge

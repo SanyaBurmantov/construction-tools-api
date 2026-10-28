@@ -156,6 +156,10 @@ model Product {
   categoryId        String
   sku               String?
   barcode           String?
+  /// How complete the card is, for the default catalogue order: 2 for a real
+  /// photo + 1 for a description (0–3). Recomputed hourly by
+  /// ListingRankService; a bare card sinks below the ones a buyer can judge.
+  listingRank       Int                    @default(0)
   model             String?
   images            ProductImage[]
   priceValue        Float?
@@ -214,6 +218,7 @@ model Product {
   @@index([status, priceValue])
   @@index([status, createdAt])
   @@index([status, name])
+  @@index([status, listingRank, name])
   @@index([status, ratingAvg])
   @@index([status, updatedAt])
   @@index([categoryId])

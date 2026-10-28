@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CategoryDuplicatesCron } from './category-duplicates.cron';
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
@@ -33,6 +34,7 @@ import { SpecificationsAdminService } from './specifications-admin.service';
     AdminService,
     DataQualityService,
     CategoryMergeService,
+    CategoryDuplicatesCron,
     SpecificationsAdminService,
   ],
   // The catalogue normalizer merges categories too, and re-implementing the
