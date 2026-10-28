@@ -77,8 +77,14 @@ export class ProductTextCleanupService
         SELECT id, name, "descriptionShort", "descriptionFull", "seoTitle", "seoDescription"
         FROM "Product"
         WHERE id > ${afterId}
-          AND concat_ws(' ', "descriptionShort", "descriptionFull", "seoTitle", "seoDescription")
+          AND (
+            concat_ws(' ', "descriptionShort", "descriptionFull", "seoTitle", "seoDescription")
               ~ '☎|➢|\\+ ?375|[Зз]воните|[Лл]учшие цены|с гарантией и доставкой|[Мм]инске|[Мм]ниске'
+            -- The supplier's tab labels in front of the text (stripTabHeaders).
+            OR "descriptionFull" ~ '^\\s*(Файлы\\s|Описание)'
+            OR "descriptionShort" ~ '^\\s*(Файлы\\s|Описание)'
+            OR "seoDescription" ~ '^\\s*(Файлы\\s|Описание)'
+          )
         ORDER BY id
         LIMIT ${CHUNK}
       `;
