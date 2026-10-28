@@ -162,9 +162,16 @@ fi
 for svc in "${SERVICES[@]}"; do
   name=${CONTAINER[$svc]}
   # id|status|health|restarts|oomkilled|exitcode|finishedAt
+  # Docker 29 drops the Health key for a container without a healthcheck, and
+  # `.State.Health` then fails the whole template ("map has no entry"), which
+  # read as status=missing. `index` tolerates the missing key; the older form
+  # stays as the fallback for daemons whose State is still a struct.
   info=$(timeout 20s docker inspect --format \
-    '{{.Id}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.State.ExitCode}}|{{.State.FinishedAt}}' \
-    "$name" 2>/dev/null) || info=""
+    '{{.Id}}|{{.State.Status}}|{{with index .State "Health"}}{{.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.State.ExitCode}}|{{.State.FinishedAt}}' \
+    "$name" 2>/dev/null) ||
+    info=$(timeout 20s docker inspect --format \
+      '{{.Id}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.RestartCount}}|{{.State.OOMKilled}}|{{.State.ExitCode}}|{{.State.FinishedAt}}' \
+      "$name" 2>/dev/null) || info=""
 
   if [[ -z "$info" ]]; then
     status=missing health=none restarts="" oom=false exit_code="" finished="" id=""
