@@ -91,6 +91,29 @@ describe('tab headers', () => {
     expect(sanitizeSupplierText(input)).toBe(expected);
   });
 
+  it('strips a repeated label and one glued to the text', () => {
+    expect(
+      sanitizeSupplierText(
+        'Файлы X Y Описание Описание: Алмазный отрезной круг.',
+      ),
+    ).toBe('Алмазный отрезной круг.');
+    expect(
+      sanitizeSupplierText('Описаниевыпускаются по ГОСТ Р 58863-2020.'),
+    ).toBe('выпускаются по ГОСТ Р 58863-2020.');
+    expect(sanitizeSupplierText('Описанием служит паспорт изделия.')).toBe(
+      'Описанием служит паспорт изделия.',
+    );
+  });
+
+  it('empties a description that is nothing but tab labels', () => {
+    expect(sanitizeSupplierText('Файлы STARTUL Ручной инструмент')).toBe('');
+    expect(
+      sanitizeSupplierText(
+        'Файлы PRO STARTUL Автомобильный слесарный инструмент',
+      ),
+    ).toBe('');
+  });
+
   it('keeps a description that merely starts with the word', () => {
     expect(sanitizeSupplierText('Описание товара уточняйте у менеджера.')).toBe(
       'Описание товара уточняйте у менеджера.',

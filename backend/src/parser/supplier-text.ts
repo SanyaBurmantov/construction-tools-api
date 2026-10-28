@@ -69,8 +69,26 @@ const HAS_CONTENT = /[\p{L}\d]/u;
 const TAB_HEADERS =
   /^\s*(?:Файлы(?=\s)[^\n]{0,160}?\s*)?Описание(?:\s*:\s*|\s+(?=[\p{Lu}\d«"])|(?=[\p{Lu}]))/u;
 
+/** Only tab labels, no text at all: «Файлы STARTUL Ручной инструмент». */
+const LABELS_ONLY = /^\s*Файлы\s[^.!?\n]{0,120}$/u;
+
+/**
+ * «Описаниевыпускаются по ГОСТ…» — the heading glued to the text. A glued
+ * lower-case letter cannot start a word after «Описание», except the
+ * instrumental «Описанием», which is left alone.
+ */
+const GLUED_HEADER = /^\s*Описание(?=[а-яё])(?!м)/u;
+
 export function stripTabHeaders(text: string): string {
-  return text.replace(TAB_HEADERS, '');
+  if (LABELS_ONLY.test(text)) return '';
+  // tools.by sometimes repeats the label: «… Описание Описание: Алмазный…».
+  let current = text;
+  for (let i = 0; i < 3; i++) {
+    const next = current.replace(TAB_HEADERS, '').replace(GLUED_HEADER, '');
+    if (next === current) break;
+    current = next;
+  }
+  return current;
 }
 
 function isMarketing(sentence: string) {
