@@ -101,6 +101,7 @@ export class ParserWatchdogCron {
 
   private describe(job: {
     lastError: string | null;
+    lastErrorAt?: Date | null;
     health: string;
     maxAgeHours: number | null;
     failureRate?: number | null;
@@ -115,6 +116,11 @@ export class ParserWatchdogCron {
     }
     if (job.health === 'STALE')
       return `Успешного запуска не было более ${job.maxAgeHours} ч`;
-    return job.lastError ?? 'неизвестная ошибка';
+    // The dedup set lives in memory, so every deploy re-announces a failure
+    // that is still on record; the time says whether it is a new one.
+    const at = job.lastErrorAt
+      ? ` (сбой ${job.lastErrorAt.toLocaleString('ru-BY', { timeZone: 'Europe/Minsk', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})`
+      : '';
+    return `${job.lastError ?? 'неизвестная ошибка'}${at}`;
   }
 }
