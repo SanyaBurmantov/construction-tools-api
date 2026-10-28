@@ -30,6 +30,9 @@ export class ThToolsCron {
   @Cron('0 5 * * * *')
   async processCategoryQueue() {
     if (!(await this.settings.isSourceCronEnabled(SOURCE_CODE))) return;
-    this.jobs.runFromCron(SOURCE_CODE, 'categories');
+    // The :00 product batch takes ~6.5 min, so at :05 it nearly always held
+    // the source and this slot was skipped — the category crawl ran a couple
+    // of times a day. Queue behind it instead; it starts at ~:07.
+    this.jobs.runFromCron(SOURCE_CODE, 'categories', { waitForLock: true });
   }
 }

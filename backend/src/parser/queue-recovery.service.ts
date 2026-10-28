@@ -175,6 +175,30 @@ export class QueueRecoveryService {
         data: { status: 'PENDING', attempts: 0, lastError: null },
       });
 
+    // Failed categories come back on the same rules as failed product URLs.
+    // They never did: th-tool.by's 13–24 Oct outage left all 716 categories
+    // FAILED, and the crawl reported SUCCESS on an empty queue every hour.
+    const categoriesRetried = await this.prisma.parserCategoryQueue.updateMany({
+      where: {
+        sourceCode: 'th-tools',
+        status: 'FAILED',
+        isEnabled: true,
+        attempts: { lt: settings.maxAttempts },
+        lastTriedAt: { lt: retryCutoff },
+      },
+      data: { status: 'PENDING' },
+    });
+    const categoriesRevived = await this.prisma.parserCategoryQueue.updateMany({
+      where: {
+        sourceCode: 'th-tools',
+        status: 'FAILED',
+        isEnabled: true,
+        attempts: { gte: settings.maxAttempts },
+        lastTriedAt: { lt: failedCutoff },
+      },
+      data: { status: 'PENDING', attempts: 0 },
+    });
+
     const total = Object.values(results).reduce((sum, n) => sum + n, 0);
     if (total) {
       this.logger.log(
@@ -196,6 +220,8 @@ export class QueueRecoveryService {
       parked,
       revived,
       categoriesRefreshed: categoriesRefreshed.count,
+      categoriesRetried: categoriesRetried.count,
+      categoriesRevived: categoriesRevived.count,
     };
   }
 }
