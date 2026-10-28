@@ -24,6 +24,7 @@ const forbidden = computed(() => Boolean(user.value) && !isAdmin.value)
 const nav = computed(() => [
   { label: 'Дашборд', to: '/admin', icon: 'grid', exact: true },
   { label: 'Заказы', to: '/admin/orders', icon: 'cart', badge: badges.value?.newOrders },
+  { label: 'Заявки', to: '/admin/leads', icon: 'log', badge: badges.value?.newLeads },
   { label: 'Товары', to: '/admin/products', icon: 'box' },
   {
     label: 'Цены',
@@ -43,6 +44,7 @@ const nav = computed(() => [
   },
   { label: 'Промокоды', to: '/admin/promo-codes', icon: 'ticket' },
   { label: 'Пользователи', to: '/admin/users', icon: 'user' },
+  { label: 'Реквизиты', to: '/admin/settings', icon: 'book' },
   { label: 'Журнал', to: '/admin/audit', icon: 'log' },
   {
     label: 'Ошибки',

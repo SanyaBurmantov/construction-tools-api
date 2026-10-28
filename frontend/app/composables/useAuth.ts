@@ -12,7 +12,13 @@ export type AccountUser = {
   emailVerifiedAt: string | null
   phone: string | null
   companyName: string | null
+  /** УНП. */
   taxId: string | null
+  legalAddress: string | null
+  /** Settlement account, a BY IBAN. */
+  bankAccount: string | null
+  bankName: string | null
+  bankBic: string | null
   isActive: boolean
   lastLoginAt: string | null
   createdAt: string
@@ -27,6 +33,10 @@ export type RegisterPayload = {
   phone?: string
   companyName?: string
   taxId?: string
+  legalAddress?: string
+  bankAccount?: string
+  bankName?: string
+  bankBic?: string
 }
 
 /** What login/register answer a browser with: the token itself stays in the cookie. */

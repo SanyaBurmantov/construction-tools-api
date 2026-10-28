@@ -408,6 +408,24 @@ model Order {
   deliveryMethod  DeliveryMethod @default(PICKUP)
   deliveryAddress String?
   paymentMethod   PaymentMethod  @default(CASH)
+  /// Who the invoice is made out to — a snapshot taken at checkout, like the
+  /// line prices. Reading it through `user` lost it as soon as the company
+  /// edited its profile or deleted the account. Null for a private buyer.
+  payerType       CustomerType?
+  payerName       String?
+  /// УНП.
+  payerTaxId      String?
+  payerAddress    String?
+  payerAccount    String?
+  payerBankName   String?
+  payerBankBic    String?
+  /// Where the buyer came from — «yandex / cpc», «google / organic»,
+  /// «direct» (attribution/traffic-source.ts, last non-direct touch).
+  trafficSource      String?
+  /// The very first visit's source (how they found us at all).
+  firstTrafficSource String?
+  /// Both raw touches (UTM tags, click ids, referrer host, landing page).
+  attribution        Json?
   currency        String         @default("BYN")
   itemsTotal      Float          @default(0)
   deliveryCost    Float          @default(0)
@@ -424,6 +442,8 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([userId, createdAt])
+  @@index([payerTaxId])
+  @@index([trafficSource, createdAt])
 }
 
 model OrderItem {
@@ -775,8 +795,15 @@ model User {
   /// Required for COMPANY accounts (checked in the service, not the schema, so
   /// an admin can still fix a half-filled row).
   companyName     String?
-  /// УНП / ИНН.
+  /// УНП (checksum-validated on input, see common/utils/requisites.ts).
   taxId           String?
+  /// Invoice requisites of a COMPANY account — copied into every order it
+  /// places (see Order.payer*), so the profile can change afterwards.
+  legalAddress    String?
+  /// Settlement account, a BY IBAN.
+  bankAccount     String?
+  bankName        String?
+  bankBic         String?
   /// Deactivated accounts keep their orders and sessions history but cannot
   /// log in, and every live session is dropped the moment the flag goes off.
   isActive        Boolean      @default(true)
@@ -791,6 +818,8 @@ model User {
   reviews            Review[]
   adminActions       AdminActionLog[]
   emailVerifications EmailVerification[]
+  purchaseLists      PurchaseList[]
+  leads              Lead[]
 
   @@index([role])
 }
@@ -1041,3 +1070,83 @@ model AiTaskItem {
   @@unique([taskId, entityId])
   @@index([taskId, status])
 }
+
+/// Site-wide settings an admin edits at runtime (`seller.*`: the shop's own
+/// requisites printed on invoices and quotes). Key/value like ParserSetting,
+/// read through SellerService with code defaults behind it.
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+enum LeadKind {
+  /// A commercial offer downloaded from the cart.
+  QUOTE
+  /// «Уточнить наличие / подобрать аналог» on a product, or the contact form
+  /// on the page for organisations.
+  QUESTION
+}
+
+enum LeadStatus {
+  NEW
+  IN_WORK
+  DONE
+  REJECTED
+}
+
+/// A request from a would-be customer that is not an order yet. Orders have
+/// their own table; this is what a manager calls back on.
+model Lead {
+  id          String     @id @default(uuid())
+  number      Int        @unique @default(autoincrement())
+  kind        LeadKind
+  status      LeadStatus @default(NEW)
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId      String?
+  companyName String?
+  /// УНП.
+  taxId       String?
+  contactName String?
+  phone       String?
+  email       String?
+  message     String?
+  /// The product a question is about (snapshot name kept if it is deleted).
+  productId   String?
+  productName String?
+  productSlug String?
+  /// Quote lines as priced when the quote was made: [{productId, name, slug,
+  /// sku, quantity, unitPrice, lineTotal}].
+  items       Json?
+  total       Float?
+  currency    String?
+  /// Salted hash of the requester's IP, for the per-IP limit — never the IP.
+  ipHash      String?
+  /// Same as Order: last non-direct source, first source, raw touches.
+  trafficSource      String?
+  firstTrafficSource String?
+  attribution        Json?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([ipHash, createdAt])
+}
+
+/// A named list of regular purchases («расходники на месяц»). Stores only
+/// product ids and quantities — names and prices are read from Product every
+/// time, the same rule as the stored cart.
+model PurchaseList {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  name      String
+  /// [{productId, quantity}]
+  items     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+

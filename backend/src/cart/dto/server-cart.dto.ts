@@ -10,6 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MAX_CART_LINES, MAX_LINE_QUANTITY } from '../cart-limits';
 
 export class CartItemDto {
   @ApiProperty({ description: 'ID товара' })
@@ -17,11 +18,11 @@ export class CartItemDto {
   @IsUUID()
   productId!: string;
 
-  @ApiProperty({ minimum: 1, maximum: 999 })
+  @ApiProperty({ minimum: 1, maximum: MAX_LINE_QUANTITY })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(999)
+  @Max(MAX_LINE_QUANTITY)
   quantity!: number;
 }
 
@@ -32,7 +33,7 @@ export class CartItemDto {
 export class CartItemsDto {
   @ApiProperty({ type: [CartItemDto] })
   @IsArray()
-  @ArrayMaxSize(200)
+  @ArrayMaxSize(MAX_CART_LINES)
   @ValidateNested({ each: true })
   @Type(() => CartItemDto)
   items!: CartItemDto[];

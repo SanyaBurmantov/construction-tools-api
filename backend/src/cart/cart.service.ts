@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 import { ValidateCartDto } from './dto/validate-cart.dto';
+import { MAX_LINE_QUANTITY } from './cart-limits';
 
 /** Why a cart line can't be ordered as-is. `null` means the line is fine. */
 export type CartIssue =
@@ -50,7 +51,10 @@ export class CartService {
     for (const item of dto.items) {
       quantities.set(
         item.productId,
-        Math.min((quantities.get(item.productId) ?? 0) + item.quantity, 999),
+        Math.min(
+          (quantities.get(item.productId) ?? 0) + item.quantity,
+          MAX_LINE_QUANTITY,
+        ),
       );
       if (!clientPrices.has(item.productId)) {
         clientPrices.set(item.productId, item.price ?? null);

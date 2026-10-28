@@ -1,5 +1,5 @@
 import { MailService, parseAddressList } from './mail.service';
-import { buildOrderMail } from './order-mail';
+import { buildCustomerOrderMail, buildOrderMail } from './order-mail';
 import type { OrderNotification } from './telegram.service';
 
 const order: OrderNotification = {
@@ -73,5 +73,44 @@ describe('buildOrderMail', () => {
     const mail = buildOrderMail(order);
     expect(mail.html).toContain('&lt;b&gt;Иван&lt;/b&gt;');
     expect(mail.html).not.toContain('<b>Иван</b>');
+  });
+});
+
+const companyOrder: OrderNotification = {
+  ...order,
+  paymentMethod: 'INVOICE',
+  payerName: 'ООО «Ромашка»',
+  payerTaxId: '391807521',
+  payerAddress: 'г. Витебск, ул. Ленина, 1',
+  payerAccount: 'BY15AKBB30120000000040000000',
+  payerBankName: 'Беларусбанк',
+  payerBankBic: 'AKBBBY2X',
+};
+
+describe('company orders in letters', () => {
+  it('puts the payer first in the shop letter and in its subject', () => {
+    const mail = buildOrderMail(companyOrder);
+    expect(mail.subject).toBe('Новый заказ №42 — ООО «Ромашка» — 115.00 BYN');
+    expect(mail.text).toContain('Организация: ООО «Ромашка»');
+    expect(mail.text).toContain('УНП: 391807521');
+    expect(mail.text).toContain('Банк: Беларусбанк, БИК AKBBBY2X');
+    expect(mail.text).toContain('Контактное лицо: <b>Иван</b>');
+    expect(mail.html).toContain('ООО «Ромашка»');
+  });
+
+  it('confirms the order to the customer, promising an invoice', () => {
+    const mail = buildCustomerOrderMail(companyOrder, 'https://gost.by');
+    expect(mail.subject).toBe('Заказ №42 принят — 115.00 BYN');
+    expect(mail.text).toContain('пришлёт счёт на оплату');
+    expect(mail.text).toContain('УНП: 391807521');
+    expect(mail.text).toContain('https://gost.by/account?tab=orders');
+    // Never the admin link.
+    expect(mail.text).not.toContain('/admin/');
+  });
+
+  it('leaves the payer out of a private order', () => {
+    const mail = buildCustomerOrderMail(order);
+    expect(mail.text).not.toContain('Плательщик');
+    expect(mail.text).toContain('свяжется с вами');
   });
 });

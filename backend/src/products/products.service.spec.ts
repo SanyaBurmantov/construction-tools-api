@@ -1,4 +1,4 @@
-import { ProductService } from './products.service';
+import { ProductService, barcodeTerm } from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const categories = [
@@ -729,5 +729,19 @@ describe('public product payload', () => {
     expect(product.images).toEqual([
       { url: 'https://th-tool.by/shop/products/real.970.webp' },
     ]);
+  });
+});
+
+describe('barcodeTerm', () => {
+  it('recognises EAN-8 … GTIN-14, spaces and dashes dropped', () => {
+    expect(barcodeTerm('4810992031625')).toBe('4810992031625');
+    expect(barcodeTerm('4 810992 031625')).toBe('4810992031625');
+    expect(barcodeTerm('40170725')).toBe('40170725');
+  });
+
+  it('leaves articles and short numbers to the ordinary search', () => {
+    expect(barcodeTerm('125266')).toBeNull();
+    expect(barcodeTerm('GSB 13 RE')).toBeNull();
+    expect(barcodeTerm('481099203162512')).toBeNull();
   });
 });

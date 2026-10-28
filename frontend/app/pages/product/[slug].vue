@@ -299,7 +299,7 @@ useHead(() => {
             </p>
 
             <div v-if="canBuy" class="buy-actions">
-              <UiQuantity v-model="quantity" :max="999" />
+              <UiQuantity v-model="quantity" />
               <UiButton size="lg" class="buy-button" @click="addToCart(quantity)">
                 {{ inCart ? 'Добавить ещё' : 'В корзину' }}
               </UiButton>
@@ -330,6 +330,10 @@ useHead(() => {
                 <UiIcon name="compare" :stroke-width="1.8" />
                 {{ isComparing ? 'В сравнении' : 'Сравнить' }}
               </button>
+
+              <ClientOnly>
+                <ProductAskManager :product-id="product.id" :product-name="product.name" :in-stock="inStock" />
+              </ClientOnly>
             </div>
 
             <p v-if="(product.offers?.count ?? 0) > 1" class="offers-note">
@@ -543,6 +547,7 @@ useHead(() => {
 
 .secondary-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
 }
 

@@ -1,8 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { createTransport, type Transporter } from 'nodemailer';
+import { TelegramService } from './telegram.service';
 
 /** A slow mail server must not hold a request or a cron for long. */
 const SMTP_TIMEOUT_MS = 15000;
+/** One Telegram alert per hour at most while mail stays broken. */
+const ALERT_INTERVAL_MS = 60 * 60 * 1000;
 
 export type MailMessage = {
   to: string | string[];
@@ -42,6 +45,10 @@ export function parseAddressList(value: string | undefined): string[] {
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter | null = null;
+  private lastAlertAt = 0;
+
+  // Optional so the pure helpers and the tests can build it bare.
+  constructor(@Optional() private readonly telegram?: TelegramService) {}
 
   private get host() {
     return process.env.SMTP_HOST?.trim() || '';
@@ -72,6 +79,15 @@ export class MailService implements OnModuleInit {
   onModuleInit() {
     if (this.enabled) {
       this.logger.log(`SMTP mail enabled via ${this.host} as ${this.user}`);
+      // "Enabled" only meant the variables were set: a wrong password stayed
+      // invisible until somebody noticed letters were missing. Log in once at
+      // boot so a broken mailbox is reported within a minute of a deploy.
+      // Not awaited — the API must not wait on a mail server to start.
+      void this.verify().then((problem) => {
+        if (problem)
+          this.reportFailure(`SMTP login failed at startup: ${problem}`);
+        else this.logger.log('SMTP login verified');
+      });
     } else {
       this.logger.warn(
         'SMTP mail disabled — set SMTP_HOST, SMTP_USER and SMTP_PASSWORD to enable',
@@ -98,6 +114,31 @@ export class MailService implements OnModuleInit {
     return this.transporter;
   }
 
+  /**
+   * Connects and logs in without sending anything. Resolves null when the
+   * server accepted the credentials, otherwise the server's reason.
+   */
+  async verify(): Promise<string | null> {
+    if (!this.enabled) return 'SMTP is not configured';
+    try {
+      await this.transport().verify();
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  /** Logs a mail failure and tells the alerts topic, at most once an hour. */
+  private reportFailure(message: string) {
+    this.logger.error(message);
+    const now = Date.now();
+    if (!this.telegram || now - this.lastAlertAt < ALERT_INTERVAL_MS) return;
+    this.lastAlertAt = now;
+    void this.telegram
+      .notifyMailProblem(`${this.user} @ ${this.host}`, message)
+      .catch(() => undefined);
+  }
+
   /** A letter to the shop itself (`MAIL_ADMIN_TO`); false when none is set. */
   async sendToAdmins(
     message: Omit<MailMessage, 'to'>,
@@ -116,7 +157,7 @@ export class MailService implements OnModuleInit {
       await this.transport().sendMail({ from: this.from, ...message });
       return true;
     } catch (error) {
-      this.logger.error(
+      this.reportFailure(
         `Mail send failed${label}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return false;

@@ -29,6 +29,7 @@ const TABS = [
 const route = useRoute()
 const router = useRouter()
 const { adminFetch, errorMessage } = useAdminApi()
+const { invoiceUrl, isInvoiceable } = useB2b()
 const toast = useAppToast()
 const { run, busy } = useAdminAction()
 
@@ -105,7 +106,7 @@ onMounted(async () => {
 <template>
   <div class="admin-page">
     <AdminPageHead title="Заказы" :description="`${pagination.total} заказов всего`">
-      <UiInput v-model="search" placeholder="Номер, имя, телефон или email" size="sm" class="search" />
+      <UiInput v-model="search" placeholder="Номер, имя, телефон, email, организация, УНП или источник" size="sm" class="search" />
     </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
@@ -132,12 +133,14 @@ onMounted(async () => {
 
       <template #cell-customer="{ row: order }">
         <div class="customer">
-          <strong>{{ order.customerName }}</strong>
+          <strong>{{ order.payerName || order.customerName }}</strong>
+          <span v-if="order.payerName">{{ order.customerName }}<template v-if="order.payerTaxId"> · УНП {{ order.payerTaxId }}</template></span>
           <span>{{ order.customerPhone }}</span>
           <span v-if="order.user" class="account">
             аккаунт: {{ order.user.login }}
           </span>
           <span v-else class="account is-guest">без аккаунта</span>
+          <span v-if="order.trafficSource" class="account">{{ order.trafficSource }}</span>
         </div>
       </template>
 
@@ -231,12 +234,37 @@ onMounted(async () => {
                   <span v-else class="admin-muted">гостевой заказ</span>
                 </dd>
               </div>
-              <div v-if="detail.user?.companyName">
+              <div v-if="detail.payerName">
                 <dt>Организация</dt>
-                <dd>{{ detail.user.companyName }}</dd>
+                <dd>
+                  {{ detail.payerName }}
+                  <a
+                    v-if="isInvoiceable(detail)"
+                    :href="invoiceUrl(detail.id)"
+                    target="_blank"
+                    rel="noopener"
+                    class="invoice-link"
+                  >счёт (PDF)</a>
+                </dd>
+              </div>
+              <div v-if="detail.payerTaxId">
+                <dt>УНП</dt>
+                <dd>{{ detail.payerTaxId }}</dd>
+              </div>
+              <div v-if="detail.payerAddress">
+                <dt>Юр. адрес</dt>
+                <dd>{{ detail.payerAddress }}</dd>
+              </div>
+              <div v-if="detail.payerAccount">
+                <dt>Р/с</dt>
+                <dd>{{ detail.payerAccount }}</dd>
+              </div>
+              <div v-if="detail.payerBankName || detail.payerBankBic">
+                <dt>Банк</dt>
+                <dd>{{ [detail.payerBankName, detail.payerBankBic && `БИК ${detail.payerBankBic}`].filter(Boolean).join(', ') }}</dd>
               </div>
               <div>
-                <dt>Имя</dt>
+                <dt>{{ detail.payerName ? 'Контактное лицо' : 'Имя' }}</dt>
                 <dd>{{ detail.customerName }}</dd>
               </div>
               <div>
@@ -267,6 +295,16 @@ onMounted(async () => {
               <div>
                 <dt>Оплата</dt>
                 <dd>{{ PAYMENT_LABEL[detail.paymentMethod] || detail.paymentMethod }}</dd>
+              </div>
+              <div v-if="detail.trafficSource">
+                <dt>Источник</dt>
+                <dd>
+                  {{ detail.trafficSource }}
+                  <span
+                    v-if="detail.firstTrafficSource && detail.firstTrafficSource !== detail.trafficSource"
+                    class="admin-muted"
+                  >· впервые пришёл: {{ detail.firstTrafficSource }}</span>
+                </dd>
               </div>
               <div v-if="detail.promoCodeLabel">
                 <dt>Промокод</dt>
@@ -612,5 +650,10 @@ onMounted(async () => {
   .item-price {
     display: none;
   }
+}
+
+.invoice-link {
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
 }
 </style>

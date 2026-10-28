@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -16,17 +16,29 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { DeliveryMethod, PaymentMethod } from '@prisma/client';
+import { emptyToUndefined } from '../../common/dto/empty-to-undefined';
+import {
+  IsBankAccount,
+  IsBic,
+  IsUnp,
+} from '../../common/dto/requisites.validators';
+import { MAX_CART_LINES, MAX_LINE_QUANTITY } from '../../cart/cart-limits';
+import { AttributionDto } from '../../attribution/attribution.dto';
 
 export class CreateOrderItemDto {
   @ApiProperty({ description: 'ID товара' })
   @IsString()
   productId!: string;
 
-  @ApiProperty({ description: 'Количество', minimum: 1, maximum: 999 })
+  @ApiProperty({
+    description: 'Количество',
+    minimum: 1,
+    maximum: MAX_LINE_QUANTITY,
+  })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(999)
+  @Max(MAX_LINE_QUANTITY)
   quantity!: number;
 }
 
@@ -34,7 +46,7 @@ export class CreateOrderDto {
   @ApiProperty({ type: [CreateOrderItemDto], description: 'Позиции заказа' })
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(100)
+  @ArrayMaxSize(MAX_CART_LINES)
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)
   items!: CreateOrderItemDto[];
@@ -74,6 +86,53 @@ export class CreateOrderDto {
   @IsEnum(PaymentMethod)
   paymentMethod!: PaymentMethod;
 
+  @ApiProperty({
+    required: false,
+    description:
+      'Плательщик — организация. Обязателен вместе с УНП при оплате по счёту; ' +
+      'для аккаунта юрлица пустые поля берутся из профиля.',
+  })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @Length(2, 200)
+  payerName?: string;
+
+  @ApiProperty({ required: false, description: 'УНП плательщика' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsUnp()
+  payerTaxId?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Юридический адрес плательщика',
+  })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @Length(5, 300)
+  payerAddress?: string;
+
+  @ApiProperty({ required: false, description: 'Расчётный счёт плательщика' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsBankAccount()
+  payerAccount?: string;
+
+  @ApiProperty({ required: false, description: 'Банк плательщика' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @Length(2, 200)
+  payerBankName?: string;
+
+  @ApiProperty({ required: false, description: 'БИК банка плательщика' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsBic()
+  payerBankBic?: string;
+
   @ApiProperty({ required: false, description: 'Промокод' })
   @IsOptional()
   @IsString()
@@ -91,4 +150,15 @@ export class CreateOrderDto {
   @IsNumber()
   @Min(0)
   expectedItemsTotal?: number;
+
+  @ApiProperty({
+    required: false,
+    type: AttributionDto,
+    description:
+      'Источник визита (UTM, click id, реферер) — только для отчётов',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AttributionDto)
+  attribution?: AttributionDto;
 }

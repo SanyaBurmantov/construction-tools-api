@@ -59,6 +59,10 @@ const blankForm = () => ({
   phone: '',
   companyName: '',
   taxId: '',
+  legalAddress: '',
+  bankAccount: '',
+  bankName: '',
+  bankBic: '',
 })
 
 const form = reactive(blankForm())
@@ -83,6 +87,10 @@ function openEdit(row: AdminUser) {
     phone: row.phone ?? '',
     companyName: row.companyName ?? '',
     taxId: row.taxId ?? '',
+    legalAddress: row.legalAddress ?? '',
+    bankAccount: row.bankAccount ?? '',
+    bankName: row.bankName ?? '',
+    bankBic: row.bankBic ?? '',
   })
   formError.value = ''
   editorOpen.value = true
@@ -107,6 +115,11 @@ async function save() {
     formError.value = 'Для юридического лица укажите название организации'
     return
   }
+  const requisitesError = isCompany.value ? requisitesProblem(form) : ''
+  if (requisitesError) {
+    formError.value = requisitesError
+    return
+  }
 
   const shared = {
     role: form.role,
@@ -118,6 +131,10 @@ async function save() {
     phone: form.phone.trim(),
     companyName: form.companyName.trim(),
     taxId: form.taxId.trim(),
+    legalAddress: form.legalAddress.trim(),
+    bankAccount: form.bankAccount.trim(),
+    bankName: form.bankName.trim(),
+    bankBic: form.bankBic.trim(),
   }
 
   saving.value = true
@@ -368,15 +385,7 @@ const isMe = (row: AdminUser) => row.id === me.value?.id
           <UiInput id="u-email" v-model="form.email" type="email" />
         </UiField>
 
-        <template v-if="isCompany">
-          <UiField label="Название организации" required for="u-company">
-            <UiInput id="u-company" v-model="form.companyName" />
-          </UiField>
-
-          <UiField label="УНП" for="u-tax">
-            <UiInput id="u-tax" v-model="form.taxId" />
-          </UiField>
-        </template>
+        <AccountCompanyRequisites v-if="isCompany" v-model="form" id-prefix="u" />
 
         <UiCheckbox v-if="editing" v-model="form.isActive" label="Активен" />
       </div>

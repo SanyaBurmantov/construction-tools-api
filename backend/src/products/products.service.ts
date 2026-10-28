@@ -50,6 +50,17 @@ const SIMILARITY_THRESHOLD = 0.45;
 const MIN_FUZZY_LENGTH = 4;
 
 /**
+ * A search term that is a barcode (EAN-8 … GTIN-14), spaces dropped, or null.
+ * Matched as a whole code, never as a substring: eight digits inside a
+ * barcode are not that product. Suppliers store a second code beside the main
+ * one as `4810992031625 (4811207007213)`, so both positions are matched.
+ */
+export function barcodeTerm(term: string): string | null {
+  const digits = term.replace(/[\s-]/g, '');
+  return /^\d{8,14}$/.test(digits) ? digits : null;
+}
+
+/**
  * The category as the storefront uses it (breadcrumb, related products).
  * The whole row also carried `pathKey`/`path` — the supplier's breadcrumb
  * slugs — and the admin's curation fields.
@@ -716,6 +727,15 @@ export class ProductService {
       },
     );
 
+    const barcode = barcodeTerm(term);
+    if (barcode) {
+      substring.push(
+        { barcode },
+        { barcode: { startsWith: `${barcode} ` } },
+        { barcode: { contains: `(${barcode})` } },
+      );
+    }
+
     const fuzzyIds = await this.fuzzyMatchIds(variants);
     return {
       OR: fuzzyIds.length
@@ -759,6 +779,19 @@ export class ProductService {
   ): Promise<string[]> {
     const variants = searchVariants(term);
     if (!variants.length) return [];
+    // Purchasers and storekeepers search by the EAN on the box.
+    const barcode = barcodeTerm(term);
+    const barcodeHit = barcode
+      ? Prisma.sql`(p."barcode" = ${barcode}
+          OR p."barcode" LIKE ${`${barcode} %`}
+          OR p."barcode" LIKE ${`%(${barcode})%`})`
+      : null;
+    const barcodeMatch = barcodeHit
+      ? Prisma.sql`OR ${barcodeHit}`
+      : Prisma.empty;
+    const barcodeRank = barcodeHit
+      ? Prisma.sql`CASE WHEN ${barcodeHit} THEN 100 ELSE 0 END`
+      : Prisma.sql`0`;
 
     const matchClauses = variants.map((variant) => {
       const like = `%${escapeLike(variant)}%`;
@@ -771,6 +804,7 @@ export class ProductService {
         OR p."sku" ILIKE ${like}
         OR p."model" ILIKE ${like}
         OR b."name" ILIKE ${like}
+        ${barcodeMatch}
         ${fuzzy}
       )`;
     });
@@ -783,6 +817,7 @@ export class ProductService {
           ? Prisma.sql`(word_similarity(${variant}, p."name") * 50)::int`
           : Prisma.sql`0`;
       return Prisma.sql`GREATEST(
+        ${barcodeRank},
         CASE WHEN lower(p."sku") = lower(${variant}) THEN 100 ELSE 0 END,
         CASE WHEN p."sku" ILIKE ${prefix} THEN 90 ELSE 0 END,
         CASE WHEN p."name" ILIKE ${prefix} THEN 75 ELSE 0 END,

@@ -16,6 +16,11 @@ import { CustomerType, UserRole } from '@prisma/client';
 import { MAX_LOGIN_LENGTH, MIN_LOGIN_LENGTH } from '../login.util';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../password.util';
 import { emptyToUndefined } from '../../common/dto/empty-to-undefined';
+import {
+  IsBankAccount,
+  IsBic,
+  IsUnp,
+} from '../../common/dto/requisites.validators';
 
 /** Query strings arrive as 'true'/'false'; class-validator wants booleans. */
 const toBoolean = ({ value }: { value: unknown }) =>
@@ -112,12 +117,37 @@ export class AdminCreateUserDto {
   @Length(2, 200)
   companyName?: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ required: false, description: 'УНП — 9 цифр' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsUnp()
+  taxId?: string;
+
+  @ApiProperty({ required: false, description: 'Юридический адрес' })
   @IsOptional()
   @Transform(emptyToUndefined)
   @IsString()
-  @Length(2, 40)
-  taxId?: string;
+  @Length(5, 300)
+  legalAddress?: string;
+
+  @ApiProperty({ required: false, description: 'Расчётный счёт (IBAN BY…)' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsBankAccount()
+  bankAccount?: string;
+
+  @ApiProperty({ required: false, description: 'Банк' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @Length(2, 200)
+  bankName?: string;
+
+  @ApiProperty({ required: false, description: 'БИК банка' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsBic()
+  bankBic?: string;
 }
 
 export class AdminUpdateUserDto {
@@ -173,9 +203,30 @@ export class AdminUpdateUserDto {
   @Length(0, 200)
   companyName?: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ required: false, description: 'УНП — 9 цифр' })
+  @IsOptional()
+  @IsUnp()
+  taxId?: string;
+
+  @ApiProperty({ required: false, description: 'Юридический адрес' })
   @IsOptional()
   @IsString()
-  @Length(0, 40)
-  taxId?: string;
+  @Length(0, 300)
+  legalAddress?: string;
+
+  @ApiProperty({ required: false, description: 'Расчётный счёт (IBAN BY…)' })
+  @IsOptional()
+  @IsBankAccount()
+  bankAccount?: string;
+
+  @ApiProperty({ required: false, description: 'Банк' })
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  bankName?: string;
+
+  @ApiProperty({ required: false, description: 'БИК банка' })
+  @IsOptional()
+  @IsBic()
+  bankBic?: string;
 }

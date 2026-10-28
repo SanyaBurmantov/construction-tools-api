@@ -1,0 +1,99 @@
+name: Uptime
+
+# External check of gost.by every 5 minutes, from GitHub's network — outside
+# the server, so it notices what the on-box watchdog cannot: the box or its
+# network down, DNS pointing elsewhere, the TLS certificate about to expire.
+# Alerts go to the Telegram alerts topic on a change of state (down / back up)
+# and once an hour while it stays down, never every five minutes.
+#
+# Needs repository secrets TELEGRAM_BOT_TOKEN, TELEGRAM_ALERT_CHAT_ID and
+# (optionally) TELEGRAM_ALERT_THREAD_ID; without them the job still fails
+# visibly in the Actions tab. GitHub may start a scheduled run a few minutes
+# late, and pauses schedules in a repository with no commits for 60 days.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: deploy/uptime-check.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Check gost.by
+        id: check
+        run: |
+          set +e
+          FAILURES_FILE="$RUNNER_TEMP/failures.txt" SITE_URL="${SITE_URL:-https://gost.by}" bash deploy/uptime-check.sh
+          echo "ok=$([ $? -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+
+      - name: Previous result
+        id: previous
+        # The conclusion of the last finished run of this workflow is the
+        # only state kept between runs — enough to alert on a change.
+        run: |
+          prev=$(curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/uptime.yml/runs?status=completed&per_page=1" \
+            | jq -r '.workflow_runs[0].conclusion // "success"') || prev=success
+          echo "conclusion=$prev" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Alert
+        run: |
+          ok="${{ steps.check.outputs.ok }}"
+          prev="${{ steps.previous.outputs.conclusion }}"
+          minute=$((10#$(date -u +%M)))
+          escape() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+          details() { escape < "$RUNNER_TEMP/failures.txt" | sed 's/^/• /'; }
+          if [ "$ok" = "false" ] && [ "$prev" != "failure" ]; then
+            text="🔴 <b>gost.by недоступен</b> (внешняя проверка)
+          $(details)"
+          elif [ "$ok" = "false" ] && [ "$minute" -lt 5 ]; then
+            # Still down: one reminder an hour, from the run in its first five minutes.
+            text="🔴 <b>gost.by всё ещё недоступен</b>
+          $(details)"
+          elif [ "$ok" = "true" ] && [ "$prev" = "failure" ]; then
+            text="🟢 <b>gost.by снова доступен</b>"
+          else
+            exit 0
+          fi
+          # The heredoc-style indentation above is YAML's; strip it per line.
+          text="$(printf '%s\n' "$text" | sed 's/^ *//')
+          <a href=\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\">проверка</a>"
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram secrets are not set — alert not sent"
+            exit 0
+          fi
+          args=(--data-urlencode "chat_id=$TELEGRAM_ALERT_CHAT_ID"
+                --data-urlencode "parse_mode=HTML"
+                --data-urlencode "disable_web_page_preview=true"
+                --data-urlencode "text=$text")
+          [ -n "$TELEGRAM_ALERT_THREAD_ID" ] && args+=(--data-urlencode "message_thread_id=$TELEGRAM_ALERT_THREAD_ID")
+          curl -fsS -m 20 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" "${args[@]}" > /dev/null \
+            || echo "::warning::Telegram send failed"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          TELEGRAM_ALERT_THREAD_ID: ${{ secrets.TELEGRAM_ALERT_THREAD_ID }}
+
+      - name: Fail when down
+        # The run's conclusion is the state the next run compares against.
+        if: steps.check.outputs.ok != 'true'
+        run: exit 1

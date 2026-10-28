@@ -133,6 +133,13 @@ export interface Order {
   deliveryMethod: DeliveryMethod
   deliveryAddress: string | null
   paymentMethod: PaymentMethod
+  /** The organisation billed — a snapshot from checkout; null for a private buyer. */
+  payerName?: string | null
+  payerTaxId?: string | null
+  payerAddress?: string | null
+  payerAccount?: string | null
+  payerBankName?: string | null
+  payerBankBic?: string | null
   comment: string | null
   customerName: string
   customerPhone: string
@@ -153,6 +160,10 @@ export interface OrderAccount {
 /** `/admin/orders` adds who placed it and when it last moved. */
 export interface AdminOrder extends Order {
   user: OrderAccount | null
+  /** Last non-direct traffic source («yandex / cpc»); null before it was recorded. */
+  trafficSource?: string | null
+  /** The very first visit's source. */
+  firstTrafficSource?: string | null
   updatedAt: string
 }
 
@@ -191,6 +202,8 @@ export interface AdminStats {
   sources: number
   orders: number
   newOrders: number
+  /** Leads (quotes, questions) nobody has picked up yet. */
+  newLeads?: number
   pendingReviews: number
   activePromoCodes: number
   priceReviewNeeded: number
@@ -219,6 +232,8 @@ export interface AdminStats {
     quantity: number
     revenue: number
   }>
+  /** Last 90 days per traffic source («yandex / cpc», «direct»…). */
+  bySource?: Array<{ source: string, orders: number, revenue: number, leads: number }>
 }
 
 /** An account as `/admin/users` lists it: the profile plus its live session count. */

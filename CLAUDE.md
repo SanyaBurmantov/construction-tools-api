@@ -23,6 +23,13 @@ normalizes them into a shared catalog shape, and serves a public storefront.
   the API cleanly at 85% of the V8 heap (`NODE_OPTIONS=--max-old-space-size=512`,
   `MEMORY_GUARD_MAX_HEAP_RATIO`) and logs heap/rss every 15 min, and
   `deploy/watchdog.sh` restarts a container left unhealthy for ~6 min.
+  **From outside**: `.github/workflows/uptime.yml` runs
+  `deploy/uptime-check.sh` every 5 minutes on GitHub's runners (home page and
+  catalogue must answer 200 *and* mention gost.by — a wrong DNS record answers
+  200 too —, `/api/health/ready`, TLS certificate ≥ 14 days) and alerts the
+  Telegram alerts topic on a change of state and hourly while down. Secrets
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALERT_CHAT_ID`, `TELEGRAM_ALERT_THREAD_ID`
+  live in the GitHub repository settings.
 
 ## Hard requirements
 
@@ -382,6 +389,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   SMTP — hoster.by for gost.by). Enabled only when `SMTP_HOST`, `SMTP_USER`
   and `SMTP_PASSWORD` are all set; like Telegram it **never throws** — a
   committed order or a created account must not fail on a mail outage.
+  "Enabled" only means the variables are set, so the service logs in once at
+  boot (`verify()`) and a failed login or send goes to the Telegram alerts
+  topic (`notifyMailProblem`, at most hourly) — a wrong `SMTP_PASSWORD` once
+  went unnoticed. `POST /orders` also mails the customer a confirmation
+  (`buildCustomerOrderMail`) when an e-mail was given.
   `POST /orders` also mails `MAIL_ADMIN_TO` (`notifications/order-mail.ts`,
   Reply-To = the customer), composed inside the promise so even a builder
   throw is caught. **Registration needs an e-mail** (the field, or a login
@@ -668,6 +680,57 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   confirm the order exists. «Повторить заказ» re-adds the order's lines from
   the *snapshot* and the cart's own `POST /cart/validate` re-prices them, so an
   old price can never come back silently.
+- **Company buyers (юрлица).** A COMPANY account keeps its invoice
+  requisites in `User` (`taxId` = УНП, `legalAddress`, `bankAccount` = BY
+  IBAN, `bankName`, `bankBic`), validated by `common/utils/requisites.ts`
+  (УНП mod-11 check digit, IBAN mod-97, BIC shape; the storefront has a copy in
+  `utils/requisites.ts`) and stored normalized. **The payer is snapshotted into
+  the order** (`Order.payer*`, `orders/order-payer.ts`): what checkout typed
+  wins field by field, a company account fills the rest — reading it through
+  `Order.user` lost it as soon as the profile changed or the account was
+  deleted. `INVOICE` without an organisation and its УНП is a 400. Telegram,
+  the shop letter and the customer's confirmation letter lead with the payer;
+  admin order search matches the organisation and УНП. Checkout defaults a
+  company to `INVOICE`, prefills the «Плательщик» block from the profile and
+  saves typed requisites back into blank profile fields. One form component
+  for all of it: `components/account/companyRequisites.vue`. Cart limits are
+  sized for purchase requests — 9999 per line, 300 lines
+  (`cart/cart-limits.ts`, mirrored in `stores/cart.ts`). Search matches a
+  barcode (8–14 digits) as a whole code, including the `A (B)` pairs suppliers
+  store; dukon.by publishes no barcodes at all.
+- **B2B documents, leads, lists** (`b2b/`). **Invoice PDF**
+  (`GET /orders/:id/invoice.pdf`, public by UUID like the confirmation) for an
+  `INVOICE` order with a payer; **commercial offer PDF**
+  (`POST /documents/quote`, re-priced from the DB, records a `QUOTE` lead);
+  **XLSX price list** (`GET /price-list.xlsx?categorySlug|brandSlug`,
+  streamed with exceljs in id-cursor chunks — never one workbook in the heap);
+  **purchase lists** (`/account/purchase-lists`, ids + quantities only,
+  hydrated from `Product` on read like the stored cart); **leads**
+  (`POST /leads`: «уточнить наличие / подобрать аналог», the form on
+  `/organizaciyam`; honeypot, @Throttle, ≤20/IP/day by salted hash; Telegram
+  orders topic + shop mail; `/admin/leads`, `newLeads` badge). PDFs are
+  pdfkit with Liberation Sans from `backend/assets/fonts` (the built-in fonts
+  have no Cyrillic; the Dockerfile copies `assets/`). **No invoice without
+  the seller's requisites**: bank account, bank, BIC and the VAT status live
+  in `SiteSetting` (`seller.*`, `SellerService`, `/admin/settings`), no code
+  default for any of them — a made-up account or a guessed VAT line is worse
+  than none. Until they are set the order still goes through and the
+  storefront says the manager will send the invoice; once set, the success
+  page, the account history, the admin order and the customer's letter all
+  link the PDF. «Счёт без регистрации» in the cart is an ordinary guest
+  `POST /orders` with `INVOICE` + payer (`components/cart/invoiceRequest.vue`).
+- **Traffic source on every order and lead** (`attribution/`). The
+  storefront records, per page load (`plugins/attribution.client.ts`,
+  `utils/attribution.ts`), the first visit ever and the last visit that had a
+  source — UTM tags, `yclid`/`gclid`, the external referrer's host, the
+  landing path; a direct visit never overwrites a known source, and a source
+  older than 90 days is dropped. It is sent as `attribution` with
+  `POST /orders`, `/leads` and `/documents/quote`; `traffic-source.ts` (pure,
+  tested) labels it «yandex / cpc», «google / organic», «t.me / social»,
+  «direct» into `trafficSource` (last non-direct touch) and
+  `firstTrafficSource`. Shown in Telegram, the shop letter, the admin order
+  and leads; the dashboard sums orders, revenue and leads per source over 90
+  days. Reporting only — nothing trusts it.
 - **Checkout requires an account, browsing does not.** `POST /orders` runs
   under `OptionalAuthGuard`: with a session it stamps `Order.userId` (that
   link is the **only** thing that puts an order in «История заказов» — orders

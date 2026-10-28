@@ -13,7 +13,11 @@ export interface CartItem {
 }
 
 const STORAGE_KEY = 'cart:v1'
-const MAX_QTY = 999
+/**
+ * Same limits as the backend's `cart/cart-limits.ts` — sized for a company's
+ * purchase request, not a household basket.
+ */
+export const MAX_QTY = 9999
 
 export const useCartStore = defineStore('cart', {
   state: () => ({

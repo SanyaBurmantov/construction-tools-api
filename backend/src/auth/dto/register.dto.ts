@@ -5,6 +5,11 @@ import { CustomerType } from '@prisma/client';
 import { MAX_LOGIN_LENGTH, MIN_LOGIN_LENGTH } from '../login.util';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../password.util';
 import { emptyToUndefined } from '../../common/dto/empty-to-undefined';
+import {
+  IsBankAccount,
+  IsBic,
+  IsUnp,
+} from '../../common/dto/requisites.validators';
 
 export class RegisterDto {
   @ApiProperty({ description: 'Логин (можно e-mail), регистр не важен' })
@@ -56,12 +61,37 @@ export class RegisterDto {
   @Length(2, 200)
   companyName?: string;
 
-  @ApiProperty({ required: false, description: 'УНП / ИНН' })
+  @ApiProperty({ required: false, description: 'УНП — 9 цифр' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsUnp()
+  taxId?: string;
+
+  @ApiProperty({ required: false, description: 'Юридический адрес' })
   @IsOptional()
   @Transform(emptyToUndefined)
   @IsString()
-  @Length(2, 40)
-  taxId?: string;
+  @Length(5, 300)
+  legalAddress?: string;
+
+  @ApiProperty({ required: false, description: 'Расчётный счёт (IBAN BY…)' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsBankAccount()
+  bankAccount?: string;
+
+  @ApiProperty({ required: false, description: 'Банк' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @Length(2, 200)
+  bankName?: string;
+
+  @ApiProperty({ required: false, description: 'БИК банка' })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsBic()
+  bankBic?: string;
 }
 
 export class VerifyEmailDto {

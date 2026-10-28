@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { DeliveryMethod, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,13 +16,18 @@ import {
 import { PromoService } from '../promo/promo.service';
 import { TelegramService } from '../notifications/telegram.service';
 import { MailService } from '../notifications/mail.service';
-import { buildOrderMail } from '../notifications/order-mail';
+import {
+  buildCustomerOrderMail,
+  buildOrderMail,
+} from '../notifications/order-mail';
+import { resolvePayer } from './order-payer';
+import { attributionColumns } from '../attribution/traffic-source';
+import { SellerService } from '../b2b/seller.service';
 import { ServerCartService } from '../cart/server-cart.service';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
+import { MAX_LINE_QUANTITY } from '../cart/cart-limits';
 
 const DEFAULT_CURRENCY = 'BYN';
-/** Same cap as a single order line and as POST /cart/validate. */
-const MAX_LINE_QUANTITY = 999;
 const MAX_INT4 = 2_147_483_647;
 
 /**
@@ -38,6 +44,16 @@ const ORDER_ACCOUNT_SELECT = {
   },
 } satisfies Prisma.OrderInclude['user'];
 
+const PAYER_ACCOUNT_SELECT = {
+  customerType: true,
+  companyName: true,
+  taxId: true,
+  legalAddress: true,
+  bankAccount: true,
+  bankName: true,
+  bankBic: true,
+} satisfies Prisma.UserSelect;
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -48,6 +64,7 @@ export class OrdersService {
     private telegram: TelegramService,
     private serverCart: ServerCartService,
     private mail: MailService,
+    @Optional() private seller?: SellerService,
   ) {}
 
   private deliveryCost(method: DeliveryMethod): number {
@@ -139,6 +156,15 @@ export class OrdersService {
 
     itemsTotal = Math.round(itemsTotal * 100) / 100;
 
+    // Frozen into the order: who the invoice is made out to.
+    const account = userId
+      ? await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: PAYER_ACCOUNT_SELECT,
+        })
+      : null;
+    const payer = resolvePayer(dto, account);
+
     // Prices are re-parsed from suppliers daily, so a cart restored from
     // localStorage can be stale. When the client tells us what the customer
     // saw, refuse to quietly charge a different amount — the storefront
@@ -185,6 +211,8 @@ export class OrdersService {
           deliveryMethod: dto.deliveryMethod,
           deliveryAddress: dto.deliveryAddress?.trim() || null,
           paymentMethod: dto.paymentMethod,
+          ...payer,
+          ...attributionColumns(dto.attribution),
           currency,
           itemsTotal,
           deliveryCost,
@@ -252,6 +280,35 @@ export class OrdersService {
           `Order #${order.number} mail failed: ${String(error)}`,
         );
       });
+    // And a copy for the customer: a purchaser attaches it to the request in
+    // their own accounting. Same never-throw rule.
+    if (order.customerEmail) {
+      const to = order.customerEmail;
+      Promise.resolve()
+        .then(async () => {
+          // A company paying by invoice gets the PDF link straight away —
+          // when the seller's requisites are complete.
+          const invoiceUrl =
+            publicOrigin &&
+            order.paymentMethod === 'INVOICE' &&
+            order.payerName &&
+            (await this.seller?.invoiceReady())
+              ? `${publicOrigin}/api/orders/${order.id}/invoice.pdf`
+              : undefined;
+          return this.mail.send(
+            {
+              to,
+              ...buildCustomerOrderMail(order, publicOrigin, invoiceUrl),
+            },
+            `order #${order.number} to customer`,
+          );
+        })
+        .catch((error) => {
+          this.logger.error(
+            `Order #${order.number} customer mail failed: ${String(error)}`,
+          );
+        });
+    }
 
     return order;
   }
@@ -276,6 +333,8 @@ export class OrdersService {
         deliveryMethod: true,
         deliveryAddress: true,
         paymentMethod: true,
+        // The success page offers the PDF invoice to a company buyer.
+        payerName: true,
         customerName: true,
         createdAt: true,
         items: {
@@ -310,6 +369,9 @@ export class OrdersService {
         { customerName: { contains: search, mode: 'insensitive' } },
         { customerPhone: { contains: search, mode: 'insensitive' } },
         { customerEmail: { contains: search, mode: 'insensitive' } },
+        { payerName: { contains: search, mode: 'insensitive' } },
+        { payerTaxId: { contains: search.replace(/\s/g, '') } },
+        { trafficSource: { contains: search, mode: 'insensitive' } },
       ];
       // Order numbers are INT4: a phone number typed into the same box would
       // overflow it and fail the whole query.
