@@ -154,6 +154,72 @@ describe('TelegramService', () => {
       expect(body.text).toContain('Новый заказ №42');
     });
 
+    describe('routing to forum topics', () => {
+      const bodyOf = (mock: jest.Mock) =>
+        JSON.parse(
+          (mock.mock.calls[0] as [string, { body: string }])[1].body,
+        ) as { chat_id: string; message_thread_id?: number };
+      let fetchMock: jest.Mock;
+
+      beforeEach(() => {
+        fetchMock = jest
+          .fn()
+          .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+        global.fetch = fetchMock as unknown as typeof fetch;
+      });
+      afterEach(() => {
+        for (const name of [
+          'TELEGRAM_THREAD_ID',
+          'TELEGRAM_ALERT_CHAT_ID',
+          'TELEGRAM_ALERT_THREAD_ID',
+        ])
+          delete process.env[name];
+      });
+
+      it('sends orders to the order topic', async () => {
+        process.env.TELEGRAM_THREAD_ID = '3';
+        await new TelegramService().notifyNewOrder(buildOrder());
+        expect(bodyOf(fetchMock)).toMatchObject({
+          chat_id: '123',
+          message_thread_id: 3,
+        });
+      });
+
+      it('sends a server error to the alert topic', async () => {
+        process.env.TELEGRAM_THREAD_ID = '3';
+        process.env.TELEGRAM_ALERT_THREAD_ID = '6';
+        await new TelegramService().notifyServerError({
+          statusCode: 500,
+          method: 'GET',
+          path: '/products',
+          message: 'Database <down>',
+        });
+        const body = bodyOf(fetchMock) as { text?: string } & ReturnType<
+          typeof bodyOf
+        >;
+        expect(body).toMatchObject({ chat_id: '123', message_thread_id: 6 });
+        expect(body.text).toContain('Database &lt;down&gt;');
+      });
+
+      it('sends parser alerts to a separate alert chat without a topic', async () => {
+        process.env.TELEGRAM_THREAD_ID = '3';
+        process.env.TELEGRAM_ALERT_CHAT_ID = '-999';
+        await new TelegramService().notifyParserProblem({
+          key: 'k',
+          label: 'L',
+          reason: 'r',
+        });
+        const body = bodyOf(fetchMock);
+        expect(body.chat_id).toBe('-999');
+        expect(body.message_thread_id).toBeUndefined();
+      });
+
+      it('omits the topic when none is configured', async () => {
+        await new TelegramService().notifyNewOrder(buildOrder());
+        expect(bodyOf(fetchMock).message_thread_id).toBeUndefined();
+      });
+    });
+
     // The order is already committed when this runs: a rejected message must
     // be logged and swallowed, never thrown back at the request.
     it('resolves false when Telegram rejects the message', async () => {

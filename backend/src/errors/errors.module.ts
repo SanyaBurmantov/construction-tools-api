@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ErrorLogService } from './error-log.service';
 import { ErrorLogCleanupCron } from './error-log-cleanup.cron';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 /**
  * The API error log.
@@ -12,6 +13,8 @@ import { ErrorLogCleanupCron } from './error-log-cleanup.cron';
  */
 @Global()
 @Module({
+  // NotificationsModule: a new 5xx is sent to the Telegram alerts topic.
+  imports: [NotificationsModule],
   providers: [ErrorLogService, ErrorLogCleanupCron],
   exports: [ErrorLogService],
 })

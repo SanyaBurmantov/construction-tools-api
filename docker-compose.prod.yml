@@ -74,6 +74,11 @@ services:
       # Both must be set for new-order Telegram notifications; empty = disabled.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # Forum topic for orders, and where parser/5xx alerts go (chat falls
+      # back to TELEGRAM_CHAT_ID). The host watchdog reads the same keys.
+      TELEGRAM_THREAD_ID: ${TELEGRAM_THREAD_ID:-}
+      TELEGRAM_ALERT_CHAT_ID: ${TELEGRAM_ALERT_CHAT_ID:-}
+      TELEGRAM_ALERT_THREAD_ID: ${TELEGRAM_ALERT_THREAD_ID:-}
       # Почта хостера: письма о заказах на MAIL_ADMIN_TO и подтверждение
       # регистрации. Пусто SMTP_HOST/USER/PASSWORD = отправка выключена.
       SMTP_HOST: ${SMTP_HOST:-}

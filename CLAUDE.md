@@ -368,7 +368,10 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 - **Order notifications**: `POST /orders` posts a summary to Telegram
   (`notifications/telegram.service.ts`). Enabled only when **both**
   `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set; otherwise it logs a
-  warning at startup and no-ops. The send goes through `fetchWithTimeout` like
+  warning at startup and no-ops. Orders go to the forum topic `TELEGRAM_THREAD_ID`;
+  parser alerts, new kinds of 5xx (`ErrorLogService`: one per failure per
+  hour, ≤10/h) and the host watchdog go to `TELEGRAM_ALERT_THREAD_ID`
+  (optionally another chat, `TELEGRAM_ALERT_CHAT_ID`). The send goes through `fetchWithTimeout` like
   every other outbound call (hard timeout, one retry, `Retry-After`) and is
   fire-and-forget **with an explicit `.catch()`** — the order is already
   committed at that point, so a Telegram outage must never fail the request,

@@ -91,6 +91,8 @@ export type OrderNotification = {
   }>;
 };
 
+type TelegramTarget = { chatId: string; threadId: string };
+
 /**
  * Sends new-order notifications to a Telegram chat.
  *
@@ -108,6 +110,25 @@ export class TelegramService implements OnModuleInit {
 
   private get chatId() {
     return process.env.TELEGRAM_CHAT_ID?.trim() || '';
+  }
+
+  /**
+   * Orders and operator alerts go to different places — usually two topics of
+   * one forum group, so a parser or 5xx alert never buries a new order. Each
+   * alert setting falls back to the order chat.
+   */
+  private target(kind: 'orders' | 'alerts'): TelegramTarget {
+    const env = (name: string) => process.env[name]?.trim() || '';
+    if (kind === 'orders') {
+      return { chatId: this.chatId, threadId: env('TELEGRAM_THREAD_ID') };
+    }
+    const alertChat = env('TELEGRAM_ALERT_CHAT_ID');
+    return {
+      chatId: alertChat || this.chatId,
+      threadId:
+        env('TELEGRAM_ALERT_THREAD_ID') ||
+        (alertChat ? '' : env('TELEGRAM_THREAD_ID')),
+    };
   }
 
   get enabled() {
@@ -203,7 +224,29 @@ export class TelegramService implements OnModuleInit {
     const origin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
     if (origin) lines.push(`${origin}/admin/parsing`);
 
-    return this.send(lines.join('\n'), `parser ${problem.key}`);
+    return this.send(lines.join('\n'), `parser ${problem.key}`, 'alerts');
+  }
+
+  /**
+   * A new kind of 5xx in production. The caller (ErrorLogService) sends it
+   * only for a fingerprint it has not alerted on recently, so a broken
+   * endpoint under load is one message, not one per request.
+   */
+  async notifyServerError(error: {
+    statusCode: number;
+    method: string;
+    path: string;
+    message: string;
+  }): Promise<boolean> {
+    const lines = [
+      `🔴 <b>Ошибка ${error.statusCode} на проде</b>`,
+      `<code>${this.escape(error.method)} ${this.escape(error.path.slice(0, 300))}</code>`,
+      this.escape(error.message.slice(0, 500)),
+    ];
+    const origin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
+    if (origin) lines.push(`${origin}/admin/errors`);
+
+    return this.send(lines.join('\n'), 'server error', 'alerts');
   }
 
   /**
@@ -214,8 +257,14 @@ export class TelegramService implements OnModuleInit {
    * attempt, bounded retries with backoff and `Retry-After` on 429/5xx.
    * Never throws — the order is already committed by the time we get here.
    */
-  private async send(text: string, context?: string): Promise<boolean> {
+  private async send(
+    text: string,
+    context?: string,
+    kind: 'orders' | 'alerts' = 'orders',
+  ): Promise<boolean> {
     if (!this.enabled) return false;
+
+    const { chatId, threadId } = this.target(kind);
 
     const label = context ? ` (${context})` : '';
 
@@ -226,7 +275,8 @@ export class TelegramService implements OnModuleInit {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chat_id: this.chatId,
+            chat_id: chatId,
+            ...(threadId ? { message_thread_id: Number(threadId) } : {}),
             text,
             parse_mode: 'HTML',
             disable_web_page_preview: true,
