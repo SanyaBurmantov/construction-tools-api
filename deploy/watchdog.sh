@@ -4,6 +4,11 @@
 # restarted, or a container stuck unhealthy — and tells Telegram once per
 # incident (plus once when it is over). Run by construction-tools-watchdog.timer.
 #
+# It also heals the one case Docker will not: a container that is running but
+# `unhealthy`. `restart: unless-stopped` only reacts to an exit, and a heap OOM
+# once left node hung at 100% CPU, "Up (unhealthy)", for 13 hours — the whole
+# catalogue a 502 until someone restarted it by hand.
+#
 # It cannot alert when the host itself is down; keep an external uptime check
 # (e.g. UptimeRobot on / and /api/health/ready) for that.
 set -Euo pipefail
@@ -19,6 +24,10 @@ DEPLOY_LOCK=${WATCHDOG_DEPLOY_LOCK:-/run/lock/construction-tools-deploy.lock}
 FAIL_THRESHOLD=2
 # Quiet runs after a restart before the restart incident is called over.
 RESTART_QUIET_RUNS=3
+# Consecutive unhealthy runs before the container is restarted, and the minimum
+# gap between two restarts of one container (a crash loop is not fixed by more).
+HEAL_THRESHOLD=3
+HEAL_COOLDOWN_SECONDS=900
 
 # service -> container_name in docker-compose.prod.yml
 SERVICES=(db backend frontend caddy)
@@ -211,6 +220,16 @@ for svc in "${SERVICES[@]}"; do
     S[${svc}_bad]=$bad
     [[ -n "$(get "${svc}_bad_since")" ]] || S[${svc}_bad_since]=$now
     echo "$svc: status=$status health=$health (bad $bad)"
+    if [[ "$status" == running && "$health" == unhealthy ]] && (( bad >= HEAL_THRESHOLD )) &&
+       (( now - $(get "${svc}_healed_at" 0) >= HEAL_COOLDOWN_SECONDS )); then
+      echo "$svc: unhealthy for $bad runs, restarting $name"
+      S[${svc}_healed_at]=$now
+      if timeout 60s docker restart -t 20 "$name" >/dev/null; then
+        send_telegram "🛠 Контейнер $svc ($name) был unhealthy ~$((bad * 2)) мин — перезапущен автоматически.$(mem_report)" || true
+      else
+        send_telegram "🔴 Контейнер $svc ($name) unhealthy, автоматический перезапуск не удался." || true
+      fi
+    fi
     if (( bad >= FAIL_THRESHOLD )) && [[ "$(get "${svc}_bad_alerted" 0)" != 1 ]]; then
       detail="status=$status, health=$health"
       [[ "$oom" == true ]] && detail+=", OOMKilled"

@@ -17,6 +17,12 @@ normalizes them into a shared catalog shape, and serves a public storefront.
   resident process, which is Postgres — the one service whose death takes the
   whole site down. Capped, a runaway run kills its own container and `restart`
   brings it back with the database untouched.
+  A heap OOM, though, once **hung** node at 100% CPU instead of ending it
+  (13 h of 502s, container "Up (unhealthy)" — Docker never restarts an
+  unhealthy container). Two guards now: `common/utils/memory-guard.ts` exits
+  the API cleanly at 85% of the V8 heap (`NODE_OPTIONS=--max-old-space-size=512`,
+  `MEMORY_GUARD_MAX_HEAP_RATIO`) and logs heap/rss every 15 min, and
+  `deploy/watchdog.sh` restarts a container left unhealthy for ~6 min.
 
 ## Hard requirements
 

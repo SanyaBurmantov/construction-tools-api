@@ -43,6 +43,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8000
+      # Heap ceiling under mem_limit (the rest is buffers, Prisma's engine and
+      # native memory). The in-process memory guard restarts the API at 85% of
+      # it — a real heap OOM hung node for 13 h instead of ending it.
+      NODE_OPTIONS: ${BACKEND_NODE_OPTIONS:---max-old-space-size=512}
+      MEMORY_GUARD_MAX_HEAP_RATIO: ${MEMORY_GUARD_MAX_HEAP_RATIO:-0.85}
       # connection_limit: Prisma's default is CPU*2+1 — on this 2-core box that
       # is 5, which the app outgrew: /admin/stats alone fires 17 aggregates in
       # one Promise.all, and the parser crons hold connections in transactions
