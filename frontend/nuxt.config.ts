@@ -61,6 +61,16 @@ export default defineNuxtConfig({
     },
   },
   css: ['@/assets/scss/main.scss'],
+  /**
+   * Inline *all* SSR styles, the global `main.scss` included — the default
+   * inlines only `.vue` styles and left `entry.css` (12 KB, 3.5 KB gzipped) as
+   * the one render-blocking request on every first visit (PageSpeed: «запросы,
+   * блокирующие отрисовку»). Costs those 3.5 KB on each HTML response, which
+   * Nitro caches anyway. The CSS of components that were imported but not
+   * rendered is turned into a non-blocking preload by
+   * server/plugins/defer-unused-css.ts.
+   */
+  features: { inlineStyles: true },
   app: {
     head: {
       htmlAttrs: { lang: 'ru' },
