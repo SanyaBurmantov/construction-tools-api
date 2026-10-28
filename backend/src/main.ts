@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import { PrismaService } from './prisma/prisma.service';
 import { AppModule } from './app.module';
+import { startMemoryGuard } from './common/utils/memory-guard';
 
 // Safety net: a stray rejected promise from a background job (e.g. a parser
 // cron) must not take the whole API process down. Errors are handled where they
@@ -90,5 +91,18 @@ async function bootstrap() {
 
   await app.listen(port, '0.0.0.0');
   logger.log(`Application is running on: http://localhost:${port}`);
+
+  // Restart cleanly before a heap OOM: the real one hung the process instead
+  // of ending it (see memory-guard.ts). MEMORY_GUARD_MAX_HEAP_RATIO=0 disables.
+  const maxHeapRatio = Number(process.env.MEMORY_GUARD_MAX_HEAP_RATIO ?? 0.85);
+  if (maxHeapRatio > 0) {
+    startMemoryGuard({
+      maxHeapRatio,
+      checkEveryMs: 15_000,
+      reportEveryMs: 15 * 60_000,
+      close: () => app.close(),
+      closeTimeoutMs: 15_000,
+    });
+  }
 }
 void bootstrap();
