@@ -23,6 +23,7 @@ import {
   IsUnp,
 } from '../../common/dto/requisites.validators';
 import { MAX_CART_LINES, MAX_LINE_QUANTITY } from '../../cart/cart-limits';
+import { AttributionDto } from '../../attribution/attribution.dto';
 
 export class CreateOrderItemDto {
   @ApiProperty({ description: 'ID товара' })
@@ -149,4 +150,15 @@ export class CreateOrderDto {
   @IsNumber()
   @Min(0)
   expectedItemsTotal?: number;
+
+  @ApiProperty({
+    required: false,
+    type: AttributionDto,
+    description:
+      'Источник визита (UTM, click id, реферер) — только для отчётов',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AttributionDto)
+  attribution?: AttributionDto;
 }

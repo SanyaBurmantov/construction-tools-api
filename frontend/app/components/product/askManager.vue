@@ -61,6 +61,7 @@ async function send() {
         companyName: form.companyName.trim() || undefined,
         message: form.message.trim(),
         website: form.website || undefined,
+        attribution: getAttribution(),
       },
     })
     open.value = false

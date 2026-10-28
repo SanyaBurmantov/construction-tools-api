@@ -162,6 +162,19 @@ const maxRevenue = computed(() =>
           </ul>
         </UiCard>
 
+        <UiCard title="Источники за 90 дней">
+          <p v-if="!stats.bySource?.length" class="empty">
+            Пока нет заказов и заявок с записанным источником
+          </p>
+          <ul v-else class="top-list">
+            <li v-for="row in stats.bySource" :key="row.source">
+              <span class="top-name">{{ row.source }}</span>
+              <span class="top-qty">{{ row.orders }} зак. · {{ row.leads }} заяв.</span>
+              <strong>{{ formatPrice(row.revenue, 'BYN') }}</strong>
+            </li>
+          </ul>
+        </UiCard>
+
         <UiCard title="Топ товаров">
           <p v-if="!stats.topProducts.length" class="empty">Продаж пока нет</p>
           <ul v-else class="top-list">

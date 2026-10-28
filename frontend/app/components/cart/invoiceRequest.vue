@@ -110,6 +110,7 @@ async function submit() {
         payerBankName: payer.bankName.trim() || undefined,
         payerBankBic: payer.bankBic.trim() || undefined,
         expectedItemsTotal: cart.totalPrice,
+        attribution: getAttribution(),
       },
     })
     cart.clear()

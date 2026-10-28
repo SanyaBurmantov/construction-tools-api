@@ -219,6 +219,7 @@ async function submit() {
             }
           : {}),
         promoCode: promo.code.value || undefined,
+        attribution: getAttribution(),
         // Lets the API refuse the order rather than charge a total the
         // customer never saw.
         expectedItemsTotal: cart.totalPrice,

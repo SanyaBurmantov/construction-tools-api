@@ -160,6 +160,10 @@ export interface OrderAccount {
 /** `/admin/orders` adds who placed it and when it last moved. */
 export interface AdminOrder extends Order {
   user: OrderAccount | null
+  /** Last non-direct traffic source («yandex / cpc»); null before it was recorded. */
+  trafficSource?: string | null
+  /** The very first visit's source. */
+  firstTrafficSource?: string | null
   updatedAt: string
 }
 
@@ -228,6 +232,8 @@ export interface AdminStats {
     quantity: number
     revenue: number
   }>
+  /** Last 90 days per traffic source («yandex / cpc», «direct»…). */
+  bySource?: Array<{ source: string, orders: number, revenue: number, leads: number }>
 }
 
 /** An account as `/admin/users` lists it: the profile plus its live session count. */

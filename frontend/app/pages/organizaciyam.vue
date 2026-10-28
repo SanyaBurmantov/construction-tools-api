@@ -68,6 +68,7 @@ async function send() {
         email: form.email.trim() || undefined,
         message: form.message.trim() || 'Запрос со страницы «Для организаций»',
         website: form.website || undefined,
+        attribution: getAttribution(),
       },
     })
     sent.value = true

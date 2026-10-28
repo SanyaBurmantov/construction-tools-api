@@ -229,7 +229,58 @@ export class AdminService {
         quantity: row._sum.quantity ?? 0,
         revenue: Math.round((row._sum.lineTotal ?? 0) * 100) / 100,
       })),
+      bySource: await this.salesBySource(),
     };
+  }
+
+  /**
+   * Orders and leads per traffic source over the last 90 days — the answer
+   * to «what does the site actually bring». Cancelled orders are left out;
+   * rows recorded before attribution existed show as «не записан».
+   */
+  private async salesBySource() {
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const [orders, leads] = await Promise.all([
+      this.prisma.order.groupBy({
+        by: ['trafficSource'],
+        where: {
+          createdAt: { gte: since },
+          status: { not: OrderStatus.CANCELLED },
+        },
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
+      this.prisma.lead.groupBy({
+        by: ['trafficSource'],
+        where: { createdAt: { gte: since } },
+        _count: { _all: true },
+      }),
+    ]);
+    const rows = new Map<
+      string,
+      { source: string; orders: number; revenue: number; leads: number }
+    >();
+    const row = (source: string | null) => {
+      const key = source ?? 'не записан';
+      const existing = rows.get(key) ?? {
+        source: key,
+        orders: 0,
+        revenue: 0,
+        leads: 0,
+      };
+      rows.set(key, existing);
+      return existing;
+    };
+    for (const o of orders) {
+      const r = row(o.trafficSource);
+      r.orders = o._count._all;
+      r.revenue = Math.round((o._sum.total ?? 0) * 100) / 100;
+    }
+    for (const l of leads) row(l.trafficSource).leads = l._count._all;
+    return [...rows.values()].sort(
+      (a, b) =>
+        b.revenue - a.revenue || b.orders - a.orders || b.leads - a.leads,
+    );
   }
 
   async getProducts(query: AdminProductQueryDto) {

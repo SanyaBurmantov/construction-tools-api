@@ -104,6 +104,8 @@ export type OrderNotification = {
   payerAccount?: string | null;
   payerBankName?: string | null;
   payerBankBic?: string | null;
+  /** «yandex / cpc» … — where the buyer came from. */
+  trafficSource?: string | null;
   currency: string;
   itemsTotal: number;
   deliveryCost: number;
@@ -215,6 +217,9 @@ export class TelegramService implements OnModuleInit {
       lines.push(`<b>Адрес:</b> ${this.escape(order.deliveryAddress)}`);
     }
     lines.push(`<b>Оплата:</b> ${PAYMENT_LABELS[order.paymentMethod]}`);
+    if (order.trafficSource) {
+      lines.push(`<b>Источник:</b> ${this.escape(order.trafficSource)}`);
+    }
     if (order.comment) {
       lines.push(`<b>Комментарий:</b> ${this.escape(order.comment)}`);
     }

@@ -419,6 +419,13 @@ model Order {
   payerAccount    String?
   payerBankName   String?
   payerBankBic    String?
+  /// Where the buyer came from — «yandex / cpc», «google / organic»,
+  /// «direct» (attribution/traffic-source.ts, last non-direct touch).
+  trafficSource      String?
+  /// The very first visit's source (how they found us at all).
+  firstTrafficSource String?
+  /// Both raw touches (UTM tags, click ids, referrer host, landing page).
+  attribution        Json?
   currency        String         @default("BYN")
   itemsTotal      Float          @default(0)
   deliveryCost    Float          @default(0)
@@ -436,6 +443,7 @@ model Order {
   @@index([createdAt])
   @@index([userId, createdAt])
   @@index([payerTaxId])
+  @@index([trafficSource, createdAt])
 }
 
 model OrderItem {
@@ -1114,6 +1122,10 @@ model Lead {
   currency    String?
   /// Salted hash of the requester's IP, for the per-IP limit — never the IP.
   ipHash      String?
+  /// Same as Order: last non-direct source, first source, raw touches.
+  trafficSource      String?
+  firstTrafficSource String?
+  attribution        Json?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

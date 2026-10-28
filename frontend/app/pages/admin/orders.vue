@@ -106,7 +106,7 @@ onMounted(async () => {
 <template>
   <div class="admin-page">
     <AdminPageHead title="Заказы" :description="`${pagination.total} заказов всего`">
-      <UiInput v-model="search" placeholder="Номер, имя, телефон, email, организация или УНП" size="sm" class="search" />
+      <UiInput v-model="search" placeholder="Номер, имя, телефон, email, организация, УНП или источник" size="sm" class="search" />
     </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
@@ -140,6 +140,7 @@ onMounted(async () => {
             аккаунт: {{ order.user.login }}
           </span>
           <span v-else class="account is-guest">без аккаунта</span>
+          <span v-if="order.trafficSource" class="account">{{ order.trafficSource }}</span>
         </div>
       </template>
 
@@ -294,6 +295,16 @@ onMounted(async () => {
               <div>
                 <dt>Оплата</dt>
                 <dd>{{ PAYMENT_LABEL[detail.paymentMethod] || detail.paymentMethod }}</dd>
+              </div>
+              <div v-if="detail.trafficSource">
+                <dt>Источник</dt>
+                <dd>
+                  {{ detail.trafficSource }}
+                  <span
+                    v-if="detail.firstTrafficSource && detail.firstTrafficSource !== detail.trafficSource"
+                    class="admin-muted"
+                  >· впервые пришёл: {{ detail.firstTrafficSource }}</span>
+                </dd>
               </div>
               <div v-if="detail.promoCodeLabel">
                 <dt>Промокод</dt>

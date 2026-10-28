@@ -11,6 +11,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../notifications/telegram.service';
 import { MailService } from '../notifications/mail.service';
 import { normalizeUnp } from '../common/utils/requisites';
+import { attributionColumns } from '../attribution/traffic-source';
+import type { AttributionDto } from '../attribution/attribution.dto';
 import {
   AdminLeadQueryDto,
   AdminUpdateLeadDto,
@@ -40,6 +42,7 @@ export type LeadInput = {
   items?: LeadNotice['items'] & object;
   total?: number | null;
   currency?: string | null;
+  attribution?: AttributionDto;
   ip?: string;
 };
 
@@ -63,6 +66,8 @@ const LEAD_SELECT = {
   items: true,
   total: true,
   currency: true,
+  trafficSource: true,
+  firstTrafficSource: true,
   createdAt: true,
   updatedAt: true,
   user: { select: { id: true, login: true } },
@@ -124,6 +129,7 @@ export class LeadsService {
         items: (input.items ?? undefined) as Prisma.InputJsonValue | undefined,
         total: input.total ?? null,
         currency: input.currency ?? null,
+        ...attributionColumns(input.attribution),
         ipHash,
       },
     });
@@ -176,6 +182,7 @@ export class LeadsService {
       phone: dto.phone,
       email: dto.email,
       message: dto.message,
+      attribution: dto.attribution,
       productId: product?.id,
       productName: product?.name,
       productSlug: product?.slug,
@@ -200,6 +207,7 @@ export class LeadsService {
         { email: contains },
         { taxId: { contains: search.replace(/\s/g, '') } },
         { productName: contains },
+        { trafficSource: contains },
       ];
     }
     const [data, total, newCount] = await Promise.all([

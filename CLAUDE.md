@@ -23,6 +23,13 @@ normalizes them into a shared catalog shape, and serves a public storefront.
   the API cleanly at 85% of the V8 heap (`NODE_OPTIONS=--max-old-space-size=512`,
   `MEMORY_GUARD_MAX_HEAP_RATIO`) and logs heap/rss every 15 min, and
   `deploy/watchdog.sh` restarts a container left unhealthy for ~6 min.
+  **From outside**: `.github/workflows/uptime.yml` runs
+  `deploy/uptime-check.sh` every 5 minutes on GitHub's runners (home page and
+  catalogue must answer 200 *and* mention gost.by — a wrong DNS record answers
+  200 too —, `/api/health/ready`, TLS certificate ≥ 14 days) and alerts the
+  Telegram alerts topic on a change of state and hourly while down. Secrets
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALERT_CHAT_ID`, `TELEGRAM_ALERT_THREAD_ID`
+  live in the GitHub repository settings.
 
 ## Hard requirements
 
@@ -712,6 +719,18 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   page, the account history, the admin order and the customer's letter all
   link the PDF. «Счёт без регистрации» in the cart is an ordinary guest
   `POST /orders` with `INVOICE` + payer (`components/cart/invoiceRequest.vue`).
+- **Traffic source on every order and lead** (`attribution/`). The
+  storefront records, per page load (`plugins/attribution.client.ts`,
+  `utils/attribution.ts`), the first visit ever and the last visit that had a
+  source — UTM tags, `yclid`/`gclid`, the external referrer's host, the
+  landing path; a direct visit never overwrites a known source, and a source
+  older than 90 days is dropped. It is sent as `attribution` with
+  `POST /orders`, `/leads` and `/documents/quote`; `traffic-source.ts` (pure,
+  tested) labels it «yandex / cpc», «google / organic», «t.me / social»,
+  «direct» into `trafficSource` (last non-direct touch) and
+  `firstTrafficSource`. Shown in Telegram, the shop letter, the admin order
+  and leads; the dashboard sums orders, revenue and leads per source over 90
+  days. Reporting only — nothing trusts it.
 - **Checkout requires an account, browsing does not.** `POST /orders` runs
   under `OptionalAuthGuard`: with a session it stamps `Order.userId` (that
   link is the **only** thing that puts an order in «История заказов» — orders

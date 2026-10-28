@@ -21,6 +21,7 @@ import {
   buildOrderMail,
 } from '../notifications/order-mail';
 import { resolvePayer } from './order-payer';
+import { attributionColumns } from '../attribution/traffic-source';
 import { SellerService } from '../b2b/seller.service';
 import { ServerCartService } from '../cart/server-cart.service';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
@@ -211,6 +212,7 @@ export class OrdersService {
           deliveryAddress: dto.deliveryAddress?.trim() || null,
           paymentMethod: dto.paymentMethod,
           ...payer,
+          ...attributionColumns(dto.attribution),
           currency,
           itemsTotal,
           deliveryCost,
@@ -369,6 +371,7 @@ export class OrdersService {
         { customerEmail: { contains: search, mode: 'insensitive' } },
         { payerName: { contains: search, mode: 'insensitive' } },
         { payerTaxId: { contains: search.replace(/\s/g, '') } },
+        { trafficSource: { contains: search, mode: 'insensitive' } },
       ];
       // Order numbers are INT4: a phone number typed into the same box would
       // overflow it and fail the whole query.

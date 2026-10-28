@@ -17,6 +17,7 @@ export type LeadNotice = {
   total: number | null;
   currency: string | null;
   items: Array<{ name: string; quantity: number; lineTotal: number }> | null;
+  trafficSource?: string | null;
 };
 
 const KIND_TITLE: Record<LeadNotice['kind'], string> = {
@@ -36,6 +37,7 @@ export function leadRows(lead: LeadNotice): Array<[string, string]> {
   if (lead.message) rows.push(['Сообщение', lead.message]);
   if (lead.total != null)
     rows.push(['Сумма', `${lead.total.toFixed(2)} ${lead.currency ?? 'BYN'}`]);
+  if (lead.trafficSource) rows.push(['Источник', lead.trafficSource]);
   return rows;
 }
 

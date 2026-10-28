@@ -224,6 +224,7 @@ export class DocumentsService {
           })),
           total,
           currency,
+          attribution: dto.attribution,
           ip,
         });
 

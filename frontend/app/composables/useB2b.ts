@@ -69,7 +69,7 @@ export function useB2b() {
   ) {
     const blob = await authFetch<Blob>('/documents/quote', {
       method: 'POST',
-      body: { items, ...contact },
+      body: { items, ...contact, attribution: getAttribution() },
       responseType: 'blob',
     })
     saveBlob(blob, `kommercheskoe-predlozhenie-gost-by.pdf`)

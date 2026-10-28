@@ -26,6 +26,7 @@ type Lead = {
   items: Array<{ name: string, slug: string, sku: string | null, quantity: number, unitPrice: number, lineTotal: number }> | null
   total: number | null
   currency: string | null
+  trafficSource: string | null
   createdAt: string
   user: { id: string, login: string } | null
 }
@@ -122,6 +123,7 @@ const kindOptions = [
             <UiBadge size="sm">{{ KIND_LABELS[lead.kind] }}</UiBadge>
             <UiBadge :tone="STATUS_TONES[lead.status]" size="sm">{{ STATUS_LABELS[lead.status] }}</UiBadge>
             <time :datetime="lead.createdAt">{{ formatDateTime(lead.createdAt) }}</time>
+            <span v-if="lead.trafficSource" class="source">{{ lead.trafficSource }}</span>
           </div>
 
           <div class="who">
@@ -233,6 +235,7 @@ const kindOptions = [
 }
 
 .lead-head time,
+.source,
 .product {
   color: var(--text-muted);
   font-size: var(--text-sm);

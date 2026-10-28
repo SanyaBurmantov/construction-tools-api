@@ -86,6 +86,7 @@ export function buildOrderMail(
   rows.push(['Доставка', DELIVERY_LABELS[order.deliveryMethod]]);
   if (order.deliveryAddress) rows.push(['Адрес', order.deliveryAddress]);
   rows.push(['Оплата', PAYMENT_LABELS[order.paymentMethod]]);
+  if (order.trafficSource) rows.push(['Источник', order.trafficSource]);
   if (order.comment) rows.push(['Комментарий', order.comment]);
 
   const totals = totalRows(order);

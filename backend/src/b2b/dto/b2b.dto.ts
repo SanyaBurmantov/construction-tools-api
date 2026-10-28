@@ -26,6 +26,7 @@ import {
   IsUnp,
 } from '../../common/dto/requisites.validators';
 import { MAX_CART_LINES, MAX_LINE_QUANTITY } from '../../cart/cart-limits';
+import { AttributionDto } from '../../attribution/attribution.dto';
 
 export class B2bLineDto {
   @ApiProperty()
@@ -61,6 +62,17 @@ class ContactFields {
   @IsEmail()
   @Length(3, 200)
   email?: string;
+
+  @ApiProperty({
+    required: false,
+    type: AttributionDto,
+    description:
+      'Источник визита (UTM, click id, реферер) — только для отчётов',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AttributionDto)
+  attribution?: AttributionDto;
 
   /** Honeypot: hidden in the form, only a bot fills it in. */
   @ApiProperty({ required: false })
