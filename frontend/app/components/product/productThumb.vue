@@ -14,11 +14,15 @@ const props = withDefaults(
     alt: string
     /** Rendered box in CSS pixels; the x2 density is generated from it. */
     width: number
+    /** Defaults to `width` (a square box); category tiles are 4:3. */
+    height?: number
     /** Above-the-fold photos load eagerly and are preloaded (LCP). */
     priority?: boolean
   }>(),
-  { src: null, priority: false }
+  { src: null, priority: false, height: undefined }
 )
+
+const boxHeight = computed(() => props.height ?? props.width)
 
 const { stage, imageElement, onLoad, onError } = useResilientImage(() => props.src)
 </script>
@@ -32,7 +36,7 @@ const { stage, imageElement, onLoad, onError } = useResilientImage(() => props.s
     :alt="alt"
     :sizes="`${width}px`"
     :width="width"
-    :height="width"
+    :height="boxHeight"
     fit="inside"
     densities="x1 x2"
     :loading="priority ? 'eager' : 'lazy'"
@@ -48,7 +52,7 @@ const { stage, imageElement, onLoad, onError } = useResilientImage(() => props.s
     :src="src"
     :alt="alt"
     :width="width"
-    :height="width"
+    :height="boxHeight"
     :loading="priority ? 'eager' : 'lazy'"
     decoding="async"
     @error="onError"

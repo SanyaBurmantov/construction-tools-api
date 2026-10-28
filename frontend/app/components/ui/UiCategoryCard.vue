@@ -45,22 +45,22 @@ const initial = computed(() => props.name.trim().charAt(0).toUpperCase())
  * the stylesheet and the image arrive, which shows up as layout shift.
  */
 const imageSize = computed(() =>
-  props.variant === 'row' ? { width: 44, height: 44 } : { width: 400, height: 300 }
+  props.variant === 'row' ? { width: 44, height: 44 } : { width: 320, height: 240 }
 )
 </script>
 
 <template>
   <NuxtLink :to="to" class="category" :class="`is-${variant}`">
     <span v-if="variant !== 'chip'" class="media" aria-hidden="true">
-      <img
+      <!-- Resized through IPX: supplier originals are 1200x900 for a box this
+           size (see ProductThumb for the fallback chain). -->
+      <ProductThumb
         v-if="image"
         :src="image"
         :alt="name"
         :width="imageSize.width"
         :height="imageSize.height"
-        loading="lazy"
-        decoding="async"
-      >
+      />
       <span v-else class="plate">{{ initial }}</span>
     </span>
 
@@ -130,7 +130,7 @@ const imageSize = computed(() =>
   place-items: center;
 }
 
-.media img {
+.media :deep(img) {
   width: 100%;
   height: 100%;
   object-fit: contain;

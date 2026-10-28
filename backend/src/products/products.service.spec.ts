@@ -1,4 +1,8 @@
-import { ProductService, barcodeTerm } from './products.service';
+import {
+  ProductService,
+  barcodeTerm,
+  facetsCacheKey,
+} from './products.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const categories = [
@@ -292,6 +296,21 @@ describe('ProductService.findAllFiltered', () => {
     });
     // the search still narrows the page
     expect(args.where.AND[0]).toEqual({ id: { in: ['p1'] } });
+  });
+
+  it('computes total and facets once per filter set, whatever the page', async () => {
+    const { service, productCount } = buildService();
+
+    await service.findAllFiltered({ categorySlug: 'dreli', page: 1 });
+    await service.findAllFiltered({
+      categorySlug: 'dreli',
+      page: 2,
+      sortBy: 'price',
+    });
+    expect(productCount).toHaveBeenCalledTimes(1);
+
+    await service.findAllFiltered({ categorySlug: 'dreli', inStock: true });
+    expect(productCount).toHaveBeenCalledTimes(2);
   });
 
   // Prisma rejects `nulls` on non-nullable columns, so only priceValue and
@@ -752,5 +771,30 @@ describe('barcodeTerm', () => {
     expect(barcodeTerm('125266')).toBeNull();
     expect(barcodeTerm('GSB 13 RE')).toBeNull();
     expect(barcodeTerm('481099203162512')).toBeNull();
+  });
+});
+
+describe('facetsCacheKey', () => {
+  it('ignores page, limit and sort, and the order of selected brands', () => {
+    expect(
+      facetsCacheKey({ brandId: 'b,a', page: 3, limit: 48, sortBy: 'price' }),
+    ).toBe(facetsCacheKey({ brandId: 'a, b' }));
+  });
+
+  it('tells apart every filter that changes the numbers', () => {
+    const base = facetsCacheKey({ categorySlug: 'dreli' });
+    expect(facetsCacheKey({ categorySlug: 'dreli', onSale: true })).not.toBe(
+      base,
+    );
+    expect(facetsCacheKey({ categorySlug: 'dreli', priceMax: 100 })).not.toBe(
+      base,
+    );
+    expect(facetsCacheKey({ categorySlug: 'dreli', search: 'Bosch' })).toBe(
+      facetsCacheKey({ categorySlug: 'dreli', search: ' bosch ' }),
+    );
+    // Admin-only: a supplier filter must never share a customer's entry.
+    expect(
+      facetsCacheKey({ categorySlug: 'dreli', sourceCode: 'dukon' }),
+    ).not.toBe(base);
   });
 });

@@ -115,16 +115,16 @@
         aria-label="Увеличить фотографию товара"
         @click="openZoom"
       >
-        <img
+        <!-- Resized (480 / 960 for retina) instead of the supplier's 1200px
+             original; the zoom below keeps the original. -->
+        <ProductThumb
           :key="selectedImage.url"
           :src="selectedImage.url"
           :alt="selectedImage.alt || name"
-          width="480"
-          height="480"
-          fetchpriority="high"
+          :width="480"
+          priority
           draggable="false"
-          @error="failedImages.add(selectedImage.url)"
-        >
+        />
         <span class="zoom-hint" aria-hidden="true">
           <UiIcon name="expand" :size="18" :stroke-width="1.8" />
         </span>
@@ -160,15 +160,7 @@
         :aria-current="index === activeIndex ? 'true' : undefined"
         @click="selectImage(index)"
       >
-        <img
-          :src="image.url"
-          :alt="image.alt || name"
-          width="56"
-          height="56"
-          loading="lazy"
-          decoding="async"
-          draggable="false"
-        >
+        <ProductThumb :src="image.url" :alt="image.alt || name" :width="60" draggable="false" />
       </button>
     </div>
 
@@ -248,7 +240,7 @@
     cursor: zoom-in;
   }
 
-  .gallery-image img,
+  .gallery-image :deep(img),
   .zoom-image {
     display: block;
     width: 100%;
@@ -350,7 +342,7 @@
     border-color: var(--brand);
   }
 
-  .gallery-thumbnail img {
+  .gallery-thumbnail :deep(img) {
     width: 100%;
     height: 100%;
     object-fit: contain;
