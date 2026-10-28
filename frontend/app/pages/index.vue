@@ -137,10 +137,24 @@ useHead({
         '@context': 'https://schema.org',
         '@type': 'Store',
         name: 'Gost.by',
+        // The legal entity behind the shop: what a company buyer and a search
+        // engine's business panel both look for.
+        legalName: company.name,
+        taxID: company.unp,
         url: homeUrl,
+        logo: `${homeUrl}logo-mark.svg`,
+        image: `${homeUrl}og-image.png`,
         telephone: company.phone,
         email: company.email,
-        address: { '@type': 'PostalAddress', streetAddress: company.storeAddress },
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: company.storeAddress.replace(/^г\.\s*Витебск,\s*/, ''),
+          addressLocality: 'Витебск',
+          addressCountry: 'BY',
+        },
+        areaServed: { '@type': 'Country', name: 'Беларусь' },
+        paymentAccepted: 'Наличные, банковская карта, безналичный расчёт по счёту',
+        currenciesAccepted: 'BYN',
         potentialAction: {
           '@type': 'SearchAction',
           target: `${homeUrl}catalog?search={search_term_string}`,

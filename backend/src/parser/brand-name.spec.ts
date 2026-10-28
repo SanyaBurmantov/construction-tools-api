@@ -70,4 +70,35 @@ describe('normalizeBrandName', () => {
     expect(isRealBrandName('Bosch')).toBe(true);
     expect(isRealBrandName('запчасти')).toBe(false);
   });
+
+  it('rejects measurements and bare numbers taken for a brand', () => {
+    for (const value of [
+      '420 литров/мин',
+      '820 литр/мин',
+      '1650/1400/1100 л/мин',
+      '2,7-3,3 л/мин',
+      '1 910 л/мин',
+      '130 кг/час',
+      '390',
+      '1170',
+    ]) {
+      expect(normalizeBrandName(value)).toBeNull();
+    }
+  });
+
+  it('keeps numbered trademarks', () => {
+    for (const value of [
+      'K2',
+      'WD-40',
+      '3TON',
+      'M7',
+      'Рубин-7',
+      'UNIVERSAL 9000',
+      'ЗАВОД № 1',
+      'C-40',
+      'EL15',
+    ]) {
+      expect(normalizeBrandName(value)).toBe(value);
+    }
+  });
 });

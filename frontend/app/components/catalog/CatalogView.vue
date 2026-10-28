@@ -4,6 +4,7 @@ import { toCardProduct } from '~/composables/useProductActions'
 
 const props = defineProps<{ categorySlug?: string }>()
 const { priceListUrl } = useB2b()
+const { formatPrice } = useFormatPrice()
 
 const PAGE_SIZE = 24
 /**
@@ -41,7 +42,7 @@ function setViewMode(mode: 'grid' | 'list') {
 
 const route = useRoute()
 const router = useRouter()
-const { apiBase, absoluteUrl } = useSite()
+const { apiBase, absoluteUrl, siteUrl } = useSite()
 
 function queryValue(value: unknown) {
   if (Array.isArray(value)) return value[0] ? String(value[0]) : undefined
@@ -543,11 +544,25 @@ const canonicalPage = computed(() =>
 )
 const pageSuffix = computed(() => (page.value > 1 ? ` — страница ${page.value}` : ''))
 const pageTitle = computed(() => (category.value
-  ? `${category.value.name} — купить в каталоге`
+  ? `${category.value.name} купить в Беларуси — цены`
   : 'Каталог инструмента и крепежа') + `${pageSuffix.value} | Gost.by`)
-const pageDescription = computed(() => category.value
-  ? (category.value.seoDescription || `${category.value.name}: ${pluralize(category.value.productCount, 'product')} в каталоге Gost.by. Фильтры по брендам и цене, доставка по Беларуси.`)
-  : 'Каталог инструментов, крепежа и расходников с фильтрами по категориям, брендам и цене.')
+/**
+ * A written description wins — the AI tasks fill `seoDescription` per
+ * category. Until then the parser's copy is just the category name
+ * («Замки велосипедные»), which is what every snippet showed; that counts as
+ * no description, and the template says something a searcher can use.
+ */
+const pageDescription = computed(() => {
+  const current = category.value
+  if (!current) return 'Каталог инструментов, крепежа и расходников с фильтрами по категориям, брендам и цене.'
+  const written = current.seoDescription?.trim()
+  const pageNote = page.value > 1 ? ` Страница ${page.value}.` : ''
+  if (written && written.toLowerCase() !== current.name.trim().toLowerCase() && written.length >= 40)
+    return written + pageNote
+  const from = priceRange.value?.min ? `, цены от ${formatPrice(priceRange.value.min, 'BYN')}` : ''
+  return `${current.name} — ${pluralize(current.productCount, 'product')} в каталоге Gost.by${from}. `
+    + `Оплата по счёту для организаций, доставка по Беларуси, самовывоз в Витебске.${pageNote}`
+})
 const listingUrl = computed(() =>
   absoluteUrl(category.value ? `/catalog/${category.value.slug}` : '/catalog'))
 const canonicalUrl = computed(() =>
@@ -561,7 +576,11 @@ useSeoMeta({
   ogDescription: pageDescription,
   ogType: 'website',
   ogUrl: canonicalUrl,
-  twitterCard: 'summary',
+  // A shared category link previews its first product rather than the logo.
+  ogImage: () => ogImageUrl(siteUrl, products.value?.data?.[0]?.images?.[0]?.url),
+  ogImageWidth: () => (products.value?.data?.[0]?.images?.[0]?.url ? OG_IMAGE_WIDTH : undefined),
+  ogImageHeight: () => (products.value?.data?.[0]?.images?.[0]?.url ? OG_IMAGE_HEIGHT : undefined),
+  twitterCard: 'summary_large_image',
   // A hidden branch (e.g. «Неразобранные товары поставщиков») stays reachable
   // by URL but must not compete in search with the real departments.
   robots: () => (category.value?.isVisible === false ? 'noindex, follow' : undefined)

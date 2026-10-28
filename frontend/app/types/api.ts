@@ -299,6 +299,10 @@ export type ProductDetail = CatalogProduct & {
   descriptionShort?: string | null
   descriptionFull?: string | null
   images?: Array<{ id?: string, url: string, alt?: string | null }>
+  /** EAN; suppliers sometimes store a second one as «A (B)». */
+  barcode?: string | null
+  /** When the price was last checked against a supplier (ISO). */
+  priceCheckedAt?: string | null
 }
 
 /** A published review as `GET /products/:slug/reviews` returns it (no account link). */

@@ -4,6 +4,7 @@ import {
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { isRealBrandName } from './brand-name';
 
@@ -32,7 +33,9 @@ export type BrandCleanupReport = {
  * attached to is left alone and reported: deleting it would silently change
  * prices, which is not a cleanup's business.
  *
- * Runs once per boot (like `ProductTextCleanupService`) and on demand from
+ * Runs once per boot (like `ProductTextCleanupService`), every night at 04:17
+ * so a value that slipped past the import check is gone by morning
+ * without anyone pressing a button, and on demand from
  * `POST /admin/parser/clean-brands`. Idempotent: on a clean catalogue it
  * reads the brand list and writes nothing. Set `BRAND_CLEANUP_ON_BOOT=false`
  * to skip the boot pass.
@@ -56,6 +59,16 @@ export class BrandCleanupService
       );
     }, BOOT_DELAY_MS);
     this.timer.unref();
+  }
+
+  // :17 — clear of every parser slot (see CatalogNormalizerCron).
+  @Cron('0 17 4 * * *')
+  async nightly() {
+    await this.run().catch((error: unknown) =>
+      this.logger.error(
+        `Nightly brand cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
   }
 
   onApplicationShutdown() {

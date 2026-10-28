@@ -7,7 +7,7 @@ import { company } from '~/data/company'
 const route = useRoute()
 const config = useRuntimeConfig()
 const slug = computed(() => String(route.params.slug))
-const { apiBase, absoluteUrl } = useSite()
+const { apiBase, absoluteUrl, siteUrl } = useSite()
 
 // The key follows the slug, so it alone re-runs the fetch on navigation.
 const { data: product, status, error } = await useAsyncData<ProductDetail>(
@@ -134,7 +134,24 @@ const breadcrumbs = computed(() => {
 /* ---- SEO --------------------------------------------------------------- */
 const images = computed(() => product.value?.images ?? [])
 const canonicalUrl = computed(() => absoluteUrl(`/product/${slug.value}`))
-const ogImage = computed(() => images.value[0]?.url || undefined)
+const ogImage = computed(() => ogImageUrl(siteUrl, images.value[0]?.url))
+
+/**
+ * «Цена обновлена 28.10.2026» — the last time a supplier's price was read.
+ * Prices are re-read daily, so the JSON-LD promises them for a week from
+ * that check: honest, and still in the future for a live product. A product
+ * whose offers stopped syncing shows an old date, which is the truth.
+ */
+const PRICE_VALID_DAYS = 7
+const priceCheckedAt = computed(() => {
+  const value = product.value?.priceCheckedAt
+  return value ? new Date(value) : null
+})
+const priceCheckedLabel = computed(() =>
+  priceCheckedAt.value
+    ? new Intl.DateTimeFormat('ru-BY', { timeZone: 'Europe/Minsk', day: '2-digit', month: '2-digit', year: 'numeric' }).format(priceCheckedAt.value)
+    : ''
+)
 /**
  * Our own template, never the supplier's `descriptionShort` — on some sources
  * that is their SEO blurb with their phone and «в Минске» in it. See
@@ -161,6 +178,9 @@ useSeoMeta({
   ogType: 'website',
   ogUrl: () => canonicalUrl.value,
   ogImage: () => ogImage.value,
+  ogImageWidth: () => (ogImage.value ? OG_IMAGE_WIDTH : undefined),
+  ogImageHeight: () => (ogImage.value ? OG_IMAGE_HEIGHT : undefined),
+  ogImageAlt: () => product.value?.name,
   // Twitter falls back to the og:* tags for title, description and image.
   twitterCard: 'summary_large_image',
 })
@@ -176,6 +196,11 @@ useHead(() => {
     url: canonicalUrl.value,
   }
   if (p.sku) productLd.sku = p.sku
+  if (p.model) productLd.mpn = p.model
+  // The barcode is how Google matches this page to searches for the product
+  // and to other shops' offers of it.
+  const gtin = gtinFromBarcode(p.barcode)
+  if (gtin) productLd[gtin.key] = gtin.value
   // The full description is the product text; `descriptionShort` may be the
   // supplier's advert (see metaDescription), so it is not used here.
   productLd.description = p.descriptionFull || metaDescription.value
@@ -190,7 +215,28 @@ useHead(() => {
         p.stockStatus === 'out_of_stock'
           ? 'https://schema.org/BackOrder'
           : 'https://schema.org/InStock',
+      itemCondition: 'https://schema.org/NewCondition',
       url: canonicalUrl.value,
+      seller: { '@type': 'Organization', name: 'Gost.by' },
+      ...(priceCheckedAt.value
+        ? {
+            priceValidUntil: new Date(priceCheckedAt.value.getTime() + PRICE_VALID_DAYS * 86_400_000)
+              .toISOString()
+              .slice(0, 10),
+          }
+        : {}),
+      shippingDetails: {
+        '@type': 'OfferShippingDetails',
+        shippingRate: { '@type': 'MonetaryAmount', value: courierCost.value, currency: 'BYN' },
+        shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'BY' },
+      },
+      hasMerchantReturnPolicy: {
+        '@type': 'MerchantReturnPolicy',
+        applicableCountry: 'BY',
+        returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+        merchantReturnDays: 14,
+        returnMethod: 'https://schema.org/ReturnInStore',
+      },
     }
   }
   // Only emit aggregateRating when there really are reviews — Google rejects
@@ -296,6 +342,7 @@ useHead(() => {
             <p class="availability" :class="{ 'is-in-stock': inStock }">
               <span class="dot" aria-hidden="true" />
               {{ availabilityLabel }}
+              <span v-if="priceCheckedLabel" class="price-checked">· цена обновлена {{ priceCheckedLabel }}</span>
             </p>
 
             <div v-if="canBuy" class="buy-actions">
@@ -518,6 +565,10 @@ useHead(() => {
   gap: var(--space-2);
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+.price-checked {
+  color: var(--text-subtle);
 }
 
 .availability .dot {

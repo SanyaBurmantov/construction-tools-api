@@ -59,6 +59,20 @@ const BOUNDARY = /((?<=[.!?])\s+(?=[\p{Lu}\d«"])|\s*(?=[☎➢📞]))/u;
 
 const HAS_CONTENT = /[\p{L}\d]/u;
 
+/**
+ * The supplier's tab labels scraped in front of the text: tools.by gives
+ * «Файлы BULL Электроинструмент Описание: BULL DG 2240 — это…» (the «Файлы»
+ * tab, the brand and category chips, the «Описание» tab), tools.by and dukon
+ * start with «Описание:» / «Описание » / «ОписаниеРама…». Only a heading is
+ * removed: «Описание товара …» (lower-case word after it) is a sentence.
+ */
+const TAB_HEADERS =
+  /^\s*(?:Файлы(?=\s)[^\n]{0,160}?\s*)?Описание(?:\s*:\s*|\s+(?=[\p{Lu}\d«"])|(?=[\p{Lu}]))/u;
+
+export function stripTabHeaders(text: string): string {
+  return text.replace(TAB_HEADERS, '');
+}
+
 function isMarketing(sentence: string) {
   if (MARKETING_SENTENCE.some((re) => re.test(sentence))) return true;
   return BUY.test(sentence) && SUPPLIER_CITY.test(sentence);
@@ -70,6 +84,7 @@ function isMarketing(sentence: string) {
  */
 export function sanitizeSupplierText(text: string | null | undefined): string {
   if (!text) return '';
+  text = stripTabHeaders(text);
   if (!ANY_MARKER.test(text)) return text;
 
   const parts = text.split(BOUNDARY);

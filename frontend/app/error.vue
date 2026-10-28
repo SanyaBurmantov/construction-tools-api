@@ -9,6 +9,11 @@ const props = defineProps<{ error: NuxtError }>()
  * would only land on the same outage, so the action here is «обновить».
  */
 const isMaintenance = computed(() => props.error.statusCode === 503)
+/**
+ * 404 has its own fixed copy: Nuxt's default statusMessage is English
+ * («Page not found: /…») and went straight into the <h1> a crawler reads.
+ */
+const isNotFound = computed(() => props.error.statusCode === 404)
 
 // The error page used to have no <title> at all, so an outage answer or a 404
 // read in a crawler (or an audit) as «page without a title».
@@ -44,6 +49,17 @@ const retry = () => reloadNuxtApp({ persistState: false })
       <p>Мы уже чиним — обновите страницу через пару минут. Заказы и корзина
         никуда не делись.</p>
       <UiButton class="error-action" size="lg" @click="retry">Обновить страницу</UiButton>
+    </div>
+
+    <div v-else-if="isNotFound" class="error-card">
+      <span class="eyebrow">Ошибка 404</span>
+      <h1>Страница не найдена</h1>
+      <p>Возможно, товар снят с продажи, раздел переехал или в ссылке опечатка.
+        Найдите нужное через каталог или поиск — в каталоге больше 50 000 позиций.</p>
+      <div class="error-actions">
+        <UiButton size="lg" @click="clearError({ redirect: '/catalog' })">Перейти в каталог</UiButton>
+        <UiButton size="lg" variant="secondary" @click="handleError">На главную</UiButton>
+      </div>
     </div>
 
     <div v-else class="error-card">
@@ -87,5 +103,12 @@ p {
 
 .error-action {
   margin-top: 28px;
+}
+
+.error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
 }
 </style>

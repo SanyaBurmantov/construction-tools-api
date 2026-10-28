@@ -242,8 +242,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   same reason. Anything creating products from a parse goes through it.
   `upsertBrand()` also refuses values that are not brands (`parser/brand-name.ts`:
   «запчасти…», «без товарного знака», «Измерители», «-»…) — the product gets
-  no brand. `BrandCleanupService` removes such rows imported earlier (on boot
-  and `POST /admin/parser/clean-brands`); brand identity is the slug, so case
+  no brand — including measurements and bare numbers («420 литров/мин»: dukon's
+  compressors became brands because `findSpecValue(…, 'производитель')`
+  matched «Производительность»; dukon now matches the spec *name*,
+  `findBrandSpec`). `BrandCleanupService` removes such rows imported earlier
+  (on boot, nightly at 04:17 and `POST /admin/parser/clean-brands`); brand identity is the slug, so case
   variants are already one row. A brand an admin **merged** away leaves a
   `BrandAlias(slug → survivor)` that `upsertBrand()` resolves first, or the
   next parse recreated it and pulled its products back.
@@ -280,8 +283,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `taxonomy.ts` synonym) before creating anything, and `merge()` is **deep** —
   a child the target already has by name is merged into it, not re-parented.
   What was already duplicated is listed at `GET /admin/categories/duplicates`
-  and folded per reviewed group (`POST …/duplicates/merge`, «Дубли» view in
-  `/admin/categories`) — never automatically.
+  and folded per group (`POST …/duplicates/merge`, «Дубли» view in
+  `/admin/categories`) — and, since the owner asked for it, **every night**
+  by `CategoryDuplicatesCron` (04:47, ≤100 groups, same deep merge with
+  aliases and 301s; a group whose copies differ in visibility is left for an
+  admin). Not every `-N` slug is a duplicate: «DIN 7981» is a standard's
+  number.
   The parsers' fallback «Неразобранные товары поставщиков»
   (`FALLBACK_CATEGORY_SLUG`) is created `isVisible: false`, so it is in no
   storefront listing; its URL and its products' URLs still work.
@@ -864,6 +871,23 @@ belongs in the description, not the name; the last breadcrumb is a brand filter
 `Product.barcode` and is what merges a tools.by offer with the same product from
 th-tool.by. Photos come from `content.tools.by` at three sizes — deduplicated by
 the size-stripped URL, largest kept.
+
+**Default catalogue order: complete cards first.** `Product.listingRank`
+(real photo 2 + description 1) is recomputed hourly by `ListingRankService`;
+the default sort and search ties order by it before the name, so the cards
+without a photo or text sink to the end. An explicit sort ignores it.
+Supplier tab labels in front of a description («Файлы BULL Электроинструмент
+Описание: …», «Описание:») are stripped by `stripTabHeaders` in
+`supplier-text.ts`.
+
+**SEO bits worth not undoing.** `robots.txt` closes the client-rendered
+private screens (their `noindex` exists only after JS) and has Yandex
+`Clean-param` for tracking tags and `sort`. og:image is our own
+`/_ipx/…&s_1200x630&fit_contain&b_ffffff` (`utils/og-image.ts`), never the
+supplier URL. Product JSON-LD carries `gtin*` from the barcode,
+`priceValidUntil` = last offer sync (`priceCheckedAt`) + 7 days, shipping and
+return policy. A category's `seoDescription` equal to its name counts as
+empty and the template is used until an AI task writes one.
 
 **Supplier sales boilerplate never reaches our product text.** dukon.by's meta
 description is a template — «Купить … в Минске с гарантией и доставкой … ☎ +375
