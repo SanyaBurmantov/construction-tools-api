@@ -133,6 +133,13 @@ export interface Order {
   deliveryMethod: DeliveryMethod
   deliveryAddress: string | null
   paymentMethod: PaymentMethod
+  /** The organisation billed — a snapshot from checkout; null for a private buyer. */
+  payerName?: string | null
+  payerTaxId?: string | null
+  payerAddress?: string | null
+  payerAccount?: string | null
+  payerBankName?: string | null
+  payerBankBic?: string | null
   comment: string | null
   customerName: string
   customerPhone: string

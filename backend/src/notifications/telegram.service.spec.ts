@@ -71,6 +71,26 @@ describe('TelegramService', () => {
     expect(message).toContain('Итого: 100.00 BYN');
   });
 
+  it('leads a company order with the payer and its requisites', () => {
+    const message = new TelegramService().buildMessage(
+      buildOrder({
+        paymentMethod: 'INVOICE',
+        payerName: 'ООО <Ромашка>',
+        payerTaxId: '391807521',
+        payerBankBic: 'AKBBBY2X',
+      }),
+    );
+
+    expect(message).toContain('Новый заказ №42 от организации');
+    expect(message).toContain('<b>Организация:</b> ООО &lt;Ромашка&gt;');
+    expect(message).toContain('<b>УНП:</b> 391807521');
+    expect(message).toContain('<b>Банк:</b> БИК AKBBBY2X');
+    expect(message).toContain('<b>Контактное лицо:</b> Иван');
+    expect(message.indexOf('Организация')).toBeLessThan(
+      message.indexOf('Контактное лицо'),
+    );
+  });
+
   it('shows the discount line only when a discount was applied', () => {
     const without = new TelegramService().buildMessage(buildOrder());
     expect(without).not.toContain('Скидка');

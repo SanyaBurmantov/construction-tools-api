@@ -205,6 +205,18 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
             <dt>УНП</dt>
             <dd>{{ account.taxId }}</dd>
           </div>
+          <div v-if="account.legalAddress">
+            <dt>Юр. адрес</dt>
+            <dd>{{ account.legalAddress }}</dd>
+          </div>
+          <div v-if="account.bankAccount">
+            <dt>Р/с</dt>
+            <dd>{{ account.bankAccount }}</dd>
+          </div>
+          <div v-if="account.bankName || account.bankBic">
+            <dt>Банк</dt>
+            <dd>{{ [account.bankName, account.bankBic && `БИК ${account.bankBic}`].filter(Boolean).join(', ') }}</dd>
+          </div>
           <div>
             <dt>{{ account.customerType === 'COMPANY' ? 'Контактное лицо' : 'Имя' }}</dt>
             <dd>{{ account.name || '—' }}</dd>

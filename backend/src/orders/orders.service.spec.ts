@@ -7,6 +7,7 @@ import { MailService } from '../notifications/mail.service';
 import { TelegramService } from '../notifications/telegram.service';
 import { ServerCartService } from '../cart/server-cart.service';
 import { PromoCode, PromoCodeType } from '@prisma/client';
+import type { PayerAccount } from './order-payer';
 
 function buildPromoCode(overrides: Partial<PromoCode> = {}): PromoCode {
   return {
@@ -40,7 +41,11 @@ type ProductRow = {
   images: { url: string }[];
 };
 
-function buildService(products: ProductRow[], promoCode?: PromoCode) {
+function buildService(
+  products: ProductRow[],
+  promoCode?: PromoCode,
+  account?: PayerAccount,
+) {
   const createMock = jest.fn((args: { data: unknown }) => {
     const data = args.data as { items?: { create?: unknown[] } };
     // `include: { items: true }` hands the created lines back as an array.
@@ -67,6 +72,9 @@ function buildService(products: ProductRow[], promoCode?: PromoCode) {
     promoCode: {
       findUnique: jest.fn(() => Promise.resolve(promoCode ?? null)),
     },
+    user: {
+      findUnique: jest.fn(() => Promise.resolve(account ?? null)),
+    },
     // Run the callback inline against the same mocks — these tests assert on
     // the data passed to order.create, not on transactional semantics.
     $transaction: jest.fn((fn: (client: typeof tx) => unknown) => fn(tx)),
@@ -85,11 +93,16 @@ function buildService(products: ProductRow[], promoCode?: PromoCode) {
   } as unknown as ServerCartService;
 
   const mailMock = jest.fn(() => Promise.resolve(true));
-  const mail = { sendToAdmins: mailMock } as unknown as MailService;
+  const customerMailMock = jest.fn(() => Promise.resolve(true));
+  const mail = {
+    sendToAdmins: mailMock,
+    send: customerMailMock,
+  } as unknown as MailService;
 
   return {
     service: new OrdersService(prisma, promo, telegram, serverCart, mail),
     mailMock,
+    customerMailMock,
     createMock,
     promoUpdateMock,
     notifyMock,
@@ -647,5 +660,72 @@ describe('canMoveOrder', () => {
     expect(canMoveOrder('SHIPPED', 'NEW')).toBe(false);
     expect(canMoveOrder('CANCELLED', 'NEW')).toBe(false);
     expect(canMoveOrder('DELIVERED', 'CANCELLED')).toBe(false);
+  });
+});
+
+describe('OrdersService.createOrder — payer', () => {
+  const drill: ProductRow = {
+    id: 'p1',
+    name: 'Дрель',
+    slug: 'drel',
+    status: 'PUBLISHED',
+    priceValue: 100,
+    priceCurrency: 'BYN',
+    images: [],
+  };
+
+  it('freezes the company account requisites into the order', async () => {
+    const { service, createMock } = buildService([drill], undefined, {
+      customerType: 'COMPANY',
+      companyName: 'ООО «Ромашка»',
+      taxId: '391807521',
+      legalAddress: null,
+      bankAccount: null,
+      bankName: null,
+      bankBic: null,
+    });
+
+    await service.createOrder(
+      {
+        ...baseCustomer,
+        paymentMethod: 'INVOICE',
+        deliveryMethod: 'PICKUP',
+        items: [{ productId: 'p1', quantity: 1 }],
+      },
+      'u1',
+    );
+
+    const data = createMock.mock.calls[0][0].data as Record<string, unknown>;
+    expect(data.payerType).toBe('COMPANY');
+    expect(data.payerName).toBe('ООО «Ромашка»');
+    expect(data.payerTaxId).toBe('391807521');
+  });
+
+  it('refuses a guest invoice without an organisation', async () => {
+    const { service, createMock } = buildService([drill]);
+    await expect(
+      service.createOrder({
+        ...baseCustomer,
+        paymentMethod: 'INVOICE',
+        deliveryMethod: 'PICKUP',
+        items: [{ productId: 'p1', quantity: 1 }],
+      }),
+    ).rejects.toThrow(/по счёту/);
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('mails the customer a confirmation when an e-mail was given', async () => {
+    const { service, customerMailMock } = buildService([drill]);
+    await service.createOrder({
+      ...baseCustomer,
+      customerEmail: 'buyer@example.by',
+      deliveryMethod: 'PICKUP',
+      items: [{ productId: 'p1', quantity: 1 }],
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(customerMailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'buyer@example.by' }),
+      expect.any(String),
+    );
   });
 });

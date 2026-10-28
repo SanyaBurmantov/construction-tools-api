@@ -408,6 +408,17 @@ model Order {
   deliveryMethod  DeliveryMethod @default(PICKUP)
   deliveryAddress String?
   paymentMethod   PaymentMethod  @default(CASH)
+  /// Who the invoice is made out to — a snapshot taken at checkout, like the
+  /// line prices. Reading it through `user` lost it as soon as the company
+  /// edited its profile or deleted the account. Null for a private buyer.
+  payerType       CustomerType?
+  payerName       String?
+  /// УНП.
+  payerTaxId      String?
+  payerAddress    String?
+  payerAccount    String?
+  payerBankName   String?
+  payerBankBic    String?
   currency        String         @default("BYN")
   itemsTotal      Float          @default(0)
   deliveryCost    Float          @default(0)
@@ -424,6 +435,7 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([userId, createdAt])
+  @@index([payerTaxId])
 }
 
 model OrderItem {
@@ -775,8 +787,15 @@ model User {
   /// Required for COMPANY accounts (checked in the service, not the schema, so
   /// an admin can still fix a half-filled row).
   companyName     String?
-  /// УНП / ИНН.
+  /// УНП (checksum-validated on input, see common/utils/requisites.ts).
   taxId           String?
+  /// Invoice requisites of a COMPANY account — copied into every order it
+  /// places (see Order.payer*), so the profile can change afterwards.
+  legalAddress    String?
+  /// Settlement account, a BY IBAN.
+  bankAccount     String?
+  bankName        String?
+  bankBic         String?
   /// Deactivated accounts keep their orders and sessions history but cannot
   /// log in, and every live session is dropped the moment the flag goes off.
   isActive        Boolean      @default(true)

@@ -34,6 +34,11 @@ const error = ref('')
 
 onMounted(leaveIfSignedIn)
 
+/** Shown under the field as soon as nine characters are typed. */
+const taxIdError = computed(() =>
+  form.taxId.trim().length >= 9 ? requisitesProblem({ taxId: form.taxId }) : ''
+)
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /** Mirrors the server's rules so a typo doesn't cost a round trip. */
@@ -45,6 +50,7 @@ function validate() {
   if (form.password !== form.passwordConfirm) return 'Пароли не совпадают'
   if (isCompany.value && !form.companyName.trim())
     return 'Для юридического лица укажите название организации'
+  if (isCompany.value && taxIdError.value) return taxIdError.value
   if (!form.email.trim() && !EMAIL_RE.test(form.login.trim()))
     return 'Укажите e-mail — на него придёт письмо для подтверждения регистрации'
   if (form.email.trim() && !EMAIL_RE.test(form.email.trim()))
@@ -158,8 +164,13 @@ useSeoMeta({ title: 'Регистрация | Gost.by', robots: 'noindex,nofollo
             <UiInput id="reg-company" v-model="form.companyName" placeholder="ООО «Ромашка»" />
           </UiField>
 
-          <UiField label="УНП" for="reg-tax">
-            <UiInput id="reg-tax" v-model="form.taxId" placeholder="123456789" />
+          <UiField
+            label="УНП"
+            for="reg-tax"
+            hint="Нужен для счёта на оплату — можно указать и позже, в кабинете"
+            :error="taxIdError"
+          >
+            <UiInput id="reg-tax" v-model="form.taxId" placeholder="123456789" inputmode="numeric" />
           </UiField>
         </template>
 

@@ -6,7 +6,7 @@ const props = withDefaults(
     size?: 'sm' | 'md'
     disabled?: boolean
   }>(),
-  { min: 1, max: 999, size: 'md' }
+  { min: 1, max: 9999, size: 'md' }
 )
 
 const model = defineModel<number>({ default: 1 })

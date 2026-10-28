@@ -9,6 +9,11 @@ import {
 } from 'class-validator';
 import { CustomerType } from '@prisma/client';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '../password.util';
+import {
+  IsBankAccount,
+  IsBic,
+  IsUnp,
+} from '../../common/dto/requisites.validators';
 
 /** Everything an account may change about itself — never the role. */
 export class UpdateProfileDto {
@@ -44,11 +49,32 @@ export class UpdateProfileDto {
   @Length(0, 200)
   companyName?: string;
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ required: false, description: 'УНП — 9 цифр' })
+  @IsOptional()
+  @IsUnp()
+  taxId?: string;
+
+  @ApiProperty({ required: false, description: 'Юридический адрес' })
   @IsOptional()
   @IsString()
-  @Length(0, 40)
-  taxId?: string;
+  @Length(0, 300)
+  legalAddress?: string;
+
+  @ApiProperty({ required: false, description: 'Расчётный счёт (IBAN BY…)' })
+  @IsOptional()
+  @IsBankAccount()
+  bankAccount?: string;
+
+  @ApiProperty({ required: false, description: 'Банк' })
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  bankName?: string;
+
+  @ApiProperty({ required: false, description: 'БИК банка' })
+  @IsOptional()
+  @IsBic()
+  bankBic?: string;
 }
 
 export class ChangePasswordDto {

@@ -382,6 +382,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   SMTP — hoster.by for gost.by). Enabled only when `SMTP_HOST`, `SMTP_USER`
   and `SMTP_PASSWORD` are all set; like Telegram it **never throws** — a
   committed order or a created account must not fail on a mail outage.
+  "Enabled" only means the variables are set, so the service logs in once at
+  boot (`verify()`) and a failed login or send goes to the Telegram alerts
+  topic (`notifyMailProblem`, at most hourly) — a wrong `SMTP_PASSWORD` once
+  went unnoticed. `POST /orders` also mails the customer a confirmation
+  (`buildCustomerOrderMail`) when an e-mail was given.
   `POST /orders` also mails `MAIL_ADMIN_TO` (`notifications/order-mail.ts`,
   Reply-To = the customer), composed inside the promise so even a builder
   throw is caught. **Registration needs an e-mail** (the field, or a login
@@ -668,6 +673,24 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   confirm the order exists. «Повторить заказ» re-adds the order's lines from
   the *snapshot* and the cart's own `POST /cart/validate` re-prices them, so an
   old price can never come back silently.
+- **Company buyers (юрлица).** A COMPANY account keeps its invoice
+  requisites in `User` (`taxId` = УНП, `legalAddress`, `bankAccount` = BY
+  IBAN, `bankName`, `bankBic`), validated by `common/utils/requisites.ts`
+  (УНП mod-11 check digit, IBAN mod-97, BIC shape; the storefront has a copy in
+  `utils/requisites.ts`) and stored normalized. **The payer is snapshotted into
+  the order** (`Order.payer*`, `orders/order-payer.ts`): what checkout typed
+  wins field by field, a company account fills the rest — reading it through
+  `Order.user` lost it as soon as the profile changed or the account was
+  deleted. `INVOICE` without an organisation and its УНП is a 400. Telegram,
+  the shop letter and the customer's confirmation letter lead with the payer;
+  admin order search matches the organisation and УНП. Checkout defaults a
+  company to `INVOICE`, prefills the «Плательщик» block from the profile and
+  saves typed requisites back into blank profile fields. One form component
+  for all of it: `components/account/companyRequisites.vue`. Cart limits are
+  sized for purchase requests — 9999 per line, 300 lines
+  (`cart/cart-limits.ts`, mirrored in `stores/cart.ts`). Search matches a
+  barcode (8–14 digits) as a whole code, including the `A (B)` pairs suppliers
+  store; dukon.by publishes no barcodes at all.
 - **Checkout requires an account, browsing does not.** `POST /orders` runs
   under `OptionalAuthGuard`: with a session it stamps `Order.userId` (that
   link is the **only** thing that puts an order in «История заказов» — orders

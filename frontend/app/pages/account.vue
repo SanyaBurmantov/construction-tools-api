@@ -2,6 +2,7 @@
 import { useCartStore } from '~/stores/cart'
 import type { AccountUser, CustomerType } from '~/composables/useAuth'
 import type { Order, OrderStatus, Paginated } from '~/types/api'
+import type { CompanyRequisitesModel } from '~/utils/requisites'
 // The year matters here: an order history spans them.
 import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
 
@@ -272,8 +273,15 @@ const profile = reactive({
   name: '',
   email: '',
   phone: '',
+})
+/** The organisation's requisites — what an invoice is made out to. */
+const requisites = reactive<CompanyRequisitesModel>({
   companyName: '',
   taxId: '',
+  legalAddress: '',
+  bankAccount: '',
+  bankName: '',
+  bankBic: '',
 })
 
 function fillProfileForm() {
@@ -282,8 +290,12 @@ function fillProfileForm() {
   profile.name = user.value.name ?? ''
   profile.email = user.value.email ?? ''
   profile.phone = user.value.phone ?? ''
-  profile.companyName = user.value.companyName ?? ''
-  profile.taxId = user.value.taxId ?? ''
+  requisites.companyName = user.value.companyName ?? ''
+  requisites.taxId = user.value.taxId ?? ''
+  requisites.legalAddress = user.value.legalAddress ?? ''
+  requisites.bankAccount = user.value.bankAccount ?? ''
+  requisites.bankName = user.value.bankName ?? ''
+  requisites.bankBic = user.value.bankBic ?? ''
 }
 
 const isCompany = computed(() => profile.customerType === 'COMPANY')
@@ -292,8 +304,13 @@ const profileError = ref('')
 
 async function saveProfile() {
   profileError.value = ''
-  if (isCompany.value && !profile.companyName.trim()) {
+  if (isCompany.value && !requisites.companyName.trim()) {
     profileError.value = 'Для юридического лица укажите название организации'
+    return
+  }
+  const problem = isCompany.value ? requisitesProblem(requisites) : ''
+  if (problem) {
+    profileError.value = problem
     return
   }
   savingProfile.value = true
@@ -303,8 +320,17 @@ async function saveProfile() {
       name: profile.name.trim(),
       email: profile.email.trim() || undefined,
       phone: profile.phone.trim(),
-      companyName: profile.companyName.trim(),
-      taxId: profile.taxId.trim(),
+      // A private buyer's form hides these: leave whatever is stored alone.
+      ...(isCompany.value
+        ? {
+            companyName: requisites.companyName.trim(),
+            taxId: requisites.taxId.trim(),
+            legalAddress: requisites.legalAddress.trim(),
+            bankAccount: requisites.bankAccount.trim(),
+            bankName: requisites.bankName.trim(),
+            bankBic: requisites.bankBic.trim(),
+          }
+        : {}),
     })
     await loadSummary()
     toast.success('Данные сохранены')
@@ -480,6 +506,12 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
                 <dt>УНП</dt>
                 <dd>{{ user?.taxId || '—' }}</dd>
               </div>
+              <div v-if="user?.customerType === 'COMPANY'">
+                <dt>Реквизиты для счёта</dt>
+                <dd>
+                  {{ user?.bankAccount && user?.legalAddress ? 'заполнены' : 'не заполнены — в «Настройках»' }}
+                </dd>
+              </div>
               <div>
                 <dt>{{ user?.customerType === 'COMPANY' ? 'Контактное лицо' : 'Имя' }}</dt>
                 <dd>{{ user?.name || '—' }}</dd>
@@ -598,6 +630,10 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
               <div>
                 <dt>Оплата</dt>
                 <dd>{{ PAYMENT_LABEL[order.paymentMethod] }}</dd>
+              </div>
+              <div v-if="order.payerName">
+                <dt>Плательщик</dt>
+                <dd>{{ order.payerName }}<template v-if="order.payerTaxId">, УНП {{ order.payerTaxId }}</template></dd>
               </div>
             </dl>
 
@@ -791,13 +827,11 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
             </UiField>
 
             <template v-if="isCompany">
-              <UiField label="Название организации" required for="acc-company">
-                <UiInput id="acc-company" v-model="profile.companyName" />
-              </UiField>
-
-              <UiField label="УНП" for="acc-tax">
-                <UiInput id="acc-tax" v-model="profile.taxId" />
-              </UiField>
+              <h3 class="form-subtitle">Реквизиты для счёта</h3>
+              <p class="form-note">
+                Подставляются в каждый заказ с оплатой по счёту — заполните один раз.
+              </p>
+              <AccountCompanyRequisites v-model="requisites" id-prefix="acc" />
             </template>
 
             <div class="form-actions">
@@ -1265,6 +1299,17 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
+}
+
+.form-subtitle {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-md);
+}
+
+.form-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .form-actions {

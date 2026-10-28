@@ -8,6 +8,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { CustomerType, Prisma, User, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { requisitesData } from './company-requisites';
 import { hashOpaqueToken } from './token-hash';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -38,6 +39,10 @@ export const USER_SELECT = {
   phone: true,
   companyName: true,
   taxId: true,
+  legalAddress: true,
+  bankAccount: true,
+  bankName: true,
+  bankBic: true,
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
@@ -165,7 +170,7 @@ export class AuthService {
       email,
       phone: dto.phone?.trim() || null,
       companyName: dto.companyName?.trim() || null,
-      taxId: dto.taxId?.trim() || null,
+      ...requisitesData(dto),
       lastLoginAt: new Date(),
     });
 
@@ -306,7 +311,7 @@ export class AuthService {
           dto.companyName === undefined
             ? undefined
             : dto.companyName?.trim() || null,
-        taxId: dto.taxId === undefined ? undefined : dto.taxId?.trim() || null,
+        ...requisitesData(dto),
       },
       select: USER_SELECT,
     });

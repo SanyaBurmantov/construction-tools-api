@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 import { CartItemsDto } from './dto/server-cart.dto';
+import { MAX_LINE_QUANTITY } from './cart-limits';
 
 /** One line as the storefront needs it: identity, quantity and a live price. */
 export type ServerCartLine = {
@@ -32,7 +33,6 @@ export type ServerCart = {
   updatedAt: Date | null;
 };
 
-const MAX_QUANTITY = 999;
 const DEFAULT_TTL_DAYS = 90;
 
 /**
@@ -61,7 +61,7 @@ export class ServerCartService {
     const quantities = new Map<string, number>();
     for (const item of dto.items) {
       const next = (quantities.get(item.productId) ?? 0) + item.quantity;
-      quantities.set(item.productId, Math.min(next, MAX_QUANTITY));
+      quantities.set(item.productId, Math.min(next, MAX_LINE_QUANTITY));
     }
     return quantities;
   }

@@ -299,7 +299,7 @@ useHead(() => {
             </p>
 
             <div v-if="canBuy" class="buy-actions">
-              <UiQuantity v-model="quantity" :max="999" />
+              <UiQuantity v-model="quantity" />
               <UiButton size="lg" class="buy-button" @click="addToCart(quantity)">
                 {{ inCart ? 'Добавить ещё' : 'В корзину' }}
               </UiButton>

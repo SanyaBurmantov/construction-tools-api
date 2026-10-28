@@ -67,6 +67,26 @@ export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   INVOICE: 'По счёту',
 };
 
+/**
+ * The payer as label/value rows — the same lines in Telegram and in both
+ * letters. Empty for a private buyer.
+ */
+export function payerRows(order: OrderNotification): Array<[string, string]> {
+  if (!order.payerName) return [];
+  const rows: Array<[string, string]> = [['Организация', order.payerName]];
+  if (order.payerTaxId) rows.push(['УНП', order.payerTaxId]);
+  if (order.payerAddress) rows.push(['Юр. адрес', order.payerAddress]);
+  if (order.payerAccount) rows.push(['Р/с', order.payerAccount]);
+  const bank = [
+    order.payerBankName,
+    order.payerBankBic && `БИК ${order.payerBankBic}`,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  if (bank) rows.push(['Банк', bank]);
+  return rows;
+}
+
 export type OrderNotification = {
   id: string;
   number: number;
@@ -77,6 +97,13 @@ export type OrderNotification = {
   deliveryMethod: DeliveryMethod;
   deliveryAddress: string | null;
   paymentMethod: PaymentMethod;
+  /** The organisation the invoice goes to; null for a private buyer. */
+  payerName?: string | null;
+  payerTaxId?: string | null;
+  payerAddress?: string | null;
+  payerAccount?: string | null;
+  payerBankName?: string | null;
+  payerBankBic?: string | null;
   currency: string;
   itemsTotal: number;
   deliveryCost: number;
@@ -160,9 +187,24 @@ export class TelegramService implements OnModuleInit {
   buildMessage(order: OrderNotification, adminUrl?: string): string {
     const lines: string[] = [];
 
-    lines.push(`🛒 <b>Новый заказ №${order.number}</b>`);
+    lines.push(
+      order.payerName
+        ? `🏢 <b>Новый заказ №${order.number} от организации</b>`
+        : `🛒 <b>Новый заказ №${order.number}</b>`,
+    );
     lines.push('');
-    lines.push(`<b>Покупатель:</b> ${this.escape(order.customerName)}`);
+    // A company order is billed, so the manager needs the requisites first,
+    // not after a trip to the admin.
+    const payer = payerRows(order);
+    if (payer.length) {
+      for (const [label, value] of payer) {
+        lines.push(`<b>${label}:</b> ${this.escape(value)}`);
+      }
+      lines.push('');
+    }
+    lines.push(
+      `<b>${order.payerName ? 'Контактное лицо' : 'Покупатель'}:</b> ${this.escape(order.customerName)}`,
+    );
     lines.push(`<b>Телефон:</b> ${this.escape(order.customerPhone)}`);
     if (order.customerEmail) {
       lines.push(`<b>Email:</b> ${this.escape(order.customerEmail)}`);
@@ -225,6 +267,21 @@ export class TelegramService implements OnModuleInit {
     if (origin) lines.push(`${origin}/admin/parsing`);
 
     return this.send(lines.join('\n'), `parser ${problem.key}`, 'alerts');
+  }
+
+  /**
+   * Outgoing mail is broken (wrong password, blocked port). Order letters and
+   * registration confirmations silently stop otherwise. Throttled by
+   * MailService.
+   */
+  async notifyMailProblem(account: string, reason: string): Promise<boolean> {
+    const lines = [
+      '📧 <b>Почта не отправляется</b>',
+      `<b>Ящик:</b> ${this.escape(account)}`,
+      `<b>Причина:</b> ${this.escape(reason.slice(0, 500))}`,
+      'Письма о заказах и подтверждения регистрации не уходят. Проверьте SMTP_PASSWORD в .env.prod.',
+    ];
+    return this.send(lines.join('\n'), 'mail problem', 'alerts');
   }
 
   /**

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { CustomerType, OrderStatus, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { requisitesData } from './company-requisites';
 import {
   AdminCreateUserDto,
   AdminUpdateUserDto,
@@ -58,6 +59,7 @@ export class UsersAdminService {
         { name: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
         { companyName: { contains: search, mode: 'insensitive' } },
+        { taxId: { contains: search.replace(/\s/g, '') } },
       ];
     }
 
@@ -152,7 +154,7 @@ export class UsersAdminService {
           email: dto.email?.trim().toLowerCase() || null,
           phone: dto.phone?.trim() || null,
           companyName: dto.companyName?.trim() || null,
-          taxId: dto.taxId?.trim() || null,
+          ...requisitesData(dto),
         },
         select: USER_SELECT,
       });
@@ -239,7 +241,7 @@ export class UsersAdminService {
         dto.companyName === undefined
           ? undefined
           : dto.companyName?.trim() || null,
-      taxId: dto.taxId === undefined ? undefined : dto.taxId?.trim() || null,
+      ...requisitesData(dto),
     };
 
     if (dto.password) {
