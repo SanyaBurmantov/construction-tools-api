@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { DeliveryMethod, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +21,7 @@ import {
   buildOrderMail,
 } from '../notifications/order-mail';
 import { resolvePayer } from './order-payer';
+import { SellerService } from '../b2b/seller.service';
 import { ServerCartService } from '../cart/server-cart.service';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 import { MAX_LINE_QUANTITY } from '../cart/cart-limits';
@@ -61,6 +63,7 @@ export class OrdersService {
     private telegram: TelegramService,
     private serverCart: ServerCartService,
     private mail: MailService,
+    @Optional() private seller?: SellerService,
   ) {}
 
   private deliveryCost(method: DeliveryMethod): number {
@@ -280,12 +283,24 @@ export class OrdersService {
     if (order.customerEmail) {
       const to = order.customerEmail;
       Promise.resolve()
-        .then(() =>
-          this.mail.send(
-            { to, ...buildCustomerOrderMail(order, publicOrigin) },
+        .then(async () => {
+          // A company paying by invoice gets the PDF link straight away —
+          // when the seller's requisites are complete.
+          const invoiceUrl =
+            publicOrigin &&
+            order.paymentMethod === 'INVOICE' &&
+            order.payerName &&
+            (await this.seller?.invoiceReady())
+              ? `${publicOrigin}/api/orders/${order.id}/invoice.pdf`
+              : undefined;
+          return this.mail.send(
+            {
+              to,
+              ...buildCustomerOrderMail(order, publicOrigin, invoiceUrl),
+            },
             `order #${order.number} to customer`,
-          ),
-        )
+          );
+        })
         .catch((error) => {
           this.logger.error(
             `Order #${order.number} customer mail failed: ${String(error)}`,
@@ -316,6 +331,8 @@ export class OrdersService {
         deliveryMethod: true,
         deliveryAddress: true,
         paymentMethod: true,
+        // The success page offers the PDF invoice to a company buyer.
+        payerName: true,
         customerName: true,
         createdAt: true,
         items: {

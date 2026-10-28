@@ -691,6 +691,27 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (`cart/cart-limits.ts`, mirrored in `stores/cart.ts`). Search matches a
   barcode (8–14 digits) as a whole code, including the `A (B)` pairs suppliers
   store; dukon.by publishes no barcodes at all.
+- **B2B documents, leads, lists** (`b2b/`). **Invoice PDF**
+  (`GET /orders/:id/invoice.pdf`, public by UUID like the confirmation) for an
+  `INVOICE` order with a payer; **commercial offer PDF**
+  (`POST /documents/quote`, re-priced from the DB, records a `QUOTE` lead);
+  **XLSX price list** (`GET /price-list.xlsx?categorySlug|brandSlug`,
+  streamed with exceljs in id-cursor chunks — never one workbook in the heap);
+  **purchase lists** (`/account/purchase-lists`, ids + quantities only,
+  hydrated from `Product` on read like the stored cart); **leads**
+  (`POST /leads`: «уточнить наличие / подобрать аналог», the form on
+  `/organizaciyam`; honeypot, @Throttle, ≤20/IP/day by salted hash; Telegram
+  orders topic + shop mail; `/admin/leads`, `newLeads` badge). PDFs are
+  pdfkit with Liberation Sans from `backend/assets/fonts` (the built-in fonts
+  have no Cyrillic; the Dockerfile copies `assets/`). **No invoice without
+  the seller's requisites**: bank account, bank, BIC and the VAT status live
+  in `SiteSetting` (`seller.*`, `SellerService`, `/admin/settings`), no code
+  default for any of them — a made-up account or a guessed VAT line is worse
+  than none. Until they are set the order still goes through and the
+  storefront says the manager will send the invoice; once set, the success
+  page, the account history, the admin order and the customer's letter all
+  link the PDF. «Счёт без регистрации» in the cart is an ordinary guest
+  `POST /orders` with `INVOICE` + payer (`components/cart/invoiceRequest.vue`).
 - **Checkout requires an account, browsing does not.** `POST /orders` runs
   under `OptionalAuthGuard`: with a session it stamps `Order.userId` (that
   link is the **only** thing that puts an order in «История заказов» — orders

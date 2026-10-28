@@ -117,6 +117,7 @@ useHead({
           </ul>
         </section>
 
+        <div class="aside">
         <CartOrderSummary title="Итого" total-label="К оплате">
           <p class="note">Стоимость доставки рассчитывается на следующем шаге.</p>
 
@@ -133,6 +134,9 @@ useHead({
           </p>
           <UiButton variant="ghost" block to="/catalog">Продолжить покупки</UiButton>
         </CartOrderSummary>
+
+        <CartB2bPanel />
+        </div>
       </div>
     </ClientOnly>
   </div>
@@ -154,6 +158,13 @@ useHead({
   align-items: start;
   gap: var(--space-6);
   grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+/* The summary and the panel for organisations, one right-hand column. */
+.aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 /* Warnings span both columns, above the items and the summary. */

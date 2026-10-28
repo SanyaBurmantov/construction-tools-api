@@ -3,6 +3,7 @@ import type { CatalogProductsResponse, CategoryPage, FacetItem, SpecFacet } from
 import { toCardProduct } from '~/composables/useProductActions'
 
 const props = defineProps<{ categorySlug?: string }>()
+const { priceListUrl } = useB2b()
 
 const PAGE_SIZE = 24
 /**
@@ -570,9 +571,16 @@ useHead(() => ({
         <h1>{{ category?.name || 'Каталог товаров' }}</h1>
         <p v-if="category?.description">{{ category.description }}</p>
       </div>
-      <NuxtLink v-if="parentLink" :to="parentLink.to" class="up-link">
-        ← {{ parentLink.label }}
-      </NuxtLink>
+      <div class="head-links">
+        <!-- Purchasers compare in their own sheet; same URL for everyone, so
+             the cached page can carry it. -->
+        <a :href="priceListUrl({ categorySlug: category?.slug })" class="price-link" rel="nofollow" download>
+          Прайс-лист{{ category ? ' раздела' : '' }} (Excel)
+        </a>
+        <NuxtLink v-if="parentLink" :to="parentLink.to" class="up-link">
+          ← {{ parentLink.label }}
+        </NuxtLink>
+      </div>
     </header>
 
     <!-- Browsing the catalogue: at the top level the categories *are* the
@@ -755,6 +763,19 @@ useHead(() => ({
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+.head-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.price-link {
+  color: var(--text-link);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .catalog-head h1 {

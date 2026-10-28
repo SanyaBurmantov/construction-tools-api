@@ -28,6 +28,7 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { PromoModule } from './promo/promo.module';
 import { CatalogNormalizerModule } from './catalog-normalizer/catalog-normalizer.module';
 import { AiModule } from './ai/ai.module';
+import { B2bModule } from './b2b/b2b.module';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
 
 @Module({
@@ -44,6 +45,7 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
       },
     ]),
     PrismaModule,
+    B2bModule,
     AuthModule,
     AccountModule,
     ListsModule,

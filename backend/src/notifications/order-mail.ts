@@ -133,6 +133,7 @@ ${rowsTable(totals, true)}${
 export function buildCustomerOrderMail(
   order: OrderNotification,
   siteUrl?: string,
+  invoiceUrl?: string,
 ): Omit<MailMessage, 'to'> {
   const payer = payerRows(order);
   const rows: Rows = [['Доставка', DELIVERY_LABELS[order.deliveryMethod]]];
@@ -141,8 +142,9 @@ export function buildCustomerOrderMail(
   if (order.comment) rows.push(['Комментарий', order.comment]);
 
   const totals = totalRows(order);
-  const next =
-    order.paymentMethod === 'INVOICE'
+  const next = invoiceUrl
+    ? 'Счёт на оплату готов — скачайте его по ссылке ниже. Менеджер подтвердит наличие товара.'
+    : order.paymentMethod === 'INVOICE'
       ? 'Менеджер проверит наличие и пришлёт счёт на оплату на этот адрес.'
       : 'Менеджер свяжется с вами, чтобы подтвердить заказ.';
   const link = siteUrl ? `${siteUrl}/account?tab=orders` : '';
@@ -152,6 +154,7 @@ export function buildCustomerOrderMail(
     `Заказ №${order.number} принят`,
     '',
     next,
+    ...(invoiceUrl ? [`Счёт (PDF): ${invoiceUrl}`] : []),
     '',
     ...textSection('Плательщик:', payer),
     ...rows.map(([k, v]) => `${k}: ${v}`),
@@ -165,7 +168,11 @@ export function buildCustomerOrderMail(
 
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222">
 <h2 style="margin:0 0 12px">Заказ №${order.number} принят</h2>
-<p>${escapeHtml(next)}</p>
+<p>${escapeHtml(next)}</p>${
+    invoiceUrl
+      ? `\n<p><a href="${escapeHtml(invoiceUrl)}" style="display:inline-block;padding:10px 18px;background:#e8590c;color:#fff;text-decoration:none;border-radius:6px">Скачать счёт (PDF)</a></p>`
+      : ''
+  }
 ${htmlSection('Плательщик', payer)}${rowsTable(rows)}
 ${itemsTable(order)}
 ${rowsTable(totals, true)}${

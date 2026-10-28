@@ -56,7 +56,7 @@ const route = useRoute()
 const router = useRouter()
 
 /* ---- Sections ---------------------------------------------------------- */
-const SECTIONS = ['overview', 'orders', 'promo', 'settings'] as const
+const SECTIONS = ['overview', 'orders', 'lists', 'promo', 'settings'] as const
 type Section = (typeof SECTIONS)[number]
 
 const section = ref<Section>('overview')
@@ -90,6 +90,7 @@ watch(section, (value) => {
 const tabs = computed(() => [
   { value: 'overview', label: 'Общая информация' },
   { value: 'orders', label: 'История заказов', count: summary.value?.orders.total ?? null },
+  { value: 'lists', label: 'Списки закупок' },
   { value: 'promo', label: 'Промокоды', count: summary.value?.promoCodes.available ?? null },
   { value: 'settings', label: 'Настройки' },
 ])
@@ -179,6 +180,32 @@ function goToOrdersPage(page: number) {
  * through POST /cart/validate and flags whatever moved, so nothing here can
  * quietly resurrect an old price.
  */
+/* ---- Documents & purchase lists from an order ------------------------- */
+const { loadSeller, invoiceUrl, isInvoiceable } = useB2b()
+const invoiceReady = ref(false)
+onMounted(async () => {
+  invoiceReady.value = Boolean((await loadSeller())?.invoiceReady)
+})
+
+async function saveOrderAsList(order: Order) {
+  const items = order.items
+    .filter(item => item.productId)
+    .map(item => ({ productId: item.productId as string, quantity: item.quantity }))
+  if (!items.length) {
+    toast.warning('Товары из этого заказа больше не доступны')
+    return
+  }
+  try {
+    await authFetch('/account/purchase-lists', {
+      method: 'POST',
+      body: { name: `По заказу №${order.number}`, items },
+    })
+    toast.success('Сохранено — список во вкладке «Списки закупок»')
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось сохранить список'))
+  }
+}
+
 function repeatOrder(order: Order) {
   const items = order.items.filter(item => item.productId)
   if (!items.length) {
@@ -648,6 +675,19 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
               <UiButton size="sm" variant="ghost" @click="repeatOrder(order)">
                 Повторить заказ
               </UiButton>
+              <UiButton
+                v-if="invoiceReady && isInvoiceable(order)"
+                size="sm"
+                variant="ghost"
+                :href="invoiceUrl(order.id)"
+                target="_blank"
+                rel="noopener"
+              >
+                Счёт (PDF)
+              </UiButton>
+              <UiButton size="sm" variant="ghost" @click="saveOrderAsList(order)">
+                В список закупок
+              </UiButton>
             </div>
 
             <div v-if="expandedOrder === order.id" class="order-details">
@@ -727,6 +767,11 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
           :total="ordersTotal"
           @change="goToOrdersPage"
         />
+      </section>
+
+      <!-- ============ Списки закупок ============ -->
+      <section v-else-if="section === 'lists'" class="pane">
+        <AccountPurchaseLists />
       </section>
 
       <!-- ============ Промокоды ============ -->

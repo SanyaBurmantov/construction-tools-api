@@ -23,6 +23,7 @@ const currentYear = new Date().getFullYear()
         <h2>Покупателям</h2>
         <NuxtLink to="/catalog">Все товары</NuxtLink>
         <NuxtLink to="/brand">Бренды</NuxtLink>
+        <NuxtLink to="/organizaciyam">Для организаций</NuxtLink>
         <NuxtLink to="/delivery">Доставка и оплата</NuxtLink>
         <NuxtLink to="/contacts">Контакты</NuxtLink>
         <NuxtLink to="/about">О компании</NuxtLink>

@@ -29,6 +29,7 @@ const TABS = [
 const route = useRoute()
 const router = useRouter()
 const { adminFetch, errorMessage } = useAdminApi()
+const { invoiceUrl, isInvoiceable } = useB2b()
 const toast = useAppToast()
 const { run, busy } = useAdminAction()
 
@@ -234,7 +235,16 @@ onMounted(async () => {
               </div>
               <div v-if="detail.payerName">
                 <dt>Организация</dt>
-                <dd>{{ detail.payerName }}</dd>
+                <dd>
+                  {{ detail.payerName }}
+                  <a
+                    v-if="isInvoiceable(detail)"
+                    :href="invoiceUrl(detail.id)"
+                    target="_blank"
+                    rel="noopener"
+                    class="invoice-link"
+                  >счёт (PDF)</a>
+                </dd>
               </div>
               <div v-if="detail.payerTaxId">
                 <dt>УНП</dt>
@@ -629,5 +639,10 @@ onMounted(async () => {
   .item-price {
     display: none;
   }
+}
+
+.invoice-link {
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
 }
 </style>

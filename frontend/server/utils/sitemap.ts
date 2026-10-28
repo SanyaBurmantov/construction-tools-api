@@ -32,7 +32,7 @@ const SNAPSHOT_TTL_MS = 60 * 60 * 1000
 /** The slug list is one big query; give it room, but never hang a crawler. */
 const FETCH_TIMEOUT_MS = 60_000
 
-const STATIC_PATHS = ['/', '/catalog', '/sales', '/brand', '/delivery', '/contacts', '/about', '/garantiya', '/usloviya', '/privacy']
+const STATIC_PATHS = ['/', '/catalog', '/sales', '/brand', '/delivery', '/organizaciyam', '/contacts', '/about', '/garantiya', '/usloviya', '/privacy']
 
 export type SitemapSnapshot = {
   /** Sorted by slug, so a product stays in the same chunk between snapshots. */

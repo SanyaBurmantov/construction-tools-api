@@ -198,6 +198,8 @@ export interface AdminStats {
   sources: number
   orders: number
   newOrders: number
+  /** Leads (quotes, questions) nobody has picked up yet. */
+  newLeads?: number
   pendingReviews: number
   activePromoCodes: number
   priceReviewNeeded: number

@@ -381,6 +381,14 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
+  /**
+   * A lead (quote downloaded, a question about a product). Goes to the
+   * orders topic: it is sales work, not an operator alert.
+   */
+  async notifyLead(text: string, context: string): Promise<boolean> {
+    return this.send(text, context, 'orders');
+  }
+
   async notifyNewOrder(order: OrderNotification): Promise<boolean> {
     if (!this.enabled) return false;
 

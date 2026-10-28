@@ -35,6 +35,8 @@ COPY package*.json ./
 COPY prisma ./prisma/
 RUN npm ci --omit=dev && npx prisma generate
 COPY --from=build /backend/dist ./dist
+# Fonts for the PDF invoice and quote (src/documents/).
+COPY --from=build /backend/assets ./assets
 # Not root: a compromised process should not own the container.
 RUN chown -R node:node /backend
 USER node

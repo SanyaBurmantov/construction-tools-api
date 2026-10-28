@@ -122,6 +122,7 @@ export default defineNuxtConfig({
     // Static information pages: they change with a deploy, not with the
     // catalogue, so an hour of cache costs nothing.
     '/delivery': { swr: 3600 },
+    '/organizaciyam': { swr: 3600 },
     '/about': { swr: 3600 },
     '/contacts': { swr: 3600 },
     '/garantiya': { swr: 3600 },

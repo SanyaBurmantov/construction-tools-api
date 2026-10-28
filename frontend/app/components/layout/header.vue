@@ -45,6 +45,7 @@ const navLinks = [
   { label: 'Каталог', to: '/catalog' },
   { label: 'Акции', to: '/sales' },
   { label: 'Бренды', to: '/brand' },
+  { label: 'Организациям', to: '/organizaciyam' },
   { label: 'Доставка', to: '/delivery' },
   { label: 'Контакты', to: '/contacts' },
 ]

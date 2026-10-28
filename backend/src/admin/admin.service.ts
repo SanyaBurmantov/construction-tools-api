@@ -115,6 +115,7 @@ export class AdminService {
       dailyOrders,
       topProducts,
       recentErrors,
+      newLeads,
     ] = await Promise.all([
       this.prisma.product.count(),
       this.prisma.product.count({ where: { status: 'PUBLISHED' } }),
@@ -174,6 +175,7 @@ export class AdminService {
           lastSeenAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
         },
       }),
+      this.prisma.lead.count({ where: { status: 'NEW' } }),
     ]);
 
     // Bucket the last 14 days client-side; the row count here is small and it
@@ -209,6 +211,7 @@ export class AdminService {
       users,
       admins,
       recentErrors,
+      newLeads,
       revenueTotal: Math.round((revenue._sum.total ?? 0) * 100) / 100,
       averageOrder: Math.round((revenue._avg.total ?? 0) * 100) / 100,
       ordersByStatus: Object.fromEntries(

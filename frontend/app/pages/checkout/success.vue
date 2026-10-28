@@ -13,6 +13,7 @@ type OrderConfirmation = Pick<
   | 'deliveryMethod'
   | 'deliveryAddress'
   | 'paymentMethod'
+  | 'payerName'
   | 'customerName'
   | 'createdAt'
 > & {
@@ -37,6 +38,8 @@ const { formatPrice } = useFormatPrice()
 // Orders placed from an account show up in its history — point there instead
 // of leaving this page as the only record of the order.
 const { isAuthenticated } = useAuth()
+const { loadSeller, invoiceUrl, isInvoiceable } = useB2b()
+const invoiceReady = ref(false)
 
 const orderId = computed(() => String(route.query.id || ''))
 const order = ref<OrderConfirmation | null>(null)
@@ -53,6 +56,7 @@ async function loadOrder() {
     order.value = await $fetch<OrderConfirmation>(
       `${config.public.apiBase}/orders/${orderId.value}`
     )
+    if (isInvoiceable(order.value)) invoiceReady.value = Boolean((await loadSeller())?.invoiceReady)
   } catch {
     failed.value = true
   } finally {
@@ -80,6 +84,18 @@ useHead({
             <h1>Спасибо за заказ!</h1>
             <p class="sub">Заказ <strong>№{{ order.number }}</strong> принят. Мы свяжемся с вами для подтверждения.</p>
           </div>
+        </div>
+
+        <div v-if="isInvoiceable(order)" class="invoice">
+          <template v-if="invoiceReady">
+            <p>Счёт на <strong>{{ order.payerName }}</strong> готов. Копия — в письме на ваш e-mail.</p>
+            <UiButton :href="invoiceUrl(orderId)" target="_blank" rel="noopener" size="lg">
+              Скачать счёт (PDF)
+            </UiButton>
+          </template>
+          <p v-else>
+            Счёт на <strong>{{ order.payerName }}</strong> менеджер пришлёт на ваш e-mail в рабочее время.
+          </p>
         </div>
 
         <ul class="items">
@@ -131,6 +147,22 @@ useHead({
 .success-page {
   display: grid;
   gap: 24px;
+}
+
+.invoice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+
+  p {
+    margin: 0;
+  }
 }
 
 .state {

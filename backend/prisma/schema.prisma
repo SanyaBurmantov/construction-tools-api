@@ -810,6 +810,8 @@ model User {
   reviews            Review[]
   adminActions       AdminActionLog[]
   emailVerifications EmailVerification[]
+  purchaseLists      PurchaseList[]
+  leads              Lead[]
 
   @@index([role])
 }
@@ -1060,3 +1062,79 @@ model AiTaskItem {
   @@unique([taskId, entityId])
   @@index([taskId, status])
 }
+
+/// Site-wide settings an admin edits at runtime (`seller.*`: the shop's own
+/// requisites printed on invoices and quotes). Key/value like ParserSetting,
+/// read through SellerService with code defaults behind it.
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+enum LeadKind {
+  /// A commercial offer downloaded from the cart.
+  QUOTE
+  /// «Уточнить наличие / подобрать аналог» on a product, or the contact form
+  /// on the page for organisations.
+  QUESTION
+}
+
+enum LeadStatus {
+  NEW
+  IN_WORK
+  DONE
+  REJECTED
+}
+
+/// A request from a would-be customer that is not an order yet. Orders have
+/// their own table; this is what a manager calls back on.
+model Lead {
+  id          String     @id @default(uuid())
+  number      Int        @unique @default(autoincrement())
+  kind        LeadKind
+  status      LeadStatus @default(NEW)
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId      String?
+  companyName String?
+  /// УНП.
+  taxId       String?
+  contactName String?
+  phone       String?
+  email       String?
+  message     String?
+  /// The product a question is about (snapshot name kept if it is deleted).
+  productId   String?
+  productName String?
+  productSlug String?
+  /// Quote lines as priced when the quote was made: [{productId, name, slug,
+  /// sku, quantity, unitPrice, lineTotal}].
+  items       Json?
+  total       Float?
+  currency    String?
+  /// Salted hash of the requester's IP, for the per-IP limit — never the IP.
+  ipHash      String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([ipHash, createdAt])
+}
+
+/// A named list of regular purchases («расходники на месяц»). Stores only
+/// product ids and quantities — names and prices are read from Product every
+/// time, the same rule as the stored cart.
+model PurchaseList {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  name      String
+  /// [{productId, quantity}]
+  items     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
