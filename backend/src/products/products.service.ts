@@ -8,25 +8,24 @@ import { isIdentitySpec, publicSpecs } from '../parser/spec-filterable';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 
 /**
- * How many products deep the relevance ranking goes.
+ * How many matches the indexed search collects, in relevance order.
  *
- * This is an *ordering* budget, not a membership one. It used to be both: the
- * ranked id list was fed into `where: { id: { in: … } }`, so a search for
- * "ключ", "набор" or "масло" answered `total: 1000` exactly — the cap, not the
- * truth — and the facets, the price range and the sort were all computed over
- * an arbitrary thousand rows. Membership is now a relational clause, so counts
- * and facets cover every match; this only decides how far the "most relevant
- * first" order extends before falling back to alphabetical.
+ * Membership and order come from one query now (see `rankedMatchIds`): each
+ * condition is its own `UNION` branch, so every branch is served by its own
+ * trigram index instead of one `OR` across a join forcing a scan of the whole
+ * catalogue — «перфоратор» went from ~2 s to ~0.1 s on production. Counts and
+ * facets then filter by that id list. A term matching more than this (one or
+ * two letters) falls back to the relational clause, so `total` is never the
+ * cap instead of the truth — that was the bug of the old 1000-row list.
  */
-const SEARCH_RANK_LIMIT = 2000;
+const SEARCH_MATCH_LIMIT = 20_000;
 
-/**
- * Trigram similarity is the one part of the match that cannot be written as a
- * Prisma filter, so typo-tolerant hits still arrive as an id list and are
- * OR'ed into the clause. Bounded because, unlike a substring match, this one
- * can touch a large slice of the catalogue at a low threshold.
- */
-const FUZZY_MATCH_LIMIT = 2000;
+/** Repeated searches (autocomplete, filter changes) reuse the id list. */
+const SEARCH_CACHE_TTL_MS = 60_000;
+const SEARCH_CACHE_MAX_ENTRIES = 100;
+/** Only modest lists are cached — a bounded heap matters more than a hit. */
+const SEARCH_CACHE_MAX_IDS = 5_000;
+
 /** How many characteristics a category page offers as filters. */
 const SPEC_FACET_LIMIT = 40;
 /** How many options one characteristic offers. */
@@ -422,8 +421,13 @@ export class ProductService {
     // Membership is a relational clause, so every count below covers the whole
     // match; the ranked id list that follows only decides the order.
     const searchTerm = filter.search?.trim();
+    const rankedIds = searchTerm
+      ? await this.rankedMatchIds(searchTerm)
+      : undefined;
     const searchWhere = searchTerm
-      ? await this.buildSearchWhere(searchTerm)
+      ? rankedIds
+        ? { id: { in: rankedIds } }
+        : this.buildSearchWhere(searchTerm)
       : undefined;
 
     const specSelections = parseSpecFilter(filter.specs);
@@ -534,7 +538,7 @@ export class ProductService {
       await Promise.all([
         this.prisma.product.count({ where }),
         useRelevance && searchTerm
-          ? this.findPageByRelevance(where, searchTerm, skip, limit)
+          ? this.findPageByRelevance(where, rankedIds ?? undefined, skip, limit)
           : this.prisma.product.findMany({
               where,
               skip,
@@ -637,53 +641,40 @@ export class ProductService {
   }
 
   /**
-   * Page of products ordered by search relevance: the ranked id list from
-   * searchProductIds defines the order, the relational where narrows it.
+   * Page of products in relevance order. `rankedIds` is every match, best
+   * first; the relational `where` narrows it by the other filters. Without
+   * the list (a term too broad for it) the page is alphabetical.
    */
   private async findPageByRelevance(
     where: Prisma.ProductWhereInput,
-    term: string,
+    rankedIds: string[] | undefined,
     skip: number,
     limit: number,
   ): Promise<ListProduct[]> {
-    const rankedIds = await this.searchProductIds(term);
-    const position = new Map(rankedIds.map((id, index) => [id, index]));
-
-    // The ranked window, narrowed by the active filters and kept in rank
-    // order. Bounded by SEARCH_RANK_LIMIT, so this list stays small even when
-    // the term matches most of the catalogue — which is the whole point of
-    // separating it from membership.
-    const ranked = rankedIds.length
-      ? (
-          await this.prisma.product.findMany({
-            where: { AND: [where, { id: { in: rankedIds } }] },
-            select: { id: true },
-          })
+    let pageIds: string[];
+    if (rankedIds) {
+      const position = new Map(rankedIds.map((id, index) => [id, index]));
+      const filtered = rankedIds.length
+        ? await this.prisma.product.findMany({ where, select: { id: true } })
+        : [];
+      pageIds = filtered
+        .map((row) => row.id)
+        .sort(
+          (a, b) =>
+            (position.get(a) ?? Number.MAX_SAFE_INTEGER) -
+            (position.get(b) ?? Number.MAX_SAFE_INTEGER),
         )
-          .map((row) => row.id)
-          .sort(
-            (a, b) =>
-              (position.get(a) ?? Number.MAX_SAFE_INTEGER) -
-              (position.get(b) ?? Number.MAX_SAFE_INTEGER),
-          )
-      : [];
-
-    const pageIds = ranked.slice(skip, skip + limit);
-
-    // Matches the ranking never reached still have to be reachable: they come
-    // after everything ranked, alphabetically, and Postgres paginates them
-    // rather than this process holding every id in memory.
-    if (pageIds.length < limit) {
-      const tail = await this.prisma.product.findMany({
-        where: rankedIds.length
-          ? { AND: [where, { id: { notIn: rankedIds } }] }
-          : where,
-        select: { id: true },
-        orderBy: { name: 'asc' },
-        skip: Math.max(0, skip - ranked.length),
-        take: limit - pageIds.length,
-      });
-      pageIds.push(...tail.map((row) => row.id));
+        .slice(skip, skip + limit);
+    } else {
+      pageIds = (
+        await this.prisma.product.findMany({
+          where,
+          select: { id: true },
+          orderBy: { name: 'asc' },
+          skip,
+          take: limit,
+        })
+      ).map((row) => row.id);
     }
 
     const rows = await this.prisma.product.findMany({
@@ -697,24 +688,16 @@ export class ProductService {
   }
 
   /**
-   * Which products a term matches, as a Prisma filter.
-   *
-   * Everything except trigram similarity is expressible relationally, so the
-   * match becomes part of `where` and Postgres counts it with its own indexes.
-   * That is what makes `total`, the facets and the price range describe the
-   * real result set rather than the first page of a ranked id list.
-   *
-   * Typo tolerance is the exception — `word_similarity` has no Prisma
-   * equivalent — so those ids are fetched separately and OR'ed in.
+   * The relational form of the match, for a term too broad for the id list
+   * (`rankedMatchIds` answered null). Slow on purpose-free terms, but correct:
+   * every count covers every match. No typo tolerance here — a one- or
+   * two-letter term has nothing to be tolerant about.
    */
-  private async buildSearchWhere(
-    term: string,
-  ): Promise<Prisma.ProductWhereInput | undefined> {
+  private buildSearchWhere(term: string): Prisma.ProductWhereInput {
     const variants = searchVariants(term);
     // No usable variants means the term was punctuation: match nothing rather
     // than silently dropping the filter and returning the whole catalogue.
     if (!variants.length) return { id: { in: [] } };
-
     const substring: Prisma.ProductWhereInput[] = variants.flatMap(
       (variant) => {
         const contains = { contains: variant, mode: 'insensitive' as const };
@@ -726,7 +709,6 @@ export class ProductService {
         ];
       },
     );
-
     const barcode = barcodeTerm(term);
     if (barcode) {
       substring.push(
@@ -735,79 +717,88 @@ export class ProductService {
         { barcode: { contains: `(${barcode})` } },
       );
     }
-
-    const fuzzyIds = await this.fuzzyMatchIds(variants);
-    return {
-      OR: fuzzyIds.length
-        ? [...substring, { id: { in: fuzzyIds } }]
-        : substring,
-    };
+    return { OR: substring };
   }
 
-  /** Trigram-similar product ids — the typo-tolerant half of the match. */
-  private async fuzzyMatchIds(variants: string[]): Promise<string[]> {
-    const fuzzable = variants.filter(
-      (variant) => variant.length >= MIN_FUZZY_LENGTH,
-    );
-    if (!fuzzable.length) return [];
+  /** term → ranked ids, for a minute. Insertion order doubles as LRU order. */
+  private readonly searchCache = new Map<
+    string,
+    { at: number; ids: Promise<string[] | null> }
+  >();
 
-    const rows = await this.withTrigramThreshold((tx) =>
-      tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-        SELECT p."id"
-        FROM "Product" p
-        WHERE p."status" = 'PUBLISHED'
-          AND (${Prisma.join(
-            fuzzable.map((variant) => Prisma.sql`${variant} <% p."name"`),
-            ' OR ',
-          )})
-        LIMIT ${FUZZY_MATCH_LIMIT}
-      `),
+  /**
+   * Every published product a term matches, best first — or null when it
+   * matches more than SEARCH_MATCH_LIMIT (the caller falls back to the
+   * relational clause). Concurrent and repeated calls for the same term share
+   * one query: the listing, its facets and the header suggestions all ask.
+   */
+  rankedMatchIds(term: string): Promise<string[] | null> {
+    const key = term.trim().toLowerCase();
+    const now = Date.now();
+    const hit = this.searchCache.get(key);
+    if (hit && now - hit.at < SEARCH_CACHE_TTL_MS) {
+      this.searchCache.delete(key);
+      this.searchCache.set(key, hit);
+      return hit.ids;
+    }
+    const ids = this.queryRankedMatchIds(key);
+    const entry = { at: now, ids };
+    this.searchCache.set(key, entry);
+    // Keep only modest lists, and drop a failed query so the next call retries.
+    ids.then(
+      (result) => {
+        if (result && result.length > SEARCH_CACHE_MAX_IDS) {
+          if (this.searchCache.get(key) === entry) this.searchCache.delete(key);
+        }
+      },
+      () => {
+        if (this.searchCache.get(key) === entry) this.searchCache.delete(key);
+      },
     );
-    return rows.map((row) => row.id);
+    while (this.searchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
+      const oldest = this.searchCache.keys().next().value as string;
+      this.searchCache.delete(oldest);
+    }
+    return ids;
   }
 
   /**
-   * Ranked full-text-ish search: exact/prefix SKU first, then name prefix,
-   * substring matches, model/brand hits, and finally pg_trgm word similarity
-   * for typo tolerance. Matches the term and its transliterations.
-   *
-   * Used only to order results now — see `SEARCH_RANK_LIMIT`.
+   * One query: the match as a `UNION` of index-served branches (trigram GIN
+   * on name, sku, model and brand name, the barcode, typo-tolerant `<%`),
+   * ranked over the matched rows only — exact/prefix SKU and barcode first,
+   * then name prefix, substring, model, brand, and word similarity.
    */
-  private async searchProductIds(
-    term: string,
-    limit = SEARCH_RANK_LIMIT,
-  ): Promise<string[]> {
+  private async queryRankedMatchIds(term: string): Promise<string[] | null> {
     const variants = searchVariants(term);
     if (!variants.length) return [];
-    // Purchasers and storekeepers search by the EAN on the box.
     const barcode = barcodeTerm(term);
+
+    const branches: Prisma.Sql[] = [];
+    for (const variant of variants) {
+      const like = `%${escapeLike(variant)}%`;
+      branches.push(
+        Prisma.sql`SELECT "id" FROM "Product" WHERE "name" ILIKE ${like}`,
+        Prisma.sql`SELECT "id" FROM "Product" WHERE "sku" ILIKE ${like}`,
+        Prisma.sql`SELECT "id" FROM "Product" WHERE "model" ILIKE ${like}`,
+        Prisma.sql`SELECT "id" FROM "Product" WHERE "brandId" IN (SELECT "id" FROM "Brand" WHERE "name" ILIKE ${like})`,
+      );
+      if (variant.length >= MIN_FUZZY_LENGTH) {
+        branches.push(
+          Prisma.sql`SELECT "id" FROM "Product" WHERE ${variant} <% "name"`,
+        );
+      }
+    }
+    // Suppliers store a second code beside the main one as `A (B)`.
     const barcodeHit = barcode
       ? Prisma.sql`(p."barcode" = ${barcode}
           OR p."barcode" LIKE ${`${barcode} %`}
           OR p."barcode" LIKE ${`%(${barcode})%`})`
       : null;
-    const barcodeMatch = barcodeHit
-      ? Prisma.sql`OR ${barcodeHit}`
-      : Prisma.empty;
-    const barcodeRank = barcodeHit
-      ? Prisma.sql`CASE WHEN ${barcodeHit} THEN 100 ELSE 0 END`
-      : Prisma.sql`0`;
-
-    const matchClauses = variants.map((variant) => {
-      const like = `%${escapeLike(variant)}%`;
-      const fuzzy =
-        variant.length >= MIN_FUZZY_LENGTH
-          ? Prisma.sql`OR ${variant} <% p."name"`
-          : Prisma.empty;
-      return Prisma.sql`(
-        p."name" ILIKE ${like}
-        OR p."sku" ILIKE ${like}
-        OR p."model" ILIKE ${like}
-        OR b."name" ILIKE ${like}
-        ${barcodeMatch}
-        ${fuzzy}
-      )`;
-    });
+    if (barcode) {
+      branches.push(
+        Prisma.sql`SELECT "id" FROM "Product" p WHERE ${barcodeHit!}`,
+      );
+    }
 
     const rankClauses = variants.map((variant) => {
       const like = `%${escapeLike(variant)}%`;
@@ -817,7 +808,6 @@ export class ProductService {
           ? Prisma.sql`(word_similarity(${variant}, p."name") * 50)::int`
           : Prisma.sql`0`;
       return Prisma.sql`GREATEST(
-        ${barcodeRank},
         CASE WHEN lower(p."sku") = lower(${variant}) THEN 100 ELSE 0 END,
         CASE WHEN p."sku" ILIKE ${prefix} THEN 90 ELSE 0 END,
         CASE WHEN p."name" ILIKE ${prefix} THEN 75 ELSE 0 END,
@@ -827,17 +817,22 @@ export class ProductService {
         ${fuzzy}
       )`;
     });
+    if (barcodeHit) {
+      rankClauses.push(Prisma.sql`CASE WHEN ${barcodeHit} THEN 100 ELSE 0 END`);
+    }
 
     const rows = await this.withTrigramThreshold((tx) =>
       tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        WITH matched AS (${Prisma.join(branches, ' UNION ')})
         SELECT p."id"
         FROM "Product" p
         LEFT JOIN "Brand" b ON b."id" = p."brandId"
-        WHERE p."status" = 'PUBLISHED' AND (${Prisma.join(matchClauses, ' OR ')})
+        WHERE p."status" = 'PUBLISHED' AND p."id" IN (SELECT "id" FROM matched)
         ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."name" ASC
-        LIMIT ${limit}
+        LIMIT ${SEARCH_MATCH_LIMIT + 1}
       `),
     );
+    if (rows.length > SEARCH_MATCH_LIMIT) return null;
     return rows.map((row) => row.id);
   }
 
@@ -873,7 +868,7 @@ export class ProductService {
       })),
     };
 
-    const ids = await this.searchProductIds(term, 6);
+    const ids = ((await this.rankedMatchIds(term)) ?? []).slice(0, 6);
     const [rows, categories, brands] = await Promise.all([
       this.prisma.product.findMany({
         where: { id: { in: ids } },
