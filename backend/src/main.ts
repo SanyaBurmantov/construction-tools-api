@@ -7,6 +7,8 @@ import { json, urlencoded } from 'express';
 import { PrismaService } from './prisma/prisma.service';
 import { AppModule } from './app.module';
 import { startMemoryGuard } from './common/utils/memory-guard';
+import { startHeapSampling, topRetainers } from './common/utils/heap-profile';
+import { TelegramService } from './notifications/telegram.service';
 
 // Safety net: a stray rejected promise from a background job (e.g. a parser
 // cron) must not take the whole API process down. Errors are handled where they
@@ -96,8 +98,27 @@ async function bootstrap() {
   // of ending it (see memory-guard.ts). MEMORY_GUARD_MAX_HEAP_RATIO=0 disables.
   const maxHeapRatio = Number(process.env.MEMORY_GUARD_MAX_HEAP_RATIO ?? 0.85);
   if (maxHeapRatio > 0) {
+    // Sampling heap profiler (~1% overhead): when the heap gets high, the log
+    // and the alerts topic say which code holds it — the 2026-10-27 OOM left
+    // nothing but a V8 stack in StreamBase::Writev to go on.
+    await startHeapSampling().catch((error) =>
+      logger.warn(`Heap sampling unavailable: ${String(error)}`),
+    );
+    const telegram = app.get(TelegramService);
     startMemoryGuard({
       maxHeapRatio,
+      warnRatio: Number(process.env.MEMORY_GUARD_WARN_HEAP_RATIO ?? 0.6),
+      report: async (reason, describe) => {
+        const top = await topRetainers(12);
+        const lines = top.map(
+          (r) => `${r.mb} MB  ${r.site}${r.stack ? `  ← ${r.stack}` : ''}`,
+        );
+        logger.warn(
+          `Heap ${reason === 'restart' ? 'before restart' : 'high'}: ${describe}\n` +
+            lines.join('\n'),
+        );
+        await telegram.notifyMemoryReport(reason, describe, lines);
+      },
       checkEveryMs: 15_000,
       reportEveryMs: 15 * 60_000,
       close: () => app.close(),

@@ -9,6 +9,13 @@ export interface MemoryGuardOptions {
   checkEveryMs: number;
   /** How often a plain usage line goes to the log (0 = never). */
   reportEveryMs: number;
+  /**
+   * Called once per process when the heap first crosses `warnRatio`, and
+   * again (awaited, inside the shutdown timeout) right before a restart —
+   * the moment to say what is holding the memory.
+   */
+  warnRatio?: number;
+  report?: (reason: 'warn' | 'restart', describe: string) => Promise<void>;
   /** Graceful shutdown; the guard exits regardless after `closeTimeoutMs`. */
   close: () => Promise<unknown>;
   closeTimeoutMs: number;
@@ -48,6 +55,11 @@ export function startMemoryGuard(options: MemoryGuardOptions) {
   const exit = options.exit ?? ((code: number) => process.exit(code));
   let lastReport = Date.now();
   let leaving = false;
+  let warned = false;
+  const report = (reason: 'warn' | 'restart', describe: string) =>
+    (options.report?.(reason, describe) ?? Promise.resolve()).catch((error) =>
+      logger.error(`Memory report failed: ${String(error)}`),
+    );
 
   const timer = setInterval(() => {
     if (leaving) return;
@@ -62,11 +74,21 @@ export function startMemoryGuard(options: MemoryGuardOptions) {
       );
       const hardExit = setTimeout(() => exit(1), options.closeTimeoutMs);
       hardExit.unref();
-      options
-        .close()
+      report('restart', describe)
+        .then(() => options.close())
         .catch((error) => logger.error(`Shutdown failed: ${String(error)}`))
         .finally(() => exit(1));
       return;
+    }
+
+    if (
+      !warned &&
+      options.warnRatio !== undefined &&
+      usage.ratio >= options.warnRatio
+    ) {
+      warned = true;
+      logger.warn(`Heap at ${Math.round(usage.ratio * 100)}% (${describe})`);
+      void report('warn', describe);
     }
 
     if (

@@ -249,6 +249,26 @@ export class TelegramService implements OnModuleInit {
     return this.send(lines.join('\n'), 'server error', 'alerts');
   }
 
+  /** What holds the API heap (sampling profiler), sent to the alerts topic. */
+  async notifyMemoryReport(
+    reason: 'warn' | 'restart',
+    describe: string,
+    retainers: string[],
+  ): Promise<boolean> {
+    const title =
+      reason === 'restart'
+        ? '🔴 <b>API перезапускается: куча почти заполнена</b>'
+        : '🟠 <b>API: память растёт</b>';
+    const lines = [title, this.escape(describe)];
+    if (retainers.length) {
+      lines.push('', '<b>Кто держит память:</b>');
+      lines.push(
+        `<pre>${this.escape(retainers.join('\n')).slice(0, 3000)}</pre>`,
+      );
+    }
+    return this.send(lines.join('\n'), 'memory report', 'alerts');
+  }
+
   /**
    * Fire-and-forget POST shared by every notification.
    *
