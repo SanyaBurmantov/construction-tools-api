@@ -176,36 +176,51 @@ describe('ProductService.findAllFiltered', () => {
     expect(result.facets.priceRange).toEqual({ min: 10, max: 100 });
   });
 
-  // The ranked id list used to *be* the result set: it was fed into
-  // `where: { id: { in: … } }` with a 1000-row cap, so "ключ" answered
-  // `total: 1000` — the cap, not the truth — and the facets, price range and
-  // sort all described an arbitrary thousand rows. Membership is relational
-  // now; the ranking only orders.
-  it('expresses the search as a relational clause rather than a capped id list', async () => {
+  // The search used to be one OR across a join (name, sku, model, brand
+  // name), which no index could serve: ~2 s per query on production, times
+  // every facet. It is now one indexed, ranked query whose ids are the match;
+  // counts and facets filter by them.
+  it('matches by the full ranked id list, not by a capped window', async () => {
     const { service, productCount, queryRaw } = buildService();
     queryRaw.mockResolvedValue([{ id: 'p2' }, { id: 'p1' }] as never);
 
     await service.findAllFiltered({ search: ' DF333D ' });
 
     const where = productCount.mock.calls[0][0].where as {
-      id?: unknown;
+      AND?: Array<{ id?: { in?: string[] } }>;
+    };
+    expect(where.AND?.[0]).toEqual({ id: { in: ['p2', 'p1'] } });
+  });
+
+  it('runs the search query once for the listing and its facets', async () => {
+    const { service, queryRaw } = buildService();
+    queryRaw.mockResolvedValue([{ id: 'p1' }] as never);
+
+    await service.findAllFiltered({ search: 'дрель' });
+    await service.findAllFiltered({ search: 'Дрель ', page: 2 });
+
+    // The second call — same term, any case — comes from the cache.
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  // A one- or two-letter term can match most of the catalogue; past the cap
+  // the relational clause takes over, so `total` stays the truth.
+  it('falls back to the relational clause when the term matches too much', async () => {
+    const { service, productCount, queryRaw } = buildService();
+    queryRaw.mockResolvedValue(
+      Array.from({ length: 20_001 }, (_, i) => ({ id: `p${i}` })) as never,
+    );
+
+    await service.findAllFiltered({ search: 'ка' });
+
+    const where = productCount.mock.calls[0][0].where as {
       AND?: Array<{ OR?: Array<Record<string, unknown>> }>;
     };
-    // Nothing narrows the count to a fixed set of ids...
-    expect(where.id).toBeUndefined();
-    // ...the term is matched by column instead.
-    const clause = where.AND?.[0]?.OR ?? [];
-    expect(clause).toEqual(
+    expect(where.AND?.[0]?.OR).toEqual(
       expect.arrayContaining([
-        { name: { contains: 'DF333D', mode: 'insensitive' } },
-        { sku: { contains: 'DF333D', mode: 'insensitive' } },
-        { model: { contains: 'DF333D', mode: 'insensitive' } },
-        { brand: { name: { contains: 'DF333D', mode: 'insensitive' } } },
+        { name: { contains: 'ка', mode: 'insensitive' } },
+        { brand: { name: { contains: 'ка', mode: 'insensitive' } } },
       ]),
-    );
-    // Trigram hits have no Prisma equivalent, so they join as ids.
-    expect(clause).toEqual(
-      expect.arrayContaining([{ id: { in: ['p2', 'p1'] } }]),
     );
   });
 
@@ -213,10 +228,8 @@ describe('ProductService.findAllFiltered', () => {
     const { service, productFindMany, queryRaw } = buildService();
     queryRaw.mockResolvedValue([{ id: 'p2' }, { id: 'p1' }] as never);
     productFindMany
-      // ranked ∩ filtered, in arbitrary DB order
+      // matches that pass the filters, in arbitrary DB order
       .mockResolvedValueOnce([{ id: 'p1' }, { id: 'p2' }] as never)
-      // the unranked tail — empty here
-      .mockResolvedValueOnce([] as never)
       // page rows fetched by id
       .mockResolvedValueOnce([
         {
@@ -238,16 +251,21 @@ describe('ProductService.findAllFiltered', () => {
     expect(result.data.map((row) => row.id)).toEqual(['p2', 'p1']);
   });
 
-  // Beyond the ranked window the matches must still be reachable — that is the
-  // half of the old bug that hid results rather than miscounting them.
-  it('pages past the ranked window into the alphabetical tail', async () => {
+  it('pages through every match in rank order', async () => {
     const { service, productFindMany, queryRaw } = buildService();
-    queryRaw.mockResolvedValue([{ id: 'r1' }] as never);
+    queryRaw.mockResolvedValue([
+      { id: 'r1' },
+      { id: 'r2' },
+      { id: 'r3' },
+    ] as never);
     productFindMany
-      .mockResolvedValueOnce([{ id: 'r1' }] as never) // one ranked match
-      .mockResolvedValueOnce([{ id: 't1' }] as never) // the tail
       .mockResolvedValueOnce([
-        { id: 't1', images: [], productSpecs: [], _count: null },
+        { id: 'r3' },
+        { id: 'r1' },
+        { id: 'r2' },
+      ] as never)
+      .mockResolvedValueOnce([
+        { id: 'r2', images: [], productSpecs: [], _count: null },
       ] as never);
 
     const result = await service.findAllFiltered({
@@ -256,16 +274,7 @@ describe('ProductService.findAllFiltered', () => {
       limit: 1,
     });
 
-    const tailArgs = productFindMany.mock.calls[1][0] as never as {
-      orderBy: Record<string, string>;
-      skip: number;
-      where: { AND: Array<{ id?: { notIn?: string[] } }> };
-    };
-    expect(tailArgs.orderBy).toEqual({ name: 'asc' });
-    // page 2 of 1 starts right after the single ranked row
-    expect(tailArgs.skip).toBe(0);
-    expect(tailArgs.where.AND[1]).toEqual({ id: { notIn: ['r1'] } });
-    expect(result.data.map((row) => row.id)).toEqual(['t1']);
+    expect(result.data.map((row) => row.id)).toEqual(['r2']);
   });
 
   it('uses explicit sort instead of relevance when sortBy is set', async () => {
@@ -276,13 +285,13 @@ describe('ProductService.findAllFiltered', () => {
 
     const args = productFindMany.mock.calls[0][0] as never as {
       orderBy: Record<string, string>;
-      where: { AND: Array<{ OR?: unknown[] }> };
+      where: { AND: Array<{ id?: { in?: string[] } }> };
     };
     expect(args.orderBy).toEqual({
       priceValue: { sort: 'asc', nulls: 'last' },
     });
-    // the search still narrows the page, relationally
-    expect(args.where.AND[0].OR?.length).toBeGreaterThan(0);
+    // the search still narrows the page
+    expect(args.where.AND[0]).toEqual({ id: { in: ['p1'] } });
   });
 
   // Prisma rejects `nulls` on non-nullable columns, so only priceValue and

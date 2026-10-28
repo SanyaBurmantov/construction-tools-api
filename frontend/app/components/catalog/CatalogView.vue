@@ -188,6 +188,13 @@ const categoryUnavailable = ref(false)
 // the URL, not by the category answer — so they start together and the render
 // waits for the slowest instead of their sum.
 const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
+
+/**
+ * New results fade in, one card after another — but only after the first
+ * client-side change: animating the server-rendered page would hold back its
+ * largest paint for nothing.
+ */
+const resultsAnimated = ref(false)
 const [
   { data: category },
   { data: products, pending, error },
@@ -229,6 +236,10 @@ const [
     }
   ),
 ])
+
+watch(catalogDataKey, () => {
+  if (import.meta.client) resultsAnimated.value = true
+})
 
 if (categoryUnavailable.value) throw apiUnavailableError()
 
@@ -721,7 +732,7 @@ useHead(() => ({
         </UiEmpty>
 
         <template v-else>
-          <div v-if="viewMode === 'grid'" class="product-grid">
+          <div v-if="viewMode === 'grid'" class="product-grid" :class="{ 'is-animated': resultsAnimated }">
             <ProductCatalogCard
               v-for="(product, index) in products.data"
               :key="product.id"
@@ -729,7 +740,7 @@ useHead(() => ({
               :priority="index < LCP_CARD_COUNT"
             />
           </div>
-          <div v-else class="list">
+          <div v-else class="list" :class="{ 'is-animated': resultsAnimated }">
             <ProductCatalogRow
               v-for="product in products.data"
               :key="product.id"
@@ -995,6 +1006,32 @@ useHead(() => ({
 
   .filters-toggle {
     flex-shrink: 0;
+  }
+}
+
+/* ---- Results arriving after a filter or search change ---- */
+.is-animated > * {
+  animation: results-in var(--duration-slow) var(--ease-out) both;
+}
+
+.is-animated > :nth-child(2) { animation-delay: 30ms; }
+.is-animated > :nth-child(3) { animation-delay: 60ms; }
+.is-animated > :nth-child(4) { animation-delay: 90ms; }
+.is-animated > :nth-child(5) { animation-delay: 120ms; }
+.is-animated > :nth-child(6) { animation-delay: 150ms; }
+.is-animated > :nth-child(7) { animation-delay: 180ms; }
+.is-animated > :nth-child(n + 8) { animation-delay: 210ms; }
+
+@keyframes results-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-animated > * {
+    animation: none;
   }
 }
 </style>

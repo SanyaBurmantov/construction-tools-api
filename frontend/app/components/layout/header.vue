@@ -64,8 +64,13 @@ const listActions = computed(() => [
 const search = ref('')
 const suggest = ref<SuggestResponse | null>(null)
 const suggestOpen = ref(false)
+/** A request is in flight: the panel shows a skeleton, or dims the last answer. */
+const suggestLoading = ref(false)
+/** The query the panel's content answers — «ничего не найдено по …». */
+const suggestQuery = ref('')
 const searchForm = ref<HTMLElement | null>(null)
 let suggestTimer: ReturnType<typeof setTimeout> | undefined
+let suggestAbort: AbortController | undefined
 
 const hasSuggestions = computed(() =>
   Boolean(
@@ -86,27 +91,44 @@ function submitSearch() {
   navigateTo({ path: '/catalog', query: query ? { search: query } : undefined })
 }
 
+/**
+ * The panel opens as soon as there is something to search for — with a
+ * skeleton the first time, and with the previous answer dimmed while a
+ * refined query loads — instead of popping up whole once the API answers.
+ * A newer keystroke aborts the older request.
+ */
 watch(search, (value) => {
   if (suggestTimer) clearTimeout(suggestTimer)
   const query = value.trim()
   if (query.length < 2) {
+    suggestAbort?.abort()
     suggest.value = null
     suggestOpen.value = false
+    suggestLoading.value = false
     return
   }
+  suggestLoading.value = true
+  suggestOpen.value = true
   suggestTimer = setTimeout(async () => {
+    suggestAbort?.abort()
+    const controller = new AbortController()
+    suggestAbort = controller
     try {
       const result = await $fetch<SuggestResponse>(
         `${apiBase}/products/suggest`,
-        { params: { q: query } }
+        { params: { q: query }, signal: controller.signal }
       )
       // The response may be stale if the user kept typing.
       if (search.value.trim() === query) {
         suggest.value = result
-        suggestOpen.value = true
+        suggestQuery.value = query
       }
     } catch {
+      if (controller.signal.aborted) return
       suggest.value = null
+      suggestQuery.value = query
+    } finally {
+      if (suggestAbort === controller) suggestLoading.value = false
     }
   }, 250)
 })
@@ -296,10 +318,11 @@ onBeforeUnmount(() => {
               placeholder="Поиск по названию, бренду или артикулу"
               size="lg"
               aria-label="Поиск по каталогу"
-              @focus="suggestOpen = hasSuggestions"
+              @focus="suggestOpen = search.trim().length >= 2"
             >
               <template #leading>
-                <UiIcon name="search" :size="18" :stroke-width="1.8" />
+                <span v-if="suggestLoading" class="search-spinner" role="status" aria-label="Ищем" />
+                <UiIcon v-else name="search" :size="18" :stroke-width="1.8" />
               </template>
               <template #trailing>
                 <button type="submit" class="search-submit">Найти</button>
@@ -307,15 +330,42 @@ onBeforeUnmount(() => {
             </UiInput>
           </form>
 
-          <Transition name="fade">
-            <div v-if="suggestOpen && hasSuggestions" class="suggest u-scroll u-scroll--fade">
+          <Transition name="suggest-pop">
+            <div
+              v-if="suggestOpen"
+              class="suggest u-scroll u-scroll--fade"
+              :class="{ 'is-refreshing': suggestLoading && hasSuggestions }"
+              :aria-busy="suggestLoading"
+            >
+              <span v-if="suggestLoading" class="suggest-progress" aria-hidden="true" />
+
+              <!-- First answer still on its way: the shape of one, not a blank. -->
+              <div v-if="suggestLoading && !hasSuggestions" class="suggest-skeleton">
+                <p class="suggest-title">Ищем…</p>
+                <div v-for="i in 3" :key="i" class="suggest-product is-skeleton">
+                  <UiSkeleton width="44px" height="44px" radius="var(--radius-xs)" />
+                  <span class="suggest-body">
+                    <UiSkeleton :width="`${90 - i * 15}%`" height="14px" />
+                    <UiSkeleton width="35%" height="11px" />
+                  </span>
+                  <UiSkeleton width="64px" height="14px" />
+                </div>
+              </div>
+
+              <div v-else-if="!hasSuggestions" class="suggest-empty">
+                <p>По запросу «{{ suggestQuery }}» ничего не нашлось.</p>
+                <p class="suggest-empty-hint">Проверьте написание или поищите по артикулу или штрихкоду.</p>
+              </div>
+
+              <template v-else>
               <div v-if="suggest?.products.length" class="suggest-group">
                 <p class="suggest-title">Товары</p>
                 <NuxtLink
-                  v-for="item in suggest.products"
+                  v-for="(item, index) in suggest.products"
                   :key="item.id"
                   :to="`/product/${item.slug}`"
                   class="suggest-product"
+                  :style="{ '--stagger': index }"
                   @click="closeSuggest"
                 >
                   <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
@@ -361,6 +411,7 @@ onBeforeUnmount(() => {
               <button type="button" class="suggest-all" @click="submitSearch">
                 Показать все результаты
               </button>
+              </template>
             </div>
           </Transition>
         </div>
@@ -676,6 +727,131 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-md);
   background: var(--surface-card);
   box-shadow: var(--shadow-lg);
+}
+
+.suggest {
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+
+/* A refined query is loading: keep the last answer, quieter. */
+.suggest.is-refreshing > :not(.suggest-progress) {
+  opacity: 0.55;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+
+/* Thin indeterminate bar along the top edge while a request is in flight. */
+.suggest-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.suggest-progress::after {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--brand);
+  animation: suggest-progress 1.1s var(--ease-out) infinite;
+  content: '';
+}
+
+@keyframes suggest-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(260%); }
+}
+
+/* Results arrive one after another, not as a block. */
+.suggest-group,
+.suggest-empty,
+.suggest-all {
+  animation: suggest-in var(--duration-slow) var(--ease-out) both;
+}
+
+.suggest-product:not(.is-skeleton) {
+  animation: suggest-in var(--duration-slow) var(--ease-out) both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
+}
+
+@keyframes suggest-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.suggest-empty p {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--text-default);
+}
+
+.suggest-empty .suggest-empty-hint {
+  padding-top: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.suggest-product.is-skeleton .suggest-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The panel itself: fades in and settles, rather than appearing whole. */
+.suggest-pop-enter-active {
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+.suggest-pop-leave-active {
+  transition: opacity var(--duration-fast) ease-in;
+}
+
+.suggest-pop-enter-from {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+}
+
+.suggest-pop-leave-to {
+  opacity: 0;
+}
+
+.search-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: search-spin 0.7s linear infinite;
+}
+
+@keyframes search-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggest-group,
+  .suggest-empty,
+  .suggest-all,
+  .suggest-product:not(.is-skeleton),
+  .suggest-progress::after {
+    animation: none;
+  }
+
+  .search-spinner {
+    animation-duration: 2s;
+  }
+
+  .suggest-pop-enter-active,
+  .suggest-pop-leave-active {
+    transition: none;
+  }
 }
 
 .suggest-group + .suggest-group {
