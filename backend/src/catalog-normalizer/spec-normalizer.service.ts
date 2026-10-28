@@ -394,15 +394,27 @@ export class SpecNormalizerService {
         // Move what can move. `@@unique([productId, specificationId])` means a
         // product already carrying the survivor's row cannot take a second
         // one, so those are skipped and deleted below.
+        //
+        // And only one loser row per product may move: with three or more
+        // spellings a product can carry two losers and no survivor, and
+        // `NOT EXISTS` reads the snapshot from before the statement, so it
+        // let both through onto the survivor — 23505 on the unique key,
+        // which failed the whole nightly pass. A row with a facet value wins.
         await tx.$executeRaw`
           UPDATE "ProductSpecification" ps
           SET "specificationId" = ${group.survivor}
-          WHERE ps."specificationId" = ANY(${losers})
-            AND NOT EXISTS (
-              SELECT 1 FROM "ProductSpecification" keep
-              WHERE keep."productId" = ps."productId"
-                AND keep."specificationId" = ${group.survivor}
-            )
+          FROM (
+            SELECT DISTINCT ON (src."productId") src.id
+            FROM "ProductSpecification" src
+            WHERE src."specificationId" = ANY(${losers})
+              AND NOT EXISTS (
+                SELECT 1 FROM "ProductSpecification" keep
+                WHERE keep."productId" = src."productId"
+                  AND keep."specificationId" = ${group.survivor}
+              )
+            ORDER BY src."productId", (src."valueNorm" IS NULL), src.id
+          ) pick
+          WHERE ps.id = pick.id
         `;
         await tx.productSpecification.deleteMany({
           where: { specificationId: { in: losers } },
