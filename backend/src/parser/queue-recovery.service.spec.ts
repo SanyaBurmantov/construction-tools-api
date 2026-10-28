@@ -60,4 +60,37 @@ describe('Supplier snapshots refresh', () => {
     });
     expect(refresh.data).not.toHaveProperty('visitedAt');
   });
+
+  it('brings failed categories back instead of leaving them dead', async () => {
+    const productUpdate = jest.fn(() => Promise.resolve({ count: 0 }));
+    const categoryUpdate = jest.fn(() => Promise.resolve({ count: 716 }));
+    const prisma = {
+      parserCategoryQueue: { updateMany: categoryUpdate },
+      sitemapsThTools: { updateMany: productUpdate },
+      sitemapsToolsBy: { updateMany: productUpdate },
+      sitemapsDukon: { updateMany: productUpdate },
+      sitemaps7745: { updateMany: productUpdate },
+    };
+    const result = await new QueueRecoveryService(
+      prisma as never,
+    ).requeueRecoverable();
+
+    const calls = categoryUpdate.mock.calls as unknown as Array<
+      [{ where: Record<string, unknown>; data: Record<string, unknown> }]
+    >;
+    const failed = calls.filter(([arg]) => arg.where.status === 'FAILED');
+    // A recent failure is retried within its attempt budget…
+    expect(failed[0][0].where).toMatchObject({
+      sourceCode: 'th-tools',
+      isEnabled: true,
+      attempts: { lt: 3 },
+      lastTriedAt: { lt: expect.any(Date) as Date },
+    });
+    expect(failed[0][0].data).toEqual({ status: 'PENDING' });
+    // …and an exhausted one gets a fresh budget after a few days (an outage).
+    expect(failed[1][0].where).toMatchObject({ attempts: { gte: 3 } });
+    expect(failed[1][0].data).toEqual({ status: 'PENDING', attempts: 0 });
+    expect(result.categoriesRetried).toBe(716);
+    expect(result.categoriesRevived).toBe(716);
+  });
 });
