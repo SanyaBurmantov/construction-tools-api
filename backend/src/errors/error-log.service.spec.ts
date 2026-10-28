@@ -1,9 +1,15 @@
 import { ErrorLogService, type ErrorEntry } from './error-log.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from '../notifications/telegram.service';
+
+const silentTelegram = () =>
+  ({
+    notifyServerError: jest.fn(() => Promise.resolve(true)),
+  }) as unknown as TelegramService & { notifyServerError: jest.Mock };
 
 type CreateArgs = { data: Record<string, unknown> };
 
-function buildService() {
+function buildService(telegram = silentTelegram()) {
   // Typed arguments, so the assertions below can read `mock.calls[0][0].data`
   // instead of casting at every use.
   const create = jest.fn((_args: CreateArgs) =>
@@ -13,7 +19,12 @@ function buildService() {
   const prisma = {
     errorLog: { create, update },
   } as unknown as PrismaService;
-  return { service: new ErrorLogService(prisma), create, update };
+  return {
+    service: new ErrorLogService(prisma, telegram),
+    create,
+    update,
+    telegram,
+  };
 }
 
 const entry = (overrides: Partial<ErrorEntry> = {}): ErrorEntry => ({
@@ -115,7 +126,51 @@ describe('ErrorLogService.record', () => {
     } as unknown as PrismaService;
 
     await expect(
-      new ErrorLogService(prisma).record(entry()),
+      new ErrorLogService(prisma, silentTelegram()).record(entry()),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('ErrorLogService Telegram alerts', () => {
+  let now = 1_000_000;
+  beforeEach(() => {
+    now = 1_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => now);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('alerts on a new 5xx, not on a 4xx', async () => {
+    const { service, telegram } = buildService();
+    await service.record(entry({ statusCode: 400, message: 'bad input' }));
+    expect(telegram.notifyServerError).not.toHaveBeenCalled();
+    await service.record(entry());
+    expect(telegram.notifyServerError).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the same failure once an hour', async () => {
+    const { service, telegram } = buildService();
+    await service.record(entry());
+    now += 2 * 60_000; // past the 60 s row dedupe, inside the alert hour
+    await service.record(entry());
+    expect(telegram.notifyServerError).toHaveBeenCalledTimes(1);
+    now += 60 * 60_000;
+    await service.record(entry());
+    expect(telegram.notifyServerError).toHaveBeenCalledTimes(2);
+  });
+
+  it('caps distinct alerts per hour', async () => {
+    const { service, telegram } = buildService();
+    for (let i = 0; i < 25; i++) {
+      await service.record(entry({ message: `boom ${i}` }));
+    }
+    expect(telegram.notifyServerError).toHaveBeenCalledTimes(10);
+  });
+
+  it('never fails the log write when Telegram rejects', async () => {
+    const telegram = silentTelegram();
+    telegram.notifyServerError.mockRejectedValue(new Error('down'));
+    const { service, create } = buildService(telegram);
+    await expect(service.record(entry())).resolves.toBeUndefined();
+    expect(create).toHaveBeenCalledTimes(1);
   });
 });

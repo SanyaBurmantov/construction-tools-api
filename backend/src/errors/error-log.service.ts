@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminActionLogService } from '../audit/admin-action-log.service';
 import { ErrorLogQueryDto } from './dto/error-log-query.dto';
+import { TelegramService } from '../notifications/telegram.service';
 
 export type ErrorEntry = {
   statusCode: number;
@@ -28,6 +29,12 @@ const MAX_MESSAGE_CHARS = 1000;
  * fails on every request; at one row per request the log becomes the incident.
  */
 const DEDUPE_WINDOW_MS = 60_000;
+/**
+ * Telegram alerts on 5xx: the same failure at most once an hour, and at most
+ * ALERTS_PER_HOUR in all — an outage is one burst of messages, not a flood.
+ */
+const ALERT_REPEAT_MS = 60 * 60_000;
+const ALERTS_PER_HOUR = 10;
 
 @Injectable()
 export class ErrorLogService {
@@ -35,7 +42,14 @@ export class ErrorLogService {
   /** fingerprint → the row it last wrote, so a repeat can bump it. */
   private readonly recent = new Map<string, { id: string; at: number }>();
 
-  constructor(private prisma: PrismaService) {}
+  /** fingerprint → when it was last sent to Telegram. */
+  private readonly alerted = new Map<string, number>();
+  private alertTimes: number[] = [];
+
+  constructor(
+    private prisma: PrismaService,
+    private telegram: TelegramService,
+  ) {}
 
   private static fingerprint(entry: ErrorEntry) {
     return [entry.statusCode, entry.method, entry.path, entry.message].join(
@@ -87,9 +101,27 @@ export class ErrorLogService {
 
       this.recent.set(key, { id: row.id, at: now });
       this.forgetStaleFingerprints(now);
+      if (entry.statusCode >= 500) this.alert(key, entry, now);
     } catch (error) {
       this.logger.error(`Could not record error log entry: ${String(error)}`);
     }
+  }
+
+  /** Fire-and-forget: Telegram being down must not touch error logging. */
+  private alert(key: string, entry: ErrorEntry, now: number) {
+    const last = this.alerted.get(key);
+    if (last !== undefined && now - last < ALERT_REPEAT_MS) return;
+    this.alertTimes = this.alertTimes.filter((t) => now - t < 60 * 60_000);
+    if (this.alertTimes.length >= ALERTS_PER_HOUR) return;
+
+    this.alertTimes.push(now);
+    this.alerted.set(key, now);
+    if (this.alerted.size > 500) {
+      for (const [k, at] of this.alerted) {
+        if (now - at >= ALERT_REPEAT_MS) this.alerted.delete(k);
+      }
+    }
+    this.telegram.notifyServerError(entry).catch(() => undefined);
   }
 
   /** The dedupe map is a cache, not state — it must not grow with traffic. */

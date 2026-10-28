@@ -59,7 +59,12 @@ env_value() {
 
 domain=$(env_value DOMAIN)
 tg_token=$(env_value TELEGRAM_BOT_TOKEN)
-tg_chat=$(env_value TELEGRAM_CHAT_ID)
+# Alerts go to their own chat/topic (orders stay in TELEGRAM_CHAT_ID), same
+# fallback as the backend's TelegramService.
+tg_alert_chat=$(env_value TELEGRAM_ALERT_CHAT_ID)
+tg_chat=${tg_alert_chat:-$(env_value TELEGRAM_CHAT_ID)}
+tg_thread=$(env_value TELEGRAM_ALERT_THREAD_ID)
+[[ -n "$tg_thread" || -n "$tg_alert_chat" ]] || tg_thread=$(env_value TELEGRAM_THREAD_ID)
 host_label=${domain:-$(hostname)}
 
 # --- state: flat key=value file -------------------------------------------
@@ -99,6 +104,7 @@ send_telegram() {
   code=$(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$tg_token" |
     curl --config - --silent --max-time 10 --output /dev/null --write-out '%{http_code}' \
       --data-urlencode "chat_id=$tg_chat" \
+      ${tg_thread:+--data-urlencode "message_thread_id=$tg_thread"} \
       --data-urlencode "text=$text" \
       --data-urlencode "disable_web_page_preview=true" 2>/dev/null) || code=000
   if [[ "$code" != 200 ]]; then
