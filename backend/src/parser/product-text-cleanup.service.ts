@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { cleanProductTexts } from './supplier-text';
+import { runsBackgroundJobs } from '../common/utils/process-role';
 
 /** Rows per round trip; keeps memory flat on the 1.8 GB box. */
 const CHUNK = 500;
@@ -40,6 +41,8 @@ export class ProductTextCleanupService
   constructor(private readonly prisma: PrismaService) {}
 
   onApplicationBootstrap() {
+    // Boot passes belong to the worker: the API restarting must not repeat them.
+    if (!runsBackgroundJobs()) return;
     if (process.env.PRODUCT_TEXT_CLEANUP_ON_BOOT === 'false') return;
     this.timer = setTimeout(() => {
       this.run().catch((error: unknown) =>

@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { createTransport, type Transporter } from 'nodemailer';
 import { TelegramService } from './telegram.service';
+import { servesHttp } from '../common/utils/process-role';
 
 /** A slow mail server must not hold a request or a cron for long. */
 const SMTP_TIMEOUT_MS = 15000;
@@ -82,7 +83,10 @@ export class MailService implements OnModuleInit {
       // "Enabled" only meant the variables were set: a wrong password stayed
       // invisible until somebody noticed letters were missing. Log in once at
       // boot so a broken mailbox is reported within a minute of a deploy.
-      // Not awaited — the API must not wait on a mail server to start.
+      // Not awaited — the API must not wait on a mail server to start. The API
+      // is the process that sends mail; the worker checking too would only
+      // double the alert.
+      if (!servesHttp()) return;
       void this.verify().then((problem) => {
         if (problem)
           this.reportFailure(`SMTP login failed at startup: ${problem}`);

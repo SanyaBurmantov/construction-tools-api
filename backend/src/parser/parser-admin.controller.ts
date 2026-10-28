@@ -19,6 +19,7 @@ import {
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
 import { CategoryQueueService } from './categories/category-queue.service';
 import { ParserJobsService } from './parser-jobs.service';
+import { ParserJobRequestService } from './parser-job-request.service';
 import { ThToolsParserService } from './sites/th-tools-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
@@ -46,6 +47,7 @@ export class ParserAdminController {
     private readonly runtimeStatus: ParserRuntimeStatusService,
     private readonly categoryQueue: CategoryQueueService,
     private readonly jobs: ParserJobsService,
+    private readonly requests: ParserJobRequestService,
     private readonly thTools: ThToolsParserService,
     private readonly dukon: DukonParserService,
     private readonly toolsBy: ToolsByParserService,
@@ -85,6 +87,8 @@ export class ParserAdminController {
       // and at least one source doing something (or a recent success).
       isRunning: anyRunning,
       health: { ok: health.ok, maxAgeHours: health.maxAgeHours },
+      // Every job runs in the worker; the screen warns when it is silent.
+      worker: health.worker,
       sources,
     };
   }
@@ -138,8 +142,14 @@ export class ParserAdminController {
   async listJobs(@Param('code') code: string) {
     this.ensureKnownSource(code);
     const health = await this.runtimeStatus.getHealth();
+    const jobs = this.jobs.jobsFor(code).filter((job) => !job.hidden);
+    // The lock lives in the worker; what the API can see is the waiting mark
+    // it writes and the requests it has not finished.
+    const requested = await Promise.all(
+      jobs.map((job) => this.requests.hasOpenRequest(code, job.name)),
+    );
 
-    return this.jobs.jobsFor(code).map((job) => {
+    return jobs.map((job, index) => {
       const key = `${code}-${job.name}`;
       const status = health.jobs.find((item) => item.key === key) ?? null;
 
@@ -150,7 +160,10 @@ export class ParserAdminController {
         description: job.description,
         isRunning: this.jobs.isRunning(key) || (status?.isRunning ?? false),
         // Queued behind the source lock: not started, but not idle either.
-        isWaiting: this.jobs.isWaiting(key),
+        isWaiting:
+          this.jobs.isWaiting(key) ||
+          Boolean(status?.waitingSince) ||
+          (requested[index] && !status?.isRunning),
         health: status?.health ?? null,
         lastSuccessAt: status?.lastSuccessAt ?? null,
         lastError: status?.lastError ?? null,
@@ -166,9 +179,10 @@ export class ParserAdminController {
    */
   @Post('sources/:code/jobs/:job/run')
   @HttpCode(202)
-  runJob(@Param('code') code: string, @Param('job') jobName: string) {
+  async runJob(@Param('code') code: string, @Param('job') jobName: string) {
     this.ensureKnownSource(code);
-    const result = this.jobs.start(code, jobName);
+    // Handed to the worker (or run in place in a single dev process).
+    const result = await this.requests.start(code, jobName);
 
     if (!result.started && result.reason === 'unknown-job') {
       throw new BadRequestException(
@@ -223,7 +237,8 @@ export class ParserAdminController {
   @HttpCode(200)
   refreshCategories(@Param('code') code: string) {
     this.ensureKnownSource(code);
-    return this.categoryQueue.refresh(code);
+    // Supplier HTTP belongs to the worker, under the source lock.
+    return this.requests.runAndWait(code, 'categories-refresh');
   }
 
   @Post('sources/:code/categories/process')
@@ -233,7 +248,9 @@ export class ParserAdminController {
     @Body() dto: CategoryQueueProcessDto,
   ) {
     this.ensureKnownSource(code);
-    return this.categoryQueue.processBatch(code, dto.limit ?? 3);
+    return this.requests.runAndWait(code, 'categories', {
+      limit: dto.limit ?? 3,
+    });
   }
 
   @Post('sources/:code/categories/retry-problems')

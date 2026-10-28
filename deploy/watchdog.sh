@@ -30,10 +30,11 @@ HEAL_THRESHOLD=3
 HEAL_COOLDOWN_SECONDS=900
 
 # service -> container_name in docker-compose.prod.yml
-SERVICES=(db backend frontend caddy)
+SERVICES=(db backend worker frontend caddy)
 declare -A CONTAINER=(
   [db]=construction-tools-db
   [backend]=construction-tools-api
+  [worker]=construction-tools-worker
   [frontend]=construction-tools-front
   [caddy]=construction-tools-caddy
 )
@@ -117,7 +118,7 @@ mem_report() {
   local out
   out=$(timeout 20s docker stats --no-stream \
     --format '{{.Name}}: {{.MemUsage}} ({{.MemPerc}})' \
-    "${CONTAINER[frontend]}" "${CONTAINER[backend]}" 2>/dev/null) || true
+    "${CONTAINER[frontend]}" "${CONTAINER[backend]}" "${CONTAINER[worker]}" 2>/dev/null) || true
   [[ -n "$out" ]] && printf '\nПамять:\n%s' "$out"
 }
 

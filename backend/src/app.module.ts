@@ -30,6 +30,7 @@ import { CatalogNormalizerModule } from './catalog-normalizer/catalog-normalizer
 import { AiModule } from './ai/ai.module';
 import { B2bModule } from './b2b/b2b.module';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
+import { runsBackgroundJobs } from './common/utils/process-role';
 
 @Module({
   imports: [
@@ -37,7 +38,10 @@ import { ParserRuntimeStatusService } from './parser/parser-runtime-status.servi
       isGlobal: true,
       envFilePath: '.env',
     }),
-    ScheduleModule.forRoot(),
+    // Crons, intervals and the worker's request poller fire only where the
+    // scheduler is loaded: the worker, or a single dev process — never the
+    // API (PROCESS_ROLE=api). ConfigModule above has loaded .env by now.
+    ...(runsBackgroundJobs() ? [ScheduleModule.forRoot()] : []),
     ThrottlerModule.forRoot([
       {
         ttl: Number(process.env.THROTTLE_TTL ?? 60000),

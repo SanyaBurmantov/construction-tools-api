@@ -11,8 +11,8 @@ normalizes them into a shared catalog shape, and serves a public storefront.
 - **frontend/** — Nuxt 4 (Vue 3), SSR with ISR/SWR route rules. No UI library:
   the design system in `app/components/ui/*` + `assets/scss/tokens.scss` is the
   whole of it (see «Frontend design system» below).
-- **deploy/**, `docker-compose*.yml`, `deploy-prod.sh` — Docker deploy (db + backend + frontend + Caddy).
-  The prod box has 1.8 GB for all four containers, so backend/frontend/Caddy
+- **deploy/**, `docker-compose*.yml`, `deploy-prod.sh` — Docker deploy (db + backend + worker + frontend + Caddy).
+  The prod box has 1.8 GB for all five containers, so backend/worker/frontend/Caddy
   carry a `mem_limit`: without one the kernel's OOM killer picks the biggest
   resident process, which is Postgres — the one service whose death takes the
   whole site down. Capped, a runaway run kills its own container and `restart`
@@ -23,6 +23,11 @@ normalizes them into a shared catalog shape, and serves a public storefront.
   the API cleanly at 85% of the V8 heap (`NODE_OPTIONS=--max-old-space-size=512`,
   `MEMORY_GUARD_MAX_HEAP_RATIO`) and logs heap/rss every 15 min, and
   `deploy/watchdog.sh` restarts a container left unhealthy for ~6 min.
+  **The worker** (`construction-tools-worker`) has no HTTP to hang on, so it
+  carries its own two: a heartbeat file the healthcheck checks, and an
+  event-loop watchdog thread (`common/utils/event-loop-watchdog.ts`) that
+  SIGKILLs the process when the loop is silent for 3 min — which is why the
+  service has `init: true` (the kernel ignores a SIGKILL to PID 1).
   **From outside**: `.github/workflows/uptime.yml` runs
   `deploy/uptime-check.sh` every 5 minutes on GitHub's runners (home page and
   catalogue must answer 200 *and* mention gost.by — a wrong DNS record answers
@@ -128,6 +133,33 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   fallback any more; it is only the service header. The bootstrap never
   touches an existing account — a changed password stays changed, and a
   deliberately deleted admin is not resurrected while another one is active.
+- **Two processes, one codebase: API and worker.** `PROCESS_ROLE`
+  (`common/utils/process-role.ts`) splits the backend: `api` (`main.ts`,
+  container `backend`) serves HTTP only; `worker` (`main.worker.ts`,
+  `createApplicationContext`, no HTTP) runs **every cron, the parsers, the AI
+  runner and the boot passes** (brand/text cleanup, listing rank, the RUNNING
+  reset). Unset = both in one process — `npm run start:dev` and the tests
+  behave as before. They used to share one 512 MB heap, so a parser batch that
+  ate memory took the storefront down (the 13-hour hang). Mechanics worth
+  keeping: `ScheduleModule.forRoot()` is loaded only where
+  `runsBackgroundJobs()`, so `@Cron`/`@Interval` are inert in the API without
+  touching each cron; a new boot-time pass must check `runsBackgroundJobs()`
+  (and the admin bootstrap/SMTP check `servesHttp()`), or both processes run
+  it. **The per-source lock lives in the worker's memory**, so the API never
+  runs a parser job itself: `ParserJobRequestService` writes a
+  `ParserJobRequest`, the worker claims it (`@Interval` 3 s, conditional
+  update) and runs it through `ParserJobsService.runRequested()` — queued
+  behind the lock like a waiting cron job — and records the outcome. The jobs
+  panel's buttons answer 202 at once; the synchronous `/admin/queue/*` and
+  category-queue endpoints **wait** for the outcome (≤ 20 min, then 504 while
+  the job keeps running), so the runbook's curl contract is unchanged. The API
+  sees the lock through the DB: `ParserRuntimeStatus.isRunning`,
+  `.waitingSince` (the «Ждёт окончания батча» mark the worker writes) and open
+  requests. The worker stamps `SiteSetting worker.heartbeatAt` every 30 s;
+  `getHealth()` is `ok: false` when it is older than 3 min, and the API answers
+  503 to a job request nobody would pick up. Admin actions that are only DB
+  work (clean brands/texts, pricing, merges, single-product import) still run
+  in the API.
 - **API routing in prod**: Caddy serves `/api/*` → strips `/api` → `backend:8000`;
   everything else → `frontend:3000`. Client calls use base `/api`
   (`NUXT_PUBLIC_API_BASE`); SSR calls go through the Nuxt server route

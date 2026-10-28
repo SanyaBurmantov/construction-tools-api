@@ -22,6 +22,7 @@ function createService(
       finished.push(`fail:${key}`);
       return Promise.resolve();
     }),
+    markWaiting: jest.fn(() => Promise.resolve()),
   } as unknown as ParserRuntimeStatusService;
 
   const settings = {
@@ -216,6 +217,94 @@ describe('ParserJobsService', () => {
       'process',
       'revalidate',
     ]);
+  });
+
+  describe('admin requests (runRequested)', () => {
+    it('resolves with the result once the job has run', async () => {
+      const { service } = createService(() =>
+        Promise.resolve({ processed: 3 }),
+      );
+
+      await expect(
+        service.runRequested('tools-by', 'refresh'),
+      ).resolves.toEqual({ ok: true, result: { processed: 3 } });
+      expect(service.isRunning('tools-by-refresh')).toBe(false);
+    });
+
+    it('resolves with the error instead of rejecting', async () => {
+      const { service, finished } = createService(() =>
+        Promise.reject(new Error('supplier down')),
+      );
+
+      await expect(
+        service.runRequested('tools-by', 'refresh'),
+      ).resolves.toEqual({ ok: false, error: 'supplier down' });
+      expect(finished).toEqual(['fail:tools-by-refresh']);
+    });
+
+    it('queues behind a running batch and marks itself waiting', async () => {
+      let release: () => void = () => {};
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const { service, finished } = createService(
+        () => Promise.resolve('crawled'),
+        () => blocked,
+      );
+
+      service.start('tools-by', 'process');
+      const outcome = service.runRequested('tools-by', 'refresh');
+      await flush();
+
+      expect(service.isWaiting('tools-by-refresh')).toBe(true);
+      expect(finished).toEqual([]);
+
+      release();
+      await expect(outcome).resolves.toEqual({ ok: true, result: 'crawled' });
+      expect(finished).toEqual(['ok:tools-by-process', 'ok:tools-by-refresh']);
+    });
+
+    it('refuses a request for a job already in flight', async () => {
+      let release: () => void = () => {};
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const { service } = createService(() => blocked);
+
+      service.start('tools-by', 'refresh');
+      await expect(
+        service.runRequested('tools-by', 'refresh'),
+      ).resolves.toEqual({
+        ok: false,
+        error: 'Задание tools-by-refresh уже выполняется',
+      });
+
+      release();
+      await flush();
+    });
+
+    it('passes a manual batch size through, one URL at a time', async () => {
+      const processSitemapsBatch = jest.fn(() => Promise.resolve({}));
+      const service = new ParserJobsService(
+        {
+          start: () => Promise.resolve(),
+          success: () => Promise.resolve(),
+        } as never,
+        { getBatchLimit: () => Promise.resolve(300) } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        { processSitemapsBatch } as never,
+        {} as never,
+        {} as never,
+      );
+
+      await service.runRequested('tools-by', 'process', { limit: 25 });
+      expect(processSitemapsBatch).toHaveBeenLastCalledWith(25, 1);
+
+      await service.runRequested('tools-by', 'process');
+      expect(processSitemapsBatch).toHaveBeenLastCalledWith(300, 1);
+    });
   });
 
   describe('th-tools refresh', () => {

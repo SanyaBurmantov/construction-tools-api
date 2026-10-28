@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { runsBackgroundJobs } from '../common/utils/process-role';
+import { readWorkerHeartbeat } from './worker-heartbeat';
 
 // How many historical ParserRun rows to keep per key. Older rows are pruned
 // after each run so the table stays bounded (mirrors ParserLogService).
@@ -101,28 +103,42 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
    * silent parser death the health check exists to catch.
    */
   async onApplicationBootstrap() {
+    // Only the process that runs the jobs may declare them dead: the API
+    // restarting must not fail the batch the worker is in the middle of.
+    if (!runsBackgroundJobs()) return;
     const reason = 'Прервано перезапуском процесса (OOM или деплой)';
     try {
       const now = new Date();
-      const [statuses, runs] = await this.prisma.$transaction([
-        this.prisma.parserRuntimeStatus.updateMany({
-          where: { isRunning: true },
-          data: {
-            isRunning: false,
-            finishedAt: now,
-            lastErrorAt: now,
-            lastError: reason,
-            failures: { increment: 1 },
-          },
-        }),
-        this.prisma.parserRun.updateMany({
-          where: { status: 'RUNNING' },
-          data: { status: 'FAILED', finishedAt: now, error: reason },
-        }),
-      ]);
-      if (statuses.count || runs.count) {
+      const [statuses, runs, waiting, requests] =
+        await this.prisma.$transaction([
+          this.prisma.parserRuntimeStatus.updateMany({
+            where: { isRunning: true },
+            data: {
+              isRunning: false,
+              finishedAt: now,
+              lastErrorAt: now,
+              lastError: reason,
+              failures: { increment: 1 },
+            },
+          }),
+          this.prisma.parserRun.updateMany({
+            where: { status: 'RUNNING' },
+            data: { status: 'FAILED', finishedAt: now, error: reason },
+          }),
+          this.prisma.parserRuntimeStatus.updateMany({
+            where: { waitingSince: { not: null } },
+            data: { waitingSince: null },
+          }),
+          // A request the previous worker had claimed died with it; PENDING
+          // ones are still valid and get picked up by this process.
+          this.prisma.parserJobRequest.updateMany({
+            where: { status: 'TAKEN' },
+            data: { status: 'FAILED', finishedAt: now, error: reason },
+          }),
+        ]);
+      if (statuses.count || runs.count || waiting.count || requests.count) {
         this.logger.warn(
-          `Reset ${statuses.count} job status(es) and ${runs.count} run(s) left RUNNING by the previous process`,
+          `Reset ${statuses.count} job status(es), ${runs.count} run(s), ${waiting.count} queued job(s) and ${requests.count} admin request(s) left by the previous process`,
         );
       }
     } catch (error) {
@@ -142,6 +158,7 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
         startedAt,
         finishedAt: null,
         lastError: null,
+        waitingSince: null,
         runs: { increment: 1 },
       },
       create: {
@@ -165,6 +182,26 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
         `Failed to open ParserRun for ${key}: ${this.message(error)}`,
       );
     }
+  }
+
+  /**
+   * A job queued behind its source's lock. Kept in the DB rather than only in
+   * the worker's memory because the API is what renders «Ждёт окончания
+   * батча». Best-effort: a failed write costs a label, never the job.
+   */
+  async markWaiting(key: string, label: string, waiting: boolean) {
+    const waitingSince = waiting ? new Date() : null;
+    await this.prisma.parserRuntimeStatus
+      .upsert({
+        where: { key },
+        update: { waitingSince },
+        create: { key, label, waitingSince },
+      })
+      .catch((error: unknown) =>
+        this.logger.warn(
+          `Failed to mark ${key} as waiting: ${this.message(error)}`,
+        ),
+      );
   }
 
   async success(key: string, result?: unknown) {
@@ -299,10 +336,11 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
       positiveSetting(process.env.PARSER_PRICE_STALE_PERCENT, 10),
       100,
     );
-    const [statuses, priceFreshness, queues] = await Promise.all([
+    const [statuses, priceFreshness, queues, worker] = await Promise.all([
       this.getAll(),
       this.getPriceFreshness(priceMaxAgeHours, priceStalePercent),
       this.getQueueDepth(),
+      readWorkerHeartbeat(this.prisma),
     ]);
     const now = Date.now();
     const jobs = statuses.map((status) => {
@@ -359,8 +397,12 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
 
     return {
       ok:
+        worker.alive &&
         jobs.every((job) => job.health === 'OK' || job.health === 'RUNNING') &&
         priceFreshness.every((source) => source.health !== 'STALE'),
+      // The process that runs every job: a dead one leaves each status frozen
+      // at its last value, which ages into STALE only hours later.
+      worker,
       maxAgeHours,
       priceMaxAgeHours,
       priceStalePercent,

@@ -45,6 +45,7 @@ export class AppController {
     const health = await this.parserRuntimeStatusService.getHealth();
     return {
       ok: health.ok,
+      worker: health.worker,
       maxAgeHours: health.maxAgeHours,
       priceMaxAgeHours: health.priceMaxAgeHours,
       priceStalePercent: health.priceStalePercent,

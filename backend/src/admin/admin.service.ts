@@ -8,14 +8,9 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { rekeyCategory } from '../categories/category-path-alias';
 import { PricingService } from '../pricing/pricing.service';
-import { ParserJobsService } from '../parser/parser-jobs.service';
+import { ParserJobRequestService } from '../parser/parser-job-request.service';
 import { SupplierQueueParser } from '../parser/supplier-queue-parser';
 import { QueueSourceCode } from '../parser/queue-table';
-
-/** Parsers that discover their own URLs (all but th-tools' sitemap service). */
-type DiscoveringParser = SupplierQueueParser & {
-  refreshSitemaps(): Promise<unknown>;
-};
 import {
   countProducts,
   fromSource,
@@ -27,7 +22,6 @@ import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
 import { AdminCreateProductDto } from './dto/admin-create-product.dto';
 import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminProductQueryDto } from './dto/admin-product-query.dto';
-import { SitemapsService } from '../parser/sitemaps/sitemaps.service';
 import { ThToolsParserService } from '../parser/sites/th-tools-source.parser';
 import { DukonParserService } from '../parser/sites/dukon.parser';
 import { Supplier7745ParserService } from '../parser/sites/7745-source.parser';
@@ -76,7 +70,6 @@ const CATEGORY_TX_OPTIONS = { maxWait: 10_000, timeout: 120_000 };
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sitemapsService: SitemapsService,
     private readonly thToolsParserService: ThToolsParserService,
     private readonly dukonParserService: DukonParserService,
     private readonly supplier7745ParserService: Supplier7745ParserService,
@@ -84,7 +77,7 @@ export class AdminService {
     private readonly parserLogService: ParserLogService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
     private readonly pricing: PricingService,
-    private readonly jobs: ParserJobsService,
+    private readonly jobRequests: ParserJobRequestService,
   ) {}
 
   async getStats() {
@@ -619,21 +612,16 @@ export class AdminService {
    * none), under the same per-source lock as the cron jobs.
    */
   async refreshQueue(code: QueueSourceCode) {
-    const parser = this.queueParser(code);
-    await this.jobs.runExclusive(code, 'refresh', 'Пополнить очередь', () =>
-      code === 'th-tools'
-        ? this.sitemapsService.parseAllSitemapsThTools()
-        : (parser as DiscoveringParser).refreshSitemaps(),
-    );
-    return parser.getQueueStats();
+    // Run by the worker; this request waits for it (see ParserJobRequestService).
+    await this.jobRequests.runAndWait(code, 'refresh');
+    return this.queueParser(code).getQueueStats();
   }
 
   async processQueue(code: QueueSourceCode, limit: unknown) {
-    const parser = this.queueParser(code);
-    await this.jobs.runExclusive(code, 'process', 'Разобрать пачку', () =>
-      parser.processSitemapsBatch(manualBatch(limit), 1),
-    );
-    return parser.getQueueStats();
+    await this.jobRequests.runAndWait(code, 'process', {
+      limit: manualBatch(limit),
+    });
+    return this.queueParser(code).getQueueStats();
   }
 
   retryQueueRow(code: QueueSourceCode, id: string) {

@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashPassword } from './password.util';
 import { normalizeLogin } from './login.util';
+import { servesHttp } from '../common/utils/process-role';
 
 const DEFAULT_ADMIN_LOGIN = 'admin';
 
@@ -35,6 +36,8 @@ export class AdminBootstrapService implements OnModuleInit {
   constructor(private prisma: PrismaService) {}
 
   async onModuleInit() {
+    // One process creates the first admin; two racing would hit the unique login.
+    if (!servesHttp()) return;
     try {
       await this.ensureAdmin();
     } catch (error) {

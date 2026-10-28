@@ -4,6 +4,95 @@ x-default-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# Shared by the API and the worker: one image, one configuration. What
+# differs per process (role, heap, pool size) is set on each service below.
+x-backend-environment: &backend-environment
+  NODE_ENV: production
+  ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+  # Начальная учётка администратора создаётся на первом старте, если
+  # активных админов нет. Пароль — ADMIN_PASSWORD, а если он пуст —
+  # зашитый начальный: admin / test-111 (сменить сразу после входа).
+  ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  # Срок жизни сессии аккаунта (HttpOnly-cookie или Authorization: Bearer), в сутках.
+  AUTH_SESSION_TTL_DAYS: ${AUTH_SESSION_TTL_DAYS:-30}
+  # Сколько суток хранить корзину аккаунта без изменений.
+  CART_TTL_DAYS: ${CART_TTL_DAYS:-90}
+  # Сколько хранить избранное/сравнение и журнал действий админов, в сутках.
+  LIST_TTL_DAYS: ${LIST_TTL_DAYS:-365}
+  ADMIN_LOG_TTL_DAYS: ${ADMIN_LOG_TTL_DAYS:-180}
+  ERROR_LOG_TTL_DAYS: ${ERROR_LOG_TTL_DAYS:-30}
+  CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+  PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
+  # Both must be set for new-order Telegram notifications; empty = disabled.
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+  # Forum topic for orders, and where parser/5xx alerts go (chat falls
+  # back to TELEGRAM_CHAT_ID). The host watchdog reads the same keys.
+  TELEGRAM_THREAD_ID: ${TELEGRAM_THREAD_ID:-}
+  TELEGRAM_ALERT_CHAT_ID: ${TELEGRAM_ALERT_CHAT_ID:-}
+  TELEGRAM_ALERT_THREAD_ID: ${TELEGRAM_ALERT_THREAD_ID:-}
+  # Почта хостера: письма о заказах на MAIL_ADMIN_TO и подтверждение
+  # регистрации. Пусто SMTP_HOST/USER/PASSWORD = отправка выключена.
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_SECURE: ${SMTP_SECURE:-}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  MAIL_FROM: ${MAIL_FROM:-}
+  MAIL_ADMIN_TO: ${MAIL_ADMIN_TO:-}
+  EMAIL_VERIFICATION_TTL_HOURS: ${EMAIL_VERIFICATION_TTL_HOURS:-48}
+  # ИИ-задачи в админке (/admin/ai) через OpenRouter. Пустой ключ = выключено.
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}
+  AI_BATCHES_PER_TICK: ${AI_BATCHES_PER_TICK:-3}
+  AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
+  # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
+  REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
+  # Скачок закупочной цены свыше N% уходит на ручную проверку, а не на витрину.
+  PRICING_SPIKE_THRESHOLD_PERCENT: ${PRICING_SPIKE_THRESHOLD_PERCENT:-50}
+  # Дефолт на старте. Переключатели в /admin/parsing пишут override в БД,
+  # и после первого переключения решает уже он, а не эта переменная.
+  PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
+  PARSER_FETCH_TIMEOUT_MS: ${PARSER_FETCH_TIMEOUT_MS:-20000}
+  # Сторож: доля ошибок для «сломан», задержка и потолок повторов.
+  PARSER_FAILURE_RATE_THRESHOLD: ${PARSER_FAILURE_RATE_THRESHOLD:-0.5}
+  PARSER_PRICE_MAX_AGE_HOURS: ${PARSER_PRICE_MAX_AGE_HOURS:-48}
+  PARSER_PRICE_STALE_PERCENT: ${PARSER_PRICE_STALE_PERCENT:-10}
+  PARSER_RETRY_AFTER_MINUTES: ${PARSER_RETRY_AFTER_MINUTES:-60}
+  PARSER_MAX_ATTEMPTS: ${PARSER_MAX_ATTEMPTS:-3}
+  TH_TOOLS_CRON_ENABLED: ${TH_TOOLS_CRON_ENABLED:-true}
+  PARSER_REFRESH_AFTER_HOURS: ${PARSER_REFRESH_AFTER_HOURS:-24}
+  DUKON_CRON_ENABLED: ${DUKON_CRON_ENABLED:-true}
+  DUKON_CRON_BATCH_LIMIT: ${DUKON_CRON_BATCH_LIMIT:-300}
+  TH_TOOLS_CRON_BATCH_LIMIT: ${TH_TOOLS_CRON_BATCH_LIMIT:-300}
+  TH_TOOLS_REQUEST_DELAY_MS: ${TH_TOOLS_REQUEST_DELAY_MS:-1500}
+  TH_TOOLS_CATEGORY_MAX_PAGES: ${TH_TOOLS_CATEGORY_MAX_PAGES:-100}
+  # Пустой INCLUDE = берём всё, кроме EXCLUDE. Фильтр по цепочке хлебных крошек.
+  TH_TOOLS_CATEGORY_INCLUDE_REGEX: ${TH_TOOLS_CATEGORY_INCLUDE_REGEX:-}
+  TH_TOOLS_CATEGORY_EXCLUDE_REGEX: ${TH_TOOLS_CATEGORY_EXCLUDE_REGEX:-косметика|автохими|автоламп|антенн|ароматизатор|брелок|ковры напольные|кресла детские|очки для чтения|помощь водителю|щ[её]тки стеклоочистител|уход за авто|внешний тюнинг|внутрисалонн|велотехник|дача, отдых}
+  TOOLS_BY_CRON_ENABLED: ${TOOLS_BY_CRON_ENABLED:-true}
+  TOOLS_BY_CRON_BATCH_LIMIT: ${TOOLS_BY_CRON_BATCH_LIMIT:-300}
+  TOOLS_BY_REQUEST_DELAY_MS: ${TOOLS_BY_REQUEST_DELAY_MS:-2000}
+  TOOLS_BY_DISCOVERY_MAX_PAGES: ${TOOLS_BY_DISCOVERY_MAX_PAGES:-2000}
+  TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS: ${TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS:-60000}
+  TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
+  TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-товары для дома|товары для уборки|посуда|текстиль|игрушк|канцеляр|зоотовар|космет|бытовая химия|продукты питания}
+  SUPPLIER_7745_CRON_BATCH_LIMIT: ${SUPPLIER_7745_CRON_BATCH_LIMIT:-30}
+  # 7745 — не поставщик, а пример от заказчика. Крон держим выключенным.
+  SUPPLIER_7745_CRON_ENABLED: ${SUPPLIER_7745_CRON_ENABLED:-false}
+  SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
+  SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
+  DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
+  DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
+  DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
+  THROTTLE_TTL: ${THROTTLE_TTL:-60000}
+  THROTTLE_LIMIT: ${THROTTLE_LIMIT:-120}
+  BODY_LIMIT: ${BODY_LIMIT:-1mb}
+  TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+  SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+  MEMORY_GUARD_MAX_HEAP_RATIO: ${MEMORY_GUARD_MAX_HEAP_RATIO:-0.85}
+
 services:
   db:
     image: postgres:15-alpine
@@ -29,6 +118,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
+    # Tagged so `worker` runs the very same build without building it twice.
+    image: construction-tools-backend:latest
     container_name: construction-tools-api
     restart: unless-stopped
     logging: *default-logging
@@ -37,107 +128,25 @@ services:
     # process — which is Postgres, the one service whose death takes the whole
     # site down with it. Capped, a run that eats memory kills its own
     # container instead, and `restart` brings it back in seconds with the
-    # database untouched.
-    mem_limit: 768m
-    mem_reservation: 256m
+    # database untouched. Parsing moved to `worker`, so the API needs far less
+    # than the 768m the two shared.
+    mem_limit: ${BACKEND_MEM_LIMIT:-384m}
+    mem_reservation: 128m
     environment:
-      NODE_ENV: production
+      <<: *backend-environment
+      # HTTP only: crons, parsers and AI tasks run in `worker` below, and a job
+      # an admin starts here is handed to it through ParserJobRequest.
+      PROCESS_ROLE: api
       PORT: 8000
       # Heap ceiling under mem_limit (the rest is buffers, Prisma's engine and
       # native memory). The in-process memory guard restarts the API at 85% of
       # it — a real heap OOM hung node for 13 h instead of ending it.
-      NODE_OPTIONS: ${BACKEND_NODE_OPTIONS:---max-old-space-size=512}
-      MEMORY_GUARD_MAX_HEAP_RATIO: ${MEMORY_GUARD_MAX_HEAP_RATIO:-0.85}
+      NODE_OPTIONS: ${BACKEND_NODE_OPTIONS:---max-old-space-size=256}
       # connection_limit: Prisma's default is CPU*2+1 — on this 2-core box that
       # is 5, which the app outgrew: /admin/stats alone fires 17 aggregates in
-      # one Promise.all, and the parser crons hold connections in transactions
-      # meanwhile, so ordinary queries started timing out waiting for the pool
-      # ("Timed out fetching a new connection"). Postgres allows 100 by
-      # default and this is the only client, so 20 is comfortable.
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${DB_CONNECTION_LIMIT:-20}&pool_timeout=${DB_POOL_TIMEOUT:-20}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
-      # Начальная учётка администратора создаётся на первом старте, если
-      # активных админов нет. Пароль — ADMIN_PASSWORD, а если он пуст —
-      # зашитый начальный: admin / test-111 (сменить сразу после входа).
-      ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      # Срок жизни сессии аккаунта (HttpOnly-cookie или Authorization: Bearer), в сутках.
-      AUTH_SESSION_TTL_DAYS: ${AUTH_SESSION_TTL_DAYS:-30}
-      # Сколько суток хранить корзину аккаунта без изменений.
-      CART_TTL_DAYS: ${CART_TTL_DAYS:-90}
-      # Сколько хранить избранное/сравнение и журнал действий админов, в сутках.
-      LIST_TTL_DAYS: ${LIST_TTL_DAYS:-365}
-      ADMIN_LOG_TTL_DAYS: ${ADMIN_LOG_TTL_DAYS:-180}
-      ERROR_LOG_TTL_DAYS: ${ERROR_LOG_TTL_DAYS:-30}
-      CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
-      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://localhost}
-      # Both must be set for new-order Telegram notifications; empty = disabled.
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-      # Forum topic for orders, and where parser/5xx alerts go (chat falls
-      # back to TELEGRAM_CHAT_ID). The host watchdog reads the same keys.
-      TELEGRAM_THREAD_ID: ${TELEGRAM_THREAD_ID:-}
-      TELEGRAM_ALERT_CHAT_ID: ${TELEGRAM_ALERT_CHAT_ID:-}
-      TELEGRAM_ALERT_THREAD_ID: ${TELEGRAM_ALERT_THREAD_ID:-}
-      # Почта хостера: письма о заказах на MAIL_ADMIN_TO и подтверждение
-      # регистрации. Пусто SMTP_HOST/USER/PASSWORD = отправка выключена.
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-465}
-      SMTP_SECURE: ${SMTP_SECURE:-}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      MAIL_FROM: ${MAIL_FROM:-}
-      MAIL_ADMIN_TO: ${MAIL_ADMIN_TO:-}
-      EMAIL_VERIFICATION_TTL_HOURS: ${EMAIL_VERIFICATION_TTL_HOURS:-48}
-      # ИИ-задачи в админке (/admin/ai) через OpenRouter. Пустой ключ = выключено.
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}
-      AI_BATCHES_PER_TICK: ${AI_BATCHES_PER_TICK:-3}
-      AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
-      # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
-      REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
-      # Скачок закупочной цены свыше N% уходит на ручную проверку, а не на витрину.
-      PRICING_SPIKE_THRESHOLD_PERCENT: ${PRICING_SPIKE_THRESHOLD_PERCENT:-50}
-      # Дефолт на старте. Переключатели в /admin/parsing пишут override в БД,
-      # и после первого переключения решает уже он, а не эта переменная.
-      PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
-      PARSER_FETCH_TIMEOUT_MS: ${PARSER_FETCH_TIMEOUT_MS:-20000}
-      # Сторож: доля ошибок для «сломан», задержка и потолок повторов.
-      PARSER_FAILURE_RATE_THRESHOLD: ${PARSER_FAILURE_RATE_THRESHOLD:-0.5}
-      PARSER_PRICE_MAX_AGE_HOURS: ${PARSER_PRICE_MAX_AGE_HOURS:-48}
-      PARSER_PRICE_STALE_PERCENT: ${PARSER_PRICE_STALE_PERCENT:-10}
-      PARSER_RETRY_AFTER_MINUTES: ${PARSER_RETRY_AFTER_MINUTES:-60}
-      PARSER_MAX_ATTEMPTS: ${PARSER_MAX_ATTEMPTS:-3}
-      TH_TOOLS_CRON_ENABLED: ${TH_TOOLS_CRON_ENABLED:-true}
-      PARSER_REFRESH_AFTER_HOURS: ${PARSER_REFRESH_AFTER_HOURS:-24}
-      DUKON_CRON_ENABLED: ${DUKON_CRON_ENABLED:-true}
-      DUKON_CRON_BATCH_LIMIT: ${DUKON_CRON_BATCH_LIMIT:-300}
-      TH_TOOLS_CRON_BATCH_LIMIT: ${TH_TOOLS_CRON_BATCH_LIMIT:-300}
-      TH_TOOLS_REQUEST_DELAY_MS: ${TH_TOOLS_REQUEST_DELAY_MS:-1500}
-      TH_TOOLS_CATEGORY_MAX_PAGES: ${TH_TOOLS_CATEGORY_MAX_PAGES:-100}
-      # Пустой INCLUDE = берём всё, кроме EXCLUDE. Фильтр по цепочке хлебных крошек.
-      TH_TOOLS_CATEGORY_INCLUDE_REGEX: ${TH_TOOLS_CATEGORY_INCLUDE_REGEX:-}
-      TH_TOOLS_CATEGORY_EXCLUDE_REGEX: ${TH_TOOLS_CATEGORY_EXCLUDE_REGEX:-косметика|автохими|автоламп|антенн|ароматизатор|брелок|ковры напольные|кресла детские|очки для чтения|помощь водителю|щ[её]тки стеклоочистител|уход за авто|внешний тюнинг|внутрисалонн|велотехник|дача, отдых}
-      TOOLS_BY_CRON_ENABLED: ${TOOLS_BY_CRON_ENABLED:-true}
-      TOOLS_BY_CRON_BATCH_LIMIT: ${TOOLS_BY_CRON_BATCH_LIMIT:-300}
-      TOOLS_BY_REQUEST_DELAY_MS: ${TOOLS_BY_REQUEST_DELAY_MS:-2000}
-      TOOLS_BY_DISCOVERY_MAX_PAGES: ${TOOLS_BY_DISCOVERY_MAX_PAGES:-2000}
-      TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS: ${TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS:-60000}
-      TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
-      TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-товары для дома|товары для уборки|посуда|текстиль|игрушк|канцеляр|зоотовар|космет|бытовая химия|продукты питания}
-      SUPPLIER_7745_CRON_BATCH_LIMIT: ${SUPPLIER_7745_CRON_BATCH_LIMIT:-30}
-      # 7745 — не поставщик, а пример от заказчика. Крон держим выключенным.
-      SUPPLIER_7745_CRON_ENABLED: ${SUPPLIER_7745_CRON_ENABLED:-false}
-      SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
-      SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
-      DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
-      DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
-      DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
-      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
-      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-120}
-      BODY_LIMIT: ${BODY_LIMIT:-1mb}
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
-      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      # one Promise.all. Postgres allows 100 by default; the API and the worker
+      # take 15 each.
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
     depends_on:
       db:
         condition: service_healthy
@@ -148,6 +157,51 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - app-network
+
+  worker:
+    # Same image as `backend`, built once by it (auto-deploy builds `backend`).
+    image: construction-tools-backend:latest
+    container_name: construction-tools-worker
+    # Never pulled: the tag only ever exists as the local `backend` build.
+    pull_policy: never
+    # Every cron, the supplier parsers, the AI runner and the boot passes
+    # (src/main.worker.ts). No HTTP, no migrations — `backend` applies those
+    # before it turns healthy, which is why this waits for it.
+    command: ["node", "dist/main.worker"]
+    # tini as PID 1: the worker's event-loop watchdog ends a hung process with
+    # SIGKILL, which the kernel ignores when sent to a container's PID 1.
+    init: true
+    restart: unless-stopped
+    logging: *default-logging
+    # Its own ceiling: a batch that eats memory restarts the worker (claimed
+    # rows have a lease, an interrupted run is reset at boot) and the
+    # storefront never notices.
+    mem_limit: ${WORKER_MEM_LIMIT:-576m}
+    mem_reservation: 192m
+    # A batch saves product by product; give the one in flight time to finish
+    # its current write on a deploy.
+    stop_grace_period: 30s
+    environment:
+      <<: *backend-environment
+      PROCESS_ROLE: worker
+      NODE_OPTIONS: ${WORKER_NODE_OPTIONS:---max-old-space-size=400}
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${WORKER_DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    # No port to probe: the worker touches this file every 30 s
+    # (WorkerHeartbeatService), and a hung event loop stops touching it.
+    healthcheck:
+      test:
+        ["CMD-SHELL", "node -e \"const s=require('fs').statSync('/tmp/worker-heartbeat');process.exit(Date.now()-s.mtimeMs<120000?0:1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - app-network
 
