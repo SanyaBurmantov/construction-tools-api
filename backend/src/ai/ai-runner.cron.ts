@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { AiService } from './ai.service';
-import { OpenRouterClient } from './openrouter.client';
+import { AiClient } from './ai.client';
 
 /**
  * The scheduler. Every minute it takes the earliest due task and runs a few
@@ -18,7 +18,7 @@ export class AiRunnerCron {
 
   constructor(
     private readonly ai: AiService,
-    private readonly openRouter: OpenRouterClient,
+    private readonly client: AiClient,
   ) {}
 
   private get batchesPerTick() {
@@ -28,7 +28,7 @@ export class AiRunnerCron {
 
   @Cron('0 * * * * *')
   async tick() {
-    if (this.busy || !this.openRouter.enabled) return;
+    if (this.busy || !this.client.enabled) return;
     if (process.env.AI_RUNNER_ENABLED === 'false') return;
     this.busy = true;
     try {

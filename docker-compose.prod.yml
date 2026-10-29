@@ -42,7 +42,10 @@ x-backend-environment: &backend-environment
   MAIL_FROM: ${MAIL_FROM:-}
   MAIL_ADMIN_TO: ${MAIL_ADMIN_TO:-}
   EMAIL_VERIFICATION_TTL_HOURS: ${EMAIL_VERIFICATION_TTL_HOURS:-48}
-  # ИИ-задачи в админке (/admin/ai) через OpenRouter. Пустой ключ = выключено.
+  # ИИ-задачи в админке (/admin/ai). Задан DEEPSEEK_API_KEY — пишет DeepSeek
+  # (платно, напрямую); иначе бесплатные модели OpenRouter. Оба пусты = выключено.
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
   OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}
   AI_BATCHES_PER_TICK: ${AI_BATCHES_PER_TICK:-3}

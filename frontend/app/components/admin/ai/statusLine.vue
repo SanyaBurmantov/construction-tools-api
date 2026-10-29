@@ -7,9 +7,10 @@ defineProps<{ status: AiStatus | null }>()
 <template>
   <div v-if="status" class="ai-status">
     <UiBadge :tone="status.enabled ? 'success' : 'danger'" size="sm" dot>
-      {{ status.enabled ? 'OpenRouter подключён' : 'Нет OPENROUTER_API_KEY' }}
+      {{ status.enabled ? `${status.provider} подключён` : 'Нет ключа ИИ (DEEPSEEK_API_KEY)' }}
     </UiBadge>
     <span>Модель по умолчанию: <code>{{ status.defaultModel }}</code></span>
+    <span v-if="status.quota?.balance">Баланс: {{ status.quota.balance }}</span>
     <span v-if="status.quota?.dailyLimit != null">
       Бесплатных запросов сегодня: {{ status.quota.dailyRemaining }} из {{ status.quota.dailyLimit }}
     </span>
