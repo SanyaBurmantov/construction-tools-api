@@ -223,6 +223,21 @@ describe('validateAnswer', () => {
     expect(validateAnswer(bull, { name })).toEqual({});
   });
 
+  it('lets a name be mostly brand and series', () => {
+    const old = '10х100х160 мм бур (сверло) SDS-plus EXPERT STARTUL';
+    const bit = {
+      entity: 'PRODUCT' as const,
+      oldName: old,
+      brand: 'STARTUL',
+      source: old,
+    };
+    expect(
+      validateAnswer(bit, {
+        name: 'Бур (сверло) SDS-plus EXPERT STARTUL 10х100х160 мм',
+      }),
+    ).toEqual({});
+  });
+
   it('wants the B2B payment line in the SEO description', () => {
     expect(
       validateAnswer(BOSCH, {

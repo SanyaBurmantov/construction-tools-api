@@ -22,7 +22,8 @@ const API = (process.env.AI_PILOT_API || 'https://gost.by/api').replace(/\/+$/, 
 
 /** Brands of the pilot (owner's list, 2026-10-29) — matched by name. */
 const BRANDS = ['STARFIX', 'STARTUL', 'BULL', 'GEPARD', 'TOPTUL', 'MAKITA']
-const PER_BRAND = 50
+/** `--total N` spreads N cards over the brands (default 50 each). */
+const TOTAL = Number(process.argv.includes('--total') ? process.argv[process.argv.indexOf('--total') + 1] : 0) || 0
 const STAGE_ONE_PER_BRAND = 5
 const CATEGORY_COUNT = 5
 /** Pages of 100 read per brand, spread over its whole list. */
@@ -181,11 +182,23 @@ async function select() {
       continue
     }
     const rows = await brandProducts(brand)
-    const chosen = pick(rows, name, PER_BRAND, taken)
+    const perBrand = TOTAL ? Math.ceil(TOTAL / BRANDS.length) : 50
+    const chosen = pick(rows, name, perBrand, taken)
     for (const row of chosen) taken.add(row.id)
     pilot.push(...chosen.map((row) => brief(row, name)))
     controlGroup.push(...control(rows, chosen, taken).map((row) => brief(row, name)))
     console.log(`${name}: ${rows.length} read, ${chosen.length} picked`)
+  }
+
+  // `--total`: trim the round-up off the last brands, keeping each brand's
+  // most varied cards (the round-robin puts them first).
+  if (TOTAL && pilot.length > TOTAL) {
+    const keep = new Set()
+    const perBrand = Math.floor(TOTAL / BRANDS.length)
+    for (const name of BRANDS) pilot.filter((c) => c.brand === name).slice(0, perBrand).forEach((c) => keep.add(c.id))
+    for (const card of pilot) if (keep.size < TOTAL) keep.add(card.id)
+    pilot.splice(0, pilot.length, ...pilot.filter((c) => keep.has(c.id)))
+    controlGroup.splice(TOTAL)
   }
 
   // Stage 1: the first cards of each brand's round-robin — the most varied.
@@ -244,6 +257,8 @@ async function create() {
     const first = new Set(selection.stageOne)
     const ids = stage === '1' ? selection.stageOne : selection.pilot.map((c) => c.id).filter((id) => !first.has(id))
     body = { name: `Пилот ${date}, этап ${stage}`, entity: 'PRODUCT', fields: PRODUCT_FIELDS, ids }
+  } else if (stage === 'all') {
+    body = { name: `Пилот ${date}`, entity: 'PRODUCT', fields: PRODUCT_FIELDS, ids: selection.pilot.map((c) => c.id) }
   } else if (stage === 'categories') {
     body = {
       name: `Пилот ${date}, категории`,
@@ -252,7 +267,7 @@ async function create() {
       ids: selection.categories.map((c) => c.id),
     }
   } else {
-    throw new Error('--stage 1 | 2 | categories')
+    throw new Error('--stage 1 | 2 | all | categories')
   }
   const created = await api('/admin/ai/tasks', {
     method: 'POST',
