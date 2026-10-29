@@ -209,7 +209,7 @@ const LIMITS: Record<string, { min: number; max: number }> = {
   // The prompt asks for ≤ 70 / ≤ 160; a little over is cut by the search
   // engine, not wrong — refusing it would waste a paid answer.
   seoTitle: { min: 15, max: 80 },
-  seoDescription: { min: 60, max: 200 },
+  seoDescription: { min: 60, max: 230 },
 };
 
 /** A thin card gets one honest paragraph, not a page of filler. */
@@ -265,7 +265,14 @@ function checkField(
 
   const letters = value.match(/[A-Za-zА-Яа-яЁё]/g) ?? [];
   const cyrillic = value.match(/[А-Яа-яЁё]/g) ?? [];
-  if (letters.length >= 20 && cyrillic.length / letters.length < 0.5) {
+  // Prose only: a name or an SEO title is mostly brand, series and model
+  // («Бур SDS-plus EXPERT STARTUL 10х100х160 мм») and read as «not Russian».
+  if (
+    field !== 'name' &&
+    field !== 'seoTitle' &&
+    letters.length >= 20 &&
+    cyrillic.length / letters.length < 0.5
+  ) {
     return 'текст не на русском';
   }
 
