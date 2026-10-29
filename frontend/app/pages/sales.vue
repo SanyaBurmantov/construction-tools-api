@@ -53,6 +53,10 @@ const { data, status, error } = await useAsyncData<ProductsResponse>(
 // нет» while the API is simply down. Server-side only: on the client the page
 // is already rendered and a blip must not replace it.
 if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
+// Past the last page: a 404, not an empty page with 200 (see CatalogView).
+if (import.meta.server && !error.value && page.value > Math.max(1, data.value.pagination.pages)) {
+  throw createError({ statusCode: 404, statusMessage: 'Страница не найдена', fatal: true })
+}
 
 function setQuery(patch: Record<string, string | number | undefined>) {
   router.push({ query: { ...route.query, ...patch } })
@@ -82,7 +86,24 @@ const heroStats = computed(() => {
 const description
   = 'Товары со скидкой: инструмент, оборудование и расходные материалы по сниженным ценам.'
 
-usePageSeo({ title: 'Акции и скидки', description, path: '/sales' })
+// Page-aware like the catalogue: every `?page=N` had the same title and a
+// canonical to page 1. A page under a non-default sort points at the plain
+// listing.
+const { absoluteUrl } = useSite()
+const pageSuffix = computed(() => (page.value > 1 ? ` — страница ${page.value}` : ''))
+const seoTitle = computed(() => `Акции и скидки${pageSuffix.value} | Gost.by`)
+const seoDescription = computed(() => description + (page.value > 1 ? ` Страница ${page.value}.` : ''))
+const canonicalUrl = computed(() =>
+  absoluteUrl(page.value > 1 && sort.value === 'new' ? `/sales?page=${page.value}` : '/sales'))
+useSeoMeta({
+  title: seoTitle,
+  description: seoDescription,
+  ogTitle: seoTitle,
+  ogDescription: seoDescription,
+  ogUrl: canonicalUrl,
+  ogType: 'website',
+})
+useHead(() => ({ link: [{ rel: 'canonical', href: canonicalUrl.value }] }))
 </script>
 
 <template>
@@ -140,7 +161,7 @@ usePageSeo({ title: 'Акции и скидки', description, path: '/sales' })
         :pages="data.pagination.pages"
         :total="data.pagination.total"
         :href-for="pageHref"
-        @change="setQuery({ page: $event })"
+        @change="setQuery({ page: $event > 1 ? $event : undefined })"
       />
     </template>
   </div>

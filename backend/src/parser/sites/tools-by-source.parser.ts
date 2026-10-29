@@ -19,6 +19,7 @@ import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
 import { ParserSettingsService } from '../parser-settings.service';
 import { parseTools } from './tools.parser';
+import { offerPrice } from '../offer-price';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 type CatalogSnapshot = {
@@ -565,7 +566,7 @@ export class ToolsByParserService extends SupplierQueueParser {
           externalId: url,
           name: data.name,
           sku: data.sku,
-          price: data.price,
+          price: offerPrice(data.price, data.inStock === false),
           currency: 'BYN',
           stock: data.inStock ?? false,
           images: data.images,

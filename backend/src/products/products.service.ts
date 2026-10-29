@@ -148,11 +148,27 @@ const ADMIN_ONLY_PRODUCT_FIELDS = [
 
 type AdminOnlyProductField = (typeof ADMIN_ONLY_PRODUCT_FIELDS)[number];
 
+/**
+ * SEO fields the storefront may use. What a parser stored there is the
+ * supplier's own blurb — «купить в Минске», their phone — so the product page
+ * used to ignore both columns and build its own. Only a text we wrote (an AI
+ * task or an admin edit, both of which lock the field) is passed on; the rest
+ * goes out as `null` and the page keeps its template.
+ */
+const OWN_SEO_FIELDS = ['seoTitle', 'seoDescription'] as const;
+
 /** Drops the admin-only columns from a row headed for a public response. */
 function toPublicProduct<
   T extends Partial<Record<AdminOnlyProductField, unknown>>,
 >(product: T): Omit<T, AdminOnlyProductField> {
-  const rest = { ...product };
+  const rest: Record<string, unknown> = { ...product };
+  const own = new Set([
+    ...((product.aiLockedFields as string[] | undefined) ?? []),
+    ...((product.lockedFields as string[] | undefined) ?? []),
+  ]);
+  for (const field of OWN_SEO_FIELDS) {
+    if (field in rest && !own.has(field)) rest[field] = null;
+  }
   for (const field of ADMIN_ONLY_PRODUCT_FIELDS) delete rest[field];
   return rest as Omit<T, AdminOnlyProductField>;
 }
@@ -444,12 +460,21 @@ export class ProductService {
   }
 
   /** Slim list of published products for sitemap generation. */
-  getSitemapEntries() {
-    return this.prisma.product.findMany({
+  /**
+   * `lastmod` is when the page text changed (`contentUpdatedAt`), not
+   * `updatedAt`: every product is re-parsed daily, and a sitemap where all
+   * 74k URLs changed "today" is one search engines stop believing.
+   */
+  async getSitemapEntries() {
+    const rows = await this.prisma.product.findMany({
       where: { status: 'PUBLISHED' },
-      select: { slug: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
+      select: { slug: true, contentUpdatedAt: true },
+      orderBy: { contentUpdatedAt: 'desc' },
     });
+    return rows.map((row) => ({
+      slug: row.slug,
+      lastmod: row.contentUpdatedAt,
+    }));
   }
 
   async findAllFiltered(filter: ProductFilterDto) {
@@ -912,8 +937,8 @@ export class ProductService {
       rankClauses.push(Prisma.sql`CASE WHEN ${barcodeHit} THEN 100 ELSE 0 END`);
     }
 
-    const rows = await this.withTrigramThreshold((tx) =>
-      tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    const rows = await this.withTrigramThreshold<{ id: string }>(
+      Prisma.sql`
         WITH matched AS (${Prisma.join(branches, ' UNION ')})
         SELECT p."id"
         FROM "Product" p
@@ -921,7 +946,7 @@ export class ProductService {
         WHERE p."status" = 'PUBLISHED' AND p."id" IN (SELECT "id" FROM matched)
         ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."listingRank" DESC, p."name" ASC
         LIMIT ${SEARCH_MATCH_LIMIT + 1}
-      `),
+      `,
     );
     if (rows.length > SEARCH_MATCH_LIMIT) return null;
     return rows.map((row) => row.id);
@@ -933,14 +958,21 @@ export class ProductService {
    * `<%` operator. `word_similarity(a, b) > x` is a function call the GIN
    * trigram index on `name` cannot serve — every search was a sequential
    * scan of the catalogue; the operator form is an index lookup.
+   *
+   * A *batch* transaction, not an interactive one: the interactive kind is
+   * cut at 5 s, and under load (a crawler, a parser batch writing products)
+   * the search ran past that — ~100 catalogue and suggest requests answered
+   * 500 «Transaction already closed» on 27–28.10. A batch is the same single
+   * transaction with no client-side timer and no connection held between
+   * round trips.
    */
-  private withTrigramThreshold<T>(
-    query: (tx: Prisma.TransactionClient) => Promise<T>,
-  ): Promise<T> {
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT set_config('pg_trgm.word_similarity_threshold', ${String(SIMILARITY_THRESHOLD)}, true)`;
-      return query(tx);
-    });
+  private async withTrigramThreshold<T>(query: Prisma.Sql): Promise<T[]> {
+    const [, rows] = await this.prisma.$transaction([
+      this.prisma
+        .$executeRaw`SELECT set_config('pg_trgm.word_similarity_threshold', ${String(SIMILARITY_THRESHOLD)}, true)`,
+      this.prisma.$queryRaw<T[]>(query),
+    ]);
+    return rows;
   }
 
   /** Live header suggestions: top products, categories and brands for a query. */

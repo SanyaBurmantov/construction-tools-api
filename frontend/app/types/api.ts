@@ -303,6 +303,9 @@ export type ProductDetail = CatalogProduct & {
   barcode?: string | null
   /** When the price was last checked against a supplier (ISO). */
   priceCheckedAt?: string | null
+  /** Ours only (AI task or admin edit); the API nulls a supplier's SEO text. */
+  seoTitle?: string | null
+  seoDescription?: string | null
 }
 
 /** A published review as `GET /products/:slug/reviews` returns it (no account link). */

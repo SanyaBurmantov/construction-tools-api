@@ -49,8 +49,14 @@ export function usePromoCode() {
       return true
     } catch (err) {
       const message = (err as { data?: { message?: string } }).data?.message
-      error.value = message || 'Промокод недействителен'
+      // The code is no longer applied — drop it entirely. Kept, it was still
+      // sent with the order: refused there («действует от 100 BYN»), or —
+      // once the cart grew back — discounted by the server while the screen,
+      // with no preview, showed the full price.
+      code.value = ''
       preview.value = null
+      removeStored(STORAGE_KEY, 'session')
+      error.value = message || 'Промокод недействителен'
       return false
     } finally {
       validating.value = false
@@ -85,11 +91,14 @@ export function usePromoCode() {
     )
   }
 
+  /** The code the order should carry: only one the API has just accepted. */
+  const appliedCode = computed(() => preview.value?.code ?? '')
   const discount = computed(() => preview.value?.discount ?? 0)
   const freeDelivery = computed(() => preview.value?.freeDelivery ?? false)
 
   return {
     code,
+    appliedCode,
     preview,
     error,
     validating,

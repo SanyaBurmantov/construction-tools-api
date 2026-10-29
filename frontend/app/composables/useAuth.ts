@@ -202,7 +202,11 @@ export function useAuth() {
       user.value = await authFetch<AccountUser>('/auth/me')
       setHint(true)
     } catch {
-      clear()
+      // A dead session is a 401, and authFetch has already forgotten it. Any
+      // other failure (a deploy restarting the API, a 5xx, no network) says
+      // nothing about the session: dropping the hint here signed the device
+      // out for good — /auth/me was never asked again while the cookie lived.
+      user.value = null
     } finally {
       ready.value = true
     }

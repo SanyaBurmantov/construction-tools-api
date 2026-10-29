@@ -111,7 +111,21 @@ describe('buildMessages', () => {
     });
     expect(system.content).toContain('"seoTitle"');
     expect(system.content).not.toContain('"descriptionFull"');
-    expect(user.content).toContain('Сделай SEO');
     expect(user.content).toContain('"p2"');
+  });
+
+  it('keeps everything a task repeats in the system message (cache prefix)', () => {
+    const build = (name: string) =>
+      buildMessages({
+        entity: 'PRODUCT',
+        fields: fieldDefs('PRODUCT', ['seoTitle']),
+        instruction: 'Сделай SEO',
+        contexts: [{ id: 'p1', name }],
+      });
+    const [systemA, userA] = build('Дрель');
+    const [systemB] = build('Пила');
+    expect(systemA.content).toContain('Сделай SEO');
+    expect(systemA.content).toBe(systemB.content);
+    expect(userA.content).not.toContain('Сделай SEO');
   });
 });

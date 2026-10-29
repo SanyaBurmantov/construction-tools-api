@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsISO8601,
   IsIn,
@@ -166,9 +167,19 @@ export class AiCreateTaskDto {
   @IsString()
   promptId?: string;
 
+  /**
+   * The instruction. With `templates` it is optional and only *added* to the
+   * built-in rules and the per-kind guide (`ai-templates.ts`).
+   */
+  @IsOptional()
   @IsString()
-  @Length(1, 8000)
-  prompt!: string;
+  @Length(0, 8000)
+  prompt?: string;
+
+  /** Built-in shop rules + a guide per kind of product (one task per kind). */
+  @IsOptional()
+  @IsBoolean()
+  templates?: boolean;
 
   @IsOptional()
   @Transform(emptyToUndefined)
@@ -214,9 +225,14 @@ export class AiPreviewDto {
   @IsString({ each: true })
   fields!: string[];
 
+  @IsOptional()
   @IsString()
-  @Length(1, 8000)
-  prompt!: string;
+  @Length(0, 8000)
+  prompt?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  templates?: boolean;
 
   @IsOptional()
   @Transform(emptyToUndefined)

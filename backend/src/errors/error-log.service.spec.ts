@@ -37,6 +37,32 @@ const entry = (overrides: Partial<ErrorEntry> = {}): ErrorEntry => ({
 });
 
 describe('ErrorLogService.record', () => {
+  it('writes at most 30 rejected admin attempts per address per hour', async () => {
+    const { service, create } = buildService();
+    for (let i = 0; i < 40; i++) {
+      // A different message each time, so the dedupe window cannot fold them.
+      await service.record(
+        entry({
+          statusCode: 401,
+          method: 'GET',
+          path: '/admin/x',
+          message: `m${i}`,
+          ip: '1.2.3.4',
+        }),
+      );
+    }
+    await service.record(
+      entry({
+        statusCode: 401,
+        method: 'GET',
+        path: '/admin/x',
+        message: 'other',
+        ip: '5.6.7.8',
+      }),
+    );
+    expect(create).toHaveBeenCalledTimes(31);
+  });
+
   it('writes the failure', async () => {
     const { service, create } = buildService();
     await service.record(entry());

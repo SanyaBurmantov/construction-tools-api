@@ -1,0 +1,253 @@
+import { fixHomoglyphs, numbersIn, validateAnswer } from './ai-validate';
+
+/** The Bosch card from the 2026-10-29 DeepSeek trial, as the model saw it. */
+const BOSCH = {
+  entity: 'PRODUCT' as const,
+  oldName: 'Аккум. перфоратор BOSCH GBH 18V-45 C в чем.',
+  brand: 'Bosch',
+  source: [
+    'Аккум. перфоратор BOSCH GBH 18V-45 C в чем.',
+    'Bosch',
+    'Электроинструмент / Аккумуляторный инструмент / Аккумуляторные перфораторы',
+    '611913120',
+    'Патрон: SDS-Max; Режимов работы: 2; Диаметр сверления в бетоне, мм: 45;',
+    'Страна: Германия; Напряжение, В: 18; Энергия удара, Дж: 12.5;',
+    'Число оборотов, об/мин: 0-305; Тип двигателя: Бесщеточный;',
+    'Частота ударов, уд/мин: 0-2760; Вес, кг: 8; Габариты упаковки: 44 x 35 x 24',
+    'Особенности: Bluetooth Low Energy - чип BT ... BITURBO ... ProCore 18V 12,0 Ач.',
+    'Контроль отдачи ... плавного пуска EPC ASC ... Работает на расстоянии до 30 м.',
+    'Комплектация: + Перфоратор + Боковая рукоятка + Тюбик смазки в патрон + Кейс.',
+  ].join('\n'),
+};
+
+describe('numbersIn', () => {
+  it('normalises decimals, separators and thousands', () => {
+    expect([...numbersIn('12,5 Дж, 12.50, 1 200 об/мин, 0–2760, 08')]).toEqual([
+      '12.5',
+      '1200',
+      '0',
+      '2760',
+      '8',
+    ]);
+  });
+});
+
+describe('fixHomoglyphs', () => {
+  it('turns Latin look-alikes inside Cyrillic words back', () => {
+    expect(fixHomoglyphs('Kлeщи для xoмутoв ШPУCa TOPTUL')).toBe(
+      'Клещи для хомутов ШРУСа TOPTUL',
+    );
+  });
+});
+
+describe('validateAnswer', () => {
+  it('passes the good Bosch rewrite', () => {
+    expect(
+      validateAnswer(BOSCH, {
+        name: 'Аккумуляторный перфоратор Bosch GBH 18V-45 C SDS-Max, 18 В, 12,5 Дж, в кейсе',
+        descriptionShort:
+          'Аккумуляторный перфоратор SDS-Max с бесщеточным двигателем BITURBO и энергией удара 12,5 Дж. Для работ по бетону, сверление до 45 мм.',
+        seoTitle: 'Аккумуляторный перфоратор Bosch GBH 18V-45 C SDS-Max',
+        seoDescription:
+          'Аккумуляторный перфоратор Bosch GBH 18V-45 C SDS-Max, 18 В, 12,5 Дж, до 45 мм в бетоне. Доставка по Беларуси, оплата по безналу для организаций.',
+      }),
+    ).toEqual({});
+  });
+
+  it('rejects a technology name the data does not have', () => {
+    const result = validateAnswer(BOSCH, {
+      descriptionFull:
+        'Инструмент оснащен системой контроля отдачи KickBack Control, снижающей риск внезапных реакций при заклинивании бура. '.repeat(
+          2,
+        ),
+    });
+    expect(result.descriptionFull).toMatch(/KickBack/);
+  });
+
+  it('rejects an invented number', () => {
+    const result = validateAnswer(BOSCH, {
+      descriptionShort:
+        'Аккумуляторный перфоратор весом 6,5 кг для работ по бетону и кирпичу на объектах.',
+    });
+    expect(result.descriptionShort).toBe('число 6.5 не из данных товара');
+  });
+
+  it('rejects claims the source does not back', () => {
+    expect(
+      validateAnswer(BOSCH, {
+        descriptionShort:
+          'Лучший перфоратор для бетона, всегда в наличии на складе в нашем магазине.',
+      }).descriptionShort,
+    ).toMatch(/утверждение не из данных/);
+  });
+
+  it('allows a country the specs name', () => {
+    expect(
+      validateAnswer(BOSCH, {
+        descriptionShort:
+          'Аккумуляторный перфоратор SDS-Max производства Германия для работ по бетону.',
+      }),
+    ).toEqual({});
+  });
+
+  it('rejects phones, links, prices and markup', () => {
+    const check = (text: string) =>
+      validateAnswer(BOSCH, { descriptionShort: text }).descriptionShort;
+    expect(
+      check('Звоните +375 (29) 668-00-11, перфоратор для бетона и кирпича.'),
+    ).toMatch(/телефон/);
+    expect(
+      check('Подробнее на сайте dukon.by — перфоратор для бетона и кирпича.'),
+    ).toMatch(/ссылка/);
+    expect(
+      check('**Перфоратор** для бетона и кирпича, для строительных бригад.'),
+    ).toMatch(/разметка/);
+  });
+
+  it('keeps the brand, the model code and the numbers of the old name', () => {
+    expect(
+      validateAnswer(BOSCH, {
+        name: 'Аккумуляторный перфоратор GBH 18V-45 C SDS-Max',
+      }).name,
+    ).toBe('пропал бренд «Bosch»');
+    expect(
+      validateAnswer(BOSCH, {
+        name: 'Аккумуляторный перфоратор Bosch GBH SDS-Max в кейсе',
+      }).name,
+    ).toMatch(/пропал код или модель «18V-45»/);
+
+    const starfix = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX',
+      brand: 'STARFIX',
+      source: 'Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX',
+    };
+    expect(
+      validateAnswer(starfix, { name: 'Анкер забиваемый М10х12х40 мм STARFIX' })
+        .name,
+    ).toBe('пропало число 4 из старого названия');
+    expect(
+      validateAnswer(starfix, {
+        name: 'Анкер забиваемый STARFIX М10х12х40 мм, 4 шт. в зип-пакете',
+      }),
+    ).toEqual({});
+  });
+
+  it('fixes homoglyph names instead of keeping them', () => {
+    const toptul = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Kлeщи для xoмутoв ШPУCa уcилeнныe TOPTUL',
+      brand: 'TOPTUL',
+      source: 'Kлeщи для xoмутoв ШPУCa уcилeнныe TOPTUL',
+    };
+    expect(
+      validateAnswer(toptul, {
+        name: 'Клещи для хомутов ШРУСа усиленные TOPTUL',
+      }),
+    ).toEqual({});
+    expect(
+      validateAnswer(toptul, {
+        name: 'Kлeщи для хомутов ШРУСа усиленные TOPTUL',
+      }).name,
+    ).toMatch(/смешанных/);
+  });
+
+  it('takes Latin M and x in sizes for the Cyrillic ones the supplier typed', () => {
+    const starfix = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX',
+      brand: 'STARFIX',
+      source: 'Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX',
+    };
+    expect(
+      validateAnswer(starfix, {
+        name: 'Анкер забиваемый STARFIX M10x12x40 мм, 4 шт. в зип-пакете',
+        descriptionShort:
+          'Анкер забиваемый M10x12x40 мм для крепления к бетону, 4 шт. в упаковке.',
+      }),
+    ).toEqual({});
+  });
+
+  it('does not read ordinary words as claims', () => {
+    const check = (text: string) =>
+      validateAnswer(BOSCH, { descriptionShort: text }).descriptionShort;
+    expect(
+      check(
+        'Контроль отдачи снижает риск резкой реакции инструмента при заклинивании бура.',
+      ),
+    ).toBeUndefined();
+    expect(
+      check(
+        'Перфоратор подходит для работы на складе, в цехе и на строительном объекте.',
+      ),
+    ).toBeUndefined();
+    expect(
+      check(
+        'Перфоратор идеально подходит для сверления бетона на строительных объектах.',
+      ),
+    ).toBeUndefined();
+    expect(
+      check(
+        'Перфоратор для бетона, он всегда есть на складе нашего магазина в Беларуси.',
+      ),
+    ).toMatch(/наличие/);
+  });
+
+  it('does not take a length for a phone', () => {
+    const bolt = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Болторез 375мм TOPTUL',
+      brand: 'TOPTUL',
+      source: 'Болторез 375мм TOPTUL; Длина, мм: 375; Число оборотов: 37500',
+    };
+    expect(
+      validateAnswer(bolt, {
+        descriptionShort:
+          'Болторез TOPTUL длиной 375 мм для перекусывания прутков и болтов.',
+      }),
+    ).toEqual({});
+  });
+
+  it('accepts a long name that keeps everything the supplier listed', () => {
+    const old =
+      'Аккум. дрель-шуруповерт BULL SR 1805 Xcase XLTpro, 2х6 А*ч, БЕСЩЕТ., 18 В, 60 Н*м, 2 скор., 13 мм патрон, LED, реверс';
+    const bull = {
+      entity: 'PRODUCT' as const,
+      oldName: old,
+      brand: 'BULL',
+      source: old,
+    };
+    const name =
+      'Аккумуляторная дрель-шуруповерт BULL SR 1805 Xcase XLTpro, бесщеточная, 18 В, 60 Н·м, 2 аккумулятора по 6 А·ч, 2 скорости, патрон 13 мм, подсветка LED, реверс';
+    expect(name.length).toBeGreaterThan(150);
+    expect(validateAnswer(bull, { name })).toEqual({});
+  });
+
+  it('wants the B2B payment line in the SEO description', () => {
+    expect(
+      validateAnswer(BOSCH, {
+        seoDescription:
+          'Аккумуляторный перфоратор Bosch GBH 18V-45 C SDS-Max, 18 В, 12,5 Дж. Доставка по Беларуси.',
+      }).seoDescription,
+    ).toBe('нет упоминания оплаты по безналу');
+  });
+
+  it('keeps a thin card to one paragraph', () => {
+    const thin = {
+      entity: 'PRODUCT' as const,
+      oldName: '(К-Т 6)Съемник внутренних стопорных колец изогнутый 200мм',
+      brand: 'PATRON',
+      source:
+        '(К-Т 6)Съемник внутренних стопорных колец изогнутый 200мм PATRON P-9U0102',
+      thin: true,
+    };
+    expect(
+      validateAnswer(thin, {
+        descriptionFull:
+          'Съемник внутренних стопорных колец изогнутый, длина 200 мм. '.repeat(
+            20,
+          ),
+      }).descriptionFull,
+    ).toMatch(/мало данных/);
+  });
+});

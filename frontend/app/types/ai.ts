@@ -83,6 +83,10 @@ export type AiTask = {
   processed: number
   applied: number
   failed: number
+  /** Tokens billed for the task (batches only, not previews). */
+  promptTokens?: number
+  completionTokens?: number
+  cacheHitTokens?: number
   createdBy: string | null
   createdAt: string
   startedAt: string | null
@@ -101,8 +105,22 @@ export type AiTaskItem = {
   attempts: number
   changes: Record<string, AiFieldChange> | null
   response: Record<string, unknown> | null
+  /** Fields the checks refused to write, with the reason. */
+  rejected: Record<string, string> | null
+  /** Written, but worth a look (a near-copy of a sibling variant's text). */
+  warnings: Record<string, string> | null
   error: string | null
   updatedAt: string
+}
+
+/** `POST /ai/preview`: what a task would write, and what the checks refuse. */
+export type AiPreview = {
+  model: string
+  template: string | null
+  changes: Record<string, AiFieldChange>
+  rejected: Record<string, { reason: string, value: string }>
+  usage?: { promptTokens: number, completionTokens: number, cacheHitTokens: number }
+  raw: string
 }
 
 export const AI_TASK_STATUS: Record<AiTaskStatus, { label: string, tone: 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info' }> = {

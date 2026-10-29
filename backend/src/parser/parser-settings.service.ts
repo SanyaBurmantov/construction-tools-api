@@ -1,8 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  SUPPLIER_7745_DEFAULT_EXCLUDE_REGEX,
-  SUPPLIER_7745_DEFAULT_INCLUDE_REGEX,
   TH_TOOLS_DEFAULT_EXCLUDE_REGEX,
   TOOLS_BY_DEFAULT_EXCLUDE_REGEX,
 } from './parser-defaults';
@@ -15,10 +13,6 @@ const DEFAULT_CATEGORY_FILTERS: Record<
   'th-tools': { include: '', exclude: TH_TOOLS_DEFAULT_EXCLUDE_REGEX },
   'tools-by': { include: '', exclude: TOOLS_BY_DEFAULT_EXCLUDE_REGEX },
   dukon: { include: '', exclude: '' },
-  '7745': {
-    include: SUPPLIER_7745_DEFAULT_INCLUDE_REGEX,
-    exclude: SUPPLIER_7745_DEFAULT_EXCLUDE_REGEX,
-  },
 };
 
 /**
@@ -98,23 +92,6 @@ export const PARSER_SOURCES = [
     defaultBatchLimit: 300,
     hasCategoryQueue: false,
     defaultEnabled: true,
-  },
-  {
-    code: '7745',
-    name: '7745.by (пример, не поставщик)',
-    host: '7745.by',
-    queuePrefix: '/7745',
-    envFlag: 'SUPPLIER_7745_CRON_ENABLED',
-    envBatchLimit: 'SUPPLIER_7745_CRON_BATCH_LIMIT',
-    envRequestDelay: 'SUPPLIER_7745_REQUEST_DELAY_MS',
-    envCategoryInclude: 'SUPPLIER_7745_CATEGORY_INCLUDE_REGEX',
-    envCategoryExclude: 'SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX',
-    envMaxPages: 'SUPPLIER_7745_DISCOVERY_MAX_PAGES',
-    defaultRequestDelayMs: 1500,
-    defaultMaxPages: 500,
-    hasCategoryQueue: false,
-    /** 7745 is a sample site, not a supplier — its default stays off. */
-    defaultEnabled: false,
   },
 ] as const;
 

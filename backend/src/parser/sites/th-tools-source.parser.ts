@@ -13,6 +13,7 @@ import { ProductIdentityService } from '../product-identity.service';
 import { ParserSettingsService } from '../parser-settings.service';
 import { parseThTools } from './th-tools.parser';
 import { PLACEHOLDER_IMAGE_MARKERS } from '../../common/utils/product-images';
+import { offerPrice } from '../offer-price';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 
@@ -421,7 +422,7 @@ export class ThToolsParserService extends SupplierQueueParser {
     },
   ) {
     // SourceProduct has no columns for brand/barcode/breadcrumbs — they ride
-    // along in the `specifications` snapshot, same as the 7745 parser.
+    // along in the `specifications` snapshot.
     const snapshot = this.toJson({
       attributes: Object.fromEntries(
         data.specifications.map((spec) => [spec.name, spec.value]),
@@ -443,7 +444,7 @@ export class ThToolsParserService extends SupplierQueueParser {
       sourceCategoryId: data.sourceCategoryId,
       name: data.name,
       sku: data.sku,
-      price: data.price,
+      price: offerPrice(data.price, data.inStock === false),
       currency: 'BYN',
       // Availability now comes from the page instead of a hardcoded `true`,
       // so "in stock beats a cheaper unavailable offer" has real input.

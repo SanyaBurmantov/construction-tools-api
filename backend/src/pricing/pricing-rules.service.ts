@@ -10,6 +10,7 @@ import {
   AdminCreatePricingRuleDto,
   AdminUpdatePricingRuleDto,
 } from './dto/pricing.dto';
+import { definedOnly } from '../common/utils/defined-only';
 
 @Injectable()
 export class PricingRulesService {
@@ -109,7 +110,10 @@ export class PricingRulesService {
     });
     if (!existing) throw new NotFoundException('Правило не найдено');
 
-    const merged = { ...existing, ...dto } as AdminCreatePricingRuleDto;
+    const merged = {
+      ...existing,
+      ...definedOnly(dto),
+    } as AdminCreatePricingRuleDto;
     const scope = this.validate(merged);
 
     const rule = await this.prisma.pricingRule.update({

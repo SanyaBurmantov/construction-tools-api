@@ -94,10 +94,13 @@ async function save() {
   const body = {
     name: form.name.trim(),
     slug: form.slug.trim(),
-    description: form.description.trim() || undefined,
-    country: form.country.trim() || undefined,
-    seoTitle: form.seoTitle.trim() || form.name.trim(),
-    seoDescription: form.seoDescription.trim() || form.name.trim(),
+    // `null` clears a field on an update; `undefined` was dropped from the
+    // JSON and read as «no change», so a description could never be removed.
+    description: textOrNull(form.description),
+    country: textOrNull(form.country),
+    // Blank — the API falls back to the name, as it always has.
+    seoTitle: form.seoTitle.trim(),
+    seoDescription: form.seoDescription.trim(),
   }
 
   saving.value = true

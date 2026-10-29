@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { readArray, writeJson } from '~/utils/safe-storage'
+import { onStorageChange, readArray, readStoredArray, writeJson } from '~/utils/safe-storage'
 
 export interface CartItem {
   productId: string
@@ -40,11 +40,22 @@ export const useCartStore = defineStore('cart', {
       if (this.loaded || !import.meta.client) return
       this.items = readArray<CartItem>(STORAGE_KEY)
       this.loaded = true
+      // Another tab's edit lands here. Without it every tab wrote back the
+      // copy it read when it opened: five products added from five tabs left
+      // one in the cart (and the account's copy was then overwritten too).
+      onStorageChange(STORAGE_KEY, () => this.refresh())
+    },
+    /** Re-reads storage before an edit — another tab may have changed it. */
+    refresh() {
+      if (!import.meta.client || !this.loaded) return
+      const stored = readStoredArray<CartItem>(STORAGE_KEY)
+      if (stored) this.items = stored
     },
     persist() {
       writeJson(STORAGE_KEY, this.items)
     },
     add(item: Omit<CartItem, 'quantity'>, quantity = 1) {
+      this.refresh()
       const existing = this.items.find((i) => i.productId === item.productId)
       if (existing) {
         existing.quantity = Math.min(existing.quantity + quantity, MAX_QTY)
@@ -54,6 +65,7 @@ export const useCartStore = defineStore('cart', {
       this.persist()
     },
     setQuantity(productId: string, quantity: number) {
+      this.refresh()
       const item = this.items.find((i) => i.productId === productId)
       if (!item) return
       const next = Math.max(1, Math.min(Math.floor(quantity) || 1, MAX_QTY))
@@ -61,6 +73,7 @@ export const useCartStore = defineStore('cart', {
       this.persist()
     },
     remove(productId: string) {
+      this.refresh()
       this.items = this.items.filter((i) => i.productId !== productId)
       this.persist()
     },
@@ -70,6 +83,7 @@ export const useCartStore = defineStore('cart', {
      * prices are re-parsed daily, so they drift.
      */
     applyPrices(prices: Array<{ productId: string, price: number, currency?: string }>) {
+      this.refresh()
       const byId = new Map(prices.map((p) => [p.productId, p]))
       for (const item of this.items) {
         const update = byId.get(item.productId)
@@ -80,6 +94,7 @@ export const useCartStore = defineStore('cart', {
       this.persist()
     },
     removeMany(productIds: string[]) {
+      this.refresh()
       const drop = new Set(productIds)
       this.items = this.items.filter((i) => !drop.has(i.productId))
       this.persist()

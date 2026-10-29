@@ -49,6 +49,14 @@ x-backend-environment: &backend-environment
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
   OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}
   AI_BATCHES_PER_TICK: ${AI_BATCHES_PER_TICK:-3}
+  # Порог баланса DeepSeek: ниже него ИИ-задачи останавливаются (лимит трат).
+  AI_MIN_BALANCE: ${AI_MIN_BALANCE:-}
+  # Вторая проверка смысла (название и краткое описание). false = выключить.
+  AI_VERIFY: ${AI_VERIFY:-true}
+  DEEPSEEK_THINKING: ${DEEPSEEK_THINKING:-disabled}
+  # IndexNow: изменённые страницы сразу сообщаются Яндексу. Пусто = выключено.
+  # Тот же ключ уходит фронту как NUXT_INDEXNOW_KEY (файл /<ключ>.txt).
+  INDEXNOW_KEY: ${INDEXNOW_KEY:-}
   AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
   # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
   REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
@@ -81,11 +89,6 @@ x-backend-environment: &backend-environment
   TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS: ${TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS:-60000}
   TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
   TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-товары для дома|товары для уборки|посуда|текстиль|игрушк|канцеляр|зоотовар|космет|бытовая химия|продукты питания}
-  SUPPLIER_7745_CRON_BATCH_LIMIT: ${SUPPLIER_7745_CRON_BATCH_LIMIT:-30}
-  # 7745 — не поставщик, а пример от заказчика. Крон держим выключенным.
-  SUPPLIER_7745_CRON_ENABLED: ${SUPPLIER_7745_CRON_ENABLED:-false}
-  SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
-  SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
   DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
   DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
   DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
@@ -235,6 +238,12 @@ services:
       NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=192}
       MALLOC_ARENA_MAX: 2
       NUXT_CACHE_MAX_MB: ${NUXT_CACHE_MAX_MB:-64}
+      NUXT_INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      # Same values the API charges (DELIVERY_COST_* above): the build has no
+      # access to them, so without these the storefront kept showing 15/10
+      # whatever .env.prod said, and the order total differed from the screen.
+      NUXT_PUBLIC_DELIVERY_COURIER: ${DELIVERY_COST_COURIER:-15}
+      NUXT_PUBLIC_DELIVERY_POST: ${DELIVERY_COST_POST:-10}
       API_BASE_SERVER: http://backend:8000
       NUXT_API_BASE_SERVER: http://backend:8000
       NUXT_PUBLIC_API_BASE: /api

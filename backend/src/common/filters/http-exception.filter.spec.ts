@@ -4,6 +4,7 @@ import {
   ConflictException,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { HttpExceptionFilter } from './http-exception.filter';
 
@@ -172,6 +173,31 @@ describe('HttpExceptionFilter error log', () => {
         // The list is kept as sent, so a four-error validation failure can be
         // read line by line rather than as one run-on sentence.
         detail: { message: ['name must be longer than or equal to 1'] },
+      }),
+    );
+  });
+
+  // Anyone can be turned away: by pattern and without a body, or random
+  // paths would each be a new row.
+  it('records a rejected admin attempt by its route pattern, without the body', () => {
+    const log = errorLog();
+    const { host } = buildHost({
+      method: 'PATCH',
+      path: '/admin/products/' + 'x'.repeat(2000),
+      url: '/admin/products/' + 'x'.repeat(2000),
+      route: { path: '/admin/products/:id' },
+      body: { status: 'HIDDEN' },
+    });
+    new HttpExceptionFilter(log as never).catch(
+      new UnauthorizedException(),
+      host,
+    );
+
+    expect(log.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 401,
+        path: '/admin/products/:id',
+        payload: undefined,
       }),
     );
   });

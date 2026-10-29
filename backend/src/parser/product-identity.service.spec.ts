@@ -16,6 +16,13 @@ function createService(
     slugs?: string[];
     aiLocked?: Record<string, string[]>;
     locked?: Record<string, string[]>;
+    /** Every offer of a product, oldest first (the first one owns the card). */
+    productOffers?: Record<
+      string,
+      Array<{ sourceId: string; url: string; name: string }>
+    >;
+    /** The product's current values, for the owner rule. */
+    current?: Record<string, Record<string, unknown>>;
   } = {},
 ) {
   const offers = new Map(Object.entries(options.offers ?? {}));
@@ -49,6 +56,9 @@ function createService(
           return Promise.resolve({});
         },
       ),
+      findMany: jest.fn(({ where }: { where: { productId: string } }) =>
+        Promise.resolve(options.productOffers?.[where.productId] ?? []),
+      ),
     },
     // Array transactions: every operation was already started by the caller.
     $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
@@ -57,6 +67,9 @@ function createService(
         Promise.resolve({
           aiLockedFields: options.aiLocked?.[where.id] ?? [],
           lockedFields: options.locked?.[where.id] ?? [],
+          category: { slug: 'some-category' },
+          _count: { images: 1 },
+          ...options.current?.[where.id],
         }),
       ),
       create: jest.fn(
@@ -137,7 +150,10 @@ describe('ProductIdentityService.save', () => {
       } as never,
     });
 
-    expect(updated[0].data).toEqual({ name: 'Молоток' });
+    expect(updated[0].data).toEqual({
+      name: 'Молоток',
+      contentUpdatedAt: expect.any(Date),
+    });
   });
 
   it('creates a new product when the offer is unknown', async () => {
@@ -273,7 +289,10 @@ describe('ProductIdentityService parser invariants', () => {
     });
     expect(createdData[0]).not.toHaveProperty('priceValue');
     expect(createdData[0]).not.toHaveProperty('oldPrice');
-    expect(updated[0].data).toEqual({ name: 'Молоток' });
+    expect(updated[0].data).toEqual({
+      name: 'Молоток',
+      contentUpdatedAt: expect.any(Date),
+    });
   });
 
   it('leaves fields an admin corrected alone on re-parse', async () => {
@@ -293,6 +312,196 @@ describe('ProductIdentityService parser invariants', () => {
     });
 
     expect(updated[0].data).toEqual({ sku: 'S' });
+  });
+});
+
+describe('ProductIdentityService: a product with several suppliers', () => {
+  const offers = {
+    'product-7': [
+      {
+        sourceId: 'tools',
+        url: 'https://tools/1',
+        name: 'Перфоратор MAKITA HR2470',
+      },
+      {
+        sourceId: 'th',
+        url: 'https://th/1',
+        name: 'Перфоратор MAKITA HR2470 в чем.',
+      },
+    ],
+  };
+  const update = {
+    name: 'Перфоратор Makita HR2470 (чемодан)',
+    descriptionFull: 'Текст второго поставщика',
+    categoryId: 'th-category',
+    brandId: 'th-brand',
+    stockStatus: 'in_stock',
+    images: { deleteMany: {}, create: [] },
+  };
+
+  it('lets only the oldest offer rewrite the card; others fill gaps', async () => {
+    const { service, updated } = createService({
+      offers: { 'th|https://th/1': 'product-7' },
+      productOffers: offers,
+      current: {
+        'product-7': {
+          name: 'Перфоратор MAKITA HR2470',
+          descriptionFull: null,
+          brandId: 'tools-brand',
+        },
+      },
+    });
+
+    await service.save({
+      sourceId: 'th',
+      url: 'https://th/1',
+      baseSlug: 'x',
+      data: { update, create: { name: 'x', slug: 'x' } } as never,
+    });
+
+    // Empty description filled, stock passes; name, brand, category and
+    // photos stay the owner's.
+    expect(updated[0].data).toEqual({
+      descriptionFull: 'Текст второго поставщика',
+      stockStatus: 'in_stock',
+      contentUpdatedAt: expect.any(Date),
+    });
+  });
+
+  it('takes a category from a second supplier only out of the fallback', async () => {
+    const { service, updated } = createService({
+      offers: { 'th|https://th/1': 'product-7' },
+      productOffers: offers,
+      current: {
+        'product-7': {
+          name: 'x',
+          descriptionFull: 'есть',
+          brandId: 'b',
+          category: { slug: 'unmapped-supplier-products' },
+        },
+      },
+    });
+
+    await service.save({
+      sourceId: 'th',
+      url: 'https://th/1',
+      baseSlug: 'x',
+      data: { update, create: { name: 'x', slug: 'x' } } as never,
+    });
+
+    expect(updated[0].data).toMatchObject({ categoryId: 'th-category' });
+  });
+
+  it('the owner still updates everything that is not locked', async () => {
+    const { service, updated } = createService({
+      offers: { 'tools|https://tools/1': 'product-7' },
+      productOffers: offers,
+    });
+
+    await service.save({
+      sourceId: 'tools',
+      url: 'https://tools/1',
+      baseSlug: 'x',
+      data: { update, create: { name: 'x', slug: 'x' } } as never,
+    });
+
+    expect(updated[0].data).toEqual({
+      ...update,
+      contentUpdatedAt: expect.any(Date),
+    });
+  });
+});
+
+describe('ProductIdentityService: sitemap lastmod', () => {
+  const save = async (current: Record<string, unknown>) => {
+    const { service, updated } = createService({
+      offers: { 's1|https://x/1': 'product-7' },
+      current: { 'product-7': current },
+    });
+    await service.save({
+      sourceId: 's1',
+      url: 'https://x/1',
+      baseSlug: 'x',
+      data: {
+        update: {
+          name: 'Молоток',
+          descriptionFull: 'Текст',
+          stockStatus: 'in_stock',
+        },
+        create: { name: 'x', slug: 'x' },
+      } as never,
+    });
+    return updated[0].data;
+  };
+
+  it('stays put when the supplier sends the same text again', async () => {
+    expect(
+      await save({ name: 'Молоток', descriptionFull: 'Текст' }),
+    ).not.toHaveProperty('contentUpdatedAt');
+  });
+
+  it('moves when the supplier rewrote an unlocked text', async () => {
+    expect(
+      await save({ name: 'Молоток', descriptionFull: 'Старый текст' }),
+    ).toHaveProperty('contentUpdatedAt', expect.any(Date));
+  });
+});
+
+describe('ProductIdentityService: supplier renames a product whose name we locked', () => {
+  const productOffers = {
+    'product-7': [
+      { sourceId: 's1', url: 'https://x/1', name: 'Перфоратор MAKITA HR2470' },
+    ],
+  };
+
+  it('flags a new article for an admin and keeps our name', async () => {
+    const { service, updated } = createService({
+      offers: { 's1|https://x/1': 'product-7' },
+      aiLocked: { 'product-7': ['name'] },
+      productOffers,
+    });
+
+    await service.save({
+      sourceId: 's1',
+      url: 'https://x/1',
+      baseSlug: 'x',
+      data: {
+        update: { name: 'Перфоратор MAKITA HR2470FT', sku: 'S' },
+        create: { name: 'x', slug: 'x' },
+      } as never,
+    });
+
+    expect(updated[0].data).toMatchObject({
+      sku: 'S',
+      supplierNameChange: {
+        sourceId: 's1',
+        url: 'https://x/1',
+        from: 'Перфоратор MAKITA HR2470',
+        to: 'Перфоратор MAKITA HR2470FT',
+      },
+      supplierNameChangedAt: expect.any(Date),
+    });
+    expect(updated[0].data).not.toHaveProperty('name');
+  });
+
+  it('stays quiet on a reworded name', async () => {
+    const { service, updated } = createService({
+      offers: { 's1|https://x/1': 'product-7' },
+      aiLocked: { 'product-7': ['name'] },
+      productOffers,
+    });
+
+    await service.save({
+      sourceId: 's1',
+      url: 'https://x/1',
+      baseSlug: 'x',
+      data: {
+        update: { name: 'Перфоратор Makita HR2470, чемодан' },
+        create: { name: 'x', slug: 'x' },
+      } as never,
+    });
+
+    expect(updated[0].data).toEqual({});
   });
 });
 

@@ -14,6 +14,7 @@ import { AuditModule } from '../audit/audit.module';
 import { DataQualityService } from './data-quality.service';
 import { CategoryMergeService } from './category-merge.service';
 import { SpecificationsAdminService } from './specifications-admin.service';
+import { SeoModule } from '../seo/seo.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { SpecificationsAdminService } from './specifications-admin.service';
     BannersModule,
     // Serves GET /admin/audit; the interceptor that fills the log is global.
     AuditModule,
+    SeoModule,
   ],
   controllers: [AdminController],
   providers: [

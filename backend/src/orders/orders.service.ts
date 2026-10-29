@@ -426,9 +426,21 @@ export class OrdersService {
       );
     }
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.order.update({
-        where: { id },
+      // Conditional on the status the check above saw: two cancels at once
+      // (the order modal and the account page, two admins) both passed the
+      // check, and both gave the promo use back; a DELIVERED order could be
+      // overwritten by a stale «cancel».
+      const moved = await tx.order.updateMany({
+        where: { id, status: order.status },
         data: { status: dto.status },
+      });
+      if (moved.count === 0) {
+        throw new ConflictException(
+          'Статус заказа уже изменился — обновите страницу',
+        );
+      }
+      const updated = await tx.order.findUniqueOrThrow({
+        where: { id },
         include: { items: true },
       });
       if (dto.status === OrderStatus.CANCELLED && order.promoCodeId) {

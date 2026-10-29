@@ -77,13 +77,23 @@ export class AiRateLimitError extends Error {
 
 export type AiModel = { id: string; name: string; contextLength: number };
 
+/** Tokens one request was billed for. */
+export type AiUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  /** Part of promptTokens served from the provider's prompt cache. */
+  cacheHitTokens: number;
+};
+
 export type AiQuota = {
   isFreeTier: boolean;
   dailyLimit: number | null;
   dailyUsed: number | null;
   dailyRemaining: number | null;
-  /** Paid key: what is left on the account, e.g. "12.40 USD". */
+  /** Paid key: what is left on the account, e.g. "12.40 CNY, 0.00 USD". */
   balance: string | null;
+  /** The same per currency, `{ CNY: 39.97, USD: 0 }` — what the spend floor reads. */
+  balances: Record<string, number> | null;
 };
 
 @Injectable()
@@ -166,6 +176,19 @@ export class AiClient implements OnModuleInit {
           messages,
           temperature: 0.3,
           response_format: { type: 'json_object' },
+          // deepseek-flash reasons before answering unless told not to, and
+          // the reasoning is billed as output: on a short request it was 113
+          // of 119 output tokens. DEEPSEEK_THINKING=enabled turns it back on.
+          ...(openRouter
+            ? {}
+            : {
+                thinking: {
+                  type:
+                    process.env.DEEPSEEK_THINKING?.trim() === 'enabled'
+                      ? 'enabled'
+                      : 'disabled',
+                },
+              }),
         }),
       },
       // No transport-level retry on 429: on the free tier that is the daily
@@ -198,6 +221,11 @@ export class AiClient implements OnModuleInit {
       model?: string;
       error?: { message?: string; code?: number };
       choices?: Array<{ message?: { content?: string | null } }>;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        prompt_cache_hit_tokens?: number;
+      };
     };
     // OpenRouter reports upstream failures inside a 200 body.
     if (body.error) {
@@ -214,7 +242,15 @@ export class AiClient implements OnModuleInit {
 
     const content = body.choices?.[0]?.message?.content;
     if (!content) throw new Error('Модель вернула пустой ответ');
-    return { content, model: body.model ?? resolved };
+    return {
+      content,
+      model: body.model ?? resolved,
+      usage: {
+        promptTokens: body.usage?.prompt_tokens ?? 0,
+        completionTokens: body.usage?.completion_tokens ?? 0,
+        cacheHitTokens: body.usage?.prompt_cache_hit_tokens ?? 0,
+      },
+    };
   }
 
   /**
@@ -292,6 +328,7 @@ export class AiClient implements OnModuleInit {
         dailyUsed: daily?.used ?? null,
         dailyRemaining: daily?.remaining ?? null,
         balance: null,
+        balances: null,
       };
     } catch {
       return null;
@@ -308,6 +345,13 @@ export class AiClient implements OnModuleInit {
     const body = (await res.json()) as {
       balance_infos?: Array<{ currency?: string; total_balance?: string }>;
     };
+    const balances: Record<string, number> = {};
+    for (const info of body.balance_infos ?? []) {
+      const amount = Number(info.total_balance);
+      if (info.currency && Number.isFinite(amount)) {
+        balances[info.currency.toUpperCase()] = amount;
+      }
+    }
     const balance =
       body.balance_infos
         ?.map((info) =>
@@ -320,6 +364,7 @@ export class AiClient implements OnModuleInit {
       dailyUsed: null,
       dailyRemaining: null,
       balance,
+      balances: Object.keys(balances).length ? balances : null,
     };
   }
 

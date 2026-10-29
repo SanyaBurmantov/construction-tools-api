@@ -72,6 +72,25 @@ function closeDetail() {
   if (route.query.order) router.replace({ query: {} })
 }
 
+/**
+ * CANCELLED and DELIVERED are final (`canMoveOrder`), and a cancel gives the
+ * promo use back: one misclick in the footer ended a live order for good.
+ */
+const FINAL_STATUSES: OrderStatus[] = ['CANCELLED', 'DELIVERED']
+const pendingFinal = ref<OrderStatus | null>(null)
+
+function requestStatus(status: OrderStatus) {
+  if (FINAL_STATUSES.includes(status)) pendingFinal.value = status
+  else void setStatus(status)
+}
+
+async function confirmFinalStatus() {
+  const status = pendingFinal.value
+  if (!status) return
+  await setStatus(status)
+  pendingFinal.value = null
+}
+
 function setStatus(status: OrderStatus) {
   const order = detail.value
   if (!order) return
@@ -375,7 +394,7 @@ onMounted(async () => {
             :variant="status === 'CANCELLED' ? 'ghost' : 'primary'"
             :loading="busy === status"
             :disabled="Boolean(busy)"
-            @click="setStatus(status)"
+            @click="requestStatus(status)"
           >
             {{ ORDER_STATUS_LABEL[status] }}
           </UiButton>
@@ -383,6 +402,19 @@ onMounted(async () => {
         <UiButton variant="secondary" @click="closeDetail">Закрыть</UiButton>
       </template>
     </UiModal>
+
+    <UiConfirm
+      :open="Boolean(pendingFinal)"
+      :title="pendingFinal === 'CANCELLED' ? 'Отменить заказ?' : 'Отметить заказ доставленным?'"
+      :confirm-label="pendingFinal ? ORDER_STATUS_LABEL[pendingFinal] : ''"
+      :tone="pendingFinal === 'CANCELLED' ? 'danger' : 'primary'"
+      :busy="Boolean(busy)"
+      @update:open="pendingFinal = null"
+      @confirm="confirmFinalStatus"
+    >
+      Заказ № {{ detail?.number }}: этот статус окончательный, вернуть заказ в работу будет нельзя.
+      <template v-if="pendingFinal === 'CANCELLED'">Промокод заказа снова станет доступен.</template>
+    </UiConfirm>
   </div>
 </template>
 

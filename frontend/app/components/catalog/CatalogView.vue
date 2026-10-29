@@ -31,13 +31,15 @@ const SORT_OPTIONS = [
  * in shared links or split the ISR cache.
  */
 const viewMode = useState<'grid' | 'list'>('catalog-view', () => 'grid')
+// Through safe-storage: with site data blocked a raw localStorage read throws
+// during hydration, and Nuxt swapped the whole catalogue for its 500 page.
 onMounted(() => {
-  const saved = localStorage.getItem('catalog-view')
+  const saved = readJson<string>('catalog-view')
   if (saved === 'grid' || saved === 'list') viewMode.value = saved
 })
 function setViewMode(mode: 'grid' | 'list') {
   viewMode.value = mode
-  if (import.meta.client) localStorage.setItem('catalog-view', mode)
+  writeJson('catalog-view', mode)
 }
 
 const route = useRoute()
@@ -188,7 +190,10 @@ const categoryUnavailable = ref(false)
 // The four requests are independent — products are filtered by the slug in
 // the URL, not by the category answer — so they start together and the render
 // waits for the slowest instead of their sum.
-const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
+// Without the #fragment: «Подробнее о разделе» (#category-about) and the
+// skip-link changed the key, refetched the grid and the jump landed in the
+// wrong place while the skeletons stood in.
+const catalogDataKey = computed(() => `catalog-products:${route.fullPath.split('#')[0]}`)
 
 /**
  * New results fade in, one card after another — but only after the first
@@ -259,6 +264,13 @@ if (category.value && props.categorySlug !== category.value.slug) {
  * throw the visitor out of it.
  */
 if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
+
+// A `?page=N` past the last page is a 404, not an empty «ничего не найдено»
+// with 200 and a self-canonical — a soft 404 the cache kept and search
+// engines indexed. Nitro never caches a 4xx.
+if (import.meta.server && !error.value && page.value > Math.max(1, products.value?.pagination.pages ?? 1)) {
+  throw createError({ statusCode: 404, statusMessage: 'Страница не найдена', fatal: true })
+}
 
 /**
  * The «Поставщик» facet is **admin-only**: which supplier carries a product is
@@ -590,6 +602,29 @@ useSeoMeta({
 useHead(() => ({
   link: [{ rel: 'canonical', href: canonicalUrl.value }]
 }))
+
+/**
+ * A category text, split for the layout: its first paragraph is the intro
+ * under the heading (two lines, clamped), the whole of it sits below the
+ * product grid.
+ */
+const descriptionAll = computed(() =>
+  (category.value?.description ?? '')
+    .split(/\n\s*\n|\n/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+)
+const descriptionIntro = computed(() => descriptionAll.value[0] ?? '')
+/**
+ * The full text under the grid — on the first page only, so the paginated
+ * copies are not the same text again — whenever the intro cannot show it
+ * all: more than one paragraph, or one longer than two lines.
+ */
+const INTRO_CHARS = 180
+const showAbout = computed(() =>
+  page.value === 1
+  && (descriptionAll.value.length > 1 || descriptionIntro.value.length > INTRO_CHARS)
+)
 </script>
 
 <template>
@@ -599,7 +634,10 @@ useHead(() => ({
     <header class="catalog-head">
       <div>
         <h1>{{ category?.name || 'Каталог товаров' }}</h1>
-        <p v-if="category?.description">{{ category.description }}</p>
+        <!-- The link sits outside the clamped paragraph: inside, the clamp hid
+             it exactly when the text was long enough to need it. -->
+        <p v-if="descriptionIntro" class="intro">{{ descriptionIntro }}</p>
+        <a v-if="showAbout" href="#category-about" class="more-link">Подробнее о разделе</a>
       </div>
       <div class="head-links">
         <!-- Purchasers compare in their own sheet; same URL for everyone, so
@@ -775,6 +813,13 @@ useHead(() => ({
           :href-for="pageHref"
           @change="setPage"
         />
+
+        <!-- The category text lives under the grid: three paragraphs above it
+             pushed the products off the first screen. -->
+        <section v-if="showAbout" id="category-about" class="category-about">
+          <h2>О разделе «{{ category?.name }}»</h2>
+          <p v-for="(paragraph, index) in descriptionAll" :key="index">{{ paragraph }}</p>
+        </section>
       </div>
     </div>
   </div>
@@ -817,6 +862,40 @@ useHead(() => ({
   margin-top: var(--space-2);
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+.catalog-head .intro {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.more-link {
+  display: inline-block;
+  margin-top: var(--space-1);
+  color: var(--brand);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.category-about {
+  max-width: 80ch;
+  margin-top: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.category-about h2 {
+  margin-bottom: var(--space-3);
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+
+.category-about p + p {
+  margin-top: var(--space-3);
 }
 
 /* Second way out of a category, for visitors who never look at the sidebar

@@ -36,6 +36,9 @@ const DEDUPE_WINDOW_MS = 60_000;
 const ALERT_REPEAT_MS = 60 * 60_000;
 const ALERTS_PER_HOUR = 10;
 
+/** New rows for rejected admin attempts per IP per hour (see allowRejected). */
+const REJECTED_PER_IP_HOUR = 30;
+
 @Injectable()
 export class ErrorLogService {
   private readonly logger = new Logger(ErrorLogService.name);
@@ -51,10 +54,42 @@ export class ErrorLogService {
     private telegram: TelegramService,
   ) {}
 
+  /** Bounded: the key lives in memory for the dedupe window. */
   private static fingerprint(entry: ErrorEntry) {
-    return [entry.statusCode, entry.method, entry.path, entry.message].join(
-      ' ',
-    );
+    return [
+      entry.statusCode,
+      entry.method.slice(0, 10),
+      entry.path.slice(0, 500),
+      entry.message.slice(0, 300),
+    ].join(' ');
+  }
+
+  /** ip → new rejected-attempt rows written this hour. */
+  private readonly rejectedByIp = new Map<
+    string,
+    { count: number; since: number }
+  >();
+
+  /**
+   * A rejected admin attempt (401/403) is a row only `REJECTED_PER_IP_HOUR`
+   * times an hour per address: one attempt is evidence, a thousand from the
+   * same place are one story and a way to fill the table.
+   */
+  private allowRejected(entry: ErrorEntry, now: number) {
+    if (entry.statusCode !== 401 && entry.statusCode !== 403) return true;
+    const ip = entry.ip ?? 'unknown';
+    const seen = this.rejectedByIp.get(ip);
+    if (!seen || now - seen.since >= 60 * 60_000) {
+      if (this.rejectedByIp.size > 1000) {
+        for (const [key, value] of this.rejectedByIp) {
+          if (now - value.since >= 60 * 60_000) this.rejectedByIp.delete(key);
+        }
+      }
+      this.rejectedByIp.set(ip, { count: 1, since: now });
+      return true;
+    }
+    seen.count += 1;
+    return seen.count <= REJECTED_PER_IP_HOUR;
   }
 
   /**
@@ -79,6 +114,8 @@ export class ErrorLogService {
         this.recent.set(key, { id: previous.id, at: now });
         return;
       }
+
+      if (!this.allowRejected(entry, now)) return;
 
       const row = await this.prisma.errorLog.create({
         data: {

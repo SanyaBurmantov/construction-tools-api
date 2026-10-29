@@ -65,6 +65,22 @@ const statusOptions = (status: OrderStatus) =>
     label: ORDER_STATUS_LABEL[value],
   }))
 
+/** Final statuses wait for a confirmation — see /admin/orders. */
+const pendingFinal = ref<{ order: Order, status: OrderStatus } | null>(null)
+
+function requestStatus(order: Order, status: OrderStatus) {
+  if (status === order.status) return
+  if (status === 'CANCELLED' || status === 'DELIVERED') pendingFinal.value = { order, status }
+  else void setStatus(order, status)
+}
+
+async function confirmFinalStatus() {
+  const pending = pendingFinal.value
+  if (!pending) return
+  await setStatus(pending.order, pending.status)
+  pendingFinal.value = null
+}
+
 function setStatus(order: Order, status: OrderStatus) {
   if (status === order.status) return
   return run(
@@ -79,6 +95,16 @@ function setStatus(order: Order, status: OrderStatus) {
 }
 
 /* ---- Account actions --------------------------------------------------- */
+/** Role and access changes wait for a confirmation: they take effect at once. */
+const pendingAccount = ref<{ body: Record<string, unknown>, message: string, title: string } | null>(null)
+
+async function confirmAccount() {
+  const pending = pendingAccount.value
+  if (!pending) return
+  await patchAccount(pending.body, pending.message)
+  pendingAccount.value = null
+}
+
 function patchAccount(body: Record<string, unknown>, message: string) {
   return run(() => adminFetch(`/users/${userId.value}`, { method: 'PATCH', body }), {
     key: 'account',
@@ -151,10 +177,11 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
           size="sm"
           variant="ghost"
           :loading="busy === 'account'"
-          @click="patchAccount(
-            { role: account.role === 'ADMIN' ? 'CUSTOMER' : 'ADMIN' },
-            account.role === 'ADMIN' ? 'Права администратора сняты' : 'Выданы права администратора'
-          )"
+          @click="pendingAccount = {
+            body: { role: account.role === 'ADMIN' ? 'CUSTOMER' : 'ADMIN' },
+            message: account.role === 'ADMIN' ? 'Права администратора сняты' : 'Выданы права администратора',
+            title: account.role === 'ADMIN' ? 'Снять права администратора?' : 'Выдать права администратора?',
+          }"
         >
           {{ account.role === 'ADMIN' ? 'Снять админа' : 'Сделать админом' }}
         </UiButton>
@@ -163,10 +190,11 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
           size="sm"
           variant="ghost"
           :loading="busy === 'account'"
-          @click="patchAccount(
-            { isActive: !account.isActive },
-            account.isActive ? 'Учётная запись отключена' : 'Учётная запись включена'
-          )"
+          @click="pendingAccount = {
+            body: { isActive: !account.isActive },
+            message: account.isActive ? 'Учётная запись отключена' : 'Учётная запись включена',
+            title: account.isActive ? 'Отключить учётную запись?' : 'Включить учётную запись?',
+          }"
         >
           {{ account.isActive ? 'Отключить' : 'Включить' }}
         </UiButton>
@@ -293,7 +321,7 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
                 :model-value="order.status"
                 :disabled="busy === order.id"
                 :options="statusOptions(order.status)"
-                @update:model-value="value => setStatus(order, value as OrderStatus)"
+                @update:model-value="value => requestStatus(order, value as OrderStatus)"
               />
             </div>
 
@@ -416,6 +444,29 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
         <UiButton :loading="resetBusy" @click="resetPassword">Сохранить</UiButton>
       </template>
     </UiModal>
+    <UiConfirm
+      :open="Boolean(pendingFinal)"
+      :title="pendingFinal?.status === 'CANCELLED' ? 'Отменить заказ?' : 'Отметить заказ доставленным?'"
+      :confirm-label="pendingFinal ? ORDER_STATUS_LABEL[pendingFinal.status] : ''"
+      :tone="pendingFinal?.status === 'CANCELLED' ? 'danger' : 'primary'"
+      :busy="Boolean(pendingFinal && busy === pendingFinal.order.id)"
+      @update:open="pendingFinal = null"
+      @confirm="confirmFinalStatus"
+    >
+      Заказ № {{ pendingFinal?.order.number }}: этот статус окончательный, вернуть заказ в работу будет нельзя.
+    </UiConfirm>
+
+    <UiConfirm
+      :open="Boolean(pendingAccount)"
+      :title="pendingAccount?.title ?? ''"
+      confirm-label="Подтвердить"
+      tone="primary"
+      :busy="busy === 'account'"
+      @update:open="pendingAccount = null"
+      @confirm="confirmAccount"
+    >
+      Изменение вступит в силу сразу — с ближайшего запроса пользователя.
+    </UiConfirm>
   </div>
 </template>
 

@@ -24,7 +24,6 @@ import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { ThToolsParserService } from '../parser/sites/th-tools-source.parser';
 import { DukonParserService } from '../parser/sites/dukon.parser';
-import { Supplier7745ParserService } from '../parser/sites/7745-source.parser';
 import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
 import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
@@ -32,6 +31,10 @@ import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { ParserLogService } from '../parser/parser-log.service';
 import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
+import { redirectOldSlug } from '../products/product-slug';
+import { IndexNowService, productPath } from '../seo/indexnow.service';
+import { definedOnly } from '../common/utils/defined-only';
+import { PARSER_SOURCES } from '../parser/parser-settings.service';
 
 /**
  * A button press waits for its batch inside one HTTP request, so it is capped
@@ -63,6 +66,26 @@ const PARSER_OWNED_FIELDS = [
   'seoDescription',
 ] as const;
 
+/** A form value against the stored one; a blank and `null` are the same. */
+function differs(value: unknown, stored: unknown) {
+  const norm = (v: unknown) =>
+    v === undefined || v === ''
+      ? null
+      : typeof v === 'string'
+        ? v.trim() || null
+        : v;
+  return norm(value) !== norm(stored);
+}
+
+/** The page's own text: a change moves `contentUpdatedAt` (sitemap lastmod). */
+const PAGE_TEXT_FIELDS = [
+  'name',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+] as const;
+
 /** Same budget CategoryMergeService gives a subtree rewrite. */
 const CATEGORY_TX_OPTIONS = { maxWait: 10_000, timeout: 120_000 };
 
@@ -72,12 +95,12 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly thToolsParserService: ThToolsParserService,
     private readonly dukonParserService: DukonParserService,
-    private readonly supplier7745ParserService: Supplier7745ParserService,
     private readonly toolsByParserService: ToolsByParserService,
     private readonly parserLogService: ParserLogService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
     private readonly pricing: PricingService,
     private readonly jobRequests: ParserJobRequestService,
+    private readonly indexNow: IndexNowService,
   ) {}
 
   async getStats() {
@@ -377,13 +400,44 @@ export class AdminService {
     const slugChanged = slug !== undefined && slug !== current.slug;
     if (slugChanged) await this.ensureProductSlugFree(slug, id);
 
-    const locked = PARSER_OWNED_FIELDS.filter(
-      (field) => (dto as Record<string, unknown>)[field] !== undefined,
+    // Only what the admin actually changed. The product form sends every
+    // field on every save, so «sent» used to lock the name, the category and
+    // every description against the supplier's updates the first time anyone
+    // fixed a price — and made the supplier's SEO text count as ours.
+    const sent = dto as Record<string, unknown>;
+    const stored = current as Record<string, unknown>;
+    const locked: string[] = PARSER_OWNED_FIELDS.filter(
+      (field) =>
+        sent[field] !== undefined && differs(sent[field], stored[field]),
     );
+    // A URL set by hand is final: an AI rename must not move it again.
+    if (slugChanged) locked.push('slug');
     if (locked.length) {
       data.lockedFields = [...new Set([...current.lockedFields, ...locked])];
     }
-    if (dto.status !== undefined) data.statusSource = 'ADMIN';
+    // Only a status the admin actually changed becomes theirs. The form sends
+    // the current one on every save, and fixing a name used to take the
+    // product away from the automation for good: a SYSTEM-hidden product
+    // never came back on sale, a delisted one was never hidden again.
+    if (dto.status !== undefined && dto.status !== current.status) {
+      data.statusSource = 'ADMIN';
+    }
+
+    // The page text changed: the sitemap's lastmod moves and Yandex is told.
+    const textChanged =
+      slugChanged ||
+      PAGE_TEXT_FIELDS.some(
+        (field) =>
+          sent[field] !== undefined && differs(sent[field], stored[field]),
+      );
+    if (textChanged) data.contentUpdatedAt = new Date();
+    // Saving the card from the form (it always carries the name) is the
+    // admin's answer to a supplier rename; a one-field PATCH (a status toggle
+    // in the list) is not a review of it.
+    if (dto.name !== undefined) {
+      data.supplierNameChange = Prisma.DbNull;
+      data.supplierNameChangedAt = null;
+    }
 
     const priceTouched =
       dto.priceValue !== undefined || dto.oldPrice !== undefined;
@@ -399,14 +453,7 @@ export class AdminService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.product.update({ where: { id }, data });
       if (slugChanged) {
-        // The new slug may be an alias of this or another product; a slug
-        // cannot be both a product and a redirect.
-        await tx.productRedirect.deleteMany({ where: { slug } });
-        await tx.productRedirect.upsert({
-          where: { slug: current.slug },
-          create: { slug: current.slug, productId: id },
-          update: { productId: id },
-        });
+        await redirectOldSlug(tx, id, current.slug, slug);
       }
       if (
         (data.priceValue !== undefined &&
@@ -425,6 +472,13 @@ export class AdminService {
       }
       return row;
     });
+
+    if (textChanged) {
+      await this.indexNow.enqueue([
+        productPath(updated.slug),
+        slugChanged ? productPath(current.slug) : null,
+      ]);
+    }
 
     if (mode === 'AUTO' && updated.costPrice != null) {
       await this.pricing.applyCost(id, updated.costPrice, {
@@ -485,11 +539,9 @@ export class AdminService {
 
     const product = parser.isDukon
       ? await this.dukonParserService.parseProductUrl(dto.url)
-      : parser.is7745
-        ? await this.supplier7745ParserService.parseProductUrl(dto.url)
-        : parser.isToolsBy
-          ? await this.toolsByParserService.parseProductUrl(dto.url)
-          : await this.thToolsParserService.parseProductUrl(dto.url);
+      : parser.isToolsBy
+        ? await this.toolsByParserService.parseProductUrl(dto.url)
+        : await this.thToolsParserService.parseProductUrl(dto.url);
 
     return { ok: true, product };
   }
@@ -499,11 +551,9 @@ export class AdminService {
 
     const parsed = parser.isDukon
       ? await this.dukonParserService.previewProductUrl(dto.url)
-      : parser.is7745
-        ? await this.supplier7745ParserService.previewProductUrl(dto.url)
-        : parser.isToolsBy
-          ? await this.toolsByParserService.previewProductUrl(dto.url)
-          : await this.thToolsParserService.previewProductUrl(dto.url);
+      : parser.isToolsBy
+        ? await this.toolsByParserService.previewProductUrl(dto.url)
+        : await this.thToolsParserService.previewProductUrl(dto.url);
 
     return { ok: true, dryRun: true, parsed };
   }
@@ -584,8 +634,6 @@ export class AdminService {
         return this.thToolsParserService;
       case 'dukon':
         return this.dukonParserService;
-      case '7745':
-        return this.supplier7745ParserService;
       case 'tools-by':
         return this.toolsByParserService;
     }
@@ -640,21 +688,39 @@ export class AdminService {
     return this.prisma.brand.create({
       data: {
         ...dto,
-        seoTitle: dto.name,
-        seoDescription: dto.description || dto.name,
+        seoTitle: dto.seoTitle?.trim() || dto.name,
+        seoDescription:
+          dto.seoDescription?.trim() || dto.description || dto.name,
       },
     });
   }
 
+  /**
+   * Only what was sent changes. The SEO pair used to be overwritten with the
+   * name and the description on every save, so a typed brand title never
+   * reached the page.
+   */
   async updateBrand(id: string, dto: AdminUpdateBrandDto) {
-    await this.ensureBrandExists(id);
+    const current = await this.ensureBrandExists(id);
+    const sent = definedOnly(dto);
+    const name = sent.name ?? current.name;
 
     return this.prisma.brand.update({
       where: { id },
       data: {
-        ...dto,
-        seoTitle: dto.name,
-        seoDescription: dto.description,
+        ...sent,
+        // Both columns are NOT NULL: a blank falls back as on create.
+        ...(sent.seoTitle !== undefined
+          ? { seoTitle: sent.seoTitle?.trim() || name }
+          : {}),
+        ...(sent.seoDescription !== undefined
+          ? {
+              seoDescription:
+                sent.seoDescription?.trim() ||
+                (sent.description ?? current.description) ||
+                name,
+            }
+          : {}),
       },
     });
   }
@@ -1039,6 +1105,7 @@ export class AdminService {
   private async ensureBrandExists(id: string) {
     const brand = await this.prisma.brand.findUnique({ where: { id } });
     if (!brand) throw new NotFoundException('Brand not found');
+    return brand;
   }
 
   private async ensureCategoryExists(id: string) {
@@ -1086,11 +1153,41 @@ export class AdminService {
     };
   }
 
+  /**
+   * The URL must be the supplier's own page. The import fetches it server
+   * side and returns the error text, so any URL turned it into a probe of
+   * the internal network (`http://db:5432`, `http://frontend:3000`) for
+   * whoever held the admin token — and saved offers for foreign hosts.
+   */
+  private assertSupplierUrl(
+    url: string,
+    source: { code: string; url: string },
+  ) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new BadRequestException('Некорректный URL');
+    }
+    const host =
+      PARSER_SOURCES.find((known) => known.code === source.code)?.host ??
+      new URL(source.url).hostname;
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const allowed = host.toLowerCase().replace(/^www\./, '');
+    if (
+      !/^https?:$/.test(parsed.protocol) ||
+      (hostname !== allowed && !hostname.endsWith(`.${allowed}`))
+    ) {
+      throw new BadRequestException(`URL должен вести на ${allowed}`);
+    }
+  }
+
   private async resolveSourceParser(dto: AdminImportSourceProductDto) {
     const source = await this.prisma.source.findUnique({
       where: { id: dto.sourceId },
     });
     if (!source) throw new NotFoundException('Source not found');
+    this.assertSupplierUrl(dto.url, source);
 
     const isDukon =
       source.code === 'dukon' ||
@@ -1100,18 +1197,14 @@ export class AdminService {
       source.code === 'th-tools' ||
       source.url.includes('th-tool.by') ||
       dto.url.includes('th-tool.by');
-    const is7745 =
-      source.code === '7745' ||
-      source.url.includes('7745.by') ||
-      dto.url.includes('7745.by');
     const isToolsBy =
       source.code === 'tools-by' ||
       source.url.includes('tools.by') ||
       dto.url.includes('tools.by');
-    if (!isThTools && !isDukon && !is7745 && !isToolsBy) {
+    if (!isThTools && !isDukon && !isToolsBy) {
       throw new BadRequestException('Unsupported source parser');
     }
 
-    return { isDukon, isThTools, is7745, isToolsBy };
+    return { isDukon, isThTools, isToolsBy };
   }
 }

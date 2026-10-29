@@ -5,8 +5,6 @@ import { ThToolsCron } from './sites/th-tools.cron';
 import { ThToolsParserService } from './sites/th-tools-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
 import { DukonCron } from './sites/dukon.cron';
-import { Supplier7745ParserService } from './sites/7745-source.parser';
-import { Supplier7745Cron } from './sites/7745.cron';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
 import { ToolsByCron } from './sites/tools-by.cron';
 import { ParserAdminController } from './parser-admin.controller';
@@ -32,12 +30,10 @@ import { OffersModule } from '../offers/offers.module';
     SitemapsService,
     ThToolsParserService,
     DukonParserService,
-    Supplier7745ParserService,
     ToolsByParserService,
     ToolsByCron,
     ThToolsCron,
     DukonCron,
-    Supplier7745Cron,
     ParserLogService,
     ParserRuntimeStatusService,
     ParserSettingsService,
@@ -62,7 +58,6 @@ import { OffersModule } from '../offers/offers.module';
     SitemapsService,
     ThToolsParserService,
     DukonParserService,
-    Supplier7745ParserService,
     ToolsByParserService,
     ParserLogService,
     ParserRuntimeStatusService,

@@ -13,8 +13,12 @@ if (( available_kb < 1048576 )); then
 fi
 
 cd "$app_dir"
-db_user=$(sed -n 's/^DB_USER=//p' .env.prod | head -1)
-db_name=$(sed -n 's/^DB_NAME=//p' .env.prod | head -1)
+# Quotes stripped like watchdog.sh's env_value — a quoted DB_USER broke pg_dump.
+env_value() {
+  sed -n "s/^$1=//p" .env.prod | head -1 | tr -d '\r' | sed -e 's/^["'\'']//' -e 's/["'\'']$//'
+}
+db_user=$(env_value DB_USER)
+db_name=$(env_value DB_NAME)
 file="$backup_dir/database-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
 tmp="$file.tmp"
 trap 'rm -f "$tmp"' EXIT

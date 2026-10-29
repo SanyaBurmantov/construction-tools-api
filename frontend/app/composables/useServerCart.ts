@@ -37,5 +37,8 @@ export function useServerCart() {
   const replace = (items: CartPayloadItem[]) =>
     authFetch<ServerCart>('/cart', { method: 'PUT', body: { items } })
 
-  return { mergeLocal, replace }
+  /** The stored cart as it is — what a device whose cart did not change since its last sync takes. */
+  const fetchStored = () => authFetch<ServerCart>('/cart')
+
+  return { mergeLocal, replace, fetchStored }
 }

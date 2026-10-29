@@ -344,6 +344,9 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
             <span v-if="task.failed" class="bad">ошибок {{ task.failed }}</span>
             <span>поля: {{ task.fields.map((f) => fieldLabel(task.entity, f)).join(', ') }}</span>
             <span>модель: <code>{{ task.model }}</code></span>
+            <span v-if="task.promptTokens || task.completionTokens">
+              токенов: {{ task.promptTokens }} вх. + {{ task.completionTokens }} вых.
+            </span>
             <span>создана {{ formatDateTime(task.createdAt) }}<template v-if="task.createdBy"> · {{ task.createdBy }}</template></span>
           </div>
 
@@ -490,6 +493,12 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
               </UiButton>
             </div>
             <p v-if="item.error" class="error">{{ item.error }}</p>
+            <p v-for="(reason, key) in item.rejected ?? {}" :key="`r-${key}`" class="error">
+              {{ fieldLabel(detail.entity, String(key)) }} не записано: {{ reason }}
+            </p>
+            <p v-for="(note, key) in item.warnings ?? {}" :key="`w-${key}`" class="warning">
+              {{ fieldLabel(detail.entity, String(key)) }}: {{ note }}
+            </p>
             <div v-for="(change, key) in item.changes ?? {}" :key="key" class="diff-row">
               <span class="diff-label">{{ fieldLabel(detail.entity, String(key)) }}</span>
               <del>{{ change.old || '—' }}</del>
@@ -669,6 +678,11 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
 }
 
 .bad,
+.warning {
+  color: var(--warning-soft-text);
+  font-size: var(--text-sm);
+}
+
 .error {
   color: var(--danger);
 }

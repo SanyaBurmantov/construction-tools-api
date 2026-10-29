@@ -38,7 +38,9 @@ export class AppController {
   // Admin-only: it names our suppliers, their offer counts, queue sizes and
   // job failures — "which supplier carries what" is internal. Monitoring
   // calls it with `x-admin-token`; container healthchecks use /health/ready.
-  @SkipThrottle()
+  // Throttled like every other admin route: this one checks `x-admin-token`,
+  // and unthrottled it was the place to guess the token at wire speed.
+  // Monitoring polls it every few minutes, far under the limit.
   @UseGuards(AdminGuard)
   @Get('health/parser')
   async getParserHealth() {

@@ -27,7 +27,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Worst case of uptime-check.sh is ~4 min (everything timing out); the
+    # Alert step after it must still run.
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:

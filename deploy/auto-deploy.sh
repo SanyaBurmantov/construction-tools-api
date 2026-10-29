@@ -25,7 +25,9 @@ fi
 previous=$(cat "$STATE_FILE" 2>/dev/null || git rev-parse HEAD)
 git checkout -q -f -B prod "$target"
 compose=(docker compose --parallel 1 --env-file "$ENV_FILE" -f docker-compose.prod.yml)
-domain=$(sed -n 's/^DOMAIN=//p' "$ENV_FILE" | head -1)
+# Quotes stripped like watchdog.sh's env_value: DOMAIN="gost.by" made every
+# health curl fail, so each release was marked failed and rolled back.
+domain=$(sed -n 's/^DOMAIN=//p' "$ENV_FILE" | head -1 | tr -d '\r' | sed -e 's/^["'\'']//' -e 's/["'\'']$//')
 
 deploy() {
   "${compose[@]}" config --quiet || return 1

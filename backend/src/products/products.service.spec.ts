@@ -73,8 +73,9 @@ function buildService() {
     $queryRaw: queryRaw,
     $executeRaw: jest.fn(() => Promise.resolve(1)),
   } as Record<string, unknown>;
-  // Interactive transactions (the trigram-threshold wrapper) run inline.
-  prisma.$transaction = jest.fn((fn: (tx: unknown) => unknown) => fn(prisma));
+  // The trigram-threshold wrapper is a batch transaction: an array of the
+  // operations already started.
+  prisma.$transaction = jest.fn((ops: Promise<unknown>[]) => Promise.all(ops));
   return {
     service: new ProductService(prisma as unknown as PrismaService),
     prisma: prisma as unknown as PrismaService,

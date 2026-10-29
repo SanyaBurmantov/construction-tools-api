@@ -23,7 +23,6 @@ import { ParserJobRequestService } from './parser-job-request.service';
 import { ThToolsParserService } from './sites/th-tools-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
-import { Supplier7745ParserService } from './sites/7745-source.parser';
 import { ProductTextCleanupService } from './product-text-cleanup.service';
 import { BrandCleanupService } from './brand-cleanup.service';
 import {
@@ -51,7 +50,6 @@ export class ParserAdminController {
     private readonly thTools: ThToolsParserService,
     private readonly dukon: DukonParserService,
     private readonly toolsBy: ToolsByParserService,
-    private readonly supplier7745: Supplier7745ParserService,
     private readonly textCleanup: ProductTextCleanupService,
     private readonly brandCleanup: BrandCleanupService,
   ) {}
@@ -277,8 +275,6 @@ export class ParserAdminController {
         return this.toolsBy.getQueueStats();
       case 'dukon':
         return this.dukon.getQueueStats();
-      case '7745':
-        return this.supplier7745.getQueueStats();
       default:
         throw new BadRequestException(`Unknown parser source: ${code}`);
     }

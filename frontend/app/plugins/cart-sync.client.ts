@@ -8,11 +8,14 @@ import { useCartStore } from '~/stores/cart'
  */
 export default defineNuxtPlugin(() => {
   const cart = useCartStore()
-  const { mergeLocal, replace } = useServerCart()
+  const { mergeLocal, replace, fetchStored } = useServerCart()
   const toast = useAppToast()
 
   mirrorToAccount({
+    name: 'cart',
     load: () => cart.load(),
+    fetch: fetchStored,
+    reset: () => cart.clear(),
     key: () => cart.items.map(item => `${item.productId}:${item.quantity}`).join(','),
     payload: () =>
       cart.items.map(item => ({ productId: item.productId, quantity: item.quantity })),

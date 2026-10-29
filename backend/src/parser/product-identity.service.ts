@@ -8,6 +8,28 @@ import { shouldBeFilterable } from './spec-filterable';
 import { canonicalSpec, normalizeSpecValue } from './spec-canonical';
 import { cleanProductTexts } from './supplier-text';
 import { normalizeBrandName } from './brand-name';
+import { supplierIdentityChanged } from './name-drift';
+import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
+
+/**
+ * Fields every offer of a merged product may write, not only the owner's:
+ * they describe the offer rather than the card (stock is then re-derived from
+ * the best offer anyway).
+ */
+const SHARED_FIELDS = new Set([
+  'stockStatus',
+  'stockQuantity',
+  'priceCurrency',
+]);
+
+/** The page's own text — a change moves `Product.contentUpdatedAt`. */
+const PAGE_TEXT_FIELDS = [
+  'name',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+] as const;
 
 /** How many `-2`, `-3`… suffixes to try before giving up on a slug. */
 const MAX_SLUG_ATTEMPTS = 50;
@@ -94,7 +116,12 @@ export class ProductIdentityService {
     if (existingId) {
       return this.prisma.product.update({
         where: { id: existingId },
-        data: await this.withoutLockedFields(existingId, params.data.update),
+        data: await this.forExistingProduct(
+          existingId,
+          params.sourceId,
+          params.url,
+          params.data.update,
+        ),
       });
     }
 
@@ -102,25 +129,112 @@ export class ProductIdentityService {
   }
 
   /**
-   * Text an AI task rewrote (`aiLockedFields`) and fields an admin corrected
-   * by hand (`lockedFields`) are ours now: the daily re-parse would otherwise
-   * put the supplier's version back within 24 hours.
+   * What a re-parse may still write to a product that already exists. Three
+   * rules, in order:
+   *
+   * 1. **Ours stays ours.** Text an AI task rewrote (`aiLockedFields`) and
+   *    fields an admin corrected (`lockedFields`) are skipped — the daily
+   *    re-parse would otherwise put the supplier's version back within 24h.
+   * 2. **One supplier owns the card.** When offers of several suppliers were
+   *    merged into one product, each parser used to write *its* name,
+   *    descriptions, photos, brand and category every day — the card flipped
+   *    between them with every run. The offer that created the product (the
+   *    oldest) owns it; the others only fill what is empty (a category only
+   *    out of the hidden fallback). Stock and price are not affected: they
+   *    come from the best offer (OffersService).
+   * 3. **A rename is noticed.** While our name is locked the supplier's new
+   *    name never shows; if it changed what identifies the product (article,
+   *    size, pack) the product is flagged for an admin
+   *    (`supplierNameChange`, data-quality panel).
    */
-  private async withoutLockedFields(
+  private async forExistingProduct(
     productId: string,
+    sourceId: string,
+    url: string,
     update: ProductWriteData['update'],
   ): Promise<ProductWriteData['update']> {
-    const row = await this.prisma.product.findUnique({
-      where: { id: productId },
-      select: { aiLockedFields: true, lockedFields: true },
-    });
-    const locked = [
-      ...(row?.aiLockedFields ?? []),
-      ...(row?.lockedFields ?? []),
-    ];
-    if (!locked.length) return update;
+    const [row, offers] = await Promise.all([
+      this.prisma.product.findUnique({
+        where: { id: productId },
+        select: {
+          aiLockedFields: true,
+          lockedFields: true,
+          name: true,
+          sku: true,
+          barcode: true,
+          model: true,
+          brandId: true,
+          descriptionShort: true,
+          descriptionFull: true,
+          seoTitle: true,
+          seoDescription: true,
+          category: { select: { slug: true } },
+          _count: { select: { images: true } },
+        },
+      }),
+      this.prisma.sourceProduct.findMany({
+        where: { productId },
+        select: { sourceId: true, url: true, name: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
     const fields = { ...(update as Record<string, unknown>) };
+    if (!row) return update;
+
+    const locked = new Set([...row.aiLockedFields, ...row.lockedFields]);
     for (const key of locked) delete fields[key];
+
+    const current = row as unknown as Record<string, unknown>;
+    const owner = offers[0];
+    const owns = !owner || (owner.sourceId === sourceId && owner.url === url);
+    if (!owns) {
+      for (const key of Object.keys(fields)) {
+        if (SHARED_FIELDS.has(key)) continue;
+        const keep =
+          key === 'categoryId'
+            ? row.category?.slug === FALLBACK_CATEGORY_SLUG
+            : key === 'images'
+              ? row._count.images === 0
+              : current[key] === null ||
+                current[key] === undefined ||
+                current[key] === '';
+        if (!keep) delete fields[key];
+      }
+    }
+
+    // The page text changed (a supplier rewrote an unlocked description):
+    // the sitemap's lastmod moves. A re-parse that brings the same text does
+    // not — that is what makes lastmod worth believing.
+    if (
+      PAGE_TEXT_FIELDS.some(
+        (key) =>
+          typeof fields[key] === 'string' &&
+          fields[key] !== (current[key] ?? ''),
+      )
+    ) {
+      fields.contentUpdatedAt = new Date();
+    }
+
+    const previous = offers.find(
+      (offer) => offer.sourceId === sourceId && offer.url === url,
+    )?.name;
+    if (
+      locked.has('name') &&
+      typeof update.name === 'string' &&
+      previous &&
+      supplierIdentityChanged(previous, update.name)
+    ) {
+      fields.supplierNameChange = {
+        sourceId,
+        url,
+        from: previous,
+        to: update.name,
+      };
+      fields.supplierNameChangedAt = new Date();
+      this.logger.warn(
+        `Supplier renamed locked product ${productId}: «${previous}» → «${update.name}»`,
+      );
+    }
     return fields as ProductWriteData['update'];
   }
 
@@ -223,7 +337,12 @@ export class ProductIdentityService {
         if (raced) {
           return this.prisma.product.update({
             where: { id: raced },
-            data: await this.withoutLockedFields(raced, data.update),
+            data: await this.forExistingProduct(
+              raced,
+              params.sourceId,
+              params.url,
+              data.update,
+            ),
           });
         }
         // Slug taken — next candidate.
@@ -285,8 +404,17 @@ export class ProductIdentityService {
   async saveSpecifications(
     specs: Array<{ name: string; value: string }>,
     productId: string,
-    categoryId: string,
+    supplierCategoryId: string,
   ) {
+    // Under the category the product is *in*, not the one this supplier's
+    // breadcrumbs point at: an admin's move (a locked `categoryId`) or another
+    // supplier owning the card leaves them different, and specs defined on
+    // the other category drop out of the filters of this one.
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { categoryId: true },
+    });
+    const categoryId = product?.categoryId ?? supplierCategoryId;
     for (const spec of specs) {
       const key = generateSlug(spec.name);
       if (!key) continue;

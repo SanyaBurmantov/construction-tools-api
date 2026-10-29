@@ -54,6 +54,7 @@ import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
 import { ParserSettingsService } from '../parser-settings.service';
 import { sanitizeSupplierText, sanitizeSupplierTitle } from '../supplier-text';
+import { offerPrice } from '../offer-price';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 
@@ -625,7 +626,7 @@ export class DukonParserService extends SupplierQueueParser {
       url,
       name: data.name,
       sku: data.sku,
-      price: data.priceValue,
+      price: offerPrice(data.priceValue, data.stockStatus === 'out_of_stock'),
       currency: data.priceCurrency,
       stock: data.stockStatus === 'in_stock',
       images: data.images,

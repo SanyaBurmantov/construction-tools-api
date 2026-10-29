@@ -202,6 +202,9 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     apiBaseServer: process.env.API_BASE_SERVER || process.env.API_BASE || 'http://localhost:8000',
+    // IndexNow ownership key, served at /<key>.txt (server/middleware/indexnow-key.ts).
+    // Same value as the backend's INDEXNOW_KEY; NUXT_INDEXNOW_KEY at runtime.
+    indexnowKey: '',
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
       siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',

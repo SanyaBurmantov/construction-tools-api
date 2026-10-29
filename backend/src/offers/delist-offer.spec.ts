@@ -24,7 +24,16 @@ function createService(options: {
         offerUpdates.push(data);
         return Promise.resolve({});
       }),
-      findMany: jest.fn(() => Promise.resolve([])),
+      // The offers still carrying a price — consistent with `count` below.
+      findMany: jest.fn(() =>
+        Promise.resolve(
+          Array.from({ length: options.remainingOffers ?? 0 }, () => ({
+            price: 12,
+            stock: true,
+            specifications: {},
+          })),
+        ),
+      ),
       count: jest.fn(() => Promise.resolve(options.remainingOffers ?? 0)),
     },
     product: {
@@ -38,10 +47,14 @@ function createService(options: {
         productUpdates.push(data);
         return Promise.resolve({});
       }),
+      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
   } as unknown as PrismaService;
 
-  const pricing = { applyCost: jest.fn() } as unknown as PricingService;
+  const pricing = {
+    applyCost: jest.fn(),
+    withdrawPrice: jest.fn(() => Promise.resolve(false)),
+  } as unknown as PricingService;
   const merge = { syncMatchKeys: jest.fn() } as unknown as ProductMergeService;
 
   return {
@@ -72,7 +85,7 @@ describe('OffersService.delistOffer', () => {
     const result = await service.delistOffer('s1', 'https://x/1');
 
     expect(result).toEqual({ delisted: true, productHidden: false });
-    expect(productUpdates).toHaveLength(0);
+    expect(productUpdates.some((data) => data.status === 'HIDDEN')).toBe(false);
   });
 
   it('hides a product nobody carries any more', async () => {

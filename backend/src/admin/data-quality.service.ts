@@ -65,6 +65,8 @@ export class DataQualityService {
       staleProducts,
       samples,
       allForNameChecks,
+      supplierRenamed,
+      supplierRenamedSample,
     ] = await Promise.all([
       this.prisma.product.count({ where: published }),
       this.prisma.product.count(),
@@ -96,6 +98,17 @@ export class DataQualityService {
         where: published,
         select: { id: true, name: true, slug: true, brandId: true },
       }),
+      // Our name is locked (AI or admin) and the supplier changed the article,
+      // a size or the pack in theirs — it may be a different product now.
+      this.prisma.product.count({
+        where: { supplierNameChangedAt: { not: null } },
+      }),
+      this.prisma.product.findMany({
+        where: { supplierNameChangedAt: { not: null } },
+        select: { id: true, name: true, slug: true, supplierNameChange: true },
+        orderBy: { supplierNameChangedAt: 'desc' },
+        take: SAMPLE_LIMIT,
+      }),
     ]);
 
     const duplicates = await this.withSources(
@@ -119,6 +132,7 @@ export class DataQualityService {
         staleDays: STALE_DAYS,
         duplicateGroups: duplicates.length,
         allCapsNames: allCaps.length,
+        supplierRenamed,
       },
       samples: {
         withoutImages: samples[0],
@@ -130,6 +144,16 @@ export class DataQualityService {
           .slice(0, SAMPLE_LIMIT)
           .map(({ id, name, slug }) => ({ id, name, slug })),
         duplicates: duplicates.slice(0, SAMPLE_LIMIT),
+        supplierRenamed: supplierRenamedSample.map((product) => {
+          const change = product.supplierNameChange as { to?: string } | null;
+          return {
+            id: product.id,
+            slug: product.slug,
+            name: change?.to
+              ? `${product.name} — у поставщика теперь «${change.to}»`
+              : product.name,
+          };
+        }),
       },
     };
   }

@@ -1,3 +1,5 @@
+import { readJson, removeStored, writeJson } from '~/utils/safe-storage'
+
 /** Pause before mirroring edits up, so a quantity stepper or a burst of toggles is one request. */
 const PUSH_DEBOUNCE_MS = 800
 
@@ -13,13 +15,18 @@ const MAX_MERGE_ROUNDS = 3
  * local one — the cart (`plugins/cart-sync.client.ts`) and the favourites /
  * comparison (`plugins/lists-sync.client.ts`) share this machine.
  *
- * Two directions, deliberately asymmetric:
- * - **On sign-in**, the local state is *merged* into the stored one and the
- *   result replaces the local state. That is what makes "pick things as a
- *   guest, then log in" keep everything, and what restores it on a new device.
- * - **On every later change**, the local state is pushed up as-is (last write
- *   wins). It is edited on one device at a time; a conflict resolution scheme
- *   would cost far more than it saves.
+ * When a session appears (a sign-in, or a page load restoring one):
+ * - if the local state still is what this device last synced, the **stored
+ *   copy wins** and replaces it. A plain page load used to *merge* instead —
+ *   so a phone's week-old cart put back on the account the lines that had
+ *   just been ordered (and emptied) from the desktop;
+ * - otherwise the local state has edits the account never saw — things picked
+ *   as a guest before logging in, an edit whose push failed — and it is
+ *   *merged* into the stored one, the result replacing the local state. That
+ *   keeps "pick as a guest, then log in" and restores a cart on a new device.
+ * On every later change the local state is pushed up as-is (last write wins):
+ * it is edited on one device at a time. On sign-out the local copy is
+ * cleared — on a shared computer the next visitor must not get it.
  *
  * Every call is best-effort: a failed sync leaves the local state untouched,
  * because the local copy is what the UI renders and checkout submits.
@@ -37,8 +44,16 @@ export function mirrorToAccount<P, R>(options: {
   replace: (payload: P) => Promise<unknown>
   /** Writes the server's merged answer into the local state. */
   apply: (result: R) => void
+  /** The account's stored copy, as `merge` answers it. */
+  fetch: () => Promise<R>
+  /** Empties the local state (sign-out). */
+  reset: () => void
+  /** Names this mirror's «last synced» record in localStorage. */
+  name: string
 }) {
   const { isAuthenticated } = useAuth()
+  const syncedKey = `mirror:${options.name}:synced`
+  const markSynced = (key: string) => writeJson(syncedKey, key)
 
   // While applying the server's answer the local state changes — without this
   // the watcher below would push that straight back up.
@@ -46,12 +61,15 @@ export function mirrorToAccount<P, R>(options: {
   let merging = false
   let pushTimer: ReturnType<typeof setTimeout> | undefined
 
-  async function mergeOnSignIn() {
+  async function syncSession() {
     if (merging) return
     merging = true
     try {
+      const unchanged = readJson<string>(syncedKey) === options.key()
       let sent = options.key()
-      let result = await options.merge(options.payload())
+      let result = unchanged
+        ? await options.fetch()
+        : await options.merge(options.payload())
       // An edit made while the merge was in flight is not in its answer, and
       // applying the answer would silently drop it — so merge again with what
       // the customer has now.
@@ -61,6 +79,8 @@ export function mirrorToAccount<P, R>(options: {
       }
       applying = true
       options.apply(result)
+      await nextTick()
+      markSynced(options.key())
     } catch {
       // Offline, or the session expired — the local state still works.
     } finally {
@@ -76,7 +96,11 @@ export function mirrorToAccount<P, R>(options: {
   function schedulePush() {
     if (pushTimer) clearTimeout(pushTimer)
     pushTimer = setTimeout(() => {
-      options.replace(options.payload()).catch(() => undefined)
+      const sent = options.key()
+      options
+        .replace(options.payload())
+        .then(() => markSynced(sent))
+        .catch(() => undefined)
     }, PUSH_DEBOUNCE_MS)
   }
 
@@ -85,10 +109,19 @@ export function mirrorToAccount<P, R>(options: {
     options.load()
     // The session is restored by plugins/auth.client.ts, which may finish
     // after this; the watcher below covers that case.
-    if (isAuthenticated.value) void mergeOnSignIn()
+    if (isAuthenticated.value) void syncSession()
 
     watch(isAuthenticated, (signedIn, wasSignedIn) => {
-      if (signedIn && !wasSignedIn) void mergeOnSignIn()
+      if (signedIn && !wasSignedIn) void syncSession()
+      if (!signedIn && wasSignedIn) {
+        if (pushTimer) clearTimeout(pushTimer)
+        applying = true
+        options.reset()
+        removeStored(syncedKey)
+        void nextTick(() => {
+          applying = false
+        })
+      }
     })
 
     watch(options.key, () => {

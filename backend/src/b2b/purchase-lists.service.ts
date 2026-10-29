@@ -32,7 +32,29 @@ export function normalizeLines(items: StoredLine[]): StoredLine[] {
   }));
 }
 
-function storedLines(value: Prisma.JsonValue): StoredLine[] {
+/**
+ * A list's lines after product `from` was merged into `to` (ProductMergeService):
+ * the line follows the survivor, and where the list already had both, one
+ * line stays with the larger quantity — the cart merge's rule, never a sum.
+ * Pure.
+ */
+export function repointLines(
+  items: StoredLine[],
+  from: string,
+  to: string,
+): StoredLine[] {
+  const out: StoredLine[] = [];
+  for (const line of items) {
+    const productId = line.productId === from ? to : line.productId;
+    const existing = out.find((kept) => kept.productId === productId);
+    if (existing)
+      existing.quantity = Math.max(existing.quantity, line.quantity);
+    else out.push({ productId, quantity: line.quantity });
+  }
+  return out;
+}
+
+export function storedLines(value: Prisma.JsonValue): StoredLine[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
     (line): line is StoredLine =>

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { readArray, writeJson } from '~/utils/safe-storage'
+import { onStorageChange, readArray, readStoredArray, writeJson } from '~/utils/safe-storage'
 
 export interface WishlistItem {
   productId: string
@@ -36,22 +36,35 @@ export const useWishlistStore = defineStore('wishlist', {
       if (this.loaded || !import.meta.client) return
       this.items = readArray<WishlistItem>(STORAGE_KEY)
       this.loaded = true
+      // Another tab's edit lands here. Without it every tab wrote back the
+      // copy it read when it opened: five products added from five tabs left
+      // one in the cart (and the account's copy was then overwritten too).
+      onStorageChange(STORAGE_KEY, () => this.refresh())
+    },
+    /** Re-reads storage before an edit — another tab may have changed it. */
+    refresh() {
+      if (!import.meta.client || !this.loaded) return
+      const stored = readStoredArray<WishlistItem>(STORAGE_KEY)
+      if (stored) this.items = stored
     },
     persist() {
       writeJson(STORAGE_KEY, this.items)
     },
     add(item: Omit<WishlistItem, 'addedAt'>) {
+      this.refresh()
       if (this.has(item.productId)) return
       // Newest first, and drop the oldest once the cap is reached.
       this.items = [{ ...item, addedAt: Date.now() }, ...this.items].slice(0, MAX_ITEMS)
       this.persist()
     },
     remove(productId: string) {
+      this.refresh()
       this.items = this.items.filter((i) => i.productId !== productId)
       this.persist()
     },
     /** Returns the state after toggling, so callers can word their toast. */
     toggle(item: Omit<WishlistItem, 'addedAt'>) {
+      this.refresh()
       const added = !this.has(item.productId)
       if (added) this.add(item)
       else this.remove(item.productId)

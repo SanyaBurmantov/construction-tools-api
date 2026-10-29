@@ -47,7 +47,7 @@ const total = computed(() =>
           <dd>{{ formatPrice(cart.totalPrice, cart.currency) }}</dd>
         </div>
         <div v-if="promo.discount.value" class="is-discount">
-          <dt>Скидка ({{ promo.code.value }})</dt>
+          <dt>Скидка ({{ promo.appliedCode.value }})</dt>
           <dd>−{{ formatPrice(promo.discount.value, cart.currency) }}</dd>
         </div>
         <div v-if="deliveryCost != null">

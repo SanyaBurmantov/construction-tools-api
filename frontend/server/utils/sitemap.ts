@@ -22,7 +22,8 @@
  */
 import { createError } from 'h3'
 
-type ProductEntry = { slug: string, updatedAt?: string | null }
+/** `lastmod`: when the page text changed (older APIs sent `updatedAt`). */
+type ProductEntry = { slug: string, lastmod?: string | null, updatedAt?: string | null }
 type CategoryTreeNode = { slug: string, children?: CategoryTreeNode[] }
 export type SitemapUrl = { loc: string, lastmod?: string }
 
@@ -71,7 +72,7 @@ async function fetchSnapshot(): Promise<SitemapSnapshot> {
   return {
     products: products
       .filter(product => product.slug)
-      .map(product => ({ slug: product.slug, lastmod: toLastmod(product.updatedAt) }))
+      .map(product => ({ slug: product.slug, lastmod: toLastmod(product.lastmod ?? product.updatedAt) }))
       .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)),
     categories: [...new Set(flattenCategories(categories).filter(Boolean))],
     fetchedAt: Date.now(),

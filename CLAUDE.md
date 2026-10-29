@@ -290,7 +290,9 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   **Admin corrections survive the re-parse**: every parser-owned field an admin
   edits (`name`, `categoryId`, `brandId`, descriptions, SEO, sku/model/barcode)
   joins `Product.lockedFields`, which `save()` skips exactly like
-  `aiLockedFields`. "Удалить" in the admin **archives** the product
+  `aiLockedFields` — only a field whose value actually **changed**: the
+  product form sends every field on every save, and «sent» used to lock the
+  whole card against the supplier the first time someone fixed a price. "Удалить" in the admin **archives** the product
   (`ARCHIVED`, `statusSource: ADMIN`): a hard delete cascaded away customer
   reviews and price history, and the next parse recreated the product anyway.
   A new product and a stub of its `SourceProduct` are created in one
@@ -816,7 +818,64 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   ключа на час, а не провал записей); иначе `OPENROUTER_API_KEY` и только
   `:free`-модели с цепочкой запасных. Задача, созданная под другим
   провайдером, идёт на модели по умолчанию текущего. Оба ключа пусты =
-  выключено.
+  выключено. У `deepseek-flash` «рассуждение» включено по умолчанию и
+  оплачивается как выход (~95% токенов короткого ответа) — клиент шлёт
+  `thinking: disabled` (`DEEPSEEK_THINKING=enabled` вернёт).
+  **Качество, до записи** (пилот 2026-10). Галочка «шаблоны» в мастере =
+  `ai-templates.ts`: общие правила магазина (только факты из данных, полные
+  названия, «оплата по безналу для организаций» в SEO-описании) + гайд на
+  вид товара (21 шт.: крепёж, буры, круги, головки, аккумуляторный…; вид —
+  по началу названия, затем по категории); такая задача делится на задачи
+  по видам. Правила задачи стоят в system-сообщении — постоянный префикс,
+  его DeepSeek считает по цене кеша. Ответ проходит `ai-validate.ts`: поле
+  **не пишется** (старое остаётся, причина — `AiTaskItem.rejected`), если в
+  нём число или латинское слово, которых нет в данных товара, неподтверждённое
+  утверждение (наличие, гарантия, страна, «лучший»), телефон/ссылка/цена/
+  разметка, слово из смешанных алфавитов, плохая длина; у названия — пропал
+  бренд, код модели или число старого названия. Затем `ai-verify.ts`: второй
+  запрос к модели проверяет смысл названия и краткого описания (ответ —
+  `{ok:false, problem}` на поле; молчащий проверяющий = пачка повторяется,
+  а не пишется непроверенное; `AI_VERIFY=false` выключает). Латиница и коды
+  сравниваются со «сложенными» двойниками (М/M, х/x/×) — поставщик пишет
+  «М10х12х40» кириллицей, модель латиницей. Описание, почти совпадающее с уже записанным
+  в той же задаче (варианты линейки), помечается в `AiTaskItem.warnings`.
+  Предпросмотр гоняет те же две проверки. Токены копятся в `AiTask`;
+  `AI_MIN_BALANCE` («36.4» или «36.4 CNY») останавливает раннер ниже порога
+  баланса одной валюты (DeepSeek отдаёт CNY и USD рядом — не складывать);
+  баланс не прочитался — тоже стоп.
+  **Новое название = новый адрес**: slug строится из него
+  (`products/product-slug.ts`, ≤ 90 символов), со старого — 301
+  (`ProductRedirect`, тот же помощник, что у админки), в `changes.slug` —
+  откат возвращает адрес. Парсер slug существующего товара не пишет.
+  **Адрес двигается один раз**: `slug` в `aiLockedFields`/`lockedFields`
+  значит «адрес уже наш» (после ИИ или ручной правки в админке) — повторный
+  прогон меняет название, но не URL.
+  Витрина берёт `seoTitle`/`seoDescription` товара, только если их написали
+  мы (ИИ или админ — поле в `aiLockedFields`/`lockedFields`): API отдаёт
+  `null` вместо текста поставщика. Текст категории — под сеткой товаров
+  (сверху первый абзац в две строки), только на первой странице.
+  **Поисковики**: `Product.contentUpdatedAt` — когда менялся текст/адрес
+  страницы (ИИ, админ, или поставщик переписал незакреплённый текст), это
+  `lastmod` в sitemap (`updatedAt` двигает ежедневный парсинг). `seo/indexnow.service.ts` шлёт изменённые адреса
+  Яндексу (IndexNow, очередь `IndexNowUrl`, раз в 10 мин в воркере); ключ
+  `INDEXNOW_KEY`, файл `/<ключ>.txt` отдаёт фронт (`NUXT_INDEXNOW_KEY`).
+  Скрипт пилота: `scripts/ai-pilot.mjs select|create|report` (подбор 300
+  карточек + контрольная группа, этапы — каждый создаётся один раз, отчёт).
+  Сквозной тест на настоящей базе: `src/ai/ai-pipeline.db.spec.ts`
+  (пропускается без `AI_PIPELINE_TEST_DATABASE_URL` на базе `*_test`).
+- **A product with offers from several suppliers has one owner.**
+  `ProductIdentityService.forExistingProduct()`: the oldest offer
+  (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only
+  fill empty fields, and move the category only out of the hidden fallback —
+  otherwise each parser wrote its own name, texts, photos, brand and category
+  every day and the card flipped between suppliers. Stock/price are per offer
+  as before. Specs are saved under the product's **actual** category
+  (`saveSpecifications` reads it), not the supplier's breadcrumb one — a
+  locked or owner-kept category used to lose its facets. And when a supplier
+  changes what identifies a product (article, short model suffix, SOLO/SET,
+  sizes, pack) while our name is locked, the product gets
+  `supplierNameChange` and shows in the data-quality panel («Поставщик
+  переименовал») until an admin saves it (`parser/name-drift.ts`).
 
 ## Database / migrations
 
@@ -886,8 +945,10 @@ off in the admin also sets `SourceCategory.isEnabled = false` for that branch,
 and the product parser skips (not fails) anything whose breadcrumb chain hits a
 disabled row — so an admin toggle stops the import, not just the crawl.
 
-Canonical, complete example to copy from: **`backend/src/parser/sites/7745-source.parser.ts`**
-(service) + `7745.parser.ts` (pure parse fn) + `7745.cron.ts` (cron). Every
+Canonical, complete example to copy from: **`backend/src/parser/sites/th-tools-source.parser.ts`**
+(service) + `th-tools.parser.ts` (pure parse fn) + `th-tools.cron.ts` (cron), with
+`th-tools.parser.spec.ts` against `fixtures/` (leave out its category crawler —
+th-tool.by specific). Every
 supplier service **extends `parser/supplier-queue-parser.ts`**, which owns the
 queue (stats, listing, retry, revalidate, claimed batches, per-URL outcome,
 delist/withdraw) — a parser supplies only `parseProductUrl`, `canonicalUrl`,
@@ -957,15 +1018,13 @@ than SUCCESS when anything was deferred or dropped. `dukon.parse.ts` filters
 off-site `/brands/` and paginator links, and `PAGEN_2` is pagination, not a
 category.
 
-**Which sources are real.** `th-tool.by`, `dukon.by` and `tools.by` are actual
-suppliers.
-**`7745.by` is not** — it was a sample site from the client and survives only as
-the reference implementation of the parser shape. Its cron needs both
-`PARSER_CRON_ENABLED` and `SUPPLIER_7745_CRON_ENABLED`, and both default to
-`false`; keep it that way. Copy its structure, don't turn it on.
+**Sources.** `th-tool.by`, `dukon.by` and `tools.by` are the suppliers. The
+sample site `7745.by` (never a supplier) and its parser, cron, queue table
+(`Sitemaps7745`, dropped in `20261029130000_drop_7745`) and env vars were
+removed on 2026-10-29 at the owner's request — don't bring it back.
 
 **th-tool.by specifics** (`th-tools.parser.ts` pure + `th-tools-source.parser.ts`
-service, mirroring the 7745 split): it is a Webasyst shop with ~39k products on
+service): it is a Webasyst shop with ~39k products on
 flat one-segment URLs (`/<slug>/`), so `isThToolsProductUrl()` in
 `sitemaps.service.ts` filters `/category/` and static pages out of the queue
 *before* they cost an HTTP request. The page exposes `Штрихкод` in its spec

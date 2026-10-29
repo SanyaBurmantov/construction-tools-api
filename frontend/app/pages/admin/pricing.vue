@@ -104,11 +104,14 @@ const simResult = ref<{
 } | null>(null)
 const simBusy = ref(false)
 
+// A slow answer must not replace the one for the cost typed last.
+let simTicket = 0
 async function runSimulation() {
   if (sim.cost == null || sim.cost <= 0) return
+  const ticket = ++simTicket
   simBusy.value = true
   try {
-    simResult.value = await adminFetch('/pricing/preview', {
+    const result = await adminFetch<NonNullable<typeof simResult.value>>('/pricing/preview', {
       method: 'POST',
       body: {
         cost: Number(sim.cost),
@@ -117,10 +120,11 @@ async function runSimulation() {
         sourceId: sim.sourceId || undefined,
       },
     })
+    if (ticket === simTicket) simResult.value = result
   } catch (error) {
-    toast.error(errorMessage(error, 'Симуляция не удалась'))
+    if (ticket === simTicket) toast.error(errorMessage(error, 'Симуляция не удалась'))
   } finally {
-    simBusy.value = false
+    if (ticket === simTicket) simBusy.value = false
   }
 }
 

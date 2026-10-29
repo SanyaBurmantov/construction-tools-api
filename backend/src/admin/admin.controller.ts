@@ -213,16 +213,6 @@ export class AdminController {
     return this.adminService.queueRows('dukon', query);
   }
 
-  @Get('queue/7745')
-  get7745QueueStats() {
-    return this.adminService.queueStats('7745');
-  }
-
-  @Get('queue/7745/sitemaps')
-  get7745Sitemaps(@Query() query: AdminSitemapQueryDto) {
-    return this.adminService.queueRows('7745', query);
-  }
-
   @Get('queue/tools-by')
   getToolsByQueueStats() {
     return this.adminService.queueStats('tools-by');
@@ -310,26 +300,6 @@ export class AdminController {
   @Post('queue/dukon/sitemaps/:id/retry')
   retryDukonSitemap(@Param('id') id: string) {
     return this.adminService.retryQueueRow('dukon', id);
-  }
-
-  @Post('queue/7745/refresh-sitemaps')
-  refresh7745Sitemaps() {
-    return this.adminService.refreshQueue('7745');
-  }
-
-  @Post('queue/7745/process')
-  process7745QueuedProducts(@Body('limit') limit?: unknown) {
-    return this.adminService.processQueue('7745', limit);
-  }
-
-  @Post('queue/7745/sitemaps/retry-problems')
-  retryProblem7745Sitemaps() {
-    return this.adminService.retryQueueProblems('7745');
-  }
-
-  @Post('queue/7745/sitemaps/:id/retry')
-  retry7745Sitemap(@Param('id') id: string) {
-    return this.adminService.retryQueueRow('7745', id);
   }
 
   @Post('queue/tools-by/refresh-sitemaps')
