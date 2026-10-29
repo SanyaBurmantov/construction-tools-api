@@ -160,6 +160,9 @@ const priceCheckedLabel = computed(() =>
 const metaDescription = computed(() => {
   const p = product.value
   if (!p?.name) return 'Карточка товара Gost.by'
+  // Set only when we wrote it (AI task or admin): the API nulls the
+  // supplier's own SEO text.
+  if (p.seoDescription?.trim()) return p.seoDescription.trim()
   return buildProductMetaDescription({
     name: p.name,
     brand: p.brand?.name,
@@ -171,7 +174,11 @@ const metaDescription = computed(() => {
 })
 
 useSeoMeta({
-  title: () => (product.value?.name ? `${product.value.name} | Gost.by` : 'Товар | Gost.by'),
+  title: () => {
+    const p = product.value
+    const title = p?.seoTitle?.trim() || p?.name
+    return title ? `${title} | Gost.by` : 'Товар | Gost.by'
+  },
   description: () => metaDescription.value,
   ogTitle: () => product.value?.name || 'Товар | Gost.by',
   ogDescription: () => metaDescription.value,

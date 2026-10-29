@@ -1057,32 +1057,37 @@ model AiPrompt {
 }
 
 model AiTask {
-  id          String       @id @default(uuid())
-  name        String
-  entity      AiEntity
-  status      AiTaskStatus @default(QUEUED)
+  id               String       @id @default(uuid())
+  name             String
+  entity           AiEntity
+  status           AiTaskStatus @default(QUEUED)
   /// Field names the model may rewrite (see `ai/ai-fields.ts`).
-  fields      String[]
-  prompt      AiPrompt?    @relation(fields: [promptId], references: [id], onDelete: SetNull)
-  promptId    String?
+  fields           String[]
+  prompt           AiPrompt?    @relation(fields: [promptId], references: [id], onDelete: SetNull)
+  promptId         String?
   /// Snapshot of the instruction at creation time.
-  promptText  String
-  model       String
+  promptText       String
+  model            String
   /// Entities per model request — the free tier counts requests, not tokens.
-  batchSize   Int          @default(5)
-  scheduledAt DateTime     @default(now())
+  batchSize        Int          @default(5)
+  scheduledAt      DateTime     @default(now())
   /// Set on a 429: the runner leaves the task alone until then.
-  pausedUntil DateTime?
-  lastError   String?
-  total       Int          @default(0)
-  processed   Int          @default(0)
-  applied     Int          @default(0)
-  failed      Int          @default(0)
-  createdBy   String?
-  createdAt   DateTime     @default(now())
-  startedAt   DateTime?
-  finishedAt  DateTime?
-  items       AiTaskItem[]
+  pausedUntil      DateTime?
+  lastError        String?
+  total            Int          @default(0)
+  processed        Int          @default(0)
+  applied          Int          @default(0)
+  failed           Int          @default(0)
+  /// Tokens the model billed for this task (all batches, previews excluded).
+  promptTokens     Int          @default(0)
+  completionTokens Int          @default(0)
+  /// Part of promptTokens served from the provider's cache (cheaper).
+  cacheHitTokens   Int          @default(0)
+  createdBy        String?
+  createdAt        DateTime     @default(now())
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  items            AiTaskItem[]
 
   @@index([status, scheduledAt])
   @@index([createdAt])
@@ -1102,6 +1107,8 @@ model AiTaskItem {
   changes    Json?
   /// The model's raw answer for this entity, for debugging a prompt.
   response   Json?
+  /// `{ field: reason }` — what `ai-validate.ts` refused to write.
+  rejected   Json?
   error      String?
   updatedAt  DateTime         @updatedAt
 

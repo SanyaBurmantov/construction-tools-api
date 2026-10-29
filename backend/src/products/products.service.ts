@@ -148,11 +148,27 @@ const ADMIN_ONLY_PRODUCT_FIELDS = [
 
 type AdminOnlyProductField = (typeof ADMIN_ONLY_PRODUCT_FIELDS)[number];
 
+/**
+ * SEO fields the storefront may use. What a parser stored there is the
+ * supplier's own blurb — «купить в Минске», their phone — so the product page
+ * used to ignore both columns and build its own. Only a text we wrote (an AI
+ * task or an admin edit, both of which lock the field) is passed on; the rest
+ * goes out as `null` and the page keeps its template.
+ */
+const OWN_SEO_FIELDS = ['seoTitle', 'seoDescription'] as const;
+
 /** Drops the admin-only columns from a row headed for a public response. */
 function toPublicProduct<
   T extends Partial<Record<AdminOnlyProductField, unknown>>,
 >(product: T): Omit<T, AdminOnlyProductField> {
-  const rest = { ...product };
+  const rest: Record<string, unknown> = { ...product };
+  const own = new Set([
+    ...((product.aiLockedFields as string[] | undefined) ?? []),
+    ...((product.lockedFields as string[] | undefined) ?? []),
+  ]);
+  for (const field of OWN_SEO_FIELDS) {
+    if (field in rest && !own.has(field)) rest[field] = null;
+  }
   for (const field of ADMIN_ONLY_PRODUCT_FIELDS) delete rest[field];
   return rest as Omit<T, AdminOnlyProductField>;
 }

@@ -49,6 +49,9 @@ x-backend-environment: &backend-environment
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
   OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemma-4-31b-it:free}
   AI_BATCHES_PER_TICK: ${AI_BATCHES_PER_TICK:-3}
+  # Порог баланса DeepSeek: ниже него ИИ-задачи останавливаются (лимит трат).
+  AI_MIN_BALANCE: ${AI_MIN_BALANCE:-}
+  DEEPSEEK_THINKING: ${DEEPSEEK_THINKING:-disabled}
   AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
   # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
   REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}

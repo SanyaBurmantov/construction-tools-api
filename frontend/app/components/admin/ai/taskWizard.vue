@@ -4,7 +4,7 @@
  * 1) name + when to run, 2) which fields, 3) which prompt, 4) model, with a
  * one-item dry run before anything is written.
  */
-import type { AiEntity, AiFieldChange, AiModel, AiPrompt, AiSelection, AiStatus, AiTask } from '~/types/ai'
+import type { AiEntity, AiModel, AiPreview, AiPrompt, AiSelection, AiStatus, AiTask } from '~/types/ai'
 
 const props = defineProps<{
   entity: AiEntity
@@ -16,7 +16,7 @@ const props = defineProps<{
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ created: [task: AiTask] }>()
+const emit = defineEmits<{ created: [task: AiTask & { tasks?: Array<{ id: string, name: string, total: number }> }] }>()
 
 const { adminFetch, errorMessage } = useAdminApi()
 const toast = useAppToast()
@@ -32,6 +32,8 @@ const blankForm = () => ({
   runAt: 'now' as 'now' | 'later',
   scheduledAt: '',
   fields: [] as string[],
+  /** Built-in shop rules + a guide per kind of product; the prompt is only added. */
+  templates: true,
   promptId: '' as string,
   prompt: '',
   savePrompt: false,
@@ -43,7 +45,7 @@ const form = reactive(blankForm())
 const formError = ref('')
 const saving = ref(false)
 
-const preview = ref<{ model: string, changes: Record<string, AiFieldChange>, raw: string } | null>(null)
+const preview = ref<AiPreview | null>(null)
 const previewError = ref('')
 const previewing = ref(false)
 
@@ -94,7 +96,7 @@ const requests = computed(() => {
 function validate() {
   if (!form.name.trim()) return 'Укажите название задачи'
   if (!form.fields.length) return 'Выберите хотя бы одно поле'
-  if (!form.prompt.trim()) return 'Напишите промпт'
+  if (!form.templates && !form.prompt.trim()) return 'Напишите промпт'
   if (form.runAt === 'later' && !form.scheduledAt) return 'Укажите время запуска'
   if (form.savePrompt && !form.promptName.trim()) return 'Укажите название промпта'
   return ''
@@ -104,7 +106,7 @@ async function runPreview() {
   previewError.value = ''
   preview.value = null
   if (!props.previewId) return
-  if (!form.fields.length || !form.prompt.trim()) {
+  if (!form.fields.length || (!form.templates && !form.prompt.trim())) {
     previewError.value = 'Сначала выберите поля и напишите промпт'
     return
   }
@@ -117,6 +119,7 @@ async function runPreview() {
         id: props.previewId,
         fields: form.fields,
         prompt: form.prompt,
+        templates: form.templates,
         model: form.model || undefined,
       },
     })
@@ -145,7 +148,7 @@ async function submit() {
       form.promptId = saved.id
       form.savePrompt = false
     }
-    const task = await adminFetch<AiTask>('/ai/tasks', {
+    const task = await adminFetch<AiTask & { tasks?: Array<{ id: string, name: string, total: number }> }>('/ai/tasks', {
       method: 'POST',
       body: {
         name: form.name.trim(),
@@ -153,6 +156,7 @@ async function submit() {
         fields: form.fields,
         promptId,
         prompt: form.prompt,
+        templates: form.templates,
         model: form.model || undefined,
         batchSize: Number(form.batchSize) || 5,
         scheduledAt: form.runAt === 'later' ? fromLocalInput(form.scheduledAt) ?? undefined : undefined,
@@ -161,7 +165,12 @@ async function submit() {
           : { filter: props.selection.filter }),
       },
     })
-    toast.success(`Задача создана: ${task.total} ${entityWord.value}`)
+    const created = task.tasks ?? [task]
+    toast.success(
+      created.length > 1
+        ? `Создано задач по видам товаров: ${created.length}, всего ${created.reduce((sum, t) => sum + t.total, 0)} ${entityWord.value}`
+        : `Задача создана: ${task.total} ${entityWord.value}`,
+    )
     open.value = false
     emit('created', task)
   } catch (error) {
@@ -234,12 +243,23 @@ const fieldLabel = (key: string) => fieldDefs.value.find((f) => f.key === key)?.
 
     <section class="step">
       <h3><span>3</span> Промпт</h3>
-      <UiField label="Шаблон" for="ai-prompt-pick">
+      <UiCheckbox
+        v-model="form.templates"
+        :label="entity === 'PRODUCT'
+          ? 'Встроенные правила магазина и шаблон по виду товара (рекомендуется)'
+          : 'Встроенные правила магазина для категорий (рекомендуется)'"
+      />
+      <p v-if="form.templates" class="note">
+        Правила: только факты из данных товара, полные названия, «оплата по безналу» в SEO-описании.
+        <template v-if="entity === 'PRODUCT'">Товары делятся по видам (крепёж, оснастка, аккумуляторный инструмент…) — на каждый вид своя задача со своим шаблоном.</template>
+        Поле ниже — необязательное дополнение.
+      </p>
+      <UiField label="Сохранённый промпт" for="ai-prompt-pick">
         <UiSelect id="ai-prompt-pick" v-model="form.promptId" :options="promptOptions" />
       </UiField>
       <UiField
-        label="Что сделать"
-        required
+        :label="form.templates ? 'Дополнительно (необязательно)' : 'Что сделать'"
+        :required="!form.templates"
         hint="Данные записи (название, бренд, категория, характеристики, текущие тексты) и формат ответа добавляются автоматически"
         for="ai-prompt"
       >
@@ -274,12 +294,21 @@ const fieldLabel = (key: string) => fieldDefs.value.find((f) => f.key === key)?.
         <span class="note">Один запрос, ничего не сохраняется</span>
         <UiAlert v-if="previewError" tone="danger">{{ previewError }}</UiAlert>
         <div v-if="preview" class="diff">
-          <p class="note">Ответила модель: {{ preview.model }}</p>
+          <p class="note">
+            Ответила модель: {{ preview.model }}
+            <template v-if="preview.template"> · шаблон: {{ preview.template }}</template>
+            <template v-if="preview.usage"> · токенов: {{ preview.usage.promptTokens }} + {{ preview.usage.completionTokens }}</template>
+          </p>
           <p v-if="!Object.keys(preview.changes).length" class="note">Модель ничего не изменила бы.</p>
           <div v-for="(change, key) in preview.changes" :key="key" class="diff-row">
             <strong>{{ fieldLabel(String(key)) }}</strong>
             <del>{{ change.old || '—' }}</del>
             <ins>{{ change.new }}</ins>
+          </div>
+          <div v-for="(item, key) in preview.rejected" :key="`r-${key}`" class="diff-row">
+            <strong>{{ fieldLabel(String(key)) }} — не будет записано</strong>
+            <span class="error">{{ item.reason }}</span>
+            <del>{{ item.value }}</del>
           </div>
         </div>
       </div>
@@ -365,6 +394,11 @@ const fieldLabel = (key: string) => fieldDefs.value.find((f) => f.key === key)?.
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
   gap: var(--space-3);
+}
+
+.diff-row .error {
+  color: var(--danger);
+  font-size: var(--text-sm);
 }
 
 .diff-row {

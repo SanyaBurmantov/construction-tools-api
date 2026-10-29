@@ -39,6 +39,13 @@ import {
   MAX_TASK_ITEMS,
 } from './dto/ai.dto';
 import { AiClient, AiRateLimitError } from './ai.client';
+import {
+  AiTemplate,
+  categoryInstruction,
+  productInstruction,
+  productTemplate,
+} from './ai-templates';
+import { validateAnswer, ValidationInput } from './ai-validate';
 
 /** A batch that fails this many times marks its items FAILED for good. */
 const MAX_ATTEMPTS = 3;
@@ -306,6 +313,26 @@ export class AiService {
 
   /* ---- Tasks ----------------------------------------------------------- */
 
+  /**
+   * The instruction a task or a preview sends: the admin's own prompt, or —
+   * with `templates` — the built-in rules (+ the kind's guide for a product)
+   * with the admin's text added at the end.
+   */
+  private instruction(
+    entity: AiEntity,
+    prompt: string | undefined,
+    templates: boolean | undefined,
+    template: AiTemplate | null,
+  ) {
+    if (templates) {
+      return entity === AiEntity.PRODUCT && template
+        ? productInstruction(template, prompt)
+        : categoryInstruction(prompt);
+    }
+    if (!prompt?.trim()) throw new BadRequestException('Напишите промпт');
+    return prompt.trim();
+  }
+
   async createTask(dto: AiCreateTaskDto, createdBy: string | null) {
     const fields = [...new Set(dto.fields)];
     const unknown = fields.filter((key) => !isKnownField(dto.entity, key));
@@ -334,31 +361,110 @@ export class AiService {
     if (!entities.length)
       throw new BadRequestException('Выбранные записи не найдены');
 
-    const task = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.aiTask.create({
-        data: {
-          name: dto.name.trim(),
-          entity: dto.entity,
-          fields,
-          promptId: dto.promptId ?? null,
-          promptText: dto.prompt.trim(),
-          model: dto.model?.trim() || this.client.defaultModel,
-          batchSize: dto.batchSize ?? 5,
-          scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : new Date(),
-          total: entities.length,
-          createdBy,
-        },
-      });
-      await tx.aiTaskItem.createMany({
-        data: entities.map((entity) => ({
-          taskId: created.id,
-          entityId: entity.id,
-          entityName: entity.name,
-        })),
-      });
+    // With templates every kind of product gets its own task — one prompt
+    // per request, so a batch never mixes an anchor with a hammer drill.
+    const groups = new Map<
+      string,
+      { template: AiTemplate | null; entities: typeof entities }
+    >();
+    if (dto.templates && dto.entity === AiEntity.PRODUCT) {
+      const kinds = await this.productKinds(
+        entities.map((entity) => entity.id),
+      );
+      for (const entity of entities) {
+        const template = productTemplate(
+          kinds.get(entity.id) ?? { name: entity.name, categoryPath: '' },
+        );
+        const group = groups.get(template.key) ?? { template, entities: [] };
+        group.entities.push(entity);
+        groups.set(template.key, group);
+      }
+    } else {
+      groups.set('', { template: null, entities });
+    }
+    // Validates the prompt before anything is written.
+    const instructions = new Map(
+      [...groups].map(([key, group]) => [
+        key,
+        this.instruction(dto.entity, dto.prompt, dto.templates, group.template),
+      ]),
+    );
+
+    const tasks = await this.prisma.$transaction(async (tx) => {
+      const created: AiTask[] = [];
+      for (const [key, group] of groups) {
+        const task = await tx.aiTask.create({
+          data: {
+            name:
+              groups.size > 1 && group.template
+                ? `${dto.name.trim()} — ${group.template.label}`
+                : dto.name.trim(),
+            entity: dto.entity,
+            fields,
+            promptId: dto.promptId ?? null,
+            promptText: instructions.get(key)!,
+            model: dto.model?.trim() || this.client.defaultModel,
+            batchSize: dto.batchSize ?? 5,
+            scheduledAt: dto.scheduledAt
+              ? new Date(dto.scheduledAt)
+              : new Date(),
+            total: group.entities.length,
+            createdBy,
+          },
+        });
+        await tx.aiTaskItem.createMany({
+          data: group.entities.map((entity) => ({
+            taskId: task.id,
+            entityId: entity.id,
+            entityName: entity.name,
+          })),
+        });
+        created.push(task);
+      }
       return created;
     });
-    return task;
+    return {
+      ...tasks[0],
+      tasks: tasks.map((task) => ({
+        id: task.id,
+        name: task.name,
+        total: task.total,
+      })),
+    };
+  }
+
+  /** Name + category chain per product — what picks its template. */
+  private async productKinds(ids: string[]) {
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        category: {
+          select: {
+            name: true,
+            parent: {
+              select: { name: true, parent: { select: { name: true } } },
+            },
+          },
+        },
+      },
+    });
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          name: row.name,
+          categoryPath: [
+            row.category.parent?.parent?.name,
+            row.category.parent?.name,
+            row.category.name,
+          ]
+            .filter(Boolean)
+            .join(' / '),
+        },
+      ]),
+    );
   }
 
   private async idsByFilter(entity: AiEntity, raw: Record<string, unknown>) {
@@ -637,10 +743,20 @@ export class AiService {
     const context = contexts.get(dto.id);
     if (!context) throw new NotFoundException('Запись не найдена');
 
+    const template =
+      dto.templates && dto.entity === AiEntity.PRODUCT
+        ? productTemplate(context.kind)
+        : null;
+    const instruction = this.instruction(
+      dto.entity,
+      dto.prompt,
+      dto.templates,
+      template,
+    );
     const messages = buildMessages({
       entity: dto.entity,
       fields,
-      instruction: dto.prompt,
+      instruction,
       contexts: [context.prompt],
     });
     this.assertModel(dto.model);
@@ -649,9 +765,20 @@ export class AiService {
       const answer = await this.client.chat(model, messages);
       const parsed = parseAnswer(answer.content);
       const record = parsed.get(dto.id) ?? [...parsed.values()][0] ?? {};
+      const changes = diffAnswer(fields, context.current, record);
+      const rejected = validateAnswer(context.validation, newValues(changes));
       return {
         model: answer.model,
-        changes: diffAnswer(fields, context.current, record),
+        template: template?.label ?? null,
+        // What a task would write: the rejected fields stay as they are.
+        changes: withoutKeys(changes, Object.keys(rejected)),
+        rejected: Object.fromEntries(
+          Object.entries(rejected).map(([key, reason]) => [
+            key,
+            { reason, value: changes[key].new },
+          ]),
+        ),
+        usage: answer.usage,
         raw: answer.content,
       };
     } catch (error) {
@@ -759,6 +886,15 @@ export class AiService {
     let answers: Map<string, Record<string, unknown>>;
     try {
       const answer = await this.client.chat(task.model, messages);
+      // Billed whether or not the answer parses.
+      await this.prisma.aiTask.update({
+        where: { id: task.id },
+        data: {
+          promptTokens: { increment: answer.usage.promptTokens },
+          completionTokens: { increment: answer.usage.completionTokens },
+          cacheHitTokens: { increment: answer.usage.cacheHitTokens },
+        },
+      });
       answers = parseAnswer(answer.content);
     } catch (error) {
       const message = (error as Error).message;
@@ -811,7 +947,13 @@ export class AiService {
             tx,
           );
           if (!current) throw new Error('Запись удалена');
-          const changes = diffAnswer(fields, current, record);
+          // What the checks refuse is not written; the old text stays.
+          const proposed = diffAnswer(fields, current, record);
+          const rejected = validateAnswer(
+            contexts.get(item.entityId)!.validation,
+            newValues(proposed),
+          );
+          const changes = withoutKeys(proposed, Object.keys(rejected));
           await this.applyChanges(
             task.entity,
             item.entityId,
@@ -832,6 +974,9 @@ export class AiService {
                 record,
                 fields.map((field) => field.key),
               ) as Prisma.InputJsonValue,
+              rejected: Object.keys(rejected).length
+                ? (rejected as Prisma.InputJsonValue)
+                : Prisma.DbNull,
               error: null,
             },
           });
@@ -981,8 +1126,39 @@ export class AiService {
           product.category.parent?.name,
           product.category.name,
         ].filter(Boolean);
+        const specs = product.productSpecs.map(
+          (spec) => `${spec.specification.name}: ${spec.value}`,
+        );
+        const shownDescription = truncate(
+          product.descriptionFull,
+          DESCRIPTION_CONTEXT_CHARS,
+        );
         map.set(product.id, {
           current: product as unknown as Record<string, unknown>,
+          kind: { name: product.name, categoryPath: category.join(' / ') },
+          validation: {
+            entity: AiEntity.PRODUCT,
+            oldName: product.name,
+            brand: product.brand?.name ?? null,
+            thin:
+              !product.descriptionFull?.trim() &&
+              !product.descriptionShort?.trim() &&
+              specs.length < 3,
+            source: [
+              product.name,
+              product.brand?.name,
+              category.join(' / '),
+              product.sku,
+              product.model,
+              product.descriptionShort,
+              shownDescription,
+              product.seoTitle,
+              product.seoDescription,
+              ...specs,
+            ]
+              .filter(Boolean)
+              .join('\n'),
+          },
           prompt: {
             id: product.id,
             name: product.name,
@@ -990,13 +1166,10 @@ export class AiService {
             category: category.join(' / '),
             sku: product.sku,
             model: product.model,
-            price: product.priceValue,
-            inStock: product.stockStatus === 'in_stock',
+            // No price and no stock: the rules forbid both in the text, and
+            // a model shown them writes them anyway.
             descriptionShort: product.descriptionShort,
-            descriptionFull: truncate(
-              product.descriptionFull,
-              DESCRIPTION_CONTEXT_CHARS,
-            ),
+            descriptionFull: shownDescription,
             seoTitle: product.seoTitle,
             seoDescription: product.seoDescription,
             specs: Object.fromEntries(
@@ -1029,18 +1202,33 @@ export class AiService {
       },
     });
     for (const category of categories) {
+      const parents = [category.parent?.parent?.name, category.parent?.name]
+        .filter(Boolean)
+        .join(' / ');
+      const shown = truncate(category.description, DESCRIPTION_CONTEXT_CHARS);
       map.set(category.id, {
         current: category as unknown as Record<string, unknown>,
+        kind: { name: category.name, categoryPath: parents },
+        validation: {
+          entity: AiEntity.CATEGORY,
+          oldName: category.name,
+          source: [
+            category.name,
+            parents,
+            shown,
+            category.seoTitle,
+            category.seoDescription,
+            ...category.children.map((child) => child.name),
+            ...category.products.map((product) => product.name),
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
         prompt: {
           id: category.id,
           name: category.name,
-          parents: [category.parent?.parent?.name, category.parent?.name]
-            .filter(Boolean)
-            .join(' / '),
-          description: truncate(
-            category.description,
-            DESCRIPTION_CONTEXT_CHARS,
-          ),
+          parents,
+          description: shown,
           seoTitle: category.seoTitle,
           seoDescription: category.seoDescription,
           productCount: category._count.products,
@@ -1056,4 +1244,20 @@ export class AiService {
 type EntityContext = {
   current: Record<string, unknown>;
   prompt: Record<string, unknown> & { id: string };
+  /** What picks the product template. */
+  kind: { name: string; categoryPath: string };
+  /** What the answer is checked against (`ai-validate.ts`). */
+  validation: ValidationInput;
 };
+
+function newValues(changes: Record<string, FieldChange>) {
+  return Object.fromEntries(
+    Object.entries(changes).map(([key, change]) => [key, change.new]),
+  );
+}
+
+function withoutKeys<T>(record: Record<string, T>, keys: string[]) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => !keys.includes(key)),
+  );
+}

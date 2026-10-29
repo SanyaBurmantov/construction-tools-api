@@ -26,6 +26,36 @@ export class AiRunnerCron {
     return Number.isFinite(value) && value > 0 ? value : 3;
   }
 
+  /**
+   * `AI_MIN_BALANCE`: the paid key's floor, in the account's currency. The
+   * runner stops before a batch once the balance is below it — the spend cap
+   * for a run is «balance at the start minus what we agreed to spend».
+   */
+  private get minBalance() {
+    const value = Number(process.env.AI_MIN_BALANCE);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  private lastFloorWarning = 0;
+
+  /** False when the balance is under the floor (or cannot be read while one is set). */
+  private async aboveFloor() {
+    const floor = this.minBalance;
+    if (floor === null) return true;
+    const quota = await this.client.quota();
+    const amount = quota?.balanceAmount ?? null;
+    if (amount !== null && amount >= floor) return true;
+    if (Date.now() - this.lastFloorWarning > 60 * 60 * 1000) {
+      this.lastFloorWarning = Date.now();
+      this.logger.warn(
+        amount === null
+          ? `AI runner stopped: AI_MIN_BALANCE=${floor} is set but the balance could not be read`
+          : `AI runner stopped: balance ${amount} is under AI_MIN_BALANCE=${floor}`,
+      );
+    }
+    return false;
+  }
+
   @Cron('0 * * * * *')
   async tick() {
     if (this.busy || !this.client.enabled) return;
@@ -35,6 +65,7 @@ export class AiRunnerCron {
       for (let i = 0; i < this.batchesPerTick; i++) {
         const task = await this.ai.nextRunnableTask();
         if (!task) return;
+        if (!(await this.aboveFloor())) return;
         const outcome = await this.ai.runBatch(task);
         // An error usually repeats (bad model id, provider down): one wasted
         // request per tick is enough, not AI_BATCHES_PER_TICK of the 50/day.
