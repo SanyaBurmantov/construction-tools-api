@@ -937,8 +937,8 @@ export class ProductService {
       rankClauses.push(Prisma.sql`CASE WHEN ${barcodeHit} THEN 100 ELSE 0 END`);
     }
 
-    const rows = await this.withTrigramThreshold((tx) =>
-      tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    const rows = await this.withTrigramThreshold<{ id: string }>(
+      Prisma.sql`
         WITH matched AS (${Prisma.join(branches, ' UNION ')})
         SELECT p."id"
         FROM "Product" p
@@ -946,7 +946,7 @@ export class ProductService {
         WHERE p."status" = 'PUBLISHED' AND p."id" IN (SELECT "id" FROM matched)
         ORDER BY GREATEST(${Prisma.join(rankClauses, ', ')}) DESC, p."listingRank" DESC, p."name" ASC
         LIMIT ${SEARCH_MATCH_LIMIT + 1}
-      `),
+      `,
     );
     if (rows.length > SEARCH_MATCH_LIMIT) return null;
     return rows.map((row) => row.id);
@@ -958,14 +958,21 @@ export class ProductService {
    * `<%` operator. `word_similarity(a, b) > x` is a function call the GIN
    * trigram index on `name` cannot serve — every search was a sequential
    * scan of the catalogue; the operator form is an index lookup.
+   *
+   * A *batch* transaction, not an interactive one: the interactive kind is
+   * cut at 5 s, and under load (a crawler, a parser batch writing products)
+   * the search ran past that — ~100 catalogue and suggest requests answered
+   * 500 «Transaction already closed» on 27–28.10. A batch is the same single
+   * transaction with no client-side timer and no connection held between
+   * round trips.
    */
-  private withTrigramThreshold<T>(
-    query: (tx: Prisma.TransactionClient) => Promise<T>,
-  ): Promise<T> {
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT set_config('pg_trgm.word_similarity_threshold', ${String(SIMILARITY_THRESHOLD)}, true)`;
-      return query(tx);
-    });
+  private async withTrigramThreshold<T>(query: Prisma.Sql): Promise<T[]> {
+    const [, rows] = await this.prisma.$transaction([
+      this.prisma
+        .$executeRaw`SELECT set_config('pg_trgm.word_similarity_threshold', ${String(SIMILARITY_THRESHOLD)}, true)`,
+      this.prisma.$queryRaw<T[]>(query),
+    ]);
+    return rows;
   }
 
   /** Live header suggestions: top products, categories and brands for a query. */
