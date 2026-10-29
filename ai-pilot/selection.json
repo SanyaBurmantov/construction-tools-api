@@ -1,0 +1,4067 @@
+{
+  "generatedAt": "2026-10-29T13:13:46.994Z",
+  "api": "https://gost.by/api",
+  "pilot": [
+    {
+      "id": "fe8c7074-3f31-44cf-8b97-aeaf0ec1f2e1",
+      "name": "Соединение Т-образное для 4 труб, хром STARFIX",
+      "slug": "soedinenie-t-obraznoe-dlya-4-trub-hrom-starfix-smf-64321",
+      "brand": "STARFIX",
+      "category": {
+        "id": "887c9bdc-b9f7-450c-b8cd-ecc075122342",
+        "name": "Соединитель труб"
+      }
+    },
+    {
+      "id": "4e8fc800-01ff-44bc-b039-c19b18d7ba62",
+      "name": "Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX",
+      "slug": "anker-zabivaemyi-m10h12h40-mm-4-sht-v-zip-loke-starfix-smm1-48216-4",
+      "brand": "STARFIX",
+      "category": {
+        "id": "ffc3223b-694a-49bc-acfd-bd0840b3df94",
+        "name": "Анкер забиваемый зип-лок"
+      }
+    },
+    {
+      "id": "c7387b0a-1805-4d59-aa35-038ba537f4c4",
+      "name": "Анкер клиновой М10х120 мм STARFIX",
+      "slug": "anker-klinovoi-m10h120-mm-starfix-smp-53965-1",
+      "brand": "STARFIX",
+      "category": {
+        "id": "cb04cf19-e630-4767-8752-15821a47641b",
+        "name": "Анкер клиновой поштучно"
+      }
+    },
+    {
+      "id": "8cc2ede3-308d-425e-a6da-5928de35f449",
+      "name": "Анкер латунный(цанга) М10 (250 шт в пакете) STARFIX",
+      "slug": "anker-latunnyi-canga-m10-250-sht-v-pakete-starfix-sm-97533-250",
+      "brand": "STARFIX",
+      "category": {
+        "id": "1cf6657d-74c7-4e3f-ba80-a085b9437dc5",
+        "name": "Анкер латунный (цанга) пакет"
+      }
+    },
+    {
+      "id": "31f91d4c-fa7d-4a87-81cc-e10822b7b608",
+      "name": "Анкер потолочный с ушком М6х60 мм STARFIX",
+      "slug": "anker-potolochnyi-s-ushkom-m6h60-mm-starfix-smp-74813-1",
+      "brand": "STARFIX",
+      "category": {
+        "id": "3e9827c7-34d4-4cfd-b156-2f66a9a066b6",
+        "name": "Анкер потолочный с ушком"
+      }
+    },
+    {
+      "id": "93674921-fcd5-498a-a227-984caf51cd83",
+      "name": "Анкер рамный 10х112 мм (100 шт в карт. уп.) STARFIX",
+      "slug": "anker-ramnyi-10h112-mm-100-sht-v-kart-up-starfix-sm-72518-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "57359d8a-8caa-4726-bd52-01e2596f6192",
+        "name": "Анкер рамный картонная упаковка"
+      }
+    },
+    {
+      "id": "43c53e52-91c5-4078-ad02-8026ae9b9c43",
+      "name": "Болт М16х40 шестигр., нерж.сталь (А2), DIN 933 (25 шт в уп.)",
+      "slug": "bolt-m16h40-shestigr-nerzh-stal-a2-din-933-25-sht-v-up-sm-24805-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "de969627-382c-43f5-a859-80ad70910b5a",
+        "name": "Болт шестигранный DIN 933 А2 картон"
+      }
+    },
+    {
+      "id": "f0bae239-0f42-44fe-8a5e-f46e980de37f",
+      "name": "Болт М18х80 мм шестигр., цинк, кл.пр. 5.8, DIN 933 (10 шт в карт. уп.) STARFIX",
+      "slug": "bolt-m18h80-mm-shestigr-cink-kl-pr-5-8-din-933-10-sht-v-kart-up-starfix-smc2-25533-10",
+      "brand": "STARFIX",
+      "category": {
+        "id": "428521e2-c4d8-4d6e-a07a-a2c8c40cffab",
+        "name": "Болт шестигранный 5.8 картонная упаковка"
+      }
+    },
+    {
+      "id": "3f95d257-8cbf-444a-a7a7-dc59d5096359",
+      "name": "Болт М16х50 мм шестигр., цинк, кл.пр. 10.9 ГОСТ 7798-70 (25 кг)",
+      "slug": "bolt-m16h50-mm-shestigr-cink-kl-pr-10-9-gost-7798-70-25-kg-sm-32597-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "40e18c61-aad8-4792-a81c-7505b32ee51f",
+        "name": "Болт шестигранный ГОСТ 7798-70 прочность 10.9"
+      }
+    },
+    {
+      "id": "04d300a9-c6ee-4fee-a6ef-15fefeaf1620",
+      "name": "Болт М16х55 мм шестигр., цинк, кл.пр. 8.8, DIN 931 неполн.резьба (25 кг)",
+      "slug": "bolt-m16h55-mm-shestigr-cink-kl-pr-8-8-din-931-nepoln-rezba-25-kg-sm-50362-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "ee40522b-c639-4009-861a-a81bd2000d1a",
+        "name": "Болт шестигранный 8.8 короба РФ"
+      }
+    },
+    {
+      "id": "8aefd778-7a70-4d59-81ce-a74e143c314f",
+      "name": "Винт М12х70 мм с внутр. шестигр., цинк, кл.пр. 8.8, DIN 912 (2 шт в зип-локе) STARFIX",
+      "slug": "vint-m12h70-mm-s-vnutr-shestigr-cink-kl-pr-8-8-din-912-2-sht-v-zip-loke-starfix-smz2-37774-2",
+      "brand": "STARFIX",
+      "category": {
+        "id": "6b06642e-408d-4f47-953b-f97229979829",
+        "name": "Винт с внутренним шестигранником зип-лок"
+      }
+    },
+    {
+      "id": "b2347a62-60ab-4e5d-b363-cb8aac57a727",
+      "name": "Винт М16х30 внутр.шестигр. 8.8 DIN 912 (25 кг.)",
+      "slug": "vint-m16h30-vnutr-shestigr-8-8-din-912-25-kg-sm-70590-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "19558526-f003-49e9-a5d2-0853cb3c86ea",
+        "name": "Винт с внутренним шестигранником весовой"
+      }
+    },
+    {
+      "id": "14e2f3ce-1794-44fb-8897-3e25735bdeb5",
+      "name": "Винт М4х10 мм полусф. головка, цинк, DIN 7985 (1000 шт в карт. уп.) STARFIX",
+      "slug": "vint-m4h10-mm-polusf-golovka-cink-din-7985-1000-sht-v-kart-up-starfix-smc1-52172-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "70e1afc6-fd1a-4665-b9b3-87f945e46171",
+        "name": "Винт с полусферической головкой картонная упаковка"
+      }
+    },
+    {
+      "id": "41dd056e-481d-4cff-a9ad-ac60b1448566",
+      "name": "Винт М3х10 мм потай. головка, цинк, DIN 965 (100 шт в зип-локе) STARFIX",
+      "slug": "vint-m3h10-mm-potai-golovka-cink-din-965-100-sht-v-zip-loke-starfix-smz1-45816-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "b02d7620-fc03-4ab7-8629-e608eb72c2de",
+        "name": "Винт с потайной головкой зип-лок"
+      }
+    },
+    {
+      "id": "bbd6af93-ff9f-48a0-af0b-1ed30cec785c",
+      "name": "Винт М3х12 мм полусфера, нерж.сталь (А2), DIN 7985 (50 шт в зип-локе) STARFIX",
+      "slug": "vint-m3h12-mm-polusfera-nerzh-stal-a2-din-7985-50-sht-v-zip-loke-starfix-smz1-31138-50",
+      "brand": "STARFIX",
+      "category": {
+        "id": "7c8ec4cc-3f85-4fcd-b2b1-4be8ce6d6b08",
+        "name": "Винт полусфера зип-лок"
+      }
+    },
+    {
+      "id": "003aef60-485c-42ed-8584-a089afe2c1db",
+      "name": "Винт М4х10 мм для мебельной фурнитуры, цинк DIN 967 (25 шт в зип-локе) STARFIX",
+      "slug": "vint-m4h10-mm-dlya-mebelnoi-furnitury-cink-din-967-25-sht-v-zip-loke-starfix-smz1-66871-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "bcb8f0d8-02c7-4677-9100-998258fb684d",
+        "name": "Винт для мебельной фурнитуры зип-лок"
+      }
+    },
+    {
+      "id": "f8fd6e19-325f-49ab-8d7e-04717d2379ff",
+      "name": "Винт М4х10 мм для мебельной фурнитуры, цинк, кл.пр. 5.8, DIN 967 (12000 шт в коробе) STARFIX",
+      "slug": "vint-m4h10-mm-dlya-mebelnoi-furnitury-cink-kl-pr-5-8-din-967-12000-sht-v-korobe-starfix-sm-66871-12000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "861c7a99-9076-4cd4-9f13-d4d6cb8a4016",
+        "name": "Винт для мебельной фурнитуры короб"
+      }
+    },
+    {
+      "id": "5758bd41-c505-49ab-a56b-8cb08c056d80",
+      "name": "Винт М4х20 мм потай. головка, нерж. сталь (A2), DIN 965 (50 шт в зип-локе) STARFIX",
+      "slug": "vint-m4h20-mm-potai-golovka-nerzh-stal-a2-din-965-50-sht-v-zip-loke-starfix-smz1-60435-50",
+      "brand": "STARFIX",
+      "category": {
+        "id": "2b11859a-0afe-46e1-b99c-ee90b09efd5e",
+        "name": "Винт потай DIN 965 А2 зип-лок"
+      }
+    },
+    {
+      "id": "d8593afd-63ff-41db-9f13-3f04a41c3317",
+      "name": "Винт М4х20 мм потай. головка, нерж.сталь (А2) DIN965 (1000 шт в карт. уп.)",
+      "slug": "vint-m4h20-mm-potai-golovka-nerzh-stal-a2-din965-1000-sht-v-kart-up-sm-60435-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "52427c73-09d2-4372-8f22-039287502f4a",
+        "name": "Винт потай DIN 965 А2 картон"
+      }
+    },
+    {
+      "id": "0a9d0069-4488-4c94-b001-af16148789f2",
+      "name": "Гайка М24 шестигр., цинк, кл.пр. 6, DIN 934 (10 шт в карт. уп.) STARFIX",
+      "slug": "gaika-m24-shestigr-cink-kl-pr-6-din-934-10-sht-v-kart-up-starfix-smc1-47292-10",
+      "brand": "STARFIX",
+      "category": {
+        "id": "95a0f951-9775-4a59-a725-fe5c79212abf",
+        "name": "Гайка шестигранная 6 картонная упаковка"
+      }
+    },
+    {
+      "id": "afbfec9d-155d-4bd0-a1c9-b596a93d06bc",
+      "name": "Гайка М5 барашковая, цинк, DIN 315 (100 шт в пласт. конт.) STARFIX",
+      "slug": "gaika-m5-barashkovaya-cink-din-315-100-sht-v-plast-kont-starfix-smp1-15683-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "b2ea5137-6748-47db-8c76-cd83b7a50fdf",
+        "name": "Гайка барашковая пластиковый контейнер"
+      }
+    },
+    {
+      "id": "86890ea4-14b3-42c8-9cbe-dc56841fd004",
+      "name": "Гайка М4 шестигр., нерж.сталь (А2), DIN 934 (1000 шт в уп.)",
+      "slug": "gaika-m4-shestigr-nerzh-stal-a2-din-934-1000-sht-v-up-sm-85214-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "328f6f4a-5efa-425a-905a-df2dfc164239",
+        "name": "Гайка шестигранная DIN 934 А2 картон"
+      }
+    },
+    {
+      "id": "e53a7b36-96f5-4c9a-a6ff-a9f803056d46",
+      "name": "Гайка М30 шестигр. цинк, кл.пр. 10.0 ГОСТ 5927-70(25 кг)",
+      "slug": "gaika-m30-shestigr-cink-kl-pr-10-0-gost-5927-70-25-kg-sm-54818-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "21b498e6-ddd8-40de-a581-44b17d15ec7c",
+        "name": "Гайка шестигранная ГОСТ 5915-70 прочность 10"
+      }
+    },
+    {
+      "id": "8cdffbd6-0040-48dc-b0f9-91eae4ad5aea",
+      "name": "Гайка М4 колпачковая, цинк, DIN 1587 (100 шт в пласт. конт.) STARFIX",
+      "slug": "gaika-m4-kolpachkovaya-cink-din-1587-100-sht-v-plast-kont-starfix-smp1-36212-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "550e96a0-79a7-4e43-9980-9fbedb34226c",
+        "name": "Гайка колпачковая пластиковый контейнер"
+      }
+    },
+    {
+      "id": "b1e7b1ce-a250-4444-afa7-e65077d685f5",
+      "name": "Гайка М4 с фланцем, цинк, DIN 6923 (1000 шт в карт. уп.) STARFIX",
+      "slug": "gaika-m4-s-flancem-cink-din-6923-1000-sht-v-kart-up-starfix-smc1-66039-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "b595754e-e391-48b2-a349-d10cb9aa6841",
+        "name": "Гайка с фланцем картонная упаковка"
+      }
+    },
+    {
+      "id": "5bff884c-ec9a-4183-9000-dc99f9908a77",
+      "name": "Гайка М5 со стопорным кольцом, цинк, DIN 985 (25000 шт в коробе) STARFIX",
+      "slug": "gaika-m5-so-stopornym-kolcom-cink-din-985-25000-sht-v-korobe-starfix-sm-50733-25000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "2c30c96e-71db-46ba-ade7-60f0c8b622e5",
+        "name": "Гайка со стопорным кольцом короба"
+      }
+    },
+    {
+      "id": "95d9344c-a457-4223-abc1-1ce9f4b69e1d",
+      "name": "Гайка М5/8 врезная, цинк, DIN 1624 (100 шт в пласт. конт.) STARFIX",
+      "slug": "gaika-m5-8-vreznaya-cink-din-1624-100-sht-v-plast-kont-starfix-smp1-19686-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "d3938d1c-1d42-4e28-bca0-6231885dbe18",
+        "name": "Гайка врезная пластиковый контейнер"
+      }
+    },
+    {
+      "id": "d0dcfcae-8f12-4d23-a609-0ea45e6d013c",
+      "name": "Гайка М5 со стопорным кольцом, нерж.сталь (А2), DIN 985 (1000 шт в уп.)",
+      "slug": "gaika-m5-so-stopornym-kolcom-nerzh-stal-a2-din-985-1000-sht-v-up-sm-45458-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "d1971f33-0c33-42d6-ab87-4a50f8614bf9",
+        "name": "Гайка со стопорным кольцом DIN 985 А2 картон"
+      }
+    },
+    {
+      "id": "aa9d3632-887e-4694-ae9a-8ee8165f7488",
+      "name": "Гайка М6 барашковая, нерж. сталь (А2), DIN 315 (10 шт в зип-локе) STARFIX",
+      "slug": "gaika-m6-barashkovaya-nerzh-stal-a2-din-315-10-sht-v-zip-loke-starfix-smz1-62453-10",
+      "brand": "STARFIX",
+      "category": {
+        "id": "3fce9146-c812-45fd-92c6-2f751f07852a",
+        "name": "Гайка барашковая DIN 315 А2 зип-лок"
+      }
+    },
+    {
+      "id": "2a3ece3b-03c0-4b93-96ca-bb8ac62e1f29",
+      "name": "Гайка М6 удлиняющая, цинк (130 шт в карт. уп.) STARFIX",
+      "slug": "gaika-m6-udlinyayushchaya-cink-130-sht-v-kart-up-starfix-smc1-86959-130",
+      "brand": "STARFIX",
+      "category": {
+        "id": "aefc3247-5571-4bd8-9ee0-e18ecf4b7294",
+        "name": "Гайка удлиняющая картонная упаковка"
+      }
+    },
+    {
+      "id": "51d0f5c3-dfb5-4551-aee2-0915aa7116de",
+      "name": "Дюбель распорный 6х30 мм тип N, нейлон (100 шт в пласт. конт.) STARFIX",
+      "slug": "dyubel-raspornyi-6h30-mm-tip-n-neilon-100-sht-v-plast-kont-starfix-smp2-74285-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "4a57e9ef-28ce-4ba9-9fe3-e6681aabc64d",
+        "name": "Дюбель распорный тип N нейлон пластиковый контейнер"
+      }
+    },
+    {
+      "id": "d025b2e9-9262-4655-a968-5bb7ce4ce31e",
+      "name": "Дюбель распорный 6х30 мм тип S (100 шт в пласт. конт.) STARFIX",
+      "slug": "dyubel-raspornyi-6h30-mm-tip-s-100-sht-v-plast-kont-starfix-smp2-53241-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "a14d633c-550c-429d-807a-e69b1e517052",
+        "name": "Дюбель распорный тип S пластиковый контейнер"
+      }
+    },
+    {
+      "id": "d97e1d28-1d1e-4f42-9c3c-41d9e2924ade",
+      "name": "Дюбель распорный 6х30 мм тип T (100 шт в пласт. конт.) STARFIX",
+      "slug": "dyubel-raspornyi-6h30-mm-tip-t-100-sht-v-plast-kont-starfix-smp2-06332-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "471e8751-7a4a-4d25-aee2-85c0d4bffd8e",
+        "name": "Дюбель распорный тип T пластиковый контейнер"
+      }
+    },
+    {
+      "id": "32ccc063-346e-401f-863b-89640fdd35ff",
+      "name": "Дюбель распорный 8х30 мм четырехсегментный (200 шт в карт. уп.) STARFIX",
+      "slug": "dyubel-raspornyi-8h30-mm-chetyrehsegmentnyi-200-sht-v-kart-up-starfix-smc2-44315-200",
+      "brand": "STARFIX",
+      "category": {
+        "id": "edc63fb4-3036-49ef-8ca6-6bd35f2aef00",
+        "name": "Дюбель распорный четырехсегментный картонная упаковка"
+      }
+    },
+    {
+      "id": "5d6e1a09-911c-48bf-a35d-49be259cbb44",
+      "name": "10х100х160 мм бур (сверло) SDS-plus EXPERT STARTUL",
+      "slug": "10h100h160-mm-bur-sverlo-sds-plus-expert-startul-se8310-160",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "cd6bc6dc-6590-4090-8a47-d145a6f212c3",
+      "name": "Таймер для полива механический STARTUL GARDEN (ST6011-13)",
+      "slug": "taimer-dlya-poliva-mehanicheskii-startul-garden-st6011-13",
+      "brand": "STARTUL",
+      "category": {
+        "id": "a6a01c9f-b54d-409f-a4e8-d475bc615ae1",
+        "name": "Адаптеры, соединители, переходники"
+      }
+    },
+    {
+      "id": "3f01f545-0dd2-4661-b3f7-1fc2c1aa7cee",
+      "name": "Алмазная чашка 125мм бетон двурядная EXPERT STARTUL (SE8001-125)",
+      "slug": "almaznaya-chashka-125mm-beton-dvuryadnaya-expert-startul-se8001-125",
+      "brand": "STARTUL",
+      "category": {
+        "id": "496497cd-a6d8-4272-9252-614ef6a34d38",
+        "name": "Алмазные чашки"
+      }
+    },
+    {
+      "id": "9d79832c-c963-463c-99f9-3ba1eeba160c",
+      "name": "Алмазный круг 125х22 мм универс. Turbo EXPERT STARTUL (SE8004-125)",
+      "slug": "almaznyi-krug-125h22-mm-univers-turbo-expert-startul-se8004-125",
+      "brand": "STARTUL",
+      "category": {
+        "id": "e20c47dd-216f-485d-88ac-20168b51e8c0",
+        "name": "Алмазные круги Ф125мм"
+      }
+    },
+    {
+      "id": "c88d3bf0-58f9-4082-b369-78859996058b",
+      "name": "Алмазный круг 230х22 мм турбо-сегментный EXPERT STARTUL (SE8003-230)",
+      "slug": "almaznyi-krug-230h22-mm-turbo-segmentnyi-expert-startul-se8003-230",
+      "brand": "STARTUL",
+      "category": {
+        "id": "2c837e2b-6ddd-41f8-a543-073678d19458",
+        "name": "Алмазные круги Ф 230 мм"
+      }
+    },
+    {
+      "id": "4faf6207-3086-453e-ba3f-155075a3a82c",
+      "name": "Беруши STARTUL без шнурка",
+      "slug": "berushi-startul-bez-shnurka-st7410-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "6d789080-d0a4-4e5c-82da-10cf85e9a30a",
+        "name": "Наушники, беруши"
+      }
+    },
+    {
+      "id": "583bd211-2e11-426b-a48d-2bde957854e1",
+      "name": "Бокорезы 160мм EXPERT STARTUL (SE4260-16)",
+      "slug": "bokorezy-160mm-expert-startul-se4260-16",
+      "brand": "STARTUL",
+      "category": {
+        "id": "cf4e262f-81c4-461d-a253-7e3291205cd6",
+        "name": "Кусачки, бокорезы"
+      }
+    },
+    {
+      "id": "73e497e8-0c8c-4cc2-8d59-46e678df8751",
+      "name": "Ножницы по мет. 250мм STARTUL MASTER (ST4210-25)",
+      "slug": "nozhnicy-po-met-250mm-startul-master-st4210-25",
+      "brand": "STARTUL",
+      "category": {
+        "id": "d0f0f7f7-9612-49b5-ac54-9350ad0aff23",
+        "name": "Ножницы ручные, болторезы"
+      }
+    },
+    {
+      "id": "9daa5743-332f-4aea-80f9-40b9ce6712bf",
+      "name": "Борфреза твердосплавная тип D 8x7мм EXPERT STARTUL",
+      "slug": "borfreza-tverdosplavnaya-tip-d-8x7mm-expert-startul-se8703-08",
+      "brand": "STARTUL",
+      "category": {
+        "id": "c320efc0-0417-4397-87d9-40be1bee7a88",
+        "name": "Фрезерование"
+      }
+    },
+    {
+      "id": "88e52231-542f-4465-92d9-5089296e1f3c",
+      "name": "Брусок абразивный \"лодочка\" STARTUL STANDART (ST5010)",
+      "slug": "brusok-abrazivnyi-lodochka-startul-standart-st5010",
+      "brand": "STARTUL",
+      "category": {
+        "id": "396bb7cf-3ba5-4dbe-927f-e86592c42e83",
+        "name": "Бруски, губки абразивные"
+      }
+    },
+    {
+      "id": "18991854-c868-41f8-bb21-becde95754c0",
+      "name": "Терка полиуретановая 110х600мм облегченная STARTUL MASTER (ST1019-11-60)",
+      "slug": "terka-poliuretanovaya-110h600mm-oblegchennaya-startul-master-st1019-11-60",
+      "brand": "STARTUL",
+      "category": {
+        "id": "717bc463-9924-49fc-9061-324691f280ac",
+        "name": "Терки, гладилки"
+      }
+    },
+    {
+      "id": "7bdefb75-a2ab-48cc-8218-cffe3bc9c23d",
+      "name": "Валик для нанесения шпатлевки и штукатурки 44-180мм с ручкой 8мм STARTUL PROFI",
+      "slug": "valik-dlya-naneseniya-shpatlevki-i-shtukaturki-44-180mm-s-ruchkoi-8mm-startul-profi-st0237-18r",
+      "brand": "STARTUL",
+      "category": {
+        "id": "146e59fb-6308-450f-9749-e90600c5b989",
+        "name": "Валики, ролики малярные, принадлежности"
+      }
+    },
+    {
+      "id": "a8a0cb39-b193-4ee3-a00d-257e33d0fd0a",
+      "name": "Ручка для мини-ролика ф6мм, 100мм STARTUL MASTER",
+      "slug": "ruchka-dlya-mini-rolika-f6mm-100mm-startul-master-st0220-10",
+      "brand": "STARTUL",
+      "category": {
+        "id": "f420a120-54d8-4b47-97ac-6a6d6589d092",
+        "name": "Принадлежности"
+      }
+    },
+    {
+      "id": "a658bc59-6bb3-4506-9e23-dd8f92600c6f",
+      "name": "Совок посадочный 34см STARTUL METSA (ST6440-03)",
+      "slug": "sovok-posadochnyi-34sm-startul-metsa-st6440-03",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ccdd47de-b0c6-4c6b-8f8d-4e18b343f0ae",
+        "name": "Инструмент для обработки почвы"
+      }
+    },
+    {
+      "id": "0cab6ab4-3a54-4893-8a0a-72bb83a95597",
+      "name": "Вилы садовые 4-рогие с черенком 1100мм STARTUL GARDEN (ST6088-01)",
+      "slug": "vily-sadovye-4-rogie-s-cherenkom-1100mm-startul-garden-st6088-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "219990d8-2bba-4dce-944f-7ddb6cf3b5d4",
+        "name": "Косы, вилы и пр."
+      }
+    },
+    {
+      "id": "09cc8994-53da-4fb9-a83b-69f8f44d1599",
+      "name": "Воронка пластмассовая 110мм для техн. жидкостей STARTUL AUTO (ST8050)",
+      "slug": "voronka-plastmassovaya-110mm-dlya-tehn-zhidkostei-startul-auto-st8050",
+      "brand": "STARTUL",
+      "category": {
+        "id": "6627c018-8fc0-49ce-bc06-d040516e645b",
+        "name": "Автослесарный инструмент"
+      }
+    },
+    {
+      "id": "87c7bead-e1eb-42bc-af02-c8217a763de5",
+      "name": "Газонокосилка бензиновая STARTUL GARDEN 46 SM самоходная",
+      "slug": "gazonokosilka-benzinovaya-startul-garden-46-sm-samohodnaya-sg1015",
+      "brand": "STARTUL",
+      "category": {
+        "id": "435e7937-f0c7-476c-b359-e83d0fcae7b5",
+        "name": "Газонокосилки бензиновые"
+      }
+    },
+    {
+      "id": "10492b7d-6d1f-4366-8f94-137422ca69ae",
+      "name": "Гвозди тип 18GA 20мм (5000шт) STARTUL PROFI (ST4515-20)",
+      "slug": "gvozdi-tip-18ga-20mm-5000sht-startul-profi-st4515-20",
+      "brand": "STARTUL",
+      "category": {
+        "id": "c681ce5b-f045-48d5-8206-59ba4356d3c1",
+        "name": "Скобы и гвозди для пневмостеплеров"
+      }
+    },
+    {
+      "id": "0f773606-5842-4ab5-bc9d-0900f1a8f55c",
+      "name": "Горелка газовая с пьезоподжигом STARTUL (ST1560-05)",
+      "slug": "gorelka-gazovaya-s-pezopodzhigom-startul-st1560-05",
+      "brand": "STARTUL",
+      "category": {
+        "id": "090d8a04-d40a-4b5d-ae04-e429da473e10",
+        "name": "Горелки газовые"
+      }
+    },
+    {
+      "id": "15015276-c6f9-4274-9e7b-0b0eafb34a87",
+      "name": "Грабли веерные пластм. 27зуб. со стальным черенком STARTUL GARDEN (ST6094-27)",
+      "slug": "grabli-veernye-plastm-27zub-so-stalnym-cherenkom-startul-garden-st6094-27",
+      "brand": "STARTUL",
+      "category": {
+        "id": "fbe3c7fb-b119-4347-82ae-042343e521df",
+        "name": "Грабли веерные"
+      }
+    },
+    {
+      "id": "feea2892-8723-43c2-b666-1af578975759",
+      "name": "Грабли витые 12 зуб. с черенком 1200мм STARTUL GARDEN (ST6095-01)",
+      "slug": "grabli-vitye-12-zub-s-cherenkom-1200mm-startul-garden-st6095-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "4b556751-9bcf-4675-acca-23434180602c",
+        "name": "Грабли прямые"
+      }
+    },
+    {
+      "id": "ee52520f-5229-4ab8-b2b3-c364a79c6d0a",
+      "name": "Губки для заклепочн. SE4082,SE4083 (компл. 3шт.) EXPERT STARTUL (SE4090-01)",
+      "slug": "gubki-dlya-zaklepochn-se4082-se4083-kompl-3sht-expert-startul-se4090-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "65bb36d1-0818-46bd-b9da-573939174ed6",
+        "name": "Заклепочники"
+      }
+    },
+    {
+      "id": "5ecc4eb6-3178-48d7-b897-382df9aaa5b8",
+      "name": "Движок для снега пластмассовый 700х465 STARTUL (ST9070-4)",
+      "slug": "dvizhok-dlya-snega-plastmassovyi-700h465-startul-st9070-4",
+      "brand": "STARTUL",
+      "category": {
+        "id": "47c23510-2865-43c4-9709-c9e14ea23ab2",
+        "name": "Снеговые лопаты, движки, ледорубы"
+      }
+    },
+    {
+      "id": "3cd56c43-46ff-49ec-a3d8-2a636849d50f",
+      "name": "Держатель для бит магнитный 60мм EXPERT STARTUL (SE8422-01)",
+      "slug": "derzhatel-dlya-bit-magnitnyi-60mm-expert-startul-se8422-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "fe6a8d09-bd52-4abb-96ae-bf0f7fbfea50",
+        "name": "Держатели для бит"
+      }
+    },
+    {
+      "id": "b9b74996-4105-4845-98bd-1416dd5b03ea",
+      "name": "Домкрат гидравлический 2т бутылочный 170-380мм (телескопический) STARTUL AUTO (ST8026-02)",
+      "slug": "domkrat-gidravlicheskii-2t-butylochnyi-170-380mm-teleskopicheskii-startul-auto-st8026-02",
+      "brand": "STARTUL",
+      "category": {
+        "id": "b7a3a1ee-ff92-4f5a-b4ff-8ccf92e6dada",
+        "name": "Домкраты, гидравлическое оборудование"
+      }
+    },
+    {
+      "id": "d02f4a88-bf1b-4604-89f2-d1f8bfe74d34",
+      "name": "Кисть радиаторная 3\"-75мм STARTUL STANDART",
+      "slug": "kist-radiatornaya-3-75mm-startul-standart-st0121-75",
+      "brand": "STARTUL",
+      "category": {
+        "id": "b1d6f7ea-395e-4921-a1e5-495ca9418017",
+        "name": "Кисти"
+      }
+    },
+    {
+      "id": "d1e00e1b-9624-4369-adba-0cdac4305731",
+      "name": "Кисть-макловица 20х100мм смеш. щетина (древесина) STARTUL MASTER",
+      "slug": "kist-maklovica-20h100mm-smesh-shchetina-drevesina-startul-master-st0106-100",
+      "brand": "STARTUL",
+      "category": {
+        "id": "85101fde-883e-4338-bc7f-5206b55f5694",
+        "name": "Кисти плоские"
+      }
+    },
+    {
+      "id": "ed8b5e88-861d-4608-96f1-6933880d57f2",
+      "name": "Киянка резиновая белая 0,225кг с фибергл. рукояткой STARTUL PROFI (ST2201-02)",
+      "slug": "kiyanka-rezinovaya-belaya-0-225kg-s-fibergl-rukoyatkoi-startul-profi-st2201-02",
+      "brand": "STARTUL",
+      "category": {
+        "id": "7fd8866b-2506-423b-989b-52d34b0ac8eb",
+        "name": "Молотки, кувалды,киянки"
+      }
+    },
+    {
+      "id": "11a341e9-13ff-488d-9a35-2d869df97fba",
+      "name": "Клещи для снятия изоляции STARTUL MASTER (ST4009-01)",
+      "slug": "kleshchi-dlya-snyatiya-izolyacii-startul-master-st4009-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "e9f6b1ef-549a-4f1c-9d44-ae18114b4210",
+        "name": "Инструмент для снятия изоляции"
+      }
+    },
+    {
+      "id": "95cb58bc-7be6-4b7c-9c70-bc4bfb83ea49",
+      "name": "Клещи переставные-гаечный ключ 180мм EXPERT STARTUL (SE4236-18)",
+      "slug": "kleshchi-perestavnye-gaechnyi-klyuch-180mm-expert-startul-se4236-18",
+      "brand": "STARTUL",
+      "category": {
+        "id": "8c27892e-e5a2-49f3-b8fc-bc811538146c",
+        "name": "Клещи"
+      }
+    },
+    {
+      "id": "ef8f68b6-ed06-4eee-84ac-ae776bff889a",
+      "name": "Система выравнивания плитки СВП 1,5мм (зажим 40шт+клин 40шт) STARTUL MASTER (ST4401-40)",
+      "slug": "sistema-vyravnivaniya-plitki-svp-1-5mm-zazhim-40sht-klin-40sht-startul-master-st4401-40",
+      "brand": "STARTUL",
+      "category": {
+        "id": "3a74dd58-85da-409c-827c-bfe2be679e42",
+        "name": "Система выравнивания плитки STARTUL"
+      }
+    },
+    {
+      "id": "58590121-4b59-448b-8027-d1559bd8d856",
+      "name": "Резьбонарезной набор трубный 1/2\", 3/4\", 1\" STARTUL PROFI (ST9322)",
+      "slug": "rezbonareznoi-nabor-trubnyi-1-2-3-4-1-startul-profi-st9322",
+      "brand": "STARTUL",
+      "category": {
+        "id": "68c910dd-d339-4303-843d-2838be59221d",
+        "name": "Клуппы и принадлености к ним"
+      }
+    },
+    {
+      "id": "a1a17df8-bd51-43ad-b949-dce02e1d84e1",
+      "name": "Ключ комбинированный 10мм STARTUL MASTER (ST4270-10)",
+      "slug": "klyuch-kombinirovannyi-10mm-startul-master-st4270-10",
+      "brand": "STARTUL",
+      "category": {
+        "id": "02b44a0f-bd75-4fca-9e85-5592e406528d",
+        "name": "Ключи комбинированные PRO STARTUL/STARTUL"
+      }
+    },
+    {
+      "id": "8098e1b2-871a-4109-89ba-d821fe322b2e",
+      "name": "Ключ разводной с ультратонкими губками 150мм EXPERT STARTUL (SE4224-15)",
+      "slug": "klyuch-razvodnoi-s-ultratonkimi-gubkami-150mm-expert-startul-se4224-15",
+      "brand": "STARTUL",
+      "category": {
+        "id": "6e90d300-325b-46ea-917b-550189c137a1",
+        "name": "Ключи разводные"
+      }
+    },
+    {
+      "id": "4845602e-aa13-490d-9d9d-73d49eb94a71",
+      "name": "Коронка алмазная d 82мм железобетон BULL, L70мм, M16, микроудар, сухое сверление",
+      "slug": "koronka-almaznaya-d-82mm-zhelezobeton-bull-l70mm-m16-mikroudar-suhoe-sverlenie-2329239",
+      "brand": "BULL",
+      "category": {
+        "id": "572898f6-3db8-45df-be19-4224d9008a06",
+        "name": "Алмазные коронки для буровых установок"
+      }
+    },
+    {
+      "id": "9c076e25-0fa5-4b82-93eb-42ca12fd0066",
+      "name": "Тепловизор BULL TIC 1290 в кор. 120x90, 25 Гц, -20°C…+550°C",
+      "slug": "teplovizor-bull-tic-1290-v-kor-120x90-25-gc-20-c-550-c-1323695",
+      "brand": "BULL",
+      "category": {
+        "id": "2cc99cff-342b-40b8-ac43-7c3724811fe6",
+        "name": "Другая аккумуляторная техника"
+      }
+    },
+    {
+      "id": "479dcd5f-b1db-48cc-9d32-3e0ed064f1b4",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1805 Xcase XLTpro, 2х6 А*ч, БЕСЩЕТ., 18 В, 120 Н*м, БЗП(мет.) 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1805-xcase-xltpro-2h6-a-ch-besshchet-18-v-120-n-m-bzp-met-13-mm-1329883-2",
+      "brand": "BULL",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "9bcd79b6-1018-4742-8bb5-d234a24e3472",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1805 в чем. XLTpro, 2х6 А*ч, БЕСЩЕТ., 18 В, 120 Н*м, БЗП(мет.) 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1805-v-chem-xltpro-2h6-a-ch-besshchet-18-v-120-n-m-bzp-met-13-mm-1329604",
+      "brand": "BULL",
+      "category": {
+        "id": "add2dc16-63d3-4de8-b2db-1c805e32cc64",
+        "name": "Аккумуляторный инструмент на 1 батарее BULL \"XLTpro\""
+      }
+    },
+    {
+      "id": "c47cefa8-7ce2-48a4-8ec1-7d3ba38329dd",
+      "name": "Аккум. заклепочный пистолет BULL CRG 1018 в чем. XLTpro, БЕСЩЕТ., 25 мм, 10000 Н, 1х4 А*ч",
+      "slug": "akkum-zaklepochnyi-pistolet-bull-crg-1018-v-chem-xltpro-besshchet-25-mm-10000-n-1h4-a-ch-1304594",
+      "brand": "BULL",
+      "category": {
+        "id": "ce93c109-a452-4dd0-9267-3ef7066b14ba",
+        "name": "Аккумуляторные заклепочные пистолеты"
+      }
+    },
+    {
+      "id": "cc88ed43-95f4-4a3a-b938-9333c0dfb3c6",
+      "name": "Циркулярная пила BULL KS 1901 в кор. 1500 Вт, 190х30 мм, до 66 мм",
+      "slug": "cirkulyarnaya-pila-bull-ks-1901-v-kor-1500-vt-190h30-mm-do-66-mm-07018126",
+      "brand": "BULL",
+      "category": {
+        "id": "17f08f9a-319d-480e-b354-4af4c065de21",
+        "name": "Циркулярные ручные пилы"
+      }
+    },
+    {
+      "id": "58f3da4d-3d12-4f5a-b016-24cb5335525d",
+      "name": "Аккум. ленточный шуруповерт BULL CAS 1844 в кор. SOLO, XLTpro, БЕСЩЕТ., 18 В, 4500 об/мин, 57 мм",
+      "slug": "akkum-lentochnyi-shurupovert-bull-cas-1844-v-kor-solo-xltpro-besshchet-18-v-4500-ob-min-57-mm-1304784",
+      "brand": "BULL",
+      "category": {
+        "id": "6d2e8ae7-cf2a-4ad4-8eae-bff034f5eeb5",
+        "name": "Аккумуляторные ленточные шуруповерты"
+      }
+    },
+    {
+      "id": "2b7e5bba-3378-426c-a7cd-faedc28f4564",
+      "name": "Аккум. перфоратор BULL CBH 1826 Xcase, XLTpro, БЕСЩЕТ., 18 В, 2.6 Дж, 26 мм, 1x4 А*ч, з/у",
+      "slug": "akkum-perforator-bull-cbh-1826-xcase-xltpro-besshchet-18-v-2-6-dzh-26-mm-1x4-a-ch-z-u-1333735-2",
+      "brand": "BULL",
+      "category": {
+        "id": "91865477-d6ee-4683-a89b-aeb3231922e7",
+        "name": "Аккумуляторные перфораторы"
+      }
+    },
+    {
+      "id": "5d59857f-5913-40d4-a81b-6c9ed9db5ecd",
+      "name": "Аккум. ударный гайковерт/винтоверт BULL CID 2218 Xcase, XLTpro, SET, БЕСЩЕТ., 18 В, 220 Н*м, 2х4 А*ч",
+      "slug": "akkum-udarnyi-gaikovert-vintovert-bull-cid-2218-xcase-xltpro-set-besshchet-18-v-220-n-m-2h4-a-ch-1329954",
+      "brand": "BULL",
+      "category": {
+        "id": "6f8b353c-35c9-458b-830f-052d67e33e65",
+        "name": "Аккумуляторные гайковерты"
+      }
+    },
+    {
+      "id": "8aa0340b-a1e3-4fc8-810d-fc7c637ef22e",
+      "name": "Аккум. углошлифмашина BULL CSG 1812-1 SR Xcase XLTpro 1x4 Ач БЕСЩЕТ, 125 мм, рег. об., 10 000 об/мин",
+      "slug": "akkum-ugloshlifmashina-bull-csg-1812-1-sr-xcase-xltpro-1x4-ach-besshchet-125-mm-reg-ob-10-000-ob-min-1333997",
+      "brand": "BULL",
+      "category": {
+        "id": "e363fc59-271e-4632-a329-062656e4bfe6",
+        "name": "Аккумуляторные углошлифмашины"
+      }
+    },
+    {
+      "id": "28dc2848-30be-43b5-abd8-b8097341b6df",
+      "name": "Набор аккумулятор 4 А*ч и зарядное устройство 1х4 А BULL XLTpro в чем. SET",
+      "slug": "nabor-akkumulyator-4-a-ch-i-zaryadnoe-ustroistvo-1h4-a-bull-xltpro-v-chem-set-2329061",
+      "brand": "BULL",
+      "category": {
+        "id": "0c099e22-f16c-4c76-adf4-03327981b536",
+        "name": "Аккумуляторы"
+      }
+    },
+    {
+      "id": "baeae227-7339-4725-9876-b6287aba73da",
+      "name": "Безвоздушный окрасочный аппарат BULL BAS 2223 в кор. БЕСЩЕТ., 1300 Вт, 2,3 л/мин, 220 Бар",
+      "slug": "bezvozdushnyi-okrasochnyi-apparat-bull-bas-2223-v-kor-besshchet-1300-vt-2-3-l-min-220-bar-1304755",
+      "brand": "BULL",
+      "category": {
+        "id": "81e048c4-5df9-45e1-87d0-0d0d83667e32",
+        "name": "Краскораспылители электрические"
+      }
+    },
+    {
+      "id": "402c2357-582f-4a68-b441-fc3672a0ab12",
+      "name": "Бетонорез электрический BULL BCS 3526 в кор. 2600 Вт, 355 мм, глуб. 125 мм",
+      "slug": "betonorez-elektricheskii-bull-bcs-3526-v-kor-2600-vt-355-mm-glub-125-mm-1304849",
+      "brand": "BULL",
+      "category": {
+        "id": "74157f70-8357-42d1-b7b5-dfe1af11b72a",
+        "name": "Бетонорезы"
+      }
+    },
+    {
+      "id": "e458a121-a7fd-4750-b625-8e1cdf58764e",
+      "name": "Бороздодел BULL MJ 1501 в сумке 1600 Вт, 150 мм, до 40 мм, конст. эл., защита от перег.",
+      "slug": "borozdodel-bull-mj-1501-v-sumke-1600-vt-150-mm-do-40-mm-konst-el-zashchita-ot-pereg-12043525",
+      "brand": "BULL",
+      "category": {
+        "id": "21a01db8-53fe-4737-a506-661e9ab84837",
+        "name": "Бороздоделы"
+      }
+    },
+    {
+      "id": "3bb05b65-e13d-4995-ba49-1ff14412b4c0",
+      "name": "Вал гибкий 6 м в сборе с вибронаконечником 48 мм для вибратора BULL PCV 6026",
+      "slug": "val-gibkii-6-m-v-sbore-s-vibronakonechnikom-48-mm-dlya-vibratora-bull-pcv-6026-1329659",
+      "brand": "BULL",
+      "category": {
+        "id": "756335ce-aceb-4884-a076-57310f69fbb4",
+        "name": "Гибкие валы"
+      }
+    },
+    {
+      "id": "6fa0f159-a8e8-481e-a531-547fb353e732",
+      "name": "Подстолье складное (cороконожка) BULL TT 2211 224.5x115x76.5 см, нагрузка до 1800 кг",
+      "slug": "podstole-skladnoe-corokonozhka-bull-tt-2211-224-5x115x76-5-sm-nagruzka-do-1800-kg-1335889",
+      "brand": "BULL",
+      "category": {
+        "id": "ec7879c0-05b4-4d5a-99bc-21d29a28afca",
+        "name": "Верстаки"
+      }
+    },
+    {
+      "id": "13c3dc68-e44e-436b-bf75-63a56a9fe377",
+      "name": "Вибратор глубинный BULL PCV 6026 в чем. 2600 Вт, 12000 об/мин, до 58 мм",
+      "slug": "vibrator-glubinnyi-bull-pcv-6026-v-chem-2600-vt-12000-ob-min-do-58-mm-1329605",
+      "brand": "BULL",
+      "category": {
+        "id": "56928aab-b296-4b1b-b59a-fc21ba473958",
+        "name": "Вибраторы глубинные"
+      }
+    },
+    {
+      "id": "ef2992a6-c181-4a1f-b486-4e49ab2fb305",
+      "name": "Гайка быстрозажимная для УШМ M14 BULL в блистере до 125 мм",
+      "slug": "gaika-bystrozazhimnaya-dlya-ushm-m14-bull-v-blistere-do-125-mm-2329325",
+      "brand": "BULL",
+      "category": {
+        "id": "44fa7f0e-e6a6-4ab8-9c25-c483817d5e27",
+        "name": "Оснастка для угловых шлифмашин"
+      }
+    },
+    {
+      "id": "8941a2fd-45c6-4e41-b750-8320171d7262",
+      "name": "Гайковерт ударный электрический BULL CW 1210 в чем. 1050 Вт, 1200 Н*м, 1\"",
+      "slug": "gaikovert-udarnyi-elektricheskii-bull-cw-1210-v-chem-1050-vt-1200-n-m-1-2337326",
+      "brand": "BULL",
+      "category": {
+        "id": "297ed71c-7a12-47f1-9d1d-4ff9eb5e6128",
+        "name": "Гайковерты"
+      }
+    },
+    {
+      "id": "1c57e0d5-8e0a-4b98-86ea-ad76b1e241ab",
+      "name": "Гвоздь по бетону для монт. пистолета в ленте 3х19 мм BULL (1000 шт. в уп.) гальванизированные",
+      "slug": "gvozd-po-betonu-dlya-mont-pistoleta-v-lente-3h19-mm-bull-1000-sht-v-up-galvanizirovannye-2335314",
+      "brand": "BULL",
+      "category": {
+        "id": "1bf1d589-fe3d-4a10-b1ca-47361412af6e",
+        "name": "Гвозди и скобы д/пистолета"
+      }
+    },
+    {
+      "id": "6b11a76b-c629-4f24-9fac-f1c09e4af1b7",
+      "name": "Дальномер лазерный BULL LM 8001 в кор. Проекция креста (зеленый), 0,08 – 80 м, +- 2 мм",
+      "slug": "dalnomer-lazernyi-bull-lm-8001-v-kor-proekciya-kresta-zelenyi-0-08-80-m-2-mm-1323465",
+      "brand": "BULL",
+      "category": {
+        "id": "4a51f777-1120-4118-83e6-12520c4a7942",
+        "name": "Дальномеры"
+      }
+    },
+    {
+      "id": "5c7df04c-82bb-4f5f-ad76-59fa5498289a",
+      "name": "Двуручная углошлифмашина BULL WS 2301 в кор. 2400 Вт, 230 мм, вибро, плавный пуск, 4м",
+      "slug": "dvuruchnaya-ugloshlifmashina-bull-ws-2301-v-kor-2400-vt-230-mm-vibro-plavnyi-pusk-4m-03017126",
+      "brand": "BULL",
+      "category": {
+        "id": "97b4de9c-bcd6-4ecd-aee9-6674fc26da26",
+        "name": "Двуручные углошлифмашины"
+      }
+    },
+    {
+      "id": "6481f08b-b76b-4e89-a5da-294b6820a856",
+      "name": "Диск пильный 355х25.4 мм 72 зуб. по металлу BULL (твердоспл. японский зуб, холодный рез)",
+      "slug": "disk-pilnyi-355h25-4-mm-72-zub-po-metallu-bull-tverdospl-yaponskii-zub-holodnyi-rez-2329274",
+      "brand": "BULL",
+      "category": {
+        "id": "98ab39f0-98cb-4961-b737-b7d607cd8ab1",
+        "name": "Пильные диски для циркулярных пил ф350-360мм"
+      }
+    },
+    {
+      "id": "a80580bd-5ba7-4cd1-83f6-843475f27aa2",
+      "name": "Дрель алмазного сверления BULL PCD 2432 W в кор., 3200 Вт, 240 мм, мокрое свер.",
+      "slug": "drel-almaznogo-sverleniya-bull-pcd-2432-w-v-kor-3200-vt-240-mm-mokroe-sver-2329261",
+      "brand": "BULL",
+      "category": {
+        "id": "cea66a57-a74b-47cb-b898-1ed54f7931bf",
+        "name": "Системы алмазного бурения"
+      }
+    },
+    {
+      "id": "f8a09c85-01c3-4ea5-8874-a91c7aef5e3c",
+      "name": "Дрель-шуруповерт BULL CDR 1340 в кор. 320 Вт, 41 Н*м, 2 скор., БЗП(мет.) 13 мм, 4 метра кабель",
+      "slug": "drel-shurupovert-bull-cdr-1340-v-kor-320-vt-41-n-m-2-skor-bzp-met-13-mm-4-metra-kabel-1333409",
+      "brand": "BULL",
+      "category": {
+        "id": "c924075a-1711-473e-8b8a-773d828f9964",
+        "name": "Дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "123ef891-002f-4b79-9a5c-0864d0be4ace",
+      "name": "Зарядное устройство BULL LD 2006 1 слот, 2 А XLTpro",
+      "slug": "zaryadnoe-ustroistvo-bull-ld-2006-1-slot-2-a-xltpro-1329598",
+      "brand": "BULL",
+      "category": {
+        "id": "ca780739-c19b-4fdb-9a13-60976bbacbca",
+        "name": "Зарядные устройства, радиоприемники"
+      }
+    },
+    {
+      "id": "bd9f6397-9810-4200-9909-29feb2a04596",
+      "name": "Сумка для инструмента BULL WB 5520, водонепроницаемая, объём 45 литров, вес до 30 кг.",
+      "slug": "sumka-dlya-instrumenta-bull-wb-5520-vodonepronicaemaya-obem-45-litrov-ves-do-30-kg-2323214",
+      "brand": "BULL",
+      "category": {
+        "id": "49d1d1da-bf90-4430-9258-8486d840c2ac",
+        "name": "Сумки, пояса для инструмента WORTEX"
+      }
+    },
+    {
+      "id": "5bac493a-2b80-45e1-9593-4dab2062e5db",
+      "name": "Круг заточной 145х22,2х3,2 мм BULL для BGC 1423",
+      "slug": "krug-zatochnoi-145h22-2h3-2-mm-bull-dlya-bgc-1423-2335149",
+      "brand": "BULL",
+      "category": {
+        "id": "44083929-7dca-48f3-b8c5-c5ebaf6449ad",
+        "name": "Круги заточные"
+      }
+    },
+    {
+      "id": "5b4d3500-4060-4a60-a7ad-64eb48692126",
+      "name": "Лобзик электрический BULL ST 6501 в чем. 600 Вт, 500-3000 ход/мин, до 110 мм",
+      "slug": "lobzik-elektricheskii-bull-st-6501-v-chem-600-vt-500-3000-hod-min-do-110-mm-0323066",
+      "brand": "BULL",
+      "category": {
+        "id": "06c536bc-451e-4ddd-b593-2e72cb5b0f63",
+        "name": "Лобзиковые пилы"
+      }
+    },
+    {
+      "id": "a33e349a-485d-4fa8-a550-c69726653c5a",
+      "name": "Мешок для сбора пыли для BULL AS 3002 35 л, многораз.",
+      "slug": "meshok-dlya-sbora-pyli-dlya-bull-as-3002-35-l-mnogoraz-1329631",
+      "brand": "BULL",
+      "category": {
+        "id": "3c00a644-4867-4ee6-b08a-c7847ed967a5",
+        "name": "Мешки"
+      }
+    },
+    {
+      "id": "052a04b5-de96-4895-bd45-cd60f968cc13",
+      "name": "Миксер строительный BULL BM 1618 в кор. 1800 Вт, 2 венчика , 2 скор., HEX13, рег. об., кабель 4 м",
+      "slug": "mikser-stroitelnyi-bull-bm-1618-v-kor-1800-vt-2-venchika-2-skor-hex13-reg-ob-kabel-4-m-0304362",
+      "brand": "BULL",
+      "category": {
+        "id": "350e2863-d2c0-4b25-9439-64859e9a3788",
+        "name": "Миксеры строительные"
+      }
+    },
+    {
+      "id": "9e143f16-709b-4819-ad00-80692a9b0154",
+      "name": "Многофункциональный инструмент (реноватор) BULL SM 3030 QE в кор. + набор оснастки",
+      "slug": "mnogofunkcionalnyi-instrument-renovator-bull-sm-3030-qe-v-kor-nabor-osnastki-1335906",
+      "brand": "BULL",
+      "category": {
+        "id": "be4a5d9b-62fc-417a-9d4e-5bcc060a8d11",
+        "name": "Многофункциональные инструменты"
+      }
+    },
+    {
+      "id": "bbab3b7b-3a6e-4167-b114-a69c7838c981",
+      "name": "Набор бит ударных BULL Impact IMB 40 Max в кейсе",
+      "slug": "nabor-bit-udarnyh-bull-impact-imb-40-max-v-keise-1335707",
+      "brand": "BULL",
+      "category": {
+        "id": "51c92860-8fc4-467a-b34f-ddc52741e2c1",
+        "name": "Наборы бит"
+      }
+    },
+    {
+      "id": "88756a8a-d645-45c2-8deb-b6d5f28a4995",
+      "name": "6.5х50х110 мм бур (сверло) SDS-plus GEPARD",
+      "slug": "6-5h50h110-mm-bur-sverlo-sds-plus-gepard-gp01065-110",
+      "brand": "GEPARD",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "30a47d4d-124b-4b9d-bfaf-321d2078a7c3",
+      "name": "10х250х310 мм бур (сверло) SDS-plus QUADRO-X GEPARD",
+      "slug": "10h250h310-mm-bur-sverlo-sds-plus-quadro-x-gepard-gp1210-310",
+      "brand": "GEPARD",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "0b06c6d2-12f5-4c1b-8a41-7dc3b0440c26",
+      "name": "12х200х340 мм бур (сверло) SDS-max QUADRO-X GEPARD",
+      "slug": "12h200h340-mm-bur-sverlo-sds-max-quadro-x-gepard-gp1112-340",
+      "brand": "GEPARD",
+      "category": {
+        "id": "7ddf5df0-bcad-40c3-a40e-865fd75b506f",
+        "name": "Сверла по бетону для перфораторов SDS MAX"
+      }
+    },
+    {
+      "id": "f5e767e7-9cb1-4d8a-b87a-45eae8147b4d",
+      "name": "Ключ для сверлильного патрона 13мм GEPARD (GP0821-03)",
+      "slug": "klyuch-dlya-sverlilnogo-patrona-13mm-gepard-gp0821-03",
+      "brand": "GEPARD",
+      "category": {
+        "id": "b35eb927-62a7-4b8e-8751-1a6dd5f23ae2",
+        "name": "Патроны сверлильные"
+      }
+    },
+    {
+      "id": "ea045bb3-aac7-4839-b2b8-ff92adfbb321",
+      "name": "Алмазная чашка 115мм бетон двурядная GEPARD",
+      "slug": "almaznaya-chashka-115mm-beton-dvuryadnaya-gepard-gp0808-115",
+      "brand": "GEPARD",
+      "category": {
+        "id": "496497cd-a6d8-4272-9252-614ef6a34d38",
+        "name": "Алмазные чашки"
+      }
+    },
+    {
+      "id": "4b32b081-d22a-4765-b3fb-e8ec8497a1f1",
+      "name": "Алмазный гибкий шлифкруг \"Черепашка\" 100мм P100 мокр. GEPARD (GP5022-100)",
+      "slug": "almaznyi-gibkii-shlifkrug-cherepashka-100mm-p100-mokr-gepard-gp5022-100",
+      "brand": "GEPARD",
+      "category": {
+        "id": "a133b7d6-9561-4c92-b095-9773b473f23a",
+        "name": "Алмазные круги \"Черепашка\""
+      }
+    },
+    {
+      "id": "433a71b7-c0fd-4b57-975e-e74f8b1c5a6d",
+      "name": "Алмазный круг 115х22 мм универс. Turbo GEPARD",
+      "slug": "almaznyi-krug-115h22-mm-univers-turbo-gepard-gp0802-115",
+      "brand": "GEPARD",
+      "category": {
+        "id": "0a13c590-2934-469b-9895-1951eee4635c",
+        "name": "Алмазные круги Ф110,115мм"
+      }
+    },
+    {
+      "id": "bc384e2a-daaf-42d3-93bd-1bd3260f7af1",
+      "name": "Алмазный круг 125х22 мм по керамике сплошн. тонкий GEPARD",
+      "slug": "almaznyi-krug-125h22-mm-po-keramike-sploshn-tonkii-gepard-gp0819-125",
+      "brand": "GEPARD",
+      "category": {
+        "id": "e20c47dd-216f-485d-88ac-20168b51e8c0",
+        "name": "Алмазные круги Ф125мм"
+      }
+    },
+    {
+      "id": "fccd2f7c-3033-4abe-a705-39fb617e4832",
+      "name": "Алмазный круг 150х22 мм универс. сегмент. GEPARD",
+      "slug": "almaznyi-krug-150h22-mm-univers-segment-gepard-gp0801-150",
+      "brand": "GEPARD",
+      "category": {
+        "id": "d2006671-ebdc-47ef-aae1-803f743e7661",
+        "name": "Алмазные круги Ф150мм"
+      }
+    },
+    {
+      "id": "ef6d8786-b9a3-4ead-b60c-3008479a21fe",
+      "name": "Алмазный круг 180х22 мм по керамике сплошн. GEPARD",
+      "slug": "almaznyi-krug-180h22-mm-po-keramike-sploshn-gepard-gp0803-180",
+      "brand": "GEPARD",
+      "category": {
+        "id": "e5298a41-b5d2-4a56-9b0f-b238c28b33f0",
+        "name": "Алмазные круги Ф 180,200мм"
+      }
+    },
+    {
+      "id": "17605b63-dc80-4202-9e10-fe778bf36d8b",
+      "name": "Алмазный круг 230х22 мм турбо-сегментный GEPARD",
+      "slug": "almaznyi-krug-230h22-mm-turbo-segmentnyi-gepard-gp0817-230",
+      "brand": "GEPARD",
+      "category": {
+        "id": "2c837e2b-6ddd-41f8-a543-073678d19458",
+        "name": "Алмазные круги Ф 230 мм"
+      }
+    },
+    {
+      "id": "5a677237-4286-4a30-8df5-49796d407a18",
+      "name": "Алмазный круг 350х20/25.4 мм по бетону сегмент. GEPARD",
+      "slug": "almaznyi-krug-350h20-25-4-mm-po-betonu-segment-gepard-gp0801-350",
+      "brand": "GEPARD",
+      "category": {
+        "id": "6cb9071c-5728-4025-9a81-d25f82f057c8",
+        "name": "Алмазные круги Ф 350мм"
+      }
+    },
+    {
+      "id": "73a465ff-22db-4e60-9891-d541d0ad8b05",
+      "name": "Шлифтарелка с липучкой 125мм М14 GEPARD (GP0831-125)",
+      "slug": "shliftarelka-s-lipuchkoi-125mm-m14-gepard-gp0831-125",
+      "brand": "GEPARD",
+      "category": {
+        "id": "463e4ee3-76d5-4e5e-a87d-d845146985db",
+        "name": "Оснастка для угловых шлифмашин"
+      }
+    },
+    {
+      "id": "220f7014-8195-4fa1-9d7a-dcc775ccef2c",
+      "name": "Губка абразивная 100х70х25мм Р120 GEPARD (GP5012-120)",
+      "slug": "gubka-abrazivnaya-100h70h25mm-r120-gepard-gp5012-120",
+      "brand": "GEPARD",
+      "category": {
+        "id": "396bb7cf-3ba5-4dbe-927f-e86592c42e83",
+        "name": "Бруски, губки абразивные"
+      }
+    },
+    {
+      "id": "451450a6-bf14-41bd-a930-8a8fb98a3176",
+      "name": "Держатель д/бит магнитный GEPARD (GP3001)",
+      "slug": "derzhatel-d-bit-magnitnyi-gepard-gp3001",
+      "brand": "GEPARD",
+      "category": {
+        "id": "fe6a8d09-bd52-4abb-96ae-bf0f7fbfea50",
+        "name": "Держатели для бит"
+      }
+    },
+    {
+      "id": "e398b339-8dbc-4460-a7c5-ffd978a21185",
+      "name": "Диск отрезной 125x22.2 мм по дереву GEPARD",
+      "slug": "disk-otreznoi-125x22-2-mm-po-derevu-gepard-gp0908-125",
+      "brand": "GEPARD",
+      "category": {
+        "id": "939ce413-dffd-4b97-aa79-5d1b015615a8",
+        "name": "Круги отрезные и обдирочные ф 125 мм"
+      }
+    },
+    {
+      "id": "ff7eb1f1-be3f-4b04-b4b1-0c06388eef28",
+      "name": "Круг обдирочный 230х6x22.2 мм для металла и нерж. стали GEPARD",
+      "slug": "krug-obdirochnyi-230h6x22-2-mm-dlya-metalla-i-nerzh-stali-gepard-gp16230-60",
+      "brand": "GEPARD",
+      "category": {
+        "id": "90c84ca9-d4ff-44b5-8360-5a94dfc6af66",
+        "name": "Круги отрезные и обдирочные ф 230 мм"
+      }
+    },
+    {
+      "id": "67f79367-0a59-4857-8522-394ff3de10c4",
+      "name": "Диск пильный 125х22.2/20/16 мм 3 зуб. по дереву GEPARD",
+      "slug": "disk-pilnyi-125h22-2-20-16-mm-3-zub-po-derevu-gepard-gp0907-3",
+      "brand": "GEPARD",
+      "category": {
+        "id": "44fa7f0e-e6a6-4ab8-9c25-c483817d5e27",
+        "name": "Оснастка для угловых шлифмашин"
+      }
+    },
+    {
+      "id": "3d12e827-b1df-4fc8-9a1b-eeaff93a6b7e",
+      "name": "Диск пильный 160х20/16 мм 18 зуб. по дереву GEPARD",
+      "slug": "disk-pilnyi-160h20-16-mm-18-zub-po-derevu-gepard-gp0901-18",
+      "brand": "GEPARD",
+      "category": {
+        "id": "6e5241b9-d814-431e-aea1-4a8a42107cf9",
+        "name": "Пильные диски для циркулярных пил ф160-165мм"
+      }
+    },
+    {
+      "id": "5db7af7c-a0df-4759-86e3-a76ab45769c8",
+      "name": "Диск пильный 190х30/20 мм по фиброцементу GEPARD",
+      "slug": "disk-pilnyi-190h30-20-mm-po-fibrocementu-gepard-gp0909-190",
+      "brand": "GEPARD",
+      "category": {
+        "id": "bfd14a7a-f8ae-4f27-8cc1-af1e7d78d267",
+        "name": "Пильные диски для циркулярных пил ф170-190мм"
+      }
+    },
+    {
+      "id": "a061b092-4490-4f9f-9bda-a14692597ce9",
+      "name": "Зубило бучарда SDS-max 45x45x265 мм 16 зуб. GEPARD",
+      "slug": "zubilo-bucharda-sds-max-45x45x265-mm-16-zub-gepard-gp0706-265",
+      "brand": "GEPARD",
+      "category": {
+        "id": "b9051434-f4f7-4956-93a7-c7a4cc5cf816",
+        "name": "Зубила канальные, изогнутые и пр."
+      }
+    },
+    {
+      "id": "0152108b-1fd7-45ab-b0d4-abb06de29343",
+      "name": "Коронка алмазная d 68мм железобетон GEPARD (GP2079-68)",
+      "slug": "koronka-almaznaya-d-68mm-zhelezobeton-gepard-gp2079-68",
+      "brand": "GEPARD",
+      "category": {
+        "id": "d20567d4-c8f2-4cde-b6f2-185843df8006",
+        "name": "Коронки буровые для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "a7bc1605-772d-4b79-ab18-65315e3d3eae",
+      "name": "Коронка алмазная d 10мм M14 керамогранит GEPARD (GP2075-10)",
+      "slug": "koronka-almaznaya-d-10mm-m14-keramogranit-gepard-gp2075-10",
+      "brand": "GEPARD",
+      "category": {
+        "id": "64ceff41-85ad-4ec0-95ec-3c876121cb47",
+        "name": "Коронки алмазные для твердой керамики"
+      }
+    },
+    {
+      "id": "caad5bad-1737-4cd4-a11b-3c8f19333078",
+      "name": "Коронка биметаллическая d102 мм PROGRESSOR GEPARD",
+      "slug": "koronka-bimetallicheskaya-d102-mm-progressor-gepard-gp2550-102",
+      "brand": "GEPARD",
+      "category": {
+        "id": "eaa2c361-dbd7-4b4d-8f1f-ad28ab8a67e4",
+        "name": "Коронки биметаллические"
+      }
+    },
+    {
+      "id": "f0c7c0ea-8385-4b3d-9cf7-7eab926be307",
+      "name": "Круг зачистной 125х22мм для грубой очистки GEPARD",
+      "slug": "krug-zachistnoi-125h22mm-dlya-gruboi-ochistki-gepard-gp5018-125",
+      "brand": "GEPARD",
+      "category": {
+        "id": "84530f97-b7af-48f9-bf85-dfd47186ee73",
+        "name": "Круги коралловые"
+      }
+    },
+    {
+      "id": "79a210e0-bb85-4de7-8193-876ca4d8dc90",
+      "name": "Круг лепестковый 125х22мм P100 плоск. GEPARD (GP5016-100)",
+      "slug": "krug-lepestkovyi-125h22mm-p100-plosk-gepard-gp5016-100",
+      "brand": "GEPARD",
+      "category": {
+        "id": "10e40112-4723-4bbe-b7cd-428817e8f920",
+        "name": "Круги лепестковые ф125мм"
+      }
+    },
+    {
+      "id": "0e2b37fe-4f6d-49ac-937e-5eb220cd0331",
+      "name": "Круг отрезной 115х1.0x22.2 мм для металла и нерж. стали GEPARD",
+      "slug": "krug-otreznoi-115h1-0x22-2-mm-dlya-metalla-i-nerzh-stali-gepard-gp15115-10",
+      "brand": "GEPARD",
+      "category": {
+        "id": "e15562eb-7853-4cc3-8103-5030d26b9678",
+        "name": "Круги отрезные и обдирочные ф 115 мм"
+      }
+    },
+    {
+      "id": "2e88dba0-4c42-453a-9361-28c23da88e3e",
+      "name": "Лопаточное зубило шестигр. 28мм 450x75мм GEPARD",
+      "slug": "lopatochnoe-zubilo-shestigr-28mm-450x75mm-gepard-gp0715-450",
+      "brand": "GEPARD",
+      "category": {
+        "id": "6c911f6b-181e-4d6c-8389-11900f5eb896",
+        "name": "Зубила лопаточные"
+      }
+    },
+    {
+      "id": "f1354d85-99ac-4947-bd2e-8484203ddc14",
+      "name": "Мешок для пылесоса BOSCH PAS 11-21, 12-27 сменный (10 шт.) GEPARD",
+      "slug": "meshok-dlya-pylesosa-bosch-pas-11-21-12-27-smennyi-10-sht-gepard-gp90015-1110",
+      "brand": "GEPARD",
+      "category": {
+        "id": "3c00a644-4867-4ee6-b08a-c7847ed967a5",
+        "name": "Мешки"
+      }
+    },
+    {
+      "id": "fcf0da3a-bd0c-4453-a2fe-00d7a80abac3",
+      "name": "Миксер для смесей 100х600мм SDS+ GEPARD (GP4230-10)",
+      "slug": "mikser-dlya-smesei-100h600mm-sds-gepard-gp4230-10",
+      "brand": "GEPARD",
+      "category": {
+        "id": "4005dd37-a801-4056-a9e9-5ca0548686fd",
+        "name": "Мешалки для миксеров строительных и дрелей"
+      }
+    },
+    {
+      "id": "1d3e0752-7f91-41ae-9ca5-4810cf6f5545",
+      "name": "Набор пильных коронок по дереву 11предметов GEPARD (GP2200-11)",
+      "slug": "nabor-pilnyh-koronok-po-derevu-11predmetov-gepard-gp2200-11",
+      "brand": "GEPARD",
+      "category": {
+        "id": "cbf7513c-06d5-40cd-b4b9-c9889d880922",
+        "name": "Коронки пильные"
+      }
+    },
+    {
+      "id": "ac5b6970-5486-4d93-858e-832a9e6dba2f",
+      "name": "Набор пилок лобз. по металлу 5шт. GEPARD (GP0634-02)",
+      "slug": "nabor-pilok-lobz-po-metallu-5sht-gepard-gp0634-02",
+      "brand": "GEPARD",
+      "category": {
+        "id": "2d70303b-e719-48c2-ac45-3e2ac32142ed",
+        "name": "Наборы пилок лобзиковых"
+      }
+    },
+    {
+      "id": "e3600b79-af85-4764-8d43-b187d05fc50a",
+      "name": "Набор пилок сабельных по дереву 3шт. GEPARD (GP0643-01)",
+      "slug": "nabor-pilok-sabelnyh-po-derevu-3sht-gepard-gp0643-01",
+      "brand": "GEPARD",
+      "category": {
+        "id": "4592e503-441a-4cad-a567-62658f464039",
+        "name": "Пилки по дереву для электрич. ножовок, сабельных пил"
+      }
+    },
+    {
+      "id": "beb9538d-cf15-4b04-a20e-00384c4b6a02",
+      "name": "Приспособление для разведения тормозных цилиндров TOPTUL",
+      "slug": "prisposoblenie-dlya-razvedeniya-tormoznyh-cilindrov-toptul-jgar0304",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "6627c018-8fc0-49ce-bc06-d040516e645b",
+        "name": "Автослесарный инструмент"
+      }
+    },
+    {
+      "id": "b8b241d6-f970-4b05-b49d-df1def5f0e0c",
+      "name": "Рихтовочная оправка с круглым бойком 125мм TOPTUL",
+      "slug": "rihtovochnaya-opravka-s-kruglym-boikom-125mm-toptul-jfbc0113",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "dfeb36a0-9d25-49ea-8ef7-b62f4f55e55b",
+        "name": "Кузовной инструмент"
+      }
+    },
+    {
+      "id": "4cded0f8-1838-4884-ba79-e95c2e0f5546",
+      "name": "Бокорезы 150мм TOPTUL",
+      "slug": "bokorezy-150mm-toptul-debb2206",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "cf4e262f-81c4-461d-a253-7e3291205cd6",
+        "name": "Кусачки, бокорезы"
+      }
+    },
+    {
+      "id": "f82170bf-b70d-448c-af85-b5651cb4afce",
+      "name": "Бокорезы 150мм диэлектрические 1000V TOPTUL",
+      "slug": "bokorezy-150mm-dielektricheskie-1000v-toptul-dgcc2206",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "e9f6b1ef-549a-4f1c-9d44-ae18114b4210",
+        "name": "Инструмент для снятия изоляции"
+      }
+    },
+    {
+      "id": "30820fd6-11af-4754-a585-99d7d48d4867",
+      "name": "Болторез 356мм TOPTUL",
+      "slug": "boltorez-356mm-toptul-sbcb1407",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "d0f0f7f7-9612-49b5-ac54-9350ad0aff23",
+        "name": "Ножницы ручные, болторезы"
+      }
+    },
+    {
+      "id": "883836b2-8372-494f-aadf-120613d48582",
+      "name": "Вороток T-обр. c бегунком 320мм и шарнирной головкой 10мм TOPTUL (CTBA1032)",
+      "slug": "vorotok-t-obr-c-begunkom-320mm-i-sharnirnoi-golovkoi-10mm-toptul-ctba1032",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "b9228391-2da5-4b8c-ae90-4f8e60c771e7",
+        "name": "Воротки"
+      }
+    },
+    {
+      "id": "d81edb7a-dc7f-4d19-b268-a15a900c8dd6",
+      "name": "Головка 1/2\" 10мм 6гр. глубокая TOPTUL",
+      "slug": "golovka-1-2-10mm-6gr-glubokaya-toptul-baee1610",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "f49c5643-7ef2-483b-b3eb-afc916fbbf78",
+        "name": "Головки, головки с насадками, биты-головки 1/2\""
+      }
+    },
+    {
+      "id": "cbcadcad-7e9b-4f27-88df-a9d547ee3e91",
+      "name": "Головка 3/8\" с насадкой шлицевой 5.5мм TOPTUL",
+      "slug": "golovka-3-8-s-nasadkoi-shlicevoi-5-5mm-toptul-bcca125e",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "d07b452d-a9dc-4925-af03-826121c768cb",
+        "name": "Головки, головки с насадками, биты-головки 1/4\""
+      }
+    },
+    {
+      "id": "217971dc-ad56-4aa9-ae09-06269f9479dc",
+      "name": "Головка \"звездочка\" 3/8\" Е12 TOPTUL",
+      "slug": "golovka-zvezdochka-3-8-e12-toptul-baed1212",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "3852dec6-718d-47d6-9c61-2f9fab48b11f",
+        "name": "Головки, головки с насадками, биты-головки 3/8\""
+      }
+    },
+    {
+      "id": "6403e0d1-33f2-4c1d-a8dd-2769ac3719e8",
+      "name": "Головка 1\" 65мм 6гр. TOPTUL",
+      "slug": "golovka-1-65mm-6gr-toptul-baea3265",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "fb7dd4ca-95a2-4c3b-9161-c6e80101c2d8",
+        "name": "Головки, головки с насадками, биты-головки 1\""
+      }
+    },
+    {
+      "id": "c0bafde4-b7df-4950-80bb-c7a88b059d23",
+      "name": "Головка ударн. 1/2\" 22мм для литых дисков TOPTUL",
+      "slug": "golovka-udarn-1-2-22mm-dlya-lityh-diskov-toptul-kabp1622",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "362b5865-0931-400f-893e-7ab52241c9de",
+        "name": "Головки, головки с насадками, биты-головки ударные 1/2\""
+      }
+    },
+    {
+      "id": "539579fa-3f31-473c-81eb-b139335b1416",
+      "name": "Головка 3/4\" 27мм 12гр. TOPTUL",
+      "slug": "golovka-3-4-27mm-12gr-toptul-baeb2427",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "daaa3700-d0e0-4784-b4e8-caa60056dcca",
+        "name": "Головки, головки с насадками, биты-головки 3/4\""
+      }
+    },
+    {
+      "id": "bde3d241-1456-426f-b614-3ac9bff89968",
+      "name": "Переходник-адаптер 3/8(F) - 1/2(M) - 12.7mm TOPTUL",
+      "slug": "perehodnik-adapter-3-8-f-1-2-m-12-7mm-toptul-caga1216",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "a8158d7c-24ca-418f-a047-005194f0fa2b",
+        "name": "Головки, удлинители, воротки, трещотки"
+      }
+    },
+    {
+      "id": "e40a17c5-303b-4302-abfe-b8a6d00f8fe9",
+      "name": "Редуктор-усилитель 1/2\"х1-1/2\" 400Нм-4000Нм TOPTUL",
+      "slug": "reduktor-usilitel-1-2-h1-1-2-400nm-4000nm-toptul-ance1648",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8ad291ec-3d85-4786-bf2d-c906d989bd50",
+        "name": "Ключи динамометрические"
+      }
+    },
+    {
+      "id": "3bab7a6b-727a-4b7d-87d5-8d22fd1c1366",
+      "name": "Головка ударн. 1\" 22мм 6гр. глубокая TOPTUL",
+      "slug": "golovka-udarn-1-22mm-6gr-glubokaya-toptul-kabe3222",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "d57cc0be-7c08-4659-8a4d-757e61875a60",
+        "name": "Головки, головки с насадками, биты-головки ударные 1\""
+      }
+    },
+    {
+      "id": "8aaec93c-6a38-4c50-8354-1da7e9aedecf",
+      "name": "Длинногубцы 280мм изогнутые 90° TOPTUL",
+      "slug": "dlinnogubcy-280mm-izognutye-90-toptul-dfai1211",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "07495b44-c326-4503-be51-a76fa49da4ea",
+        "name": "Тонкогубцы, круглогубцы, длинногубцы"
+      }
+    },
+    {
+      "id": "f7898239-9b76-4215-a920-329398f14e20",
+      "name": "Зажим-плоскогубцы для сварки 250мм TOPTUL",
+      "slug": "zazhim-ploskogubcy-dlya-svarki-250mm-toptul-dmah1a10",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "44352d89-a56e-4937-945f-26d0176229cf",
+        "name": "Зажимной губцевый инструмент"
+      }
+    },
+    {
+      "id": "eeeafcee-4942-48ea-81bd-d40edd7edcaa",
+      "name": "Заклепочник складной 2,4-4,8мм TOPTUL",
+      "slug": "zaklepochnik-skladnoi-2-4-4-8mm-toptul-jbad2448",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "65bb36d1-0818-46bd-b9da-573939174ed6",
+        "name": "Заклепочники"
+      }
+    },
+    {
+      "id": "62e07ace-8df7-463d-902e-b32ab9f0c01e",
+      "name": "Пневмомолоток TOPTUL",
+      "slug": "pnevmomolotok-toptul-kaha3217",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "facc8c02-55b6-4a06-909e-992d7dad50b6",
+        "name": "Отбойные пневмомолотки"
+      }
+    },
+    {
+      "id": "1fb566b2-2348-44bd-bb61-0afda11cddf6",
+      "name": "Кабелерез усиленный с обратной пружиной 200мм TOPTUL",
+      "slug": "kabelerez-usilennyi-s-obratnoi-pruzhinoi-200mm-toptul-sbaf0804",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "20350839-b166-48a1-886a-7660582e2fcc",
+        "name": "Кабелерезы"
+      }
+    },
+    {
+      "id": "29958d98-c726-44e5-84ec-6e2ed30229dd",
+      "name": "Клещи д/снятия изоляции 150мм диэлектрические 1000V TOPTUL",
+      "slug": "kleshchi-d-snyatiya-izolyacii-150mm-dielektricheskie-1000v-toptul-dgcd2206",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8c27892e-e5a2-49f3-b8fc-bc811538146c",
+        "name": "Клещи"
+      }
+    },
+    {
+      "id": "6a65ee71-984b-4f89-9664-054eda4333b9",
+      "name": "Плоскогубцы 200мм с двойным усилием TOPTUL",
+      "slug": "ploskogubcy-200mm-s-dvoinym-usiliem-toptul-dbbe2208",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "b06b0d2f-7e89-4702-84c4-138149a26329",
+        "name": "Плоскогубцы, пассатижи"
+      }
+    },
+    {
+      "id": "2a7d5a3c-d4cc-41a4-bc29-e8c4eb7d2592",
+      "name": "Съемник стопорн.колец 180мм. внутр. TOPTUL",
+      "slug": "semnik-stoporn-kolec-180mm-vnutr-toptul-dcbd1307",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "936668e4-ff4e-4874-932c-06a345e92247",
+        "name": "Съемники"
+      }
+    },
+    {
+      "id": "9b51e725-c215-406e-bb57-340db73b6fb1",
+      "name": "Ключ 005 (2шт.) для тележек TOPTUL",
+      "slug": "klyuch-005-2sht-dlya-telezhek-toptul-keys0501",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "887c783d-38df-4bd9-bd04-466a4ee5cfad",
+        "name": "Тележки инструментальные"
+      }
+    },
+    {
+      "id": "14a1fb78-b531-414a-838b-4874d26fd740",
+      "name": "Набор ключей шестигр. 1,5-10мм 9шт длинн. TOPTUL",
+      "slug": "nabor-klyuchei-shestigr-1-5-10mm-9sht-dlinn-toptul-gaal0911",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "bcace725-e841-4aa1-9fba-d3a8fac81981",
+        "name": "Ключи имбусовые"
+      }
+    },
+    {
+      "id": "3298f4e4-951a-43c3-b44a-991dfc44f98b",
+      "name": "Ключ балонный 24х27мм TOPTUL",
+      "slug": "klyuch-balonnyi-24h27mm-toptul-ctia2427",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "1f01323d-4552-4e28-ad73-671e34085475",
+        "name": "Ключи слесарные"
+      }
+    },
+    {
+      "id": "aa16d7fc-36e1-466d-b1a8-72df765193d3",
+      "name": "Набор ключей комбинир. 6-24мм 15° 14шт на клипсе TOPTUL",
+      "slug": "nabor-klyuchei-kombinir-6-24mm-15-14sht-na-klipse-toptul-gaac1401",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "f183975a-c7a1-402c-a141-d8e35a945159",
+        "name": "Ключи комбинированные TOPTUL"
+      }
+    },
+    {
+      "id": "c394bdf8-08c1-45be-9271-9337f6b0a7b4",
+      "name": "Набор ключей накидн. 75° 10 шт. в сумке (цвет:зелёный) TOPTUL",
+      "slug": "nabor-klyuchei-nakidn-75-10-sht-v-sumke-cvet-zelenyi-toptul-grai1001",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8108a02c-f29a-4c59-8d52-947d41bc3d69",
+        "name": "Ключи накидные TOPTUL"
+      }
+    },
+    {
+      "id": "3db9fcff-f14b-4e55-b789-7f21ab515489",
+      "name": "Набор ключей торцевых шарнирных 6-19мм 7пр. (черное полотно) TOPTUL",
+      "slug": "nabor-klyuchei-torcevyh-sharnirnyh-6-19mm-7pr-chernoe-polotno-toptul-gpaq0701",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8a2682d5-c298-4a29-bc20-e4a84edd93f4",
+        "name": "Ключи торцевые"
+      }
+    },
+    {
+      "id": "39e90d7e-1464-48d4-b77f-c8b658653369",
+      "name": "Ключ трубный 2-1/2\" 450мм алюминий TOPTUL",
+      "slug": "klyuch-trubnyi-2-1-2-450mm-alyuminii-toptul-ddac1a18",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "bb0267dc-1123-4e36-baf5-14e24824cf51",
+        "name": "Ключи трубные"
+      }
+    },
+    {
+      "id": "0d046158-dc1f-4981-8fe1-ef8309bda756",
+      "name": "Набор ключей рожк. 6-32мм 12шт TOPTUL",
+      "slug": "nabor-klyuchei-rozhk-6-32mm-12sht-toptul-gaaa1206",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "5b8a2099-cac9-4aa1-ab2d-5bf3f26e4b85",
+        "name": "Ключи рожковые TOPTUL"
+      }
+    },
+    {
+      "id": "034cf431-6d87-4d00-8b20-d8465cd6bafe",
+      "name": "Коронка биметаллическая d76мм TOPTUL",
+      "slug": "koronka-bimetallicheskaya-d76mm-toptul-saac4776",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "eaa2c361-dbd7-4b4d-8f1f-ad28ab8a67e4",
+        "name": "Коронки биметаллические"
+      }
+    },
+    {
+      "id": "a9023e54-ccb1-4762-944e-ed16a72dffea",
+      "name": "Плоскогубцы 200мм диэлектрические 1000V TOPTUL",
+      "slug": "ploskogubcy-200mm-dielektricheskie-1000v-toptul-dgca2208",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "6e4eacf1-3dcd-4bc2-8a04-09c97869b810",
+        "name": "Плоскогубцы, круглогубцы, бокорезы диэлектрические"
+      }
+    },
+    {
+      "id": "86f879b5-897c-4d26-b611-bceb1c2126c1",
+      "name": "8х150х210 мм бур (сверло) SDS-plus 4Cutter MAKITA",
+      "slug": "8h150h210-mm-bur-sverlo-sds-plus-4cutter-makita-b-62620",
+      "brand": "MAKITA",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "2f5036ae-8190-44be-9dbc-89b78710fe53",
+      "name": "20х420х540 мм бур (сверло) SDS-max 4cutter MAKITA",
+      "slug": "20h420h540-mm-bur-sverlo-sds-max-4cutter-makita-e-11411",
+      "brand": "MAKITA",
+      "category": {
+        "id": "7ddf5df0-bcad-40c3-a40e-865fd75b506f",
+        "name": "Сверла по бетону для перфораторов SDS MAX"
+      }
+    },
+    {
+      "id": "0e491120-ee37-4620-bc27-24a2a6840e00",
+      "name": "14х150х210 мм бур (сверло) SDS-plus Standard MAKITA",
+      "slug": "14h150h210-mm-bur-sverlo-sds-plus-standard-makita-d-21331",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "f9cc8aaa-8858-444c-b711-2ddd62b11615",
+      "name": "Адаптер SDS+BiM коронок 32-76мм MAKITA",
+      "slug": "adapter-sds-bim-koronok-32-76mm-makita-d-17619",
+      "brand": "MAKITA",
+      "category": {
+        "id": "eaa2c361-dbd7-4b4d-8f1f-ad28ab8a67e4",
+        "name": "Коронки биметаллические"
+      }
+    },
+    {
+      "id": "83f076ce-2758-48b7-bbb5-26ab23cc93e3",
+      "name": "Направл. шина 3000мм MAKITA для SP 6000",
+      "slug": "napravl-shina-3000mm-makita-dlya-sp-6000-194367-7",
+      "brand": "MAKITA",
+      "category": {
+        "id": "db777037-f220-49b5-ba3a-6f9e7fc1ec2b",
+        "name": "Пильные диски для циркулярных пил"
+      }
+    },
+    {
+      "id": "b9d4e968-b486-48ed-9607-f2bc69836666",
+      "name": "Адаптер ударный с 1/2\" квадрат на 1/4\" HEX MAKITA",
+      "slug": "adapter-udarnyi-s-1-2-kvadrat-na-1-4-hex-makita-b-68448",
+      "brand": "MAKITA",
+      "category": {
+        "id": "d07b452d-a9dc-4925-af03-826121c768cb",
+        "name": "Головки, головки с насадками, биты-головки 1/4\""
+      }
+    },
+    {
+      "id": "2c1a5390-8735-4764-956f-710a7dc7c55a",
+      "name": "Аккум. дрель угловая MAKITA XGT DA001GZ в кор.",
+      "slug": "akkum-drel-uglovaya-makita-xgt-da001gz-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "2cc99cff-342b-40b8-ac43-7c3724811fe6",
+        "name": "Другая аккумуляторная техника"
+      }
+    },
+    {
+      "id": "13aec820-486a-469b-9672-9bd16a404792",
+      "name": "Аккум. термовоздуходувка MAKITA LXT DHG 181 ZK в кейсе + набор сопл",
+      "slug": "akkum-termovozduhoduvka-makita-lxt-dhg-181-zk-v-keise-nabor-sopl-dhg181zk",
+      "brand": "MAKITA",
+      "category": {
+        "id": "45c7743f-fcc0-43d9-bdfd-c54c23811ecf",
+        "name": "Воздуходувки аккумуляторные и электрические"
+      }
+    },
+    {
+      "id": "f44f7ab6-762f-49b2-a48b-bfdf9ccc580e",
+      "name": "Аккум. кусторез MAKITA LXT DUH607Z в кор.",
+      "slug": "akkum-kustorez-makita-lxt-duh607z-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "a10498b3-b810-4221-90ff-e6348b9379ba",
+        "name": "Мотоножницы, электроножницы, кусторезы, высоторезы"
+      }
+    },
+    {
+      "id": "faf22395-053e-4737-b93e-be6496d2d67b",
+      "name": "Газонокосилка аккумуляторная MAKITA LXT DLM 462 Z",
+      "slug": "gazonokosilka-akkumulyatornaya-makita-lxt-dlm-462-z-dlm462z",
+      "brand": "MAKITA",
+      "category": {
+        "id": "8932e44b-ff9a-44c2-a805-507c92fe6cde",
+        "name": "Газонокосилки электро и ручные"
+      }
+    },
+    {
+      "id": "918f92d8-6d83-457b-b4c0-245cd864efb2",
+      "name": "Аккум. углошлифмашина MAKITA XGT GA013GU201 в чем.",
+      "slug": "akkum-ugloshlifmashina-makita-xgt-ga013gu201-v-chem",
+      "brand": "MAKITA",
+      "category": {
+        "id": "e363fc59-271e-4632-a329-062656e4bfe6",
+        "name": "Аккумуляторные углошлифмашины"
+      }
+    },
+    {
+      "id": "8cb627b8-b78b-4491-ba2b-eb9bc545f19e",
+      "name": "Аккум. дрель-шуруповерт MAKITA LXT DDF 490 F003 Makpac2",
+      "slug": "akkum-drel-shurupovert-makita-lxt-ddf-490-f003-makpac2-ddf490f003",
+      "brand": "MAKITA",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "5e245dd6-3d94-4131-bd42-8a983678aa0d",
+      "name": "Аккум. ленточная шлифмашина MAKITA XGT BS001GZ в кор.",
+      "slug": "akkum-lentochnaya-shlifmashina-makita-xgt-bs001gz-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "07a38f0e-02e8-4331-bfc6-d5ffd27033d8",
+        "name": "Аккумуляторные ленточные шлифмашины"
+      }
+    },
+    {
+      "id": "536bb3b7-cffa-43ec-98f3-68166fc8d41c",
+      "name": "Аккум. лобзик MAKITA XGT JV001GZ01 MAKPAC",
+      "slug": "akkum-lobzik-makita-xgt-jv001gz01-makpac",
+      "brand": "MAKITA",
+      "category": {
+        "id": "d1793a1a-47cf-4806-abef-034493e91e7a",
+        "name": "Аккумуляторные лобзики"
+      }
+    },
+    {
+      "id": "0354a0eb-ca94-499c-8e2a-1e2a29bcbb0e",
+      "name": "Аккум. многофункциональный инструмент (реноватор) MAKITA LXT DTM 52 Z в кор.",
+      "slug": "akkum-mnogofunkcionalnyi-instrument-renovator-makita-lxt-dtm-52-z-v-kor-dtm52z",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ba64e365-5551-40c9-ad68-32935c66ccca",
+        "name": "Аккумуляторный многофункциональный инструмент (реноватор)"
+      }
+    },
+    {
+      "id": "eeb8adfa-4bbb-4312-b2b3-2d1b24217d58",
+      "name": "Аккум. ножницы садовые MAKITA LXT DUM111SYX в кор.",
+      "slug": "akkum-nozhnicy-sadovye-makita-lxt-dum111syx-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "b4809252-d4e0-40d0-b801-d42c0d11052c",
+        "name": "Аккум. ножницы садовые, секаторы, ножовки"
+      }
+    },
+    {
+      "id": "6971386a-fab5-4a0b-8c2b-6bdd2464a4e8",
+      "name": "Аккум. опрыскиватель MAKITA DUS054Z в кор.",
+      "slug": "akkum-opryskivatel-makita-dus054z-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ca902f18-2e7f-4111-973e-4ce18b6551da",
+        "name": "Опрыскиватели аккумуляторные"
+      }
+    },
+    {
+      "id": "aecf6d00-78cf-4c57-8ce4-35841bd4b8cc",
+      "name": "Аккум. перфоратор MAKITA LXT DHR 241 Z в кор.",
+      "slug": "akkum-perforator-makita-lxt-dhr-241-z-v-kor-dhr241z",
+      "brand": "MAKITA",
+      "category": {
+        "id": "91865477-d6ee-4683-a89b-aeb3231922e7",
+        "name": "Аккумуляторные перфораторы"
+      }
+    },
+    {
+      "id": "37f27bb8-a26e-4a70-82d2-56bec06bbc71",
+      "name": "Пила цепная DUC307RT аккумуляторная (18V / 1х5.0 Ah / DC18RC / BL / Шина 30 см)",
+      "slug": "pila-cepnaya-duc307rt-akkumulyatornaya-18v-1h5-0-ah-dc18rc-bl-shina-30-sm",
+      "brand": "MAKITA",
+      "category": {
+        "id": "b47a480e-0a71-4c30-8680-411dec6c799e",
+        "name": "Пилы цепные электрические"
+      }
+    },
+    {
+      "id": "e6abfe74-559b-4bef-9e26-d6b78a2df0d9",
+      "name": "Аккум. пылесос MAKITA XGT VC008GZ09 в кор.",
+      "slug": "akkum-pylesos-makita-xgt-vc008gz09-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "4df84de4-2c94-42d8-b43a-eb6062ed5d2f",
+        "name": "Аккумуляторные пылесосы"
+      }
+    },
+    {
+      "id": "f4851fd2-5aba-4e7c-b320-d1079f9a620d",
+      "name": "Рубанок аккум. LXT BL 18В, ADT,AWS, макс. глуб. 3мм, ширина 82мм, 1х5,0Ач, быстрое ЗУ",
+      "slug": "rubanok-akkum-lxt-bl-18v-adt-aws-maks-glub-3mm-shirina-82mm-1h5-0ach-bystroe-zu-dkp181rt",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ca5d0168-929a-4a4c-be3c-e66e26bee415",
+        "name": "Аккумуляторные рубанки"
+      }
+    },
+    {
+      "id": "4508adff-b7c7-4a0c-8158-f8124676ad06",
+      "name": "Аккум. сабельная пила LXT DJR185RFE MAKITA",
+      "slug": "akkum-sabelnaya-pila-lxt-djr185rfe-makita",
+      "brand": "MAKITA",
+      "category": {
+        "id": "17d5e4e7-4e3a-4bdd-85aa-8523659fa6be",
+        "name": "Аккумуляторные сабельные пилы"
+      }
+    },
+    {
+      "id": "f8c7e045-8e2d-4f50-a38a-349b3c47b273",
+      "name": "Аккум. триммер MAKITA XGT UR002GZ05 в кор.",
+      "slug": "akkum-trimmer-makita-xgt-ur002gz05-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "e33258b4-e166-4fe1-86c5-4c5f21e61d73",
+        "name": "Триммеры"
+      }
+    },
+    {
+      "id": "25174670-f45b-4111-a2dd-564ea9a561fb",
+      "name": "Аккум. ударная дрель-шуруповерт MAKITA LXT DHP 486 Z в кор.",
+      "slug": "akkum-udarnaya-drel-shurupovert-makita-lxt-dhp-486-z-v-kor-dhp486z",
+      "brand": "MAKITA",
+      "category": {
+        "id": "77cc3f09-25ae-42d2-a120-7849c89660fc",
+        "name": "Аккумуляторные ударные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "413e3a87-38ea-483b-9e46-efb0a25eed84",
+      "name": "Аккум. ударный гайковерт MAKITA XGT TW 007 GZ в кор.",
+      "slug": "akkum-udarnyi-gaikovert-makita-xgt-tw-007-gz-v-kor-tw007gz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "6f8b353c-35c9-458b-830f-052d67e33e65",
+        "name": "Аккумуляторные гайковерты"
+      }
+    },
+    {
+      "id": "a665b6b8-2d7f-4f37-8940-a7ce4c4052de",
+      "name": "Аккум. шуруповерт MAKITA XGT TD004GD201 MAKPAC 2",
+      "slug": "akkum-shurupovert-makita-xgt-td004gd201-makpac-2",
+      "brand": "MAKITA",
+      "category": {
+        "id": "c9f816cd-576f-44ab-b828-8ba514f62913",
+        "name": "Аккумуляторные шуруповерты"
+      }
+    },
+    {
+      "id": "4130de94-b7ef-4b59-acd9-794d9eefc083",
+      "name": "Аккум. фрезер кромочный MAKITA RT001GZ19 MAKPAC",
+      "slug": "akkum-frezer-kromochnyi-makita-rt001gz19-makpac",
+      "brand": "MAKITA",
+      "category": {
+        "id": "5ab7cc97-d65d-4ccc-937d-c6d724efeefa",
+        "name": "Аккумуляторные фрезеры"
+      }
+    },
+    {
+      "id": "6a15f54a-bf40-4e62-a282-297d7425f871",
+      "name": "Аккум. циркулярная пила MAKITA XGT HS013GZ в кор.",
+      "slug": "akkum-cirkulyarnaya-pila-makita-xgt-hs013gz-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "8e18962f-415a-48e2-ac21-5f97fbc795b2",
+        "name": "Аккумуляторные циркулярные пилы"
+      }
+    },
+    {
+      "id": "bbc961c6-dfd7-452a-8842-fcf98567a70f",
+      "name": "Аккумулятор MAKITA BL 1820G 18.0 В, 2.0 А/ч, Li-Ion",
+      "slug": "akkumulyator-makita-bl-1820g-18-0-v-2-0-a-ch-li-ion-632s11-7",
+      "brand": "MAKITA",
+      "category": {
+        "id": "0c099e22-f16c-4c76-adf4-03327981b536",
+        "name": "Аккумуляторы"
+      }
+    },
+    {
+      "id": "fe045745-d453-4487-934d-e2b79b322e64",
+      "name": "Алмазная коронка для УШМ М14х2, 5мм. MAKITA",
+      "slug": "almaznaya-koronka-dlya-ushm-m14h2-5mm-makita-d-79902",
+      "brand": "MAKITA",
+      "category": {
+        "id": "64ceff41-85ad-4ec0-95ec-3c876121cb47",
+        "name": "Коронки алмазные для твердой керамики"
+      }
+    },
+    {
+      "id": "12059828-aaab-4a41-afb2-aa7f709208e7",
+      "name": "Алмазная чашка 115х22.2 мм однорядная \"Эконом\" (груб. шлиф., для УШМ 115 мм) MAKITA",
+      "slug": "almaznaya-chashka-115h22-2-mm-odnoryadnaya-ekonom-grub-shlif-dlya-ushm-115-mm-makita-d-60676",
+      "brand": "MAKITA",
+      "category": {
+        "id": "496497cd-a6d8-4272-9252-614ef6a34d38",
+        "name": "Алмазные чашки"
+      }
+    },
+    {
+      "id": "f3ee21b6-9f93-4949-b77e-fe1866861e55",
+      "name": "Алмазный круг 125х22.2 мм по бетону/мрамору сегмент \"Эконом\" MAKITA",
+      "slug": "almaznyi-krug-125h22-2-mm-po-betonu-mramoru-segment-ekonom-makita-d-52766",
+      "brand": "MAKITA",
+      "category": {
+        "id": "e20c47dd-216f-485d-88ac-20168b51e8c0",
+        "name": "Алмазные круги Ф125мм"
+      }
+    },
+    {
+      "id": "29c04295-9706-42ab-8787-1b2eea3c109f",
+      "name": "Алмазный круг 180х22,23 мм по бетону/мрамору сегмент. Diamak MAKITA",
+      "slug": "almaznyi-krug-180h22-23-mm-po-betonu-mramoru-segment-diamak-makita-d-80101",
+      "brand": "MAKITA",
+      "category": {
+        "id": "e5298a41-b5d2-4a56-9b0f-b238c28b33f0",
+        "name": "Алмазные круги Ф 180,200мм"
+      }
+    }
+  ],
+  "stageOne": [
+    "fe8c7074-3f31-44cf-8b97-aeaf0ec1f2e1",
+    "4e8fc800-01ff-44bc-b039-c19b18d7ba62",
+    "c7387b0a-1805-4d59-aa35-038ba537f4c4",
+    "8cc2ede3-308d-425e-a6da-5928de35f449",
+    "31f91d4c-fa7d-4a87-81cc-e10822b7b608",
+    "5d6e1a09-911c-48bf-a35d-49be259cbb44",
+    "cd6bc6dc-6590-4090-8a47-d145a6f212c3",
+    "3f01f545-0dd2-4661-b3f7-1fc2c1aa7cee",
+    "9d79832c-c963-463c-99f9-3ba1eeba160c",
+    "c88d3bf0-58f9-4082-b369-78859996058b",
+    "4845602e-aa13-490d-9d9d-73d49eb94a71",
+    "9c076e25-0fa5-4b82-93eb-42ca12fd0066",
+    "479dcd5f-b1db-48cc-9d32-3e0ed064f1b4",
+    "9bcd79b6-1018-4742-8bb5-d234a24e3472",
+    "c47cefa8-7ce2-48a4-8ec1-7d3ba38329dd",
+    "88756a8a-d645-45c2-8deb-b6d5f28a4995",
+    "30a47d4d-124b-4b9d-bfaf-321d2078a7c3",
+    "0b06c6d2-12f5-4c1b-8a41-7dc3b0440c26",
+    "f5e767e7-9cb1-4d8a-b87a-45eae8147b4d",
+    "ea045bb3-aac7-4839-b2b8-ff92adfbb321",
+    "beb9538d-cf15-4b04-a20e-00384c4b6a02",
+    "b8b241d6-f970-4b05-b49d-df1def5f0e0c",
+    "4cded0f8-1838-4884-ba79-e95c2e0f5546",
+    "f82170bf-b70d-448c-af85-b5651cb4afce",
+    "30820fd6-11af-4754-a585-99d7d48d4867",
+    "86f879b5-897c-4d26-b611-bceb1c2126c1",
+    "2f5036ae-8190-44be-9dbc-89b78710fe53",
+    "0e491120-ee37-4620-bc27-24a2a6840e00",
+    "f9cc8aaa-8858-444c-b711-2ddd62b11615",
+    "83f076ce-2758-48b7-bbb5-26ab23cc93e3"
+  ],
+  "control": [
+    {
+      "id": "bfe4b019-493a-4770-9de9-807d0a67d32c",
+      "name": "Cоединитель труб с кольцом, хром STARFIX",
+      "slug": "coedinitel-trub-s-kolcom-hrom-starfix-smf-59981",
+      "brand": "STARFIX",
+      "category": {
+        "id": "887c9bdc-b9f7-450c-b8cd-ecc075122342",
+        "name": "Соединитель труб"
+      }
+    },
+    {
+      "id": "eeae84d0-0ba9-4bce-913d-17abe4a8fa04",
+      "name": "Анкер забиваемый М12х16х50 мм (4 шт в зип-локе) STARFIX",
+      "slug": "anker-zabivaemyi-m12h16h50-mm-4-sht-v-zip-loke-starfix-smm1-52266-4",
+      "brand": "STARFIX",
+      "category": {
+        "id": "ffc3223b-694a-49bc-acfd-bd0840b3df94",
+        "name": "Анкер забиваемый зип-лок"
+      }
+    },
+    {
+      "id": "fbeb221c-8727-4de8-beab-f13f0a6d167d",
+      "name": "Анкер клиновой М10х65 мм STARFIX",
+      "slug": "anker-klinovoi-m10h65-mm-starfix-smp-53910-1",
+      "brand": "STARFIX",
+      "category": {
+        "id": "cb04cf19-e630-4767-8752-15821a47641b",
+        "name": "Анкер клиновой поштучно"
+      }
+    },
+    {
+      "id": "006674d9-ec47-49d4-9ec8-a1289262c5ef",
+      "name": "Анкер латунный(цанга) М12 (250 шт в пакете) STARFIX",
+      "slug": "anker-latunnyi-canga-m12-250-sht-v-pakete-starfix-sm-97535-250",
+      "brand": "STARFIX",
+      "category": {
+        "id": "1cf6657d-74c7-4e3f-ba80-a085b9437dc5",
+        "name": "Анкер латунный (цанга) пакет"
+      }
+    },
+    {
+      "id": "ad5a1811-a210-41ba-b14d-29e8ab80587c",
+      "name": "Анкер забиваемый М10х12х40 мм (50 шт в карт. уп.) STARFIX",
+      "slug": "anker-zabivaemyi-m10h12h40-mm-50-sht-v-kart-up-starfix-sm-48216-50",
+      "brand": "STARFIX",
+      "category": {
+        "id": "e01ba173-7b17-49cf-bfee-d2d1485922cd",
+        "name": "Анкер забиваемый картонная упаковка"
+      }
+    },
+    {
+      "id": "9bbfbd0b-0eea-41f6-9e73-ea2fcd59bcce",
+      "name": "Анкер рамный 10х132 мм (100 шт в карт. уп.) STARFIX",
+      "slug": "anker-ramnyi-10h132-mm-100-sht-v-kart-up-starfix-sm-72538-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "57359d8a-8caa-4726-bd52-01e2596f6192",
+        "name": "Анкер рамный картонная упаковка"
+      }
+    },
+    {
+      "id": "03f6a641-de6e-4a22-83b9-646b4d3abebb",
+      "name": "Болт М16х45 шестигр., нерж.сталь (А2), DIN 933 (25 шт в уп.)",
+      "slug": "bolt-m16h45-shestigr-nerzh-stal-a2-din-933-25-sht-v-up-sm-24810-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "de969627-382c-43f5-a859-80ad70910b5a",
+        "name": "Болт шестигранный DIN 933 А2 картон"
+      }
+    },
+    {
+      "id": "3e93384d-f9e8-4649-9c46-7dae922ce3ad",
+      "name": "Болт М16х45 мм шестигр., цинк, кл.пр. 5.8, DIN 933 (10 шт в карт. уп.) STARFIX",
+      "slug": "bolt-m16h45-mm-shestigr-cink-kl-pr-5-8-din-933-10-sht-v-kart-up-starfix-smc1-23498-10",
+      "brand": "STARFIX",
+      "category": {
+        "id": "428521e2-c4d8-4d6e-a07a-a2c8c40cffab",
+        "name": "Болт шестигранный 5.8 картонная упаковка"
+      }
+    },
+    {
+      "id": "bb3cbd12-c04b-4853-aed8-e52fba6f6201",
+      "name": "Болт М16х55 мм шестигр., цинк, кл.пр. 10.9 ГОСТ 7798-70 (25 кг)",
+      "slug": "bolt-m16h55-mm-shestigr-cink-kl-pr-10-9-gost-7798-70-25-kg-sm-32602-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "40e18c61-aad8-4792-a81c-7505b32ee51f",
+        "name": "Болт шестигранный ГОСТ 7798-70 прочность 10.9"
+      }
+    },
+    {
+      "id": "478dc36e-9153-4103-a1d8-1a43c3fa18ee",
+      "name": "Анкер забиваемый М10х12х40 мм STARFIX",
+      "slug": "anker-zabivaemyi-m10h12h40-mm-starfix-smp-48216-1",
+      "brand": "STARFIX",
+      "category": {
+        "id": "0730fb11-1e03-4b65-8cf4-2a476dc54371",
+        "name": "Анкер забиваемый поштучно"
+      }
+    },
+    {
+      "id": "e1d81005-3d03-4f02-afc4-02de7ad866f7",
+      "name": "Винт М12х80 мм с внутр. шестигр., цинк, кл.пр. 8.8, DIN 912 (2 шт в зип-локе) STARFIX",
+      "slug": "vint-m12h80-mm-s-vnutr-shestigr-cink-kl-pr-8-8-din-912-2-sht-v-zip-loke-starfix-smz2-37784-2",
+      "brand": "STARFIX",
+      "category": {
+        "id": "6b06642e-408d-4f47-953b-f97229979829",
+        "name": "Винт с внутренним шестигранником зип-лок"
+      }
+    },
+    {
+      "id": "be0f5177-dfa3-4b75-aa9b-42cf8247e5f5",
+      "name": "Винт М12х70 мм с внутр. шестигр., цинк, кл.пр. 8.8, DIN 912 (5 кг) STARFIX",
+      "slug": "vint-m12h70-mm-s-vnutr-shestigr-cink-kl-pr-8-8-din-912-5-kg-starfix-smv1-37774-5",
+      "brand": "STARFIX",
+      "category": {
+        "id": "19558526-f003-49e9-a5d2-0853cb3c86ea",
+        "name": "Винт с внутренним шестигранником весовой"
+      }
+    },
+    {
+      "id": "19dd68be-99d5-47e4-8a15-76bf10d0a17f",
+      "name": "Винт М3х10 мм полусф. головка, цинк, DIN 7985 (1000 шт в карт. уп.) STARFIX",
+      "slug": "vint-m3h10-mm-polusf-golovka-cink-din-7985-1000-sht-v-kart-up-starfix-smc1-51172-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "70e1afc6-fd1a-4665-b9b3-87f945e46171",
+        "name": "Винт с полусферической головкой картонная упаковка"
+      }
+    },
+    {
+      "id": "8dc02376-bd8e-44bc-97ec-191d68c03a9f",
+      "name": "Винт М3х12 мм потай. головка, цинк, DIN 965 (50 шт в зип-локе) STARFIX",
+      "slug": "vint-m3h12-mm-potai-golovka-cink-din-965-50-sht-v-zip-loke-starfix-smz1-45818-50",
+      "brand": "STARFIX",
+      "category": {
+        "id": "b02d7620-fc03-4ab7-8629-e608eb72c2de",
+        "name": "Винт с потайной головкой зип-лок"
+      }
+    },
+    {
+      "id": "5ec80073-11be-441a-b144-1f0d8cdec527",
+      "name": "Винт М3х20 мм полусфера, нерж.сталь (А2), DIN 7985 (50 шт в зип-локе) STARFIX",
+      "slug": "vint-m3h20-mm-polusfera-nerzh-stal-a2-din-7985-50-sht-v-zip-loke-starfix-smz1-31146-50",
+      "brand": "STARFIX",
+      "category": {
+        "id": "7c8ec4cc-3f85-4fcd-b2b1-4be8ce6d6b08",
+        "name": "Винт полусфера зип-лок"
+      }
+    },
+    {
+      "id": "3a61608a-16d3-4b1c-b48d-c192aa061426",
+      "name": "Винт М4х16 мм для мебельной фурнитуры, цинк DIN 967 (25 шт в зип-локе) STARFIX",
+      "slug": "vint-m4h16-mm-dlya-mebelnoi-furnitury-cink-din-967-25-sht-v-zip-loke-starfix-smz1-66877-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "bcb8f0d8-02c7-4677-9100-998258fb684d",
+        "name": "Винт для мебельной фурнитуры зип-лок"
+      }
+    },
+    {
+      "id": "a8b4b39b-44b9-4da7-817a-69a3336481a6",
+      "name": "Винт М4х16 мм для мебельной фурнитуры, цинк, кл.пр. 5.8, DIN 967 (11000 шт в коробе) STARFIX",
+      "slug": "vint-m4h16-mm-dlya-mebelnoi-furnitury-cink-kl-pr-5-8-din-967-11000-sht-v-korobe-starfix-sm-66877-11000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "861c7a99-9076-4cd4-9f13-d4d6cb8a4016",
+        "name": "Винт для мебельной фурнитуры короб"
+      }
+    },
+    {
+      "id": "d5b86c70-847b-4794-bfbd-a30138d94a90",
+      "name": "Винт М4х30 мм потай. головка, нерж. сталь (A2), DIN 965 (50 шт в зип-локе) STARFIX",
+      "slug": "vint-m4h30-mm-potai-golovka-nerzh-stal-a2-din-965-50-sht-v-zip-loke-starfix-smz1-61435-50",
+      "brand": "STARFIX",
+      "category": {
+        "id": "2b11859a-0afe-46e1-b99c-ee90b09efd5e",
+        "name": "Винт потай DIN 965 А2 зип-лок"
+      }
+    },
+    {
+      "id": "f369fc02-6eee-4ba0-b67b-b0d4a2c5ff9f",
+      "name": "Винт М4х30 мм потай. головка, нерж.сталь (А2) DIN965 (500 шт в карт. уп.)",
+      "slug": "vint-m4h30-mm-potai-golovka-nerzh-stal-a2-din965-500-sht-v-kart-up-sm-61435-500",
+      "brand": "STARFIX",
+      "category": {
+        "id": "52427c73-09d2-4372-8f22-039287502f4a",
+        "name": "Винт потай DIN 965 А2 картон"
+      }
+    },
+    {
+      "id": "030e9358-6cfc-4937-9eb5-c4a4f5df0dda",
+      "name": "Гайка М3 шестигр., цинк, кл.пр. 6, DIN 934 (5000 шт в карт. уп.) STARFIX",
+      "slug": "gaika-m3-shestigr-cink-kl-pr-6-din-934-5000-sht-v-kart-up-starfix-smc1-47271-5000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "95a0f951-9775-4a59-a725-fe5c79212abf",
+        "name": "Гайка шестигранная 6 картонная упаковка"
+      }
+    },
+    {
+      "id": "e2048630-df78-460e-ba27-a93d32e2f607",
+      "name": "Гайка М3 барашковая, цинк, DIN 315 (100 шт в пласт. конт.) STARFIX",
+      "slug": "gaika-m3-barashkovaya-cink-din-315-100-sht-v-plast-kont-starfix-smp1-15681-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "b2ea5137-6748-47db-8c76-cd83b7a50fdf",
+        "name": "Гайка барашковая пластиковый контейнер"
+      }
+    },
+    {
+      "id": "845287c9-bc3c-4fea-ad65-f2a11d6f7bfb",
+      "name": "Гайка М3 шестигр., нерж.сталь (А2), DIN 934 (1000 шт в уп.)",
+      "slug": "gaika-m3-shestigr-nerzh-stal-a2-din-934-1000-sht-v-up-sm-85213-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "328f6f4a-5efa-425a-905a-df2dfc164239",
+        "name": "Гайка шестигранная DIN 934 А2 картон"
+      }
+    },
+    {
+      "id": "8e595335-ea77-4975-b674-f2cb24819a3a",
+      "name": "Анкер забиваемый М12х16х50 мм STARFIX",
+      "slug": "anker-zabivaemyi-m12h16h50-mm-starfix-sm-52266",
+      "brand": "STARFIX",
+      "category": {
+        "id": "0730fb11-1e03-4b65-8cf4-2a476dc54371",
+        "name": "Анкер забиваемый поштучно"
+      }
+    },
+    {
+      "id": "e5660b59-4371-4e8a-8f7a-7e2f02149471",
+      "name": "Гайка М6 колпачковая, цинк, DIN 1587 (100 шт в пласт. конт.) STARFIX",
+      "slug": "gaika-m6-kolpachkovaya-cink-din-1587-100-sht-v-plast-kont-starfix-smp1-36214-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "550e96a0-79a7-4e43-9980-9fbedb34226c",
+        "name": "Гайка колпачковая пластиковый контейнер"
+      }
+    },
+    {
+      "id": "34f076fa-2cad-43bb-a6a1-71871f0f8f8c",
+      "name": "Гайка М5 с фланцем, цинк, DIN 6923 (1000 шт в карт. уп.) STARFIX",
+      "slug": "gaika-m5-s-flancem-cink-din-6923-1000-sht-v-kart-up-starfix-smc1-66040-1000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "b595754e-e391-48b2-a349-d10cb9aa6841",
+        "name": "Гайка с фланцем картонная упаковка"
+      }
+    },
+    {
+      "id": "cc549173-7f7c-4387-8184-4384df8f4bff",
+      "name": "Гайка М4 со стопорным кольцом, цинк DIN 985 (30000 шт в коробе) STARFIX",
+      "slug": "gaika-m4-so-stopornym-kolcom-cink-din-985-30000-sht-v-korobe-starfix-sm-50732-30000",
+      "brand": "STARFIX",
+      "category": {
+        "id": "2c30c96e-71db-46ba-ade7-60f0c8b622e5",
+        "name": "Гайка со стопорным кольцом короба"
+      }
+    },
+    {
+      "id": "99bef7cc-9ebf-4b83-8c05-48106a1918fc",
+      "name": "Гайка М4/8 врезная, цинк, DIN 1624 (100 шт в пласт. конт.) STARFIX",
+      "slug": "gaika-m4-8-vreznaya-cink-din-1624-100-sht-v-plast-kont-starfix-smp1-90539-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "d3938d1c-1d42-4e28-bca0-6231885dbe18",
+        "name": "Гайка врезная пластиковый контейнер"
+      }
+    },
+    {
+      "id": "15b59d90-c6e5-45ec-a557-6259fd2b828b",
+      "name": "Гайка М5 со стопорным кольцом, нерж.сталь (А2), DIN 985 (500 шт в карт. уп.)",
+      "slug": "gaika-m5-so-stopornym-kolcom-nerzh-stal-a2-din-985-500-sht-v-kart-up-098525",
+      "brand": "STARFIX",
+      "category": {
+        "id": "d1971f33-0c33-42d6-ab87-4a50f8614bf9",
+        "name": "Гайка со стопорным кольцом DIN 985 А2 картон"
+      }
+    },
+    {
+      "id": "c2eb852e-3f54-473f-a0a2-23743a819071",
+      "name": "Анкер забиваемый М16х20х65 мм (25 шт в карт. уп.) STARFIX",
+      "slug": "anker-zabivaemyi-m16h20h65-mm-25-sht-v-kart-up-starfix-sm-56240-25",
+      "brand": "STARFIX",
+      "category": {
+        "id": "e01ba173-7b17-49cf-bfee-d2d1485922cd",
+        "name": "Анкер забиваемый картонная упаковка"
+      }
+    },
+    {
+      "id": "987eb9e7-30a8-4278-b985-5b5be61a7a9b",
+      "name": "Анкер забиваемый М16х20х65 мм STARFIX",
+      "slug": "anker-zabivaemyi-m16h20h65-mm-starfix-smp-56240-1",
+      "brand": "STARFIX",
+      "category": {
+        "id": "0730fb11-1e03-4b65-8cf4-2a476dc54371",
+        "name": "Анкер забиваемый поштучно"
+      }
+    },
+    {
+      "id": "dcc63084-ae66-49f5-b76d-56b916d7d0e9",
+      "name": "Дюбель распорный 6х40 мм тип N, нейлон (100 шт в пласт. конт.) STARFIX",
+      "slug": "dyubel-raspornyi-6h40-mm-tip-n-neilon-100-sht-v-plast-kont-starfix-smp2-74295-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "4a57e9ef-28ce-4ba9-9fe3-e6681aabc64d",
+        "name": "Дюбель распорный тип N нейлон пластиковый контейнер"
+      }
+    },
+    {
+      "id": "0c72c23c-e578-45e7-9a20-aa7cb945f83a",
+      "name": "Дюбель распорный 6х35 мм тип S (100 шт в пласт. конт.) STARFIX",
+      "slug": "dyubel-raspornyi-6h35-mm-tip-s-100-sht-v-plast-kont-starfix-smp2-53246-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "a14d633c-550c-429d-807a-e69b1e517052",
+        "name": "Дюбель распорный тип S пластиковый контейнер"
+      }
+    },
+    {
+      "id": "0cc82ace-b8a0-4983-9ed0-b45159610c13",
+      "name": "Дюбель распорный 8х30 мм тип T (100 шт в пласт. конт.) STARFIX",
+      "slug": "dyubel-raspornyi-8h30-mm-tip-t-100-sht-v-plast-kont-starfix-smp2-08332-100",
+      "brand": "STARFIX",
+      "category": {
+        "id": "471e8751-7a4a-4d25-aee2-85c0d4bffd8e",
+        "name": "Дюбель распорный тип T пластиковый контейнер"
+      }
+    },
+    {
+      "id": "ad19dca0-7545-4825-a02b-ac5e43e64a1e",
+      "name": "Дюбель распорный 6х30 мм четырехсегментный (250 шт в карт. уп.) STARFIX",
+      "slug": "dyubel-raspornyi-6h30-mm-chetyrehsegmentnyi-250-sht-v-kart-up-starfix-smc2-42315-250",
+      "brand": "STARFIX",
+      "category": {
+        "id": "edc63fb4-3036-49ef-8ca6-6bd35f2aef00",
+        "name": "Дюбель распорный четырехсегментный картонная упаковка"
+      }
+    },
+    {
+      "id": "0f4490bb-21c0-48eb-af9d-5d233f8a463c",
+      "name": "10х150х210 мм бур (сверло) SDS-plus EXPERT STARTUL",
+      "slug": "10h150h210-mm-bur-sverlo-sds-plus-expert-startul-se8310-210",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "c7b322a3-6a5c-400c-b1f5-76777c6a8875",
+      "name": "Адаптер внешний 1/2\" и 3/4\" STARTUL GARDEN (ST6011-8-1/2-3/4)",
+      "slug": "adapter-vneshnii-1-2-i-3-4-startul-garden-st6011-8-1-2-3-4",
+      "brand": "STARTUL",
+      "category": {
+        "id": "a6a01c9f-b54d-409f-a4e8-d475bc615ae1",
+        "name": "Адаптеры, соединители, переходники"
+      }
+    },
+    {
+      "id": "22070506-b01d-404a-8fda-68efdbcb928a",
+      "name": "10х200х260 мм бур (сверло) SDS-plus EXPERT STARTUL",
+      "slug": "10h200h260-mm-bur-sverlo-sds-plus-expert-startul-se8310-260",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "afc89fda-2e7f-4d41-9074-4241ce86173e",
+      "name": "Алмазный круг 125х22 мм по керамике сплошн. STARTUL STANDART",
+      "slug": "almaznyi-krug-125h22-mm-po-keramike-sploshn-startul-standart-st5073-125",
+      "brand": "STARTUL",
+      "category": {
+        "id": "e20c47dd-216f-485d-88ac-20168b51e8c0",
+        "name": "Алмазные круги Ф125мм"
+      }
+    },
+    {
+      "id": "1a4f7719-a280-4b39-9362-4bee8f222c83",
+      "name": "Алмазный круг 230х22 мм универс. Turbo EXPERT STARTUL (SE8004-230)",
+      "slug": "almaznyi-krug-230h22-mm-univers-turbo-expert-startul-se8004-230",
+      "brand": "STARTUL",
+      "category": {
+        "id": "2c837e2b-6ddd-41f8-a543-073678d19458",
+        "name": "Алмазные круги Ф 230 мм"
+      }
+    },
+    {
+      "id": "af2f7ac1-e7e0-468a-8866-be399c2aca91",
+      "name": "Наушники защитные STARTUL",
+      "slug": "naushniki-zashchitnye-startul-st7420-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "6d789080-d0a4-4e5c-82da-10cf85e9a30a",
+        "name": "Наушники, беруши"
+      }
+    },
+    {
+      "id": "20a6bc28-9ce9-4795-9fc9-f60b781e3ded",
+      "name": "Бокорезы 115мм MINI авторазжим STARTUL MASTER (ST3087-02)",
+      "slug": "bokorezy-115mm-mini-avtorazzhim-startul-master-st3087-02",
+      "brand": "STARTUL",
+      "category": {
+        "id": "cf4e262f-81c4-461d-a253-7e3291205cd6",
+        "name": "Кусачки, бокорезы"
+      }
+    },
+    {
+      "id": "57760d3e-6201-4f24-8f6e-c8f3bf25f72a",
+      "name": "Болторез 450мм STARTUL PROFI (ST4118-45)",
+      "slug": "boltorez-450mm-startul-profi-st4118-45",
+      "brand": "STARTUL",
+      "category": {
+        "id": "d0f0f7f7-9612-49b5-ac54-9350ad0aff23",
+        "name": "Ножницы ручные, болторезы"
+      }
+    },
+    {
+      "id": "0239a068-e8a3-4459-9b01-f7c6d72b7938",
+      "name": "Борфреза твердосплавная тип B 12x25мм EXPERT STARTUL",
+      "slug": "borfreza-tverdosplavnaya-tip-b-12x25mm-expert-startul-se8701-12",
+      "brand": "STARTUL",
+      "category": {
+        "id": "c320efc0-0417-4397-87d9-40be1bee7a88",
+        "name": "Фрезерование"
+      }
+    },
+    {
+      "id": "d320c2f7-3286-4f76-8507-398be1f5d198",
+      "name": "10х250х310 мм бур (сверло) SDS-plus EXPERT STARTUL",
+      "slug": "10h250h310-mm-bur-sverlo-sds-plus-expert-startul-se8310-310",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "77c81dc2-38f7-4348-a6f6-befa02705734",
+      "name": "Брусок для шлифования 165х85мм STARTUL MASTER (ST1040-085)",
+      "slug": "brusok-dlya-shlifovaniya-165h85mm-startul-master-st1040-085",
+      "brand": "STARTUL",
+      "category": {
+        "id": "717bc463-9924-49fc-9061-324691f280ac",
+        "name": "Терки, гладилки"
+      }
+    },
+    {
+      "id": "f9294bb2-a7b7-4309-959d-828266bbcf77",
+      "name": "Валик \"NYLON\" 48-180мм с ручкой 8мм STARTUL PROFI",
+      "slug": "valik-nylon-48-180mm-s-ruchkoi-8mm-startul-profi-st0208-18r",
+      "brand": "STARTUL",
+      "category": {
+        "id": "146e59fb-6308-450f-9749-e90600c5b989",
+        "name": "Валики, ролики малярные, принадлежности"
+      }
+    },
+    {
+      "id": "bf2acc05-ba6c-4cfa-b4f1-9c2b6b746a6a",
+      "name": "Ванночка малярная пластм. 150х290мм STARTUL MASTER (ST0910-15-29)",
+      "slug": "vannochka-malyarnaya-plastm-150h290mm-startul-master-st0910-15-29",
+      "brand": "STARTUL",
+      "category": {
+        "id": "f420a120-54d8-4b47-97ac-6a6d6589d092",
+        "name": "Принадлежности"
+      }
+    },
+    {
+      "id": "4a0484f4-b918-4208-9390-d9269b38e26e",
+      "name": "Вилка посадочная пластмассовая STARTUL GARDEN (ST6094-07)",
+      "slug": "vilka-posadochnaya-plastmassovaya-startul-garden-st6094-07",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ccdd47de-b0c6-4c6b-8f8d-4e18b343f0ae",
+        "name": "Инструмент для обработки почвы"
+      }
+    },
+    {
+      "id": "f19afc19-3aa2-454a-ba5f-a0c7e2d3ec56",
+      "name": "Вилы садовые 4-рогие STARTUL GARDEN (ST6081-04)",
+      "slug": "vily-sadovye-4-rogie-startul-garden-st6081-04",
+      "brand": "STARTUL",
+      "category": {
+        "id": "219990d8-2bba-4dce-944f-7ddb6cf3b5d4",
+        "name": "Косы, вилы и пр."
+      }
+    },
+    {
+      "id": "56f34fd6-4b3d-4794-b072-e4bef72b8f09",
+      "name": "10х300х360 мм бур (сверло) SDS-plus EXPERT STARTUL",
+      "slug": "10h300h360-mm-bur-sverlo-sds-plus-expert-startul-se8310-360",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "a346491a-99eb-4159-a9f9-843b68a36b59",
+      "name": "Газонокосилка бензиновая STARTUL GARDEN 40",
+      "slug": "gazonokosilka-benzinovaya-startul-garden-40-sg1005",
+      "brand": "STARTUL",
+      "category": {
+        "id": "435e7937-f0c7-476c-b359-e83d0fcae7b5",
+        "name": "Газонокосилки бензиновые"
+      }
+    },
+    {
+      "id": "8c349529-ef8a-4f0f-9fd8-e673c6212465",
+      "name": "Гвозди тип 18GA 25мм (5000шт) STARTUL PROFI (ST4515-25)",
+      "slug": "gvozdi-tip-18ga-25mm-5000sht-startul-profi-st4515-25",
+      "brand": "STARTUL",
+      "category": {
+        "id": "c681ce5b-f045-48d5-8206-59ba4356d3c1",
+        "name": "Скобы и гвозди для пневмостеплеров"
+      }
+    },
+    {
+      "id": "f9144658-1bee-42af-b0c8-08da4acceb5b",
+      "name": "Горелка газовая STARTUL (ST1550-01)",
+      "slug": "gorelka-gazovaya-startul-st1550-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "090d8a04-d40a-4b5d-ae04-e429da473e10",
+        "name": "Горелки газовые"
+      }
+    },
+    {
+      "id": "fbae4d74-59f7-4951-b367-e8e2166a0f29",
+      "name": "Грабли веерные пластинчатые 22зуб. STARTUL GARDEN (ST6082-22)",
+      "slug": "grabli-veernye-plastinchatye-22zub-startul-garden-st6082-22",
+      "brand": "STARTUL",
+      "category": {
+        "id": "fbe3c7fb-b119-4347-82ae-042343e521df",
+        "name": "Грабли веерные"
+      }
+    },
+    {
+      "id": "851a16c2-b4d3-4402-992c-fbff2ae79e5e",
+      "name": "Грабли мет. витые 12 зуб. STARTUL GARDEN (ST6089-02)",
+      "slug": "grabli-met-vitye-12-zub-startul-garden-st6089-02",
+      "brand": "STARTUL",
+      "category": {
+        "id": "4b556751-9bcf-4675-acca-23434180602c",
+        "name": "Грабли прямые"
+      }
+    },
+    {
+      "id": "b06a553f-cb71-4464-9e00-aebdeb3d637e",
+      "name": "10х400х460 мм бур (сверло) SDS-plus EXPERT STARTUL",
+      "slug": "10h400h460-mm-bur-sverlo-sds-plus-expert-startul-se8310-460",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "5be97918-cb3c-436c-96f6-0fd4b665c358",
+      "name": "Лопата снеговая 350х370 тротуарная (алюм. с дер.черенком) STARTUL (ST9069-1)",
+      "slug": "lopata-snegovaya-350h370-trotuarnaya-alyum-s-der-cherenkom-startul-st9069-1",
+      "brand": "STARTUL",
+      "category": {
+        "id": "47c23510-2865-43c4-9709-c9e14ea23ab2",
+        "name": "Снеговые лопаты, движки, ледорубы"
+      }
+    },
+    {
+      "id": "c4a36d3a-5ea2-485b-91d2-28bb1bb65222",
+      "name": "Держатель для бит магнитный EXPERT STARTUL (SE8420-01)",
+      "slug": "derzhatel-dlya-bit-magnitnyi-expert-startul-se8420-01",
+      "brand": "STARTUL",
+      "category": {
+        "id": "fe6a8d09-bd52-4abb-96ae-bf0f7fbfea50",
+        "name": "Держатели для бит"
+      }
+    },
+    {
+      "id": "5565dee8-2710-45fe-86b1-7324ecbcece0",
+      "name": "Домкрат гидравлический 10т бутылочный 200-405мм STARTUL AUTO (ST8018-10)",
+      "slug": "domkrat-gidravlicheskii-10t-butylochnyi-200-405mm-startul-auto-st8018-10",
+      "brand": "STARTUL",
+      "category": {
+        "id": "b7a3a1ee-ff92-4f5a-b4ff-8ccf92e6dada",
+        "name": "Домкраты, гидравлическое оборудование"
+      }
+    },
+    {
+      "id": "5b56308b-ce23-472f-bb7f-c5d61ff79d61",
+      "name": "Кисть-макловица 70х150мм MAXI STARTUL PROFI",
+      "slug": "kist-maklovica-70h150mm-maxi-startul-profi-st0133-150",
+      "brand": "STARTUL",
+      "category": {
+        "id": "b1d6f7ea-395e-4921-a1e5-495ca9418017",
+        "name": "Кисти"
+      }
+    },
+    {
+      "id": "8705acd6-79f5-49fa-a34a-9104eabcca24",
+      "name": "Кисть-макловица 20х100мм смеш. щетина (лаки) STARTUL MASTER",
+      "slug": "kist-maklovica-20h100mm-smesh-shchetina-laki-startul-master-st0110-100",
+      "brand": "STARTUL",
+      "category": {
+        "id": "85101fde-883e-4338-bc7f-5206b55f5694",
+        "name": "Кисти плоские"
+      }
+    },
+    {
+      "id": "adfc009a-573d-4c9a-b45e-7533888ccbf4",
+      "name": "Киянка резиновая белая 0,45кг с дер. ручкой STARTUL MASTER (ST2015-65)",
+      "slug": "kiyanka-rezinovaya-belaya-0-45kg-s-der-ruchkoi-startul-master-st2015-65",
+      "brand": "STARTUL",
+      "category": {
+        "id": "7fd8866b-2506-423b-989b-52d34b0ac8eb",
+        "name": "Молотки, кувалды,киянки"
+      }
+    },
+    {
+      "id": "a423ac91-bc88-452e-998e-bfe7da8dedbb",
+      "name": "10х550х600 мм бур (сверло) SDS-plus EXPERT STARTUL",
+      "slug": "10h550h600-mm-bur-sverlo-sds-plus-expert-startul-se8310-600",
+      "brand": "STARTUL",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "ef1dc938-b706-4d34-958d-49323e63bb4a",
+      "name": "Клещи переставные 180мм STARTUL MASTER (ST4006-18)",
+      "slug": "kleshchi-perestavnye-180mm-startul-master-st4006-18",
+      "brand": "STARTUL",
+      "category": {
+        "id": "8c27892e-e5a2-49f3-b8fc-bc811538146c",
+        "name": "Клещи"
+      }
+    },
+    {
+      "id": "3b69ed75-a43a-4ce2-ba15-11ad07b064a4",
+      "name": "Клин д/каф. плитки 50шт STARTUL MASTER (ST4402-50)",
+      "slug": "klin-d-kaf-plitki-50sht-startul-master-st4402-50",
+      "brand": "STARTUL",
+      "category": {
+        "id": "3a74dd58-85da-409c-827c-bfe2be679e42",
+        "name": "Система выравнивания плитки STARTUL"
+      }
+    },
+    {
+      "id": "c7bf66e0-3bf2-4e05-876b-31f762f1061b",
+      "name": "Клупп трубный 1 1/4\" STARTUL PROFI (ST9320-1-1/4)",
+      "slug": "klupp-trubnyi-1-1-4-startul-profi-st9320-1-1-4",
+      "brand": "STARTUL",
+      "category": {
+        "id": "68c910dd-d339-4303-843d-2838be59221d",
+        "name": "Клуппы и принадлености к ним"
+      }
+    },
+    {
+      "id": "fcc471bb-9ace-40ae-b507-0fd552c2521c",
+      "name": "Ключ комбинированный 11мм STARTUL MASTER (ST4270-11)",
+      "slug": "klyuch-kombinirovannyi-11mm-startul-master-st4270-11",
+      "brand": "STARTUL",
+      "category": {
+        "id": "02b44a0f-bd75-4fca-9e85-5592e406528d",
+        "name": "Ключи комбинированные PRO STARTUL/STARTUL"
+      }
+    },
+    {
+      "id": "d1ea5886-b060-4194-9591-34787bb64e53",
+      "name": "Ключ разводной 150мм EXPERT STARTUL (SE4220-15)",
+      "slug": "klyuch-razvodnoi-150mm-expert-startul-se4220-15",
+      "brand": "STARTUL",
+      "category": {
+        "id": "6e90d300-325b-46ea-917b-550189c137a1",
+        "name": "Ключи разводные"
+      }
+    },
+    {
+      "id": "33aaf182-abcf-4fd2-9a09-129731f8b25f",
+      "name": "Адаптер для дрели алмазного сверления BULL с M22 на 1 1/4\"",
+      "slug": "adapter-dlya-dreli-almaznogo-sverleniya-bull-s-m22-na-1-1-4-2329252",
+      "brand": "BULL",
+      "category": {
+        "id": "572898f6-3db8-45df-be19-4224d9008a06",
+        "name": "Алмазные коронки для буровых установок"
+      }
+    },
+    {
+      "id": "a48814a8-9e78-4d82-b06f-d19f93a72d3f",
+      "name": "Аккум. гвоздезабивной монтажный пистолет BULL CCN 1840 в кор. XLTpro, SET, БЕСЩЕТ., 18В, 40мм, бетон",
+      "slug": "akkum-gvozdezabivnoi-montazhnyi-pistolet-bull-ccn-1840-v-kor-xltpro-set-besshchet-18v-40mm-beton-2335263",
+      "brand": "BULL",
+      "category": {
+        "id": "2cc99cff-342b-40b8-ac43-7c3724811fe6",
+        "name": "Другая аккумуляторная техника"
+      }
+    },
+    {
+      "id": "6b7c0204-89cd-4aee-a1ae-1ab9792fe855",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1203 Xcase БЕСЩЕТ., 12 В, 37 Н*м, 2*2 А*ч акб, БЗП 10 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1203-xcase-besshchet-12-v-37-n-m-2-2-a-ch-akb-bzp-10-mm-1329879",
+      "brand": "BULL",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "c98acaeb-d931-4ca7-8113-794bb9d6068a",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1802 Xcase, XLTpro, БЕСЩЕТ., 18 В, 80 Н*м, 2*4 А*ч, БЗП 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1802-xcase-xltpro-besshchet-18-v-80-n-m-2-4-a-ch-bzp-13-mm-1329863",
+      "brand": "BULL",
+      "category": {
+        "id": "add2dc16-63d3-4de8-b2db-1c805e32cc64",
+        "name": "Аккумуляторный инструмент на 1 батарее BULL \"XLTpro\""
+      }
+    },
+    {
+      "id": "d82407ec-435b-480d-b41d-57c6333caa05",
+      "name": "Аккум. заклепочный пистолет BULL CRG 1018 в кор. XLTpro SOLO, БЕСЩЕТ., 25 мм, 10000 Н",
+      "slug": "akkum-zaklepochnyi-pistolet-bull-crg-1018-v-kor-xltpro-solo-besshchet-25-mm-10000-n-1304593",
+      "brand": "BULL",
+      "category": {
+        "id": "ce93c109-a452-4dd0-9267-3ef7066b14ba",
+        "name": "Аккумуляторные заклепочные пистолеты"
+      }
+    },
+    {
+      "id": "26621bf2-a733-4956-b238-3bf8d792c5b4",
+      "name": "Аккум. ленточная пила BULL CBS 6583 в кор. XLTpro SOLO, БЕСЩЕТ., 18 В, 3,2 м/с, 65 мм",
+      "slug": "akkum-lentochnaya-pila-bull-cbs-6583-v-kor-xltpro-solo-besshchet-18-v-3-2-m-s-65-mm-1304544-4",
+      "brand": "BULL",
+      "category": {
+        "id": "17f08f9a-319d-480e-b354-4af4c065de21",
+        "name": "Циркулярные ручные пилы"
+      }
+    },
+    {
+      "id": "14b607c5-84b2-4254-ae7c-61d6399d78f4",
+      "name": "Аккум. гвоздезабивной монтажный пистолет BULL CCN 1840 в кор. XLTpro, SOLO, БЕСЩЕТ. 18В, 40мм, бетон",
+      "slug": "akkum-gvozdezabivnoi-montazhnyi-pistolet-bull-ccn-1840-v-kor-xltpro-solo-besshchet-18v-40mm-beton-2335262",
+      "brand": "BULL",
+      "category": {
+        "id": "2cc99cff-342b-40b8-ac43-7c3724811fe6",
+        "name": "Другая аккумуляторная техника"
+      }
+    },
+    {
+      "id": "522d7c94-0791-4be0-94ae-7431ebb23e14",
+      "name": "Аккум. перфоратор BULL CBH 1826 Xcase, XLTpro, БЕСЩЕТ., 18 В, 2.6 Дж, 26 мм, 2x6 А*ч, з/у",
+      "slug": "akkum-perforator-bull-cbh-1826-xcase-xltpro-besshchet-18-v-2-6-dzh-26-mm-2x6-a-ch-z-u-1333736",
+      "brand": "BULL",
+      "category": {
+        "id": "91865477-d6ee-4683-a89b-aeb3231922e7",
+        "name": "Аккумуляторные перфораторы"
+      }
+    },
+    {
+      "id": "26777b9d-de8f-492c-8133-35b99b52dd78",
+      "name": "Аккум. угловая трещотка (гайковерт) BULL CRW 9020 в кор. XLTpro SOLO 90 Нм, 0-200 об/мин., LED",
+      "slug": "akkum-uglovaya-treshchotka-gaikovert-bull-crw-9020-v-kor-xltpro-solo-90-nm-0-200-ob-min-led-1333566-2",
+      "brand": "BULL",
+      "category": {
+        "id": "6f8b353c-35c9-458b-830f-052d67e33e65",
+        "name": "Аккумуляторные гайковерты"
+      }
+    },
+    {
+      "id": "88e5a34e-2c9d-46f0-8f94-cb68fbf17a49",
+      "name": "Аккум. углошлифмашина BULL CSG 1812-1 SR Xcase XLTpro 2x6 Ач БЕСЩЕТ, 125 мм, рег. об., 10 000 об/мин",
+      "slug": "akkum-ugloshlifmashina-bull-csg-1812-1-sr-xcase-xltpro-2x6-ach-besshchet-125-mm-reg-ob-10-000-ob-min-1333998",
+      "brand": "BULL",
+      "category": {
+        "id": "e363fc59-271e-4632-a329-062656e4bfe6",
+        "name": "Аккумуляторные углошлифмашины"
+      }
+    },
+    {
+      "id": "aee3c326-e499-47d5-aee3-2b3f46164678",
+      "name": "Аккумулятор BULL AK 2001 18.0 В, 2.0 А/ч, Li-Ion XLTpro",
+      "slug": "akkumulyator-bull-ak-2001-18-0-v-2-0-a-ch-li-ion-xltpro-1329595-2",
+      "brand": "BULL",
+      "category": {
+        "id": "0c099e22-f16c-4c76-adf4-03327981b536",
+        "name": "Аккумуляторы"
+      }
+    },
+    {
+      "id": "92819470-f625-4b9e-b260-5b95ca7464a4",
+      "name": "Пистолет для BULL BAS 2223",
+      "slug": "pistolet-dlya-bull-bas-2223-1304762",
+      "brand": "BULL",
+      "category": {
+        "id": "81e048c4-5df9-45e1-87d0-0d0d83667e32",
+        "name": "Краскораспылители электрические"
+      }
+    },
+    {
+      "id": "b7b77487-a520-4b79-8ff1-f8b0046a4e64",
+      "name": "Аккум. гвоздезабивной пистолет BULL CFN 1890 в кор. XLTpro, SET, БЕСЩЕТ. 18В, 90мм, дерево, 90шт/мин",
+      "slug": "akkum-gvozdezabivnoi-pistolet-bull-cfn-1890-v-kor-xltpro-set-besshchet-18v-90mm-derevo-90sht-min-2335265",
+      "brand": "BULL",
+      "category": {
+        "id": "2cc99cff-342b-40b8-ac43-7c3724811fe6",
+        "name": "Другая аккумуляторная техника"
+      }
+    },
+    {
+      "id": "719d1174-7d63-44ad-aa64-8097c890b2a0",
+      "name": "Аккум. гвоздезабивной пистолет BULL CFN 1890 в кор. XLTpro,SOLO, БЕСЩЕТ. 18В, 90мм, дерево, 90шт/мин",
+      "slug": "akkum-gvozdezabivnoi-pistolet-bull-cfn-1890-v-kor-xltpro-solo-besshchet-18v-90mm-derevo-90sht-min-2335264",
+      "brand": "BULL",
+      "category": {
+        "id": "2cc99cff-342b-40b8-ac43-7c3724811fe6",
+        "name": "Другая аккумуляторная техника"
+      }
+    },
+    {
+      "id": "41e28a05-5252-44bb-9c25-1057a0d159f2",
+      "name": "Вал гибкий 6 м в сборе с вибронаконечником 58 мм для вибратора BULL PCV 6026",
+      "slug": "val-gibkii-6-m-v-sbore-s-vibronakonechnikom-58-mm-dlya-vibratora-bull-pcv-6026-1329660",
+      "brand": "BULL",
+      "category": {
+        "id": "756335ce-aceb-4884-a076-57310f69fbb4",
+        "name": "Гибкие валы"
+      }
+    },
+    {
+      "id": "868bb83f-08b3-4f88-9dc8-8620b9960634",
+      "name": "Верстак складной BULL WB 2095 в кор. 200 кг, 980x870x860 мм, складной",
+      "slug": "verstak-skladnoi-bull-wb-2095-v-kor-200-kg-980x870x860-mm-skladnoi-1325773",
+      "brand": "BULL",
+      "category": {
+        "id": "ec7879c0-05b4-4d5a-99bc-21d29a28afca",
+        "name": "Верстаки"
+      }
+    },
+    {
+      "id": "ef4c31ee-0d55-437b-bdc1-5a197480f730",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1203 в чем. БЕСЩЕТ., 12 В, 37 Н*м, 2*2 А*ч акб, БЗП 10 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1203-v-chem-besshchet-12-v-37-n-m-2-2-a-ch-akb-bzp-10-mm-1329601",
+      "brand": "BULL",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "8fb42fdb-9041-46be-b5c2-b0b3dcb7947b",
+      "name": "Гайка быстрозажимная для УШМ M14 BULL в блистере до 230 мм",
+      "slug": "gaika-bystrozazhimnaya-dlya-ushm-m14-bull-v-blistere-do-230-mm-2329324",
+      "brand": "BULL",
+      "category": {
+        "id": "44fa7f0e-e6a6-4ab8-9c25-c483817d5e27",
+        "name": "Оснастка для угловых шлифмашин"
+      }
+    },
+    {
+      "id": "507f2a29-6964-4370-878b-567256e9a0e0",
+      "name": "Гайковерт ударный электрический BULL CW 6060 в чем. 600 Вт, 600 Н*м, 3/4\"",
+      "slug": "gaikovert-udarnyi-elektricheskii-bull-cw-6060-v-chem-600-vt-600-n-m-3-4-2337269",
+      "brand": "BULL",
+      "category": {
+        "id": "297ed71c-7a12-47f1-9d1d-4ff9eb5e6128",
+        "name": "Гайковерты"
+      }
+    },
+    {
+      "id": "63820b95-f06b-4af0-a6df-758166e4dbad",
+      "name": "Гвозди реечные 2,87х50 мм гладкие BULL (2000 шт. в уп.) гальванизированные",
+      "slug": "gvozdi-reechnye-2-87h50-mm-gladkie-bull-2000-sht-v-up-galvanizirovannye-2335319",
+      "brand": "BULL",
+      "category": {
+        "id": "1bf1d589-fe3d-4a10-b1ca-47361412af6e",
+        "name": "Гвозди и скобы д/пистолета"
+      }
+    },
+    {
+      "id": "4f7c82c7-d33e-492b-9123-2f65e13208cc",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1802 Xcase, XLTpro, БЕСЩЕТ., 18 В, 80 Н*м, 2*4 А*ч, БЗП 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1802-xcase-xltpro-besshchet-18-v-80-n-m-2-4-a-ch-bzp-13-mm-1329863-2",
+      "brand": "BULL",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "459b345e-714f-46d7-b9a0-a73033c35c54",
+      "name": "Двуручная углошлифмашина BULL WS 1501 в кор. 150 мм, 1400 Вт, 8400 об/мин, пылезащ., 4м кабель",
+      "slug": "dvuruchnaya-ugloshlifmashina-bull-ws-1501-v-kor-150-mm-1400-vt-8400-ob-min-pylezashch-4m-kabel-1333622",
+      "brand": "BULL",
+      "category": {
+        "id": "97b4de9c-bcd6-4ecd-aee9-6674fc26da26",
+        "name": "Двуручные углошлифмашины"
+      }
+    },
+    {
+      "id": "ec22eb16-8012-4f83-802f-e87515c423eb",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1802 в кор. XLTpro SOLO БЕСЩЕТ., 18 В, 80 Н*м, БЗП(мет.) 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1802-v-kor-xltpro-solo-besshchet-18-v-80-n-m-bzp-met-13-mm-1329673-2",
+      "brand": "BULL",
+      "category": {
+        "id": "add2dc16-63d3-4de8-b2db-1c805e32cc64",
+        "name": "Аккумуляторный инструмент на 1 батарее BULL \"XLTpro\""
+      }
+    },
+    {
+      "id": "dec0343a-4d1d-4a19-b26b-374d043102fe",
+      "name": "Дрель алмазного сверления BULL PCD 1520 D в чем., 2000 Вт, 150 мм, 2 скор., микроуд., сух. свер.",
+      "slug": "drel-almaznogo-sverleniya-bull-pcd-1520-d-v-chem-2000-vt-150-mm-2-skor-mikroud-suh-sver-2329258",
+      "brand": "BULL",
+      "category": {
+        "id": "cea66a57-a74b-47cb-b898-1ed54f7931bf",
+        "name": "Системы алмазного бурения"
+      }
+    },
+    {
+      "id": "3121fb09-0110-49b2-916f-1d71e0e7ac1a",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1802 в кор. XLTpro SOLO БЕСЩЕТ., 18 В, 80 Н*м, БЗП(мет.) 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1802-v-kor-xltpro-solo-besshchet-18-v-80-n-m-bzp-met-13-mm-1329673",
+      "brand": "BULL",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "412833eb-dd96-43e7-a61c-73c43a515054",
+      "name": "Зарядное устройство BULL LD 4004 1 слот, 4 А XLTpro",
+      "slug": "zaryadnoe-ustroistvo-bull-ld-4004-1-slot-4-a-xltpro-1329599-2",
+      "brand": "BULL",
+      "category": {
+        "id": "ca780739-c19b-4fdb-9a13-60976bbacbca",
+        "name": "Зарядные устройства, радиоприемники"
+      }
+    },
+    {
+      "id": "381b68dd-25d5-4a2b-865a-ad9a003b723f",
+      "name": "Коробка-органайзер BULL OB 4530 45х30х20 см",
+      "slug": "korobka-organaizer-bull-ob-4530-45h30h20-sm-1323888",
+      "brand": "BULL",
+      "category": {
+        "id": "49d1d1da-bf90-4430-9258-8486d840c2ac",
+        "name": "Сумки, пояса для инструмента WORTEX"
+      }
+    },
+    {
+      "id": "51f9b1f7-0653-4c9d-a93a-908b0a01ddda",
+      "name": "Круг заточной 145х22,2х4,7 мм BULL для BGC 1423",
+      "slug": "krug-zatochnoi-145h22-2h4-7-mm-bull-dlya-bgc-1423-2335150",
+      "brand": "BULL",
+      "category": {
+        "id": "44083929-7dca-48f3-b8c5-c5ebaf6449ad",
+        "name": "Круги заточные"
+      }
+    },
+    {
+      "id": "f273bd70-67b6-4901-b620-74e5282c791c",
+      "name": "Лобзик электрический BULL ST 1301 в чем. 800 Вт, 800-2600 ход/мин, до 135 мм",
+      "slug": "lobzik-elektricheskii-bull-st-1301-v-chem-800-vt-800-2600-hod-min-do-135-mm-20046329",
+      "brand": "BULL",
+      "category": {
+        "id": "06c536bc-451e-4ddd-b593-2e72cb5b0f63",
+        "name": "Лобзиковые пилы"
+      }
+    },
+    {
+      "id": "92b80aac-dc39-41f6-bd2e-8d363c5aa98c",
+      "name": "Мешок для сбора пыли для BULL AS 6501 70 л, многораз.",
+      "slug": "meshok-dlya-sbora-pyli-dlya-bull-as-6501-70-l-mnogoraz-1329632",
+      "brand": "BULL",
+      "category": {
+        "id": "3c00a644-4867-4ee6-b08a-c7847ed967a5",
+        "name": "Мешки"
+      }
+    },
+    {
+      "id": "c627708f-5244-4eba-84e1-a89c9c162774",
+      "name": "Миксер строительный BULL BM 1416 1600 Вт, 2 скор., M14, рег. об. + насадка",
+      "slug": "mikser-stroitelnyi-bull-bm-1416-1600-vt-2-skor-m14-reg-ob-nasadka-0319102",
+      "brand": "BULL",
+      "category": {
+        "id": "350e2863-d2c0-4b25-9439-64859e9a3788",
+        "name": "Миксеры строительные"
+      }
+    },
+    {
+      "id": "74a5b00b-346b-441a-b296-0c9ea5afab9e",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1802 в чем. XLTpro БЕСЩЕТ., 18 В, 80 Н*м, 2*4 А*ч, БЗП 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1802-v-chem-xltpro-besshchet-18-v-80-n-m-2-4-a-ch-bzp-13-mm-04040329-2",
+      "brand": "BULL",
+      "category": {
+        "id": "add2dc16-63d3-4de8-b2db-1c805e32cc64",
+        "name": "Аккумуляторный инструмент на 1 батарее BULL \"XLTpro\""
+      }
+    },
+    {
+      "id": "388a7325-6910-431b-9840-b7acbaea434a",
+      "name": "Аккум. дрель-шуруповерт BULL SR 1802 в чем. XLTpro БЕСЩЕТ., 18 В, 80 Н*м, 2*4 А*ч, БЗП 13 мм",
+      "slug": "akkum-drel-shurupovert-bull-sr-1802-v-chem-xltpro-besshchet-18-v-80-n-m-2-4-a-ch-bzp-13-mm-04040329",
+      "brand": "BULL",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "00b477f7-5dab-46e3-b747-b0bd792674a5",
+      "name": "Насадка щелевая к пылесосу BULL AS 6501",
+      "slug": "nasadka-shchelevaya-k-pylesosu-bull-as-6501-1329637",
+      "brand": "BULL",
+      "category": {
+        "id": "d21302f9-fde1-4288-bf35-74b012786f75",
+        "name": "Шланги, насадки и прочее"
+      }
+    },
+    {
+      "id": "fb081d11-65e5-4326-aa77-558a085132d1",
+      "name": "10х100х160 мм бур (сверло) SDS-plus GEPARD",
+      "slug": "10h100h160-mm-bur-sverlo-sds-plus-gepard-gp0110-160",
+      "brand": "GEPARD",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "138575d1-29a2-4843-a0f3-d4d2fbce66a1",
+      "name": "10х50х110 мм бур (сверло) SDS-plus QUADRO-X GEPARD",
+      "slug": "10h50h110-mm-bur-sverlo-sds-plus-quadro-x-gepard-gp1210-110",
+      "brand": "GEPARD",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "5e17b406-b5cd-4071-a04d-a4255a5348ab",
+      "name": "14х200х340 мм бур (сверло) SDS-max QUADRO-X GEPARD",
+      "slug": "14h200h340-mm-bur-sverlo-sds-max-quadro-x-gepard-gp1114-340",
+      "brand": "GEPARD",
+      "category": {
+        "id": "7ddf5df0-bcad-40c3-a40e-865fd75b506f",
+        "name": "Сверла по бетону для перфораторов SDS MAX"
+      }
+    },
+    {
+      "id": "65c479a4-8848-42a2-901a-5fb0ac244140",
+      "name": "Адаптер SDS-plus к патрону сверлильному GEPARD (GP0821-02)",
+      "slug": "adapter-sds-plus-k-patronu-sverlilnomu-gepard-gp0821-02",
+      "brand": "GEPARD",
+      "category": {
+        "id": "b35eb927-62a7-4b8e-8751-1a6dd5f23ae2",
+        "name": "Патроны сверлильные"
+      }
+    },
+    {
+      "id": "3be5087e-0677-415e-a7a9-7e0b6188db7e",
+      "name": "Алмазная чашка 125мм Turbo GEPARD",
+      "slug": "almaznaya-chashka-125mm-turbo-gepard-gp0806-125",
+      "brand": "GEPARD",
+      "category": {
+        "id": "496497cd-a6d8-4272-9252-614ef6a34d38",
+        "name": "Алмазные чашки"
+      }
+    },
+    {
+      "id": "48842a62-1953-49e0-8c62-982262b6d016",
+      "name": "Алмазный гибкий шлифкруг \"Черепашка\" 100мм P100 сух. GEPARD (GP5023-100)",
+      "slug": "almaznyi-gibkii-shlifkrug-cherepashka-100mm-p100-suh-gepard-gp5023-100",
+      "brand": "GEPARD",
+      "category": {
+        "id": "a133b7d6-9561-4c92-b095-9773b473f23a",
+        "name": "Алмазные круги \"Черепашка\""
+      }
+    },
+    {
+      "id": "f9721e2c-ffec-4d80-8bb3-a405b8bd1125",
+      "name": "Алмазный круг 115х22 мм по керамике сплошн. тонкий GEPARD",
+      "slug": "almaznyi-krug-115h22-mm-po-keramike-sploshn-tonkii-gepard-gp0819-115",
+      "brand": "GEPARD",
+      "category": {
+        "id": "0a13c590-2934-469b-9895-1951eee4635c",
+        "name": "Алмазные круги Ф110,115мм"
+      }
+    },
+    {
+      "id": "334abd87-1331-4575-8b29-b19afe7b22b7",
+      "name": "Алмазный круг 125х22 мм по керамике сплошн. GEPARD",
+      "slug": "almaznyi-krug-125h22-mm-po-keramike-sploshn-gepard-gp0803-125",
+      "brand": "GEPARD",
+      "category": {
+        "id": "e20c47dd-216f-485d-88ac-20168b51e8c0",
+        "name": "Алмазные круги Ф125мм"
+      }
+    },
+    {
+      "id": "09cdc82c-59ca-4893-b07e-ff8497cd7de4",
+      "name": "Алмазный круг 150х22 мм универс. Turbo GEPARD",
+      "slug": "almaznyi-krug-150h22-mm-univers-turbo-gepard-gp0802-150",
+      "brand": "GEPARD",
+      "category": {
+        "id": "d2006671-ebdc-47ef-aae1-803f743e7661",
+        "name": "Алмазные круги Ф150мм"
+      }
+    },
+    {
+      "id": "0876a309-23b1-45d4-8544-e9a49944e3ff",
+      "name": "Алмазный круг 180х22 мм универс. Turbo GEPARD",
+      "slug": "almaznyi-krug-180h22-mm-univers-turbo-gepard-gp0802-180",
+      "brand": "GEPARD",
+      "category": {
+        "id": "e5298a41-b5d2-4a56-9b0f-b238c28b33f0",
+        "name": "Алмазные круги Ф 180,200мм"
+      }
+    },
+    {
+      "id": "6815d132-255a-4cfe-90e5-f2cdb9d92eef",
+      "name": "Алмазный круг 230х22 мм по керамике сплошн. GEPARD",
+      "slug": "almaznyi-krug-230h22-mm-po-keramike-sploshn-gepard-gp0803-230",
+      "brand": "GEPARD",
+      "category": {
+        "id": "2c837e2b-6ddd-41f8-a543-073678d19458",
+        "name": "Алмазные круги Ф 230 мм"
+      }
+    },
+    {
+      "id": "28cfa704-72a3-43a2-87a7-c8ee23c607a2",
+      "name": "10х150х210 мм бур (сверло) SDS-plus GEPARD",
+      "slug": "10h150h210-mm-bur-sverlo-sds-plus-gepard-gp0110-210",
+      "brand": "GEPARD",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "aaf91721-f0a5-4105-869b-addce1307839",
+      "name": "Гайка прижимная для УШМ М14 GEPARD (GP0821-01)",
+      "slug": "gaika-prizhimnaya-dlya-ushm-m14-gepard-gp0821-01",
+      "brand": "GEPARD",
+      "category": {
+        "id": "463e4ee3-76d5-4e5e-a87d-d845146985db",
+        "name": "Оснастка для угловых шлифмашин"
+      }
+    },
+    {
+      "id": "900a86ab-dd1d-4eea-9ac7-1b21ccee25f5",
+      "name": "Губка абразивная 100х70х25мм Р180 GEPARD (GP5012-180)",
+      "slug": "gubka-abrazivnaya-100h70h25mm-r180-gepard-gp5012-180",
+      "brand": "GEPARD",
+      "category": {
+        "id": "396bb7cf-3ba5-4dbe-927f-e86592c42e83",
+        "name": "Бруски, губки абразивные"
+      }
+    },
+    {
+      "id": "fa901bfa-3f08-4fe8-aaed-c2997feaaddf",
+      "name": "10х210х260 мм бур (сверло) SDS-plus GEPARD",
+      "slug": "10h210h260-mm-bur-sverlo-sds-plus-gepard-gp0110-260",
+      "brand": "GEPARD",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "0d7aa596-3488-4c64-8e39-24cf07529bee",
+      "name": "Круг обдирочный 125х6x22.2 мм для металла и нерж. стали GEPARD",
+      "slug": "krug-obdirochnyi-125h6x22-2-mm-dlya-metalla-i-nerzh-stali-gepard-gp16125-60",
+      "brand": "GEPARD",
+      "category": {
+        "id": "939ce413-dffd-4b97-aa79-5d1b015615a8",
+        "name": "Круги отрезные и обдирочные ф 125 мм"
+      }
+    },
+    {
+      "id": "a35ca4e2-ceef-4b56-bfa8-ea16f9f6a62a",
+      "name": "Диск отрезной 230x22.2 мм по дереву GEPARD",
+      "slug": "disk-otreznoi-230x22-2-mm-po-derevu-gepard-gp0908-230",
+      "brand": "GEPARD",
+      "category": {
+        "id": "90c84ca9-d4ff-44b5-8360-5a94dfc6af66",
+        "name": "Круги отрезные и обдирочные ф 230 мм"
+      }
+    },
+    {
+      "id": "ab100273-19b5-4e63-bd82-f34f860c7530",
+      "name": "10х260х310 мм бур (сверло) SDS-plus GEPARD",
+      "slug": "10h260h310-mm-bur-sverlo-sds-plus-gepard-gp0110-310",
+      "brand": "GEPARD",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "18f651f6-1ddc-4720-846d-3bb15a907aa9",
+      "name": "Диск пильный 160х20/16 мм 24 зуб. по дереву GEPARD",
+      "slug": "disk-pilnyi-160h20-16-mm-24-zub-po-derevu-gepard-gp0901-24",
+      "brand": "GEPARD",
+      "category": {
+        "id": "6e5241b9-d814-431e-aea1-4a8a42107cf9",
+        "name": "Пильные диски для циркулярных пил ф160-165мм"
+      }
+    },
+    {
+      "id": "66456c07-545a-4ec7-b4cc-c974824c4e49",
+      "name": "Диск пильный 190х30/20/16 мм 24 зуб. по дереву GEPARD",
+      "slug": "disk-pilnyi-190h30-20-16-mm-24-zub-po-derevu-gepard-gp0902-24",
+      "brand": "GEPARD",
+      "category": {
+        "id": "bfd14a7a-f8ae-4f27-8cc1-af1e7d78d267",
+        "name": "Пильные диски для циркулярных пил ф170-190мм"
+      }
+    },
+    {
+      "id": "1a14bf86-778f-421c-9fde-9f81d3e15ac5",
+      "name": "Канальное зубило SDS-plus 250х22мм GEPARD",
+      "slug": "kanalnoe-zubilo-sds-plus-250h22mm-gepard-gp0704-250",
+      "brand": "GEPARD",
+      "category": {
+        "id": "b9051434-f4f7-4956-93a7-c7a4cc5cf816",
+        "name": "Зубила канальные, изогнутые и пр."
+      }
+    },
+    {
+      "id": "08fc767d-caa6-429c-8eef-7a40dc70ebf5",
+      "name": "Коронка алмазная d 102мм железобетон GEPARD (GP2079-102)",
+      "slug": "koronka-almaznaya-d-102mm-zhelezobeton-gepard-gp2079-102",
+      "brand": "GEPARD",
+      "category": {
+        "id": "d20567d4-c8f2-4cde-b6f2-185843df8006",
+        "name": "Коронки буровые для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "1eb6029c-f9f7-425d-badf-0035b7284061",
+      "name": "Коронка алмазная d 10мм керамогранит GEPARD (GP2077-10)",
+      "slug": "koronka-almaznaya-d-10mm-keramogranit-gepard-gp2077-10",
+      "brand": "GEPARD",
+      "category": {
+        "id": "64ceff41-85ad-4ec0-95ec-3c876121cb47",
+        "name": "Коронки алмазные для твердой керамики"
+      }
+    },
+    {
+      "id": "f6c6c0e2-3634-4e98-b709-065e3ae94626",
+      "name": "Коронка биметаллическая d114 мм PROGRESSOR GEPARD",
+      "slug": "koronka-bimetallicheskaya-d114-mm-progressor-gepard-gp2550-114",
+      "brand": "GEPARD",
+      "category": {
+        "id": "eaa2c361-dbd7-4b4d-8f1f-ad28ab8a67e4",
+        "name": "Коронки биметаллические"
+      }
+    },
+    {
+      "id": "f9bf4d15-da94-4a12-8491-42424bb216e2",
+      "name": "Круг зачистной 125х22мм для мягкой очистки GEPARD",
+      "slug": "krug-zachistnoi-125h22mm-dlya-myagkoi-ochistki-gepard-gp5017-125",
+      "brand": "GEPARD",
+      "category": {
+        "id": "84530f97-b7af-48f9-bf85-dfd47186ee73",
+        "name": "Круги коралловые"
+      }
+    },
+    {
+      "id": "e2b483e4-0ed4-4cd5-8464-a6518f9f2b66",
+      "name": "Круг лепестковый 125х22мм P120 конич. GEPARD (GP5015-120)",
+      "slug": "krug-lepestkovyi-125h22mm-p120-konich-gepard-gp5015-120",
+      "brand": "GEPARD",
+      "category": {
+        "id": "10e40112-4723-4bbe-b7cd-428817e8f920",
+        "name": "Круги лепестковые ф125мм"
+      }
+    },
+    {
+      "id": "2f38d986-5271-433a-8192-2c5f87949b36",
+      "name": "10х300х360 мм бур (сверло) SDS-plus GEPARD",
+      "slug": "10h300h360-mm-bur-sverlo-sds-plus-gepard-gp0110-360",
+      "brand": "GEPARD",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "4a77472b-dd55-4e8b-80a8-76d626d9125a",
+      "name": "Лопаточное зубило SDS-max 400х50мм GEPARD",
+      "slug": "lopatochnoe-zubilo-sds-max-400h50mm-gepard-gp0709-400",
+      "brand": "GEPARD",
+      "category": {
+        "id": "6c911f6b-181e-4d6c-8389-11900f5eb896",
+        "name": "Зубила лопаточные"
+      }
+    },
+    {
+      "id": "56ef17b5-23ad-4edc-8531-1e7543af3399",
+      "name": "Мешок для пылесоса BOSCH GAS 15, 12-25 многоразовый (молния) GEPARD",
+      "slug": "meshok-dlya-pylesosa-bosch-gas-15-12-25-mnogorazovyi-molniya-gepard-gp90010-331",
+      "brand": "GEPARD",
+      "category": {
+        "id": "3c00a644-4867-4ee6-b08a-c7847ed967a5",
+        "name": "Мешки"
+      }
+    },
+    {
+      "id": "900e548b-7903-4bb5-9486-020c1f75fe19",
+      "name": "Миксер для смесей 100х600мм SDS+ GEPARD (GP4250-10)",
+      "slug": "mikser-dlya-smesei-100h600mm-sds-gepard-gp4250-10",
+      "brand": "GEPARD",
+      "category": {
+        "id": "4005dd37-a801-4056-a9e9-5ca0548686fd",
+        "name": "Мешалки для миксеров строительных и дрелей"
+      }
+    },
+    {
+      "id": "b4ef4258-14fd-4d3b-ab1e-9fcb773e35ef",
+      "name": "Набор для установки врезных замков 22/48, 3предмета GEPARD (GP2422-48)",
+      "slug": "nabor-dlya-ustanovki-vreznyh-zamkov-22-48-3predmeta-gepard-gp2422-48",
+      "brand": "GEPARD",
+      "category": {
+        "id": "cbf7513c-06d5-40cd-b4b9-c9889d880922",
+        "name": "Коронки пильные"
+      }
+    },
+    {
+      "id": "76664905-2395-42eb-808f-a230b0067511",
+      "name": "Набор пилок лобз. по дереву/ламинату 10шт. GEPARD (GP0634-04)",
+      "slug": "nabor-pilok-lobz-po-derevu-laminatu-10sht-gepard-gp0634-04",
+      "brand": "GEPARD",
+      "category": {
+        "id": "2d70303b-e719-48c2-ac45-3e2ac32142ed",
+        "name": "Наборы пилок лобзиковых"
+      }
+    },
+    {
+      "id": "471adbbd-474e-4ca8-860b-70f8e91a9d8e",
+      "name": "Пилка сабельная по дереву S1111K (2 шт.) GEPARD",
+      "slug": "pilka-sabelnaya-po-derevu-s1111k-2-sht-gepard-gp0641-07",
+      "brand": "GEPARD",
+      "category": {
+        "id": "4592e503-441a-4cad-a567-62658f464039",
+        "name": "Пилки по дереву для электрич. ножовок, сабельных пил"
+      }
+    },
+    {
+      "id": "beadba9d-b28e-4122-9fe8-5978fbf21e39",
+      "name": "Набор пилок сабельных универсальный 3шт. GEPARD (GP0643-02)",
+      "slug": "nabor-pilok-sabelnyh-universalnyi-3sht-gepard-gp0643-02",
+      "brand": "GEPARD",
+      "category": {
+        "id": "19d0f0ef-fc4d-4a7f-826d-c2f6a6f46cf9",
+        "name": "Пилки специального назначения для электрич. ножовок, сабельных пил"
+      }
+    },
+    {
+      "id": "eb15f9f7-b889-42d4-9e8f-da351b24270e",
+      "name": "Kлeщи для xoмутoв ШPУCa уcилeнныe TOPTUL",
+      "slug": "kleshchi-dlya-xomutov-shpuca-ucilennye-toptul-jeae0628",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "6627c018-8fc0-49ce-bc06-d040516e645b",
+        "name": "Автослесарный инструмент"
+      }
+    },
+    {
+      "id": "8fcd644f-dccd-467c-a89e-43ed1bd79856",
+      "name": "Боек NYLON (белый) для молотка рихтовочного HAAF3530 TOPTUL",
+      "slug": "boek-nylon-belyi-dlya-molotka-rihtovochnogo-haaf3530-toptul-hlaa3502",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "dfeb36a0-9d25-49ea-8ef7-b62f4f55e55b",
+        "name": "Кузовной инструмент"
+      }
+    },
+    {
+      "id": "3ca45e54-ae71-49cd-a5f2-5d97131e74c4",
+      "name": "Бокорезы 115мм TOPTUL",
+      "slug": "bokorezy-115mm-toptul-debe204e",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "cf4e262f-81c4-461d-a253-7e3291205cd6",
+        "name": "Кусачки, бокорезы"
+      }
+    },
+    {
+      "id": "235d58ba-0b81-4237-af76-80cfbc4f3e13",
+      "name": "Бокорезы 150мм для обрезки и зачистки проводов TOPTUL",
+      "slug": "bokorezy-150mm-dlya-obrezki-i-zachistki-provodov-toptul-deaa1206b",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "e9f6b1ef-549a-4f1c-9d44-ae18114b4210",
+        "name": "Инструмент для снятия изоляции"
+      }
+    },
+    {
+      "id": "328a2e47-32c6-4f45-a0e3-f08486931e8f",
+      "name": "Болторез 457мм TOPTUL",
+      "slug": "boltorez-457mm-toptul-sbcb1808",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "d0f0f7f7-9612-49b5-ac54-9350ad0aff23",
+        "name": "Ножницы ручные, болторезы"
+      }
+    },
+    {
+      "id": "dd1180b9-e224-496c-a786-c16f99f4e0e3",
+      "name": "Вороток 1\" 1010мм TOPTUL",
+      "slug": "vorotok-1-1010mm-toptul-cfbc3240",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "b9228391-2da5-4b8c-ae90-4f8e60c771e7",
+        "name": "Воротки"
+      }
+    },
+    {
+      "id": "e9aa37c4-fe13-4f8e-890c-49c281b092fb",
+      "name": "Головка \"звездочка\" 1/2\" Е10 TOPTUL",
+      "slug": "golovka-zvezdochka-1-2-e10-toptul-baed1610",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "f49c5643-7ef2-483b-b3eb-afc916fbbf78",
+        "name": "Головки, головки с насадками, биты-головки 1/2\""
+      }
+    },
+    {
+      "id": "c127ad7a-8ec6-4659-8cec-8df1908d79bd",
+      "name": "Головка \"звездочка\" 1/4\" Е4 TOPTUL",
+      "slug": "golovka-zvezdochka-1-4-e4-toptul-baed0804",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "d07b452d-a9dc-4925-af03-826121c768cb",
+        "name": "Головки, головки с насадками, биты-головки 1/4\""
+      }
+    },
+    {
+      "id": "00c33715-a4da-416c-a7e9-f2df84dfd0cd",
+      "name": "Головка \"звездочка\" 3/8\" Е10 TOPTUL",
+      "slug": "golovka-zvezdochka-3-8-e10-toptul-baed1210",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "3852dec6-718d-47d6-9c61-2f9fab48b11f",
+        "name": "Головки, головки с насадками, биты-головки 3/8\""
+      }
+    },
+    {
+      "id": "d3db2312-d156-4b24-9cae-77974a1c6edd",
+      "name": "Головка 1\" 67мм 6гр. TOPTUL",
+      "slug": "golovka-1-67mm-6gr-toptul-baea3267",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "fb7dd4ca-95a2-4c3b-9161-c6e80101c2d8",
+        "name": "Головки, головки с насадками, биты-головки 1\""
+      }
+    },
+    {
+      "id": "d345ae97-3742-440a-928c-df664d74e52a",
+      "name": "Головка 1/2\" 12мм для сорванных граней TOPTUL",
+      "slug": "golovka-1-2-12mm-dlya-sorvannyh-granei-toptul-baak1612",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "362b5865-0931-400f-893e-7ab52241c9de",
+        "name": "Головки, головки с насадками, биты-головки ударные 1/2\""
+      }
+    },
+    {
+      "id": "98f146bf-cb06-4017-a28d-af34aa952c0b",
+      "name": "Головка 3/4\" 19мм 6гр. TOPTUL",
+      "slug": "golovka-3-4-19mm-6gr-toptul-baea2419",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "daaa3700-d0e0-4784-b4e8-caa60056dcca",
+        "name": "Головки, головки с насадками, биты-головки 3/4\""
+      }
+    },
+    {
+      "id": "e501e191-788b-4741-931f-c0179baaf5be",
+      "name": "Головка для снятия шаровых опор (Citroen, Peugeot) TOPTUL",
+      "slug": "golovka-dlya-snyatiya-sharovyh-opor-citroen-peugeot-toptul-jebq0505",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "a8158d7c-24ca-418f-a047-005194f0fa2b",
+        "name": "Головки, удлинители, воротки, трещотки"
+      }
+    },
+    {
+      "id": "fb67907a-4fa8-4475-8464-bfad291e7151",
+      "name": "Головка накидная 17мм для ключа динамометрич. TOPTUL",
+      "slug": "golovka-nakidnaya-17mm-dlya-klyucha-dinamometrich-toptul-anar0117",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8ad291ec-3d85-4786-bf2d-c906d989bd50",
+        "name": "Ключи динамометрические"
+      }
+    },
+    {
+      "id": "3abd609c-dcec-4e97-9210-cea31ddaf31d",
+      "name": "Головка ударн. 1\" 19мм 6гр. TOPTUL",
+      "slug": "golovka-udarn-1-19mm-6gr-toptul-kaba3219",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "d57cc0be-7c08-4659-8a4d-757e61875a60",
+        "name": "Головки, головки с насадками, биты-головки ударные 1\""
+      }
+    },
+    {
+      "id": "55969b3c-8840-43bb-a7b3-6858d603d48d",
+      "name": "Длинногубцы 280мм с круглым захватом d13мм TOPTUL",
+      "slug": "dlinnogubcy-280mm-s-kruglym-zahvatom-d13mm-toptul-dfae1211",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "07495b44-c326-4503-be51-a76fa49da4ea",
+        "name": "Тонкогубцы, круглогубцы, длинногубцы"
+      }
+    },
+    {
+      "id": "9806bd35-4eb8-4d64-a77c-1a67a9684fec",
+      "name": "Зажим для сварки 230мм TOPTUL",
+      "slug": "zazhim-dlya-svarki-230mm-toptul-daat1a09",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "44352d89-a56e-4937-945f-26d0176229cf",
+        "name": "Зажимной губцевый инструмент"
+      }
+    },
+    {
+      "id": "7a612751-a007-4a2e-8467-e28da6c075c4",
+      "name": "Заклепочник 2,4-4,8мм TOPTUL",
+      "slug": "zaklepochnik-2-4-4-8mm-toptul-jbaa2448",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "65bb36d1-0818-46bd-b9da-573939174ed6",
+        "name": "Заклепочники"
+      }
+    },
+    {
+      "id": "771523d6-9116-474b-8104-773d155efd73",
+      "name": "Зубило для пневмомолотка панельное 20х178мм TOPTUL",
+      "slug": "zubilo-dlya-pnevmomolotka-panelnoe-20h178mm-toptul-kaja18d1",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "facc8c02-55b6-4a06-909e-992d7dad50b6",
+        "name": "Отбойные пневмомолотки"
+      }
+    },
+    {
+      "id": "8779dde9-3efd-4b44-822b-c53fccc3ca8c",
+      "name": "Кабелерез 160мм TOPTUL",
+      "slug": "kabelerez-160mm-toptul-dnaa1206",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "20350839-b166-48a1-886a-7660582e2fcc",
+        "name": "Кабелерезы"
+      }
+    },
+    {
+      "id": "db5c6d6e-abc2-4ae8-8d7b-f33c6bcf9ca0",
+      "name": "Клещи д/скрутки 250мм TOPTUL",
+      "slug": "kleshchi-d-skrutki-250mm-toptul-djaa0110",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8c27892e-e5a2-49f3-b8fc-bc811538146c",
+        "name": "Клещи"
+      }
+    },
+    {
+      "id": "09a6364c-e42f-4def-b3e7-e8af55d7c16b",
+      "name": "Клещи переставные 250мм TOPTUL",
+      "slug": "kleshchi-perestavnye-250mm-toptul-ddaa1210",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "b06b0d2f-7e89-4702-84c4-138149a26329",
+        "name": "Плоскогубцы, пассатижи"
+      }
+    },
+    {
+      "id": "0102a69a-08c3-4b5d-8c6b-0c6ceb886ca1",
+      "name": "Клин для снятия пластиковых деталей (ударопрочн. нейлон) TOPTUL",
+      "slug": "klin-dlya-snyatiya-plastikovyh-detalei-udaroprochn-neilon-toptul-jjap1219",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "936668e4-ff4e-4874-932c-06a345e92247",
+        "name": "Съемники"
+      }
+    },
+    {
+      "id": "7bbaa9e4-9447-48b1-a982-a729338cde84",
+      "name": "Боек PU (желтый) для молотка рихтовочного HAAF3530 TOPTUL",
+      "slug": "boek-pu-zheltyi-dlya-molotka-rihtovochnogo-haaf3530-toptul-hlaa3501",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "dfeb36a0-9d25-49ea-8ef7-b62f4f55e55b",
+        "name": "Кузовной инструмент"
+      }
+    },
+    {
+      "id": "d14b1f5b-09aa-4ba1-b592-f9a9a4a96c16",
+      "name": "Ключ TORX T10х142х76мм L-Type TOPTUL",
+      "slug": "klyuch-torx-t10h142h76mm-l-type-toptul-aiea1015",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "bcace725-e841-4aa1-9fba-d3a8fac81981",
+        "name": "Ключи имбусовые"
+      }
+    },
+    {
+      "id": "3cf3a6ed-396c-44f6-ae6d-3eff222220cb",
+      "name": "Ключ балонный 27х30мм TOPTUL",
+      "slug": "klyuch-balonnyi-27h30mm-toptul-ctia2730",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "1f01323d-4552-4e28-ad73-671e34085475",
+        "name": "Ключи слесарные"
+      }
+    },
+    {
+      "id": "8572d6cc-6b10-48d8-a2a7-715801507b90",
+      "name": "Ключ комбинированный 19мм с трещоткой MINI TOPTUL",
+      "slug": "klyuch-kombinirovannyi-19mm-s-treshchotkoi-mini-toptul-aoab1919",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "f183975a-c7a1-402c-a141-d8e35a945159",
+        "name": "Ключи комбинированные TOPTUL"
+      }
+    },
+    {
+      "id": "554fe494-16ee-47e2-8ab9-c85aec186f39",
+      "name": "Ключ накидной \"звездочка\" E6хЕ8 TOPTUL",
+      "slug": "klyuch-nakidnoi-zvezdochka-e6he8-toptul-aaee0608",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8108a02c-f29a-4c59-8d52-947d41bc3d69",
+        "name": "Ключи накидные TOPTUL"
+      }
+    },
+    {
+      "id": "12ca9a84-0d57-4b66-899a-11aa4bd5d102",
+      "name": "Ключ торцевой 17мм TOPTUL",
+      "slug": "klyuch-torcevoi-17mm-toptul-aeae1717",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "8a2682d5-c298-4a29-bc20-e4a84edd93f4",
+        "name": "Ключи торцевые"
+      }
+    },
+    {
+      "id": "681450f0-7760-4f02-94db-042a0e79e68c",
+      "name": "Ключ трубный 1-1/2\" 250мм TOPTUL",
+      "slug": "klyuch-trubnyi-1-1-2-250mm-toptul-ddab1a10",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "bb0267dc-1123-4e36-baf5-14e24824cf51",
+        "name": "Ключи трубные"
+      }
+    },
+    {
+      "id": "7b5704e0-bf43-4010-9c28-2323f660ebab",
+      "name": "Ключ ударно-силовой рожковый 17мм TOPTUL",
+      "slug": "klyuch-udarno-silovoi-rozhkovyi-17mm-toptul-aaat1717",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "5b8a2099-cac9-4aa1-ab2d-5bf3f26e4b85",
+        "name": "Ключи рожковые TOPTUL"
+      }
+    },
+    {
+      "id": "e568d03d-c44a-4259-ae0a-467bbba25778",
+      "name": "Коронка биметаллическая d19мм TOPTUL",
+      "slug": "koronka-bimetallicheskaya-d19mm-toptul-saac4719",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "eaa2c361-dbd7-4b4d-8f1f-ad28ab8a67e4",
+        "name": "Коронки биметаллические"
+      }
+    },
+    {
+      "id": "151296d0-221b-4cb7-959d-6d95e5df8747",
+      "name": "Круглогубцы 130мм для электроники TOPTUL",
+      "slug": "kruglogubcy-130mm-dlya-elektroniki-toptul-dfcl2205",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "6e4eacf1-3dcd-4bc2-8a04-09c97869b810",
+        "name": "Плоскогубцы, круглогубцы, бокорезы диэлектрические"
+      }
+    },
+    {
+      "id": "797576dd-2f48-4480-b9ee-dd534b08c249",
+      "name": "Кувалда 1кг с фиберглассовой рукояткой TOPTUL",
+      "slug": "kuvalda-1kg-s-fiberglassovoi-rukoyatkoi-toptul-habe2226",
+      "brand": "TOPTUL",
+      "category": {
+        "id": "7fd8866b-2506-423b-989b-52d34b0ac8eb",
+        "name": "Молотки, кувалды,киянки"
+      }
+    },
+    {
+      "id": "16e6eef9-358a-41fe-b2f7-f82a3eec1fbe",
+      "name": "10х100х160 мм бур (сверло) SDS-Plus 4Cutter MAKITA",
+      "slug": "10h100h160-mm-bur-sverlo-sds-plus-4cutter-makita-b-62670",
+      "brand": "MAKITA",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "7f7b61ca-50fa-4ccb-bb57-0c1dbd15195d",
+      "name": "12х200х340 мм бур (сверло) SDS-max MAKITA",
+      "slug": "12h200h340-mm-bur-sverlo-sds-max-makita-d-33875",
+      "brand": "MAKITA",
+      "category": {
+        "id": "7ddf5df0-bcad-40c3-a40e-865fd75b506f",
+        "name": "Сверла по бетону для перфораторов SDS MAX"
+      }
+    },
+    {
+      "id": "99727ccb-9fbb-490c-a7db-a1060a7502db",
+      "name": "6х100х160 мм бур (сверло) SDS-plus VPLUS MAKITA",
+      "slug": "6h100h160-mm-bur-sverlo-sds-plus-vplus-makita-b-46523",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ef2267b7-c3a2-4a61-9d1c-e5845c35e338",
+        "name": "Буры SDS-plus с крестовой пластиной"
+      }
+    },
+    {
+      "id": "ddcce689-e91d-47c2-94c8-3840882eb267",
+      "name": "Адаптер BiM MAKITA 14-29мм 10мм",
+      "slug": "adapter-bim-makita-14-29mm-10mm-d-17170",
+      "brand": "MAKITA",
+      "category": {
+        "id": "eaa2c361-dbd7-4b4d-8f1f-ad28ab8a67e4",
+        "name": "Коронки биметаллические"
+      }
+    },
+    {
+      "id": "0ae67b9b-f80c-4139-b6b5-d4917d0765e3",
+      "name": "Адаптер для направляющей шины MAKITA",
+      "slug": "adapter-dlya-napravlyayushchei-shiny-makita-197252-3",
+      "brand": "MAKITA",
+      "category": {
+        "id": "db777037-f220-49b5-ba3a-6f9e7fc1ec2b",
+        "name": "Пильные диски для циркулярных пил"
+      }
+    },
+    {
+      "id": "b7e3c3ce-90d3-4503-800f-e4983e72cd00",
+      "name": "Адаптер с 1/4\" HEX под ударные головки 1/2\" MAKITA",
+      "slug": "adapter-s-1-4-hex-pod-udarnye-golovki-1-2-makita-b-54673",
+      "brand": "MAKITA",
+      "category": {
+        "id": "d07b452d-a9dc-4925-af03-826121c768cb",
+        "name": "Головки, головки с насадками, биты-головки 1/4\""
+      }
+    },
+    {
+      "id": "55665bd5-eeea-453a-aa4c-7acb6b41d1f0",
+      "name": "Аккум. вентилятор MAKITA LXT DCF 102 Z в кор.",
+      "slug": "akkum-ventilyator-makita-lxt-dcf-102-z-v-kor-dcf102z",
+      "brand": "MAKITA",
+      "category": {
+        "id": "2cc99cff-342b-40b8-ac43-7c3724811fe6",
+        "name": "Другая аккумуляторная техника"
+      }
+    },
+    {
+      "id": "88ee80af-8361-4cc2-90cd-7c2d039f1c6a",
+      "name": "Аккум. воздуходувка MAKITA LXT DUB 362 Z",
+      "slug": "akkum-vozduhoduvka-makita-lxt-dub-362-z-dub362z",
+      "brand": "MAKITA",
+      "category": {
+        "id": "45c7743f-fcc0-43d9-bdfd-c54c23811ecf",
+        "name": "Воздуходувки аккумуляторные и электрические"
+      }
+    },
+    {
+      "id": "db050edd-7abe-413c-ba7b-45b25299328e",
+      "name": "Аккум. высоторез LXT DUA200F002 MAKITA в кор.",
+      "slug": "akkum-vysotorez-lxt-dua200f002-makita-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "a10498b3-b810-4221-90ff-e6348b9379ba",
+        "name": "Мотоножницы, электроножницы, кусторезы, высоторезы"
+      }
+    },
+    {
+      "id": "b3cefbbc-abed-48ef-8678-229133b82597",
+      "name": "Аккум. газонокосилка MAKITA LXT DLM330RT в кор.",
+      "slug": "akkum-gazonokosilka-makita-lxt-dlm330rt-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "8932e44b-ff9a-44c2-a805-507c92fe6cde",
+        "name": "Газонокосилки электро и ручные"
+      }
+    },
+    {
+      "id": "2fc72c92-d86e-493b-9033-948c5e385246",
+      "name": "Аккум. двуручная углошлифмашина MAKITA LXT DGA 901 ZU в кор.",
+      "slug": "akkum-dvuruchnaya-ugloshlifmashina-makita-lxt-dga-901-zu-v-kor-dga901zu",
+      "brand": "MAKITA",
+      "category": {
+        "id": "e363fc59-271e-4632-a329-062656e4bfe6",
+        "name": "Аккумуляторные углошлифмашины"
+      }
+    },
+    {
+      "id": "45a75b96-8f9b-4fce-b062-c07c615f1e4b",
+      "name": "Аккум. дрель-шуруповерт MAKITA 18.0 В, G-series DF 488 D004 в кейсе",
+      "slug": "akkum-drel-shurupovert-makita-18-0-v-g-series-df-488-d004-v-keise-df488d004",
+      "brand": "MAKITA",
+      "category": {
+        "id": "fddbb2da-9494-43e6-8192-8d8aa7251e33",
+        "name": "Аккумуляторные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "79bf4264-7037-402a-a6fa-404902c87e51",
+      "name": "10х100х160 мм бур (сверло) SDS-plus MAKITA",
+      "slug": "10h100h160-mm-bur-sverlo-sds-plus-makita-d-00175",
+      "brand": "MAKITA",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    },
+    {
+      "id": "00a4467f-94f9-49d1-afdf-c3a5c05fa6e5",
+      "name": "Аккум. лобзик MAKITA CXT DJV184Z в кор.",
+      "slug": "akkum-lobzik-makita-cxt-djv184z-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "d1793a1a-47cf-4806-abef-034493e91e7a",
+        "name": "Аккумуляторные лобзики"
+      }
+    },
+    {
+      "id": "68b3ea92-a687-4275-94c3-26eb861b1b8c",
+      "name": "Аккум. многофункциональный инструмент (реноватор) MAKITA CXT TM 30 DZ в кор.",
+      "slug": "akkum-mnogofunkcionalnyi-instrument-renovator-makita-cxt-tm-30-dz-v-kor-tm30dz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ba64e365-5551-40c9-ad68-32935c66ccca",
+        "name": "Аккумуляторный многофункциональный инструмент (реноватор)"
+      }
+    },
+    {
+      "id": "6854a021-6c4f-4ec9-b402-70bfac3b8b67",
+      "name": "Аккум. ножницы садовые MAKITA CXT UM 600 Z в кор.",
+      "slug": "akkum-nozhnicy-sadovye-makita-cxt-um-600-z-v-kor-um600dz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "b4809252-d4e0-40d0-b801-d42c0d11052c",
+        "name": "Аккум. ножницы садовые, секаторы, ножовки"
+      }
+    },
+    {
+      "id": "dacd109c-2c63-4ae6-8811-2994d9a7451e",
+      "name": "Аккум. опрыскиватель MAKITA LXT DUS108Z в кор.",
+      "slug": "akkum-opryskivatel-makita-lxt-dus108z-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ca902f18-2e7f-4111-973e-4ce18b6551da",
+        "name": "Опрыскиватели аккумуляторные"
+      }
+    },
+    {
+      "id": "4907b98e-cdf7-4af0-bf42-eb4d62a6b7bc",
+      "name": "Аккум. перфоратор MAKITA HR 140 DWAJ в кейсе",
+      "slug": "akkum-perforator-makita-hr-140-dwaj-v-keise-hr140dwaj",
+      "brand": "MAKITA",
+      "category": {
+        "id": "91865477-d6ee-4683-a89b-aeb3231922e7",
+        "name": "Аккумуляторные перфораторы"
+      }
+    },
+    {
+      "id": "063dd104-5a0a-486d-ab27-311b57b1d4bd",
+      "name": "Аккум. пила цепная MAKITA CXT UC100DWA шина 10 см (4\"), 0.325\", 1.1 мм в кор.",
+      "slug": "akkum-pila-cepnaya-makita-cxt-uc100dwa-shina-10-sm-4-0-325-1-1-mm-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "b47a480e-0a71-4c30-8680-411dec6c799e",
+        "name": "Пилы цепные электрические"
+      }
+    },
+    {
+      "id": "0da0c522-b98b-429f-a318-43c9ac17b436",
+      "name": "Аккум. пылесос MAKITA CL 106 FDZ в кор.",
+      "slug": "akkum-pylesos-makita-cl-106-fdz-v-kor-cl106fdz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "4df84de4-2c94-42d8-b43a-eb6062ed5d2f",
+        "name": "Аккумуляторные пылесосы"
+      }
+    },
+    {
+      "id": "9699bfcf-b735-40b4-89aa-8e95e1e32e35",
+      "name": "Аккум. рубанок MAKITA LXT DKP 181 Z в кор.",
+      "slug": "akkum-rubanok-makita-lxt-dkp-181-z-v-kor-dkp181z",
+      "brand": "MAKITA",
+      "category": {
+        "id": "ca5d0168-929a-4a4c-be3c-e66e26bee415",
+        "name": "Аккумуляторные рубанки"
+      }
+    },
+    {
+      "id": "89246727-5ada-46c7-9753-0db985e41f33",
+      "name": "Аккум. сабельная пила MAKITA CXT JR 103 DZ в кор.",
+      "slug": "akkum-sabelnaya-pila-makita-cxt-jr-103-dz-v-kor-jr103dz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "17d5e4e7-4e3a-4bdd-85aa-8523659fa6be",
+        "name": "Аккумуляторные сабельные пилы"
+      }
+    },
+    {
+      "id": "f5ca0b39-b3af-476c-a566-7fd01cf4fe0a",
+      "name": "Аккум. триммер MAKITA XGT UR003GZ в кор.",
+      "slug": "akkum-trimmer-makita-xgt-ur003gz-v-kor",
+      "brand": "MAKITA",
+      "category": {
+        "id": "e33258b4-e166-4fe1-86c5-4c5f21e61d73",
+        "name": "Триммеры"
+      }
+    },
+    {
+      "id": "3ceab4bb-5805-4f47-864d-bbfb48e54f3c",
+      "name": "Аккум. угловая дрель-шуруповерт CTX MAKITA DA 332 DZ в кор.",
+      "slug": "akkum-uglovaya-drel-shurupovert-ctx-makita-da-332-dz-v-kor-da332dz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "77cc3f09-25ae-42d2-a120-7849c89660fc",
+        "name": "Аккумуляторные ударные дрели-шуруповерты"
+      }
+    },
+    {
+      "id": "23f6b7b1-94e4-42bc-abad-344389a961e8",
+      "name": "Аккум. ударный гайковерт MAKITA CXT TW 060 DZ в кор.",
+      "slug": "akkum-udarnyi-gaikovert-makita-cxt-tw-060-dz-v-kor-tw060dz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "6f8b353c-35c9-458b-830f-052d67e33e65",
+        "name": "Аккумуляторные гайковерты"
+      }
+    },
+    {
+      "id": "7c94e0b9-4008-49af-9f39-a6f1ee74b98e",
+      "name": "Аккум. ударный шуруповерт MAKITA CXT TD 112 DMZ в кор.",
+      "slug": "akkum-udarnyi-shurupovert-makita-cxt-td-112-dmz-v-kor-td112dmz",
+      "brand": "MAKITA",
+      "category": {
+        "id": "c9f816cd-576f-44ab-b828-8ba514f62913",
+        "name": "Аккумуляторные шуруповерты"
+      }
+    },
+    {
+      "id": "ae9f82a0-e05e-41dd-8cde-05cf4c1b7de5",
+      "name": "Аккум. фрезер кромочный MAKITA DRT52Z в чем.",
+      "slug": "akkum-frezer-kromochnyi-makita-drt52z-v-chem",
+      "brand": "MAKITA",
+      "category": {
+        "id": "5ab7cc97-d65d-4ccc-937d-c6d724efeefa",
+        "name": "Аккумуляторные фрезеры"
+      }
+    },
+    {
+      "id": "532c17ed-a1fb-4ab2-8fbf-bf8dc60ac409",
+      "name": "Аккум. циркулярная пила MAKITA HS 301 DWAE в чем.",
+      "slug": "akkum-cirkulyarnaya-pila-makita-hs-301-dwae-v-chem-hs301dwae",
+      "brand": "MAKITA",
+      "category": {
+        "id": "8e18962f-415a-48e2-ac21-5f97fbc795b2",
+        "name": "Аккумуляторные циркулярные пилы"
+      }
+    },
+    {
+      "id": "eaa873c8-13ad-4b93-8389-67233458b2e1",
+      "name": "Аккумулятор BL1041B 4.0 Ah (2 шт) + зарядное DC10SB MAKITA в кейсе",
+      "slug": "akkumulyator-bl1041b-4-0-ah-2-sht-zaryadnoe-dc10sb-makita-v-keise-197641-2",
+      "brand": "MAKITA",
+      "category": {
+        "id": "0c099e22-f16c-4c76-adf4-03327981b536",
+        "name": "Аккумуляторы"
+      }
+    },
+    {
+      "id": "d8a404bf-ee18-44a0-8a0f-9ebfaa6851ae",
+      "name": "10х150х210 мм бур (сверло) SDS-Plus 4Cutter MAKITA",
+      "slug": "10h150h210-mm-bur-sverlo-sds-plus-4cutter-makita-b-62686",
+      "brand": "MAKITA",
+      "category": {
+        "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+        "name": "Сверла по бетону для перфораторов SDS-plus"
+      }
+    }
+  ],
+  "categories": [
+    {
+      "id": "f49c5643-7ef2-483b-b3eb-afc916fbbf78",
+      "name": "Головки, головки с насадками, биты-головки 1/2\"",
+      "products": 190
+    },
+    {
+      "id": "07703977-8357-4659-94b5-e3cdb8af21fa",
+      "name": "Сверла по бетону для перфораторов SDS-plus",
+      "products": 165
+    },
+    {
+      "id": "7fd8866b-2506-423b-989b-52d34b0ac8eb",
+      "name": "Молотки, кувалды,киянки",
+      "products": 152
+    },
+    {
+      "id": "bcace725-e841-4aa1-9fba-d3a8fac81981",
+      "name": "Ключи имбусовые",
+      "products": 134
+    },
+    {
+      "id": "d07b452d-a9dc-4925-af03-826121c768cb",
+      "name": "Головки, головки с насадками, биты-головки 1/4\"",
+      "products": 127
+    }
+  ]
+}
