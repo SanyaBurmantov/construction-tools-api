@@ -307,6 +307,52 @@ describe('validateAnswer', () => {
     ).toEqual({});
   });
 
+  it('keeps a unit translated and an abbreviation spelled out', () => {
+    const check = (oldName: string, name: string) =>
+      validateAnswer(
+        { entity: 'PRODUCT' as const, oldName, brand: null, source: oldName },
+        { name },
+      );
+    expect(
+      check(
+        'Клещи д/снятия изоляции 150мм диэлектрические 1000V TOPTUL',
+        'Клещи для снятия изоляции 150 мм диэлектрические 1000 В TOPTUL',
+      ),
+    ).toEqual({});
+    expect(
+      check(
+        'Рубанок аккум. LXT BL 18В, ширина 82мм',
+        'Аккумуляторный рубанок LXT бесщеточный 18 В, ширина 82 мм',
+      ),
+    ).toEqual({});
+    expect(
+      check(
+        'Адаптер SDS+BiM коронок 32-76мм MAKITA',
+        'Адаптер SDS+ для биметаллических коронок 32-76 мм MAKITA',
+      ),
+    ).toEqual({});
+    // A code that is really gone is still caught.
+    expect(
+      check('Перфоратор MAKITA HR2470 в чем.', 'Перфоратор MAKITA в кейсе')
+        .name,
+    ).toMatch(/HR2470/);
+  });
+
+  it('does not read the pronoun «сам» as a superlative', () => {
+    expect(
+      validateAnswer(BOSCH, {
+        descriptionShort:
+          'Заряд можно контролировать по самому инструменту, если у него есть индикатор.',
+      }),
+    ).toEqual({});
+    expect(
+      validateAnswer(BOSCH, {
+        descriptionShort:
+          'Самый мощный перфоратор для работ по бетону на объектах.',
+      }).descriptionShort,
+    ).toMatch(/превосходная/);
+  });
+
   it('wants the B2B payment line in the SEO description', () => {
     expect(
       validateAnswer(BOSCH, {

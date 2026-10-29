@@ -303,20 +303,56 @@ export function productTemplate(params: {
   categoryPath: string;
   name: string;
 }): AiTemplate {
+  return explainTemplate(params).template;
+}
+
+/** Which subject decided the kind — what the admin «объяснить» shows. */
+export type TemplateChoice = {
+  template: AiTemplate;
+  by: 'name' | 'category' | 'chain' | 'default';
+  subject: string;
+};
+
+export function explainTemplate(params: {
+  categoryPath: string;
+  name: string;
+}): TemplateChoice {
   const chain = params.categoryPath.split(' / ').filter(Boolean);
-  const subjects = [
-    nameHead(params.name),
-    normalise(chain[chain.length - 1] ?? ''),
-    normalise(params.categoryPath),
+  const subjects: Array<[TemplateChoice['by'], string]> = [
+    ['name', nameHead(params.name)],
+    ['category', normalise(chain[chain.length - 1] ?? '')],
+    ['chain', normalise(params.categoryPath)],
   ];
-  for (const subject of subjects) {
+  for (const [by, subject] of subjects) {
     if (!subject) continue;
     const found = PRODUCT_TEMPLATES.find(
       (template) => template !== GENERIC && template.match.test(subject),
     );
-    if (found) return found;
+    if (found) return { template: found, by, subject };
   }
-  return GENERIC;
+  return { template: GENERIC, by: 'default', subject: '' };
+}
+
+/**
+ * The word stems a kind is recognised by, readable: the regex without its
+ * syntax. Shown in the admin so «why did this anchor get the fastener guide»
+ * has an answer on screen.
+ */
+export function templateKeywords(template: AiTemplate): string[] {
+  if (template === GENERIC) return [];
+  const words = template.match.source
+    .replace(/\(\?<?[!=][^)]*\)/g, '')
+    .split('|')
+    .map((part) =>
+      part
+        .replace(/\\w\*|\\s\*|\\s\+|\\w\+/g, ' ')
+        .replace(/\[\^?[^\]]*\]\??/g, (cls) => (cls.includes('а-я') ? '' : ''))
+        .replace(/[()?*+^$\\.]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter((word) => word.length > 2);
+  return [...new Set(words)];
 }
 
 /** Rules for category pages. */
@@ -331,22 +367,36 @@ export const CATEGORY_BASE_RULES = `
 Не пиши про наличие, цены, скидки, гарантию, «лучший» и не упоминай телефоны и сайты. Пиши по-русски, деловым языком.
 `.trim();
 
+/**
+ * The admin's edited texts (AiTemplateTextsService) over the code defaults;
+ * a missing one is the default.
+ */
+export type TemplateTexts = {
+  productRules?: string;
+  categoryRules?: string;
+  guides?: Record<string, string>;
+};
+
 /** The whole instruction for a product task: base rules, the kind's guide, the admin's extra. */
-export function productInstruction(template: AiTemplate, extra?: string) {
+export function productInstruction(
+  template: AiTemplate,
+  extra?: string,
+  texts: TemplateTexts = {},
+) {
   return [
-    PRODUCT_BASE_RULES,
+    texts.productRules || PRODUCT_BASE_RULES,
     '',
     `Вид товара: ${template.label}.`,
-    template.guide,
+    texts.guides?.[template.key] || template.guide,
     extra?.trim() ? `\nДополнительно:\n${extra.trim()}` : '',
   ]
     .join('\n')
     .trim();
 }
 
-export function categoryInstruction(extra?: string) {
+export function categoryInstruction(extra?: string, texts: TemplateTexts = {}) {
   return [
-    CATEGORY_BASE_RULES,
+    texts.categoryRules || CATEGORY_BASE_RULES,
     extra?.trim() ? `\nДополнительно:\n${extra.trim()}` : '',
   ]
     .join('\n')
