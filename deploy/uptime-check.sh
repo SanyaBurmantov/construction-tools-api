@@ -27,7 +27,10 @@ check() {
   tmp="$(mktemp)"
   while (( tries < ATTEMPTS )); do
     tries=$((tries + 1))
-    code="$(curl -sS -L --max-time 25 -A 'gost-uptime-check' -o "$tmp" -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
+    # Bounded so the whole run (3 checks × 3 tries + pauses, the certificate)
+    # ends well inside the job's timeout: when the box is down every try
+    # hangs to the limit, and a job GitHub kills never reaches its Alert step.
+    code="$(curl -sS -L --connect-timeout 5 --max-time 20 -A 'gost-uptime-check' -o "$tmp" -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
     if [[ "$code" == "200" ]] && { [[ -z "$expect" ]] || grep -qi -- "$expect" "$tmp"; }; then
       echo "OK   $name ($url)"
       rm -f "$tmp"
@@ -55,7 +58,9 @@ check "API" "$SITE_URL/api/health/ready" ""
 
 # TLS certificate: Caddy renews it itself; this catches a renewal that
 # silently stopped working weeks before browsers start refusing the site.
-expiry="$(echo | openssl s_client -servername "$HOST" -connect "$HOST:443" 2>/dev/null \
+# `timeout`: s_client has none of its own and hangs ~2 min on a host that
+# drops packets — exactly the outage this check exists for.
+expiry="$(echo | timeout 15 openssl s_client -servername "$HOST" -connect "$HOST:443" 2>/dev/null \
   | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)"
 if [[ -z "$expiry" ]]; then
   failures+=("Сертификат: не удалось прочитать")

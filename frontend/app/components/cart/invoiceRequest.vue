@@ -14,6 +14,9 @@ import type { CompanyRequisitesModel } from '~/utils/requisites'
 const open = defineModel<boolean>('open', { required: true })
 
 const cart = useCartStore()
+// The discount the cart summary beside this panel shows must be on the invoice
+// too — the order used to go out at full price.
+const promo = usePromoCode()
 const config = useRuntimeConfig()
 const toast = useAppToast()
 const { user, authFetch, errorMessage } = useAuth()
@@ -109,11 +112,13 @@ async function submit() {
         payerAccount: payer.bankAccount.trim() || undefined,
         payerBankName: payer.bankName.trim() || undefined,
         payerBankBic: payer.bankBic.trim() || undefined,
+        promoCode: promo.appliedCode.value || undefined,
         expectedItemsTotal: cart.totalPrice,
         attribution: getAttribution(),
       },
     })
     cart.clear()
+    promo.clear()
     open.value = false
     await navigateTo({ path: '/checkout/success', query: { id: order.id } })
   } catch (err) {

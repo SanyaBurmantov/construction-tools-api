@@ -239,6 +239,11 @@ services:
       MALLOC_ARENA_MAX: 2
       NUXT_CACHE_MAX_MB: ${NUXT_CACHE_MAX_MB:-64}
       NUXT_INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+      # Same values the API charges (DELIVERY_COST_* above): the build has no
+      # access to them, so without these the storefront kept showing 15/10
+      # whatever .env.prod said, and the order total differed from the screen.
+      NUXT_PUBLIC_DELIVERY_COURIER: ${DELIVERY_COST_COURIER:-15}
+      NUXT_PUBLIC_DELIVERY_POST: ${DELIVERY_COST_POST:-10}
       API_BASE_SERVER: http://backend:8000
       NUXT_API_BASE_SERVER: http://backend:8000
       NUXT_PUBLIC_API_BASE: /api

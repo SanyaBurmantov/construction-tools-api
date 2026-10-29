@@ -39,12 +39,17 @@ const { run: runJobAction, busy: jobsBusy } = useAdminAction()
 /** Polls while something is running, so a long crawl shows progress. */
 let jobsTimer: ReturnType<typeof setInterval> | null = null
 
+// Polled every 5 s and on every row switch: an answer for a source that is no
+// longer open must not land in its place (the useAdminList ticket rule).
+let jobsTicket = 0
 async function loadJobs() {
   if (!hasSession.value || !expandedSource.value) return
+  const ticket = ++jobsTicket
   try {
-    jobs.value = await adminFetch<ParserJob[]>(`/parser/sources/${expandedSource.value}/jobs`)
+    const answer = await adminFetch<ParserJob[]>(`/parser/sources/${expandedSource.value}/jobs`)
+    if (ticket === jobsTicket) jobs.value = answer
   } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось загрузить задания'))
+    if (ticket === jobsTicket) toast.error(errorMessage(error, 'Не удалось загрузить задания'))
   }
 }
 
@@ -154,29 +159,34 @@ const toggleSource = (code: string, enabled: boolean) =>
   })
 
 /**
- * Saves every field of the source form in one request. The backend validates
- * the regexes and answers 400 with the reason, so a broken filter never reaches
- * the parser — it would otherwise throw on every single product.
+ * Saves the fields of the source form the admin actually changed. The backend
+ * validates the regexes and answers 400 with the reason, so a broken filter
+ * never reaches the parser — it would otherwise throw on every single product.
+ *
+ * Only the changed ones: the form holds the *effective* values (env and code
+ * defaults included), and sending all of them copied each into a DB row that
+ * outranks env — after one batch-size change, edits to the category regexes in
+ * compose or in parser-defaults.ts were silently ignored for that source.
  */
 const saveSourceSettings = (code: string) =>
   runControl(`settings-${code}`, async () => {
     const draft = drafts[code]!
+    const seeded = seededFrom[code]
     const source = control.value?.sources.find(item => item.code === code)
-    await adminFetch(`/parser/sources/${code}`, {
-      method: 'PATCH',
-      body: {
-        batchLimit: Number(draft.batchLimit),
-        requestDelayMs: Number(draft.requestDelayMs),
-        maxPages: Number(draft.maxPages),
-        // Sent only for a source that crawls categories: the API validates
-        // `Min(1)`, and the others have no such setting to send.
-        ...(source?.categoryBatchLimit !== undefined
-          ? { categoryBatchLimit: Number(draft.categoryBatchLimit) }
-          : {}),
-        categoryIncludeRegex: draft.categoryIncludeRegex,
-        categoryExcludeRegex: draft.categoryExcludeRegex,
-      },
-    })
+    const changed = <K extends keyof SourceDraft>(key: K) =>
+      !seeded || String(draft[key] ?? '') !== String(seeded[key] ?? '')
+    const body: Record<string, unknown> = {}
+    if (changed('batchLimit')) body.batchLimit = Number(draft.batchLimit)
+    if (changed('requestDelayMs')) body.requestDelayMs = Number(draft.requestDelayMs)
+    if (changed('maxPages')) body.maxPages = Number(draft.maxPages)
+    // Only a source that crawls categories has this setting (the API
+    // validates `Min(1)`).
+    if (source?.categoryBatchLimit !== undefined && changed('categoryBatchLimit'))
+      body.categoryBatchLimit = Number(draft.categoryBatchLimit)
+    if (changed('categoryIncludeRegex')) body.categoryIncludeRegex = draft.categoryIncludeRegex
+    if (changed('categoryExcludeRegex')) body.categoryExcludeRegex = draft.categoryExcludeRegex
+    if (!Object.keys(body).length) return `${code}: изменений нет`
+    await adminFetch(`/parser/sources/${code}`, { method: 'PATCH', body })
     return `${code}: настройки сохранены`
   }, code)
 
@@ -252,9 +262,12 @@ const categoryStats = computed(() =>
   categorySources.value.find(source => source.code === categorySource.value)?.categories ?? null
 )
 
+let categoriesTicket = 0
 async function loadCategories() {
   if (!hasSession.value) return
   categoryLoading.value = true
+  // A quick tab switch must not leave source A's rows under tab B.
+  const ticket = ++categoriesTicket
   try {
     const response = await adminFetch<Paginated<CategoryRow>>('/parser/categories', {
       params: compactParams({
@@ -264,12 +277,13 @@ async function loadCategories() {
         limit: categoryPagination.limit,
       }),
     })
+    if (ticket !== categoriesTicket) return
     categoryRows.value = response.data
     Object.assign(categoryPagination, response.pagination)
   } catch (error) {
-    toast.error(errorMessage(error, 'Не удалось загрузить очередь категорий'))
+    if (ticket === categoriesTicket) toast.error(errorMessage(error, 'Не удалось загрузить очередь категорий'))
   } finally {
-    categoryLoading.value = false
+    if (ticket === categoriesTicket) categoryLoading.value = false
   }
 }
 

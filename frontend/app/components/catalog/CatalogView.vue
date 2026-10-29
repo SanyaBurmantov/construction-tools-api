@@ -31,13 +31,15 @@ const SORT_OPTIONS = [
  * in shared links or split the ISR cache.
  */
 const viewMode = useState<'grid' | 'list'>('catalog-view', () => 'grid')
+// Through safe-storage: with site data blocked a raw localStorage read throws
+// during hydration, and Nuxt swapped the whole catalogue for its 500 page.
 onMounted(() => {
-  const saved = localStorage.getItem('catalog-view')
+  const saved = readJson<string>('catalog-view')
   if (saved === 'grid' || saved === 'list') viewMode.value = saved
 })
 function setViewMode(mode: 'grid' | 'list') {
   viewMode.value = mode
-  if (import.meta.client) localStorage.setItem('catalog-view', mode)
+  writeJson('catalog-view', mode)
 }
 
 const route = useRoute()
@@ -188,7 +190,10 @@ const categoryUnavailable = ref(false)
 // The four requests are independent — products are filtered by the slug in
 // the URL, not by the category answer — so they start together and the render
 // waits for the slowest instead of their sum.
-const catalogDataKey = computed(() => `catalog-products:${route.fullPath}`)
+// Without the #fragment: «Подробнее о разделе» (#category-about) and the
+// skip-link changed the key, refetched the grid and the jump landed in the
+// wrong place while the skeletons stood in.
+const catalogDataKey = computed(() => `catalog-products:${route.fullPath.split('#')[0]}`)
 
 /**
  * New results fade in, one card after another — but only after the first
@@ -259,6 +264,13 @@ if (category.value && props.categorySlug !== category.value.slug) {
  * throw the visitor out of it.
  */
 if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
+
+// A `?page=N` past the last page is a 404, not an empty «ничего не найдено»
+// with 200 and a self-canonical — a soft 404 the cache kept and search
+// engines indexed. Nitro never caches a 4xx.
+if (import.meta.server && !error.value && page.value > Math.max(1, products.value?.pagination.pages ?? 1)) {
+  throw createError({ statusCode: 404, statusMessage: 'Страница не найдена', fatal: true })
+}
 
 /**
  * The «Поставщик» facet is **admin-only**: which supplier carries a product is

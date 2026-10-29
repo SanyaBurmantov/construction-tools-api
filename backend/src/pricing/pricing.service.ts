@@ -382,6 +382,10 @@ export class PricingService {
     const where = {
       pricingMode: 'AUTO' as const,
       costPrice: { not: null },
+      // A product waiting in the spike review keeps waiting: re-pricing it
+      // from its pre-spike cost cleared the flag, and the review queue in
+      // /admin/pricing emptied with nobody having looked at it.
+      priceReviewNeeded: false,
       ...(filter.categoryId ? { categoryId: filter.categoryId } : {}),
       ...(filter.brandId ? { brandId: filter.brandId } : {}),
     };
