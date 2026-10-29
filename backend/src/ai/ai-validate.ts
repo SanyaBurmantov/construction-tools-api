@@ -163,6 +163,13 @@ function codeTokens(name: string) {
   );
 }
 
+/** Supplier abbreviations a name may spell out instead of keeping. */
+const SPELLED_OUT: Record<string, RegExp> = {
+  bl: /бесщ[её]т/i,
+  bim: /биметалл/i,
+  hss: /быстрорежущ/i,
+};
+
 /**
  * Claims a model likes to add and a supplier's data almost never backs:
  * stock, warranty, delivery terms, discounts, «the best». Each is allowed only
@@ -181,7 +188,9 @@ const CLAIMS: Array<[RegExp, string]> = [
     // Comparisons with other products only. «Идеально подходит» is a stock
     // phrase, not a claim: the prompt discourages it, rejecting a whole
     // description for it would only throw away a paid answer.
-    /(?<![а-яё])(лучш|самы[йхем]|сама[яю]|само[ейм]|непревзойд|№\s*1(?!\d)|номер\s+один)/i,
+    // «самый/самая/самое/самые/самых/самым/самую» only — «по самому
+    // инструменту», «самого прибора» are the pronoun «сам», not a superlative.
+    /(?<![а-яё])(лучш|сам(ый|ая|ое|ые|ых|ым|ую)(?![а-яё])|непревзойд|№\s*1(?!\d)|номер\s+один)/i,
     'превосходная степень',
   ],
   [
@@ -369,10 +378,17 @@ function checkName(value: string, input: ValidationInput): string | null {
   }
 
   // Article numbers, model codes and the supplier's Latin series words
-  // (EXPERT, XLTpro, NYLON) stay — the prompt asks for exactly this.
+  // (EXPERT, XLTpro, NYLON) stay — the prompt asks for exactly this. Two
+  // honest rewrites count as kept: a value with its unit in Russian
+  // («1000V» → «1000 В») and a known abbreviation spelled out («BL» →
+  // «бесщёточный»).
   for (const token of codeTokens(old)) {
-    if (!next.includes(codeKey(token)))
-      return `пропал код или модель «${token}»`;
+    if (next.includes(codeKey(token))) continue;
+    const unit = /^(\d+(?:[.,]\d+)?)(v|w|ah|mah|mm|cm|kg|nm|rpm)$/i.exec(token);
+    if (unit && numbersIn(value).has(normaliseNumber(unit[1]))) continue;
+    const spelled = SPELLED_OUT[token.toLowerCase()];
+    if (spelled && spelled.test(value)) continue;
+    return `пропал код или модель «${token}»`;
   }
 
   // Sizes and pack quantities stay: «М10х12х40», «(4 шт в зип-локе)».
