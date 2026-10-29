@@ -14,6 +14,7 @@ import { CategoryTreeService } from '../categories/category-tree.service';
 import { ProductIdentityService } from '../product-identity.service';
 import { ParserSettingsService } from '../parser-settings.service';
 import { parse7745 } from './7745.parser';
+import { offerPrice } from '../offer-price';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
 
@@ -303,7 +304,7 @@ export class Supplier7745ParserService extends SupplierQueueParser {
           externalId: url,
           name: data.name,
           sku: data.sku,
-          price: data.price,
+          price: offerPrice(data.price, data.inStock === false),
           currency: 'BYN',
           stock: data.inStock ?? false,
           images: data.images,
@@ -319,7 +320,7 @@ export class Supplier7745ParserService extends SupplierQueueParser {
           url,
           name: data.name,
           sku: data.sku,
-          price: data.price,
+          price: offerPrice(data.price, data.inStock === false),
           currency: 'BYN',
           stock: data.inStock ?? false,
           images: data.images,

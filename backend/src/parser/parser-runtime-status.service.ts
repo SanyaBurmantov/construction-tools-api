@@ -8,9 +8,16 @@ import { readWorkerHeartbeat } from './worker-heartbeat';
 // after each run so the table stays bounded (mirrors ParserLogService).
 const MAX_RUNS_PER_KEY = 100;
 
-// A run still marked RUNNING after this long is reported as ERROR. The longest
-// legitimate job (the tools.by catalogue crawl) finishes well inside it.
+// A run still marked RUNNING after this long is reported as ERROR. Batch jobs
+// finish well inside 6 h. A catalogue crawl (`*-refresh`) does not always:
+// dukon's is up to 5000 pages at a 3 s delay plus the saves, and its first
+// full resumable pass on 26.10 ran 9.3 h — reported ERROR while it worked.
 const STUCK_RUN_HOURS = 6;
+const STUCK_CRAWL_HOURS = 12;
+
+export function stuckAfterHours(key: string) {
+  return key.endsWith('-refresh') ? STUCK_CRAWL_HOURS : STUCK_RUN_HOURS;
+}
 
 /**
  * Share of hard failures in the last run above which a job counts as broken.
@@ -388,7 +395,8 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
         // healthy, so it must not be allowed to hide that.
         health: status.isRunning
           ? status.startedAt &&
-            now - status.startedAt.getTime() > STUCK_RUN_HOURS * 3_600_000
+            now - status.startedAt.getTime() >
+              stuckAfterHours(status.key) * 3_600_000
             ? 'ERROR'
             : 'RUNNING'
           : hasError || isFailingHard || isMassDelisting
