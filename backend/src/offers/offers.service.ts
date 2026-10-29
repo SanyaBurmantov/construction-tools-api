@@ -59,7 +59,17 @@ export class OffersService {
    */
   async recomputeFromOffers(productId: string) {
     const offer = await this.bestOffer(productId);
-    if (!offer) return null;
+    if (!offer) {
+      // Nobody has a price for it now. It used to keep whatever price it had
+      // last — on sale at a cost the supplier no longer quotes. The card stays
+      // (its page keeps its place in search), without a price and out of stock.
+      await this.pricing.withdrawPrice(productId);
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { stockStatus: 'out_of_stock' },
+      });
+      return null;
+    }
     const result = await this.pricing.applyCost(productId, offer.price, {
       oldCost: offer.oldPrice,
     });

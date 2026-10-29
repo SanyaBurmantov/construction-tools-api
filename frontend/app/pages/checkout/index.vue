@@ -218,7 +218,7 @@ async function submit() {
               payerBankBic: payer.bankBic.trim() || undefined,
             }
           : {}),
-        promoCode: promo.code.value || undefined,
+        promoCode: promo.appliedCode.value || undefined,
         attribution: getAttribution(),
         // Lets the API refuse the order rather than charge a total the
         // customer never saw.

@@ -37,8 +37,10 @@ export class ProductController {
   }
 
   @Get('suggest')
-  suggest(@Query('q') q: string) {
-    return this.service.suggest(q ?? '');
+  suggest(@Query('q') q: unknown) {
+    // `?q=a&q=b` arrives as an array (Express 5's simple query parser), and
+    // `.trim()` on it answered 500 — with an error-log row and an alert.
+    return this.service.suggest(typeof q === 'string' ? q : '');
   }
 
   @Get(':slug')

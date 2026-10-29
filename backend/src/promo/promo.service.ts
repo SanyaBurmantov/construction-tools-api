@@ -9,6 +9,7 @@ import {
   AdminCreatePromoCodeDto,
   AdminUpdatePromoCodeDto,
 } from './dto/promo-code.dto';
+import { definedOnly } from '../common/utils/defined-only';
 
 export type PromoEvaluation = {
   code: PromoCode;
@@ -197,7 +198,7 @@ export class PromoService {
 
     const data = this.buildData({
       ...existing,
-      ...dto,
+      ...definedOnly(dto),
     } as AdminCreatePromoCodeDto);
     return this.prisma.promoCode
       .update({ where: { id }, data })

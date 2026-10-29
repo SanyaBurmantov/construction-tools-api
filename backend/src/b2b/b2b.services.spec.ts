@@ -6,7 +6,7 @@ import { MailService } from '../notifications/mail.service';
 import { DocumentsService } from './documents.service';
 import { LeadsService } from './leads.service';
 import { PriceListService } from './price-list.service';
-import { normalizeLines } from './purchase-lists.service';
+import { normalizeLines, repointLines } from './purchase-lists.service';
 import {
   SELLER_DEFAULTS,
   SellerService,
@@ -276,5 +276,29 @@ describe('normalizeLines', () => {
       { productId: 'a', quantity: 9999 },
       { productId: 'b', quantity: 1 },
     ]);
+  });
+});
+
+describe('repointLines (product merge)', () => {
+  it('moves the line to the survivor, keeping the larger quantity, never a sum', () => {
+    expect(
+      repointLines(
+        [
+          { productId: 'dup', quantity: 5 },
+          { productId: 'other', quantity: 1 },
+          { productId: 'target', quantity: 3 },
+        ],
+        'dup',
+        'target',
+      ),
+    ).toEqual([
+      { productId: 'target', quantity: 5 },
+      { productId: 'other', quantity: 1 },
+    ]);
+  });
+
+  it('leaves a list without the duplicate as it is', () => {
+    const items = [{ productId: 'a', quantity: 2 }];
+    expect(repointLines(items, 'dup', 'target')).toEqual(items);
   });
 });

@@ -345,9 +345,13 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
     const now = Date.now();
     const jobs = statuses.map((status) => {
       const lastSuccessMs = status.lastSuccessAt?.getTime();
-      // TH-tools revalidation is an operator action without a cron schedule.
+      // Operator actions without a cron schedule never age: TH-tools
+      // revalidation, and the «Пополнить очередь категорий» button — its key
+      // ends in `-refresh`, so one press used to read STALE (and the whole
+      // health `ok: false`) for ever after 26 h.
       const jobMaxAgeHours =
-        status.key === 'th-tools-revalidate'
+        status.key === 'th-tools-revalidate' ||
+        status.key.endsWith('-categories-refresh')
           ? null
           : status.key.endsWith('-revalidate')
             ? 32 * 24

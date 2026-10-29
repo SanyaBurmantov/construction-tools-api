@@ -28,6 +28,12 @@ import {
 import { MAX_CART_LINES, MAX_LINE_QUANTITY } from '../../cart/cart-limits';
 import { AttributionDto } from '../../attribution/attribution.dto';
 
+/** '' / null → undefined (not sent), anything else → a number. */
+function blankToUndefinedNumber({ value }: { value: unknown }) {
+  if (value === '' || value === null || value === undefined) return undefined;
+  return typeof value === 'number' ? value : Number(value);
+}
+
 export class B2bLineDto {
   @ApiProperty()
   @IsUUID()
@@ -225,9 +231,11 @@ export class AdminUpdateSellerDto {
   @IsIn(['NONE', 'INCLUDED', ''])
   vatMode?: 'NONE' | 'INCLUDED' | '';
 
+  // A cleared number input sends '' (or null); `@Type(() => Number)` made that
+  // 0 and invoices printed «НДС 0%». Blank now means «leave as it is».
   @ApiProperty({ required: false })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(blankToUndefinedNumber)
   @IsNumber()
   @Min(0)
   @Max(30)
@@ -235,7 +243,7 @@ export class AdminUpdateSellerDto {
 
   @ApiProperty({ required: false, description: 'Срок действия счёта, дней' })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(blankToUndefinedNumber)
   @IsInt()
   @Min(1)
   @Max(30)

@@ -7,6 +7,7 @@ import {
 import { Prisma, Product } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildMatchKeys } from './product-matching';
+import { repointLines, storedLines } from '../b2b/purchase-lists.service';
 
 const MERGE_TX_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
 
@@ -172,6 +173,22 @@ export class ProductMergeService {
         where: { productId: duplicateId },
         data: { productId: targetId },
       });
+
+      // Purchase lists keep product ids inside JSON, where no foreign key
+      // re-points them: the company's monthly list showed the merged-away
+      // line as «Товар удалён» and dropped it on «в корзину».
+      const lists = await tx.$queryRaw<
+        Array<{ id: string; items: Prisma.JsonValue }>
+      >`SELECT "id", "items" FROM "PurchaseList"
+        WHERE "items" @> ${JSON.stringify([{ productId: duplicateId }])}::jsonb`;
+      for (const list of lists) {
+        await tx.purchaseList.update({
+          where: { id: list.id },
+          data: {
+            items: repointLines(storedLines(list.items), duplicateId, targetId),
+          },
+        });
+      }
 
       // Order lines keep pointing at a real product so order history stays
       // navigable (they also carry their own name/price snapshot).

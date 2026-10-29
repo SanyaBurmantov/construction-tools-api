@@ -151,6 +151,38 @@ export class PricingService {
    * accordingly. Safe to call on every parse: it no-ops for MANUAL products and
    * only writes history when something actually changed.
    */
+  /**
+   * No supplier has a price for the product any more (every offer is out of
+   * stock without one, or withdrawn): an AUTO price is taken down — the
+   * storefront shows the card without a price, nobody can order it — and
+   * comes back with the next priced offer through `applyCost`. `costPrice`
+   * stays, so that comeback is still checked against the last known cost.
+   * A MANUAL price is the admin's and stays.
+   */
+  async withdrawPrice(productId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { priceValue: true, pricingMode: true },
+    });
+    if (!product || product.pricingMode === 'MANUAL') return false;
+    if (product.priceValue == null) return false;
+    await this.prisma.$transaction([
+      this.prisma.product.update({
+        where: { id: productId },
+        data: { priceValue: null, oldPrice: null },
+      }),
+      this.prisma.priceHistory.create({
+        data: {
+          productId,
+          oldPrice: product.priceValue,
+          newPrice: null,
+          reason: 'no_offer',
+        },
+      }),
+    ]);
+    return true;
+  }
+
   async applyCost(
     productId: string,
     cost: number,

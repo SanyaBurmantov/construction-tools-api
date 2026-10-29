@@ -199,9 +199,17 @@ export class CategoryQueueService {
   async processBatch(sourceCode: string, limit = 5) {
     this.ensureCrawlable(sourceCode);
 
+    // Never-crawled first, then the stalest — the products queue's rule. By
+    // level and url alone, the categories the watchdog re-queues every 24 h
+    // always sorted ahead of the rest: at 20 an hour (480 a day) against 716,
+    // the same first ~480 cycled and the deep tail was never crawled again.
     const rows = await this.prisma.parserCategoryQueue.findMany({
       where: { sourceCode, status: 'PENDING', isEnabled: true },
-      orderBy: [{ level: 'asc' }, { url: 'asc' }],
+      orderBy: [
+        { visitedAt: { sort: 'asc', nulls: 'first' } },
+        { level: 'asc' },
+        { url: 'asc' },
+      ],
       take: limit,
     });
 

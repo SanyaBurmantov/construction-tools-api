@@ -11,7 +11,7 @@ import type { UserListLine } from '~/composables/useUserLists'
 export default defineNuxtPlugin(() => {
   const wishlist = useWishlistStore()
   const compare = useCompareStore()
-  const { mergeLocal, replace } = useUserLists()
+  const { mergeLocal, replace, fetchStored } = useUserLists()
 
   const toEntry = (line: UserListLine) => ({
     productId: line.productId,
@@ -24,6 +24,12 @@ export default defineNuxtPlugin(() => {
   })
 
   mirrorToAccount({
+    name: 'lists',
+    fetch: fetchStored,
+    reset() {
+      wishlist.clear()
+      compare.clear()
+    },
     load() {
       wishlist.load()
       compare.load()

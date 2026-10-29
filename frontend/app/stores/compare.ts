@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { readArray, writeJson } from '~/utils/safe-storage'
+import { onStorageChange, readArray, readStoredArray, writeJson } from '~/utils/safe-storage'
 
 export interface CompareItem {
   productId: string
@@ -34,12 +34,23 @@ export const useCompareStore = defineStore('compare', {
       if (this.loaded || !import.meta.client) return
       this.items = readArray<CompareItem>(STORAGE_KEY).slice(0, COMPARE_LIMIT)
       this.loaded = true
+      // Another tab's edit lands here. Without it every tab wrote back the
+      // copy it read when it opened: five products added from five tabs left
+      // one in the cart (and the account's copy was then overwritten too).
+      onStorageChange(STORAGE_KEY, () => this.refresh())
+    },
+    /** Re-reads storage before an edit — another tab may have changed it. */
+    refresh() {
+      if (!import.meta.client || !this.loaded) return
+      const stored = readStoredArray<CompareItem>(STORAGE_KEY)
+      if (stored) this.items = stored.slice(0, COMPARE_LIMIT)
     },
     persist() {
       writeJson(STORAGE_KEY, this.items)
     },
     /** Returns false when the list is already full. */
     add(item: CompareItem) {
+      this.refresh()
       if (this.has(item.productId)) return true
       if (this.items.length >= COMPARE_LIMIT) return false
       this.items = [...this.items, item]
@@ -47,11 +58,13 @@ export const useCompareStore = defineStore('compare', {
       return true
     },
     remove(productId: string) {
+      this.refresh()
       this.items = this.items.filter((i) => i.productId !== productId)
       this.persist()
     },
     /** `'added' | 'removed' | 'full'` so the caller can pick the right message. */
     toggle(item: CompareItem) {
+      this.refresh()
       if (this.has(item.productId)) {
         this.remove(item.productId)
         return 'removed' as const

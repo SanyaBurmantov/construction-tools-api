@@ -131,6 +131,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const loggedMessage = payload?.message || internalMessage;
 
     if (this.errorLog && HttpExceptionFilter.shouldRecord(status, request)) {
+      // A rejected admin attempt is anyone's to make: recorded by the route's
+      // pattern and without its body. By concrete path, every random
+      // `/admin/products/<16 KB>` was a new row (and a new in-memory key) —
+      // an anonymous way to fill the table and the heap.
+      const rejected = REJECTED_ADMIN_ATTEMPT.has(status);
+      const concretePath = (request.originalUrl || request.url).split('?')[0];
+      const routePath = (request as { route?: { path?: unknown } }).route?.path;
       // Fire-and-forget with its own catch inside the service: the response
       // below must not wait on a log write, and must not fail with it.
       void this.errorLog.record({
@@ -138,7 +145,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         method: request.method,
         // Without the query string: `?x=1`, `?x=2`… are the same broken
         // endpoint and must collapse into one row.
-        path: (request.originalUrl || request.url).split('?')[0],
+        path:
+          rejected && typeof routePath === 'string'
+            ? routePath
+            : concretePath.slice(0, 500),
         kind:
           exception instanceof Error
             ? exception.constructor.name
@@ -156,7 +166,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           status >= 500 && exception instanceof Error
             ? exception.stack
             : undefined,
-        payload: request.body,
+        payload: rejected ? undefined : request.body,
         actorLabel: actorLabel(request),
         ip: request.ip,
         userAgent: request.headers?.['user-agent'],

@@ -34,6 +34,8 @@ import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.serv
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
 import { redirectOldSlug } from '../products/product-slug';
 import { IndexNowService, productPath } from '../seo/indexnow.service';
+import { definedOnly } from '../common/utils/defined-only';
+import { PARSER_SOURCES } from '../parser/parser-settings.service';
 
 /**
  * A button press waits for its batch inside one HTTP request, so it is capped
@@ -415,7 +417,13 @@ export class AdminService {
     if (locked.length) {
       data.lockedFields = [...new Set([...current.lockedFields, ...locked])];
     }
-    if (dto.status !== undefined) data.statusSource = 'ADMIN';
+    // Only a status the admin actually changed becomes theirs. The form sends
+    // the current one on every save, and fixing a name used to take the
+    // product away from the automation for good: a SYSTEM-hidden product
+    // never came back on sale, a delisted one was never hidden again.
+    if (dto.status !== undefined && dto.status !== current.status) {
+      data.statusSource = 'ADMIN';
+    }
 
     // The page text changed: the sitemap's lastmod moves and Yandex is told.
     const textChanged =
@@ -688,21 +696,39 @@ export class AdminService {
     return this.prisma.brand.create({
       data: {
         ...dto,
-        seoTitle: dto.name,
-        seoDescription: dto.description || dto.name,
+        seoTitle: dto.seoTitle?.trim() || dto.name,
+        seoDescription:
+          dto.seoDescription?.trim() || dto.description || dto.name,
       },
     });
   }
 
+  /**
+   * Only what was sent changes. The SEO pair used to be overwritten with the
+   * name and the description on every save, so a typed brand title never
+   * reached the page.
+   */
   async updateBrand(id: string, dto: AdminUpdateBrandDto) {
-    await this.ensureBrandExists(id);
+    const current = await this.ensureBrandExists(id);
+    const sent = definedOnly(dto);
+    const name = sent.name ?? current.name;
 
     return this.prisma.brand.update({
       where: { id },
       data: {
-        ...dto,
-        seoTitle: dto.name,
-        seoDescription: dto.description,
+        ...sent,
+        // Both columns are NOT NULL: a blank falls back as on create.
+        ...(sent.seoTitle !== undefined
+          ? { seoTitle: sent.seoTitle?.trim() || name }
+          : {}),
+        ...(sent.seoDescription !== undefined
+          ? {
+              seoDescription:
+                sent.seoDescription?.trim() ||
+                (sent.description ?? current.description) ||
+                name,
+            }
+          : {}),
       },
     });
   }
@@ -1087,6 +1113,7 @@ export class AdminService {
   private async ensureBrandExists(id: string) {
     const brand = await this.prisma.brand.findUnique({ where: { id } });
     if (!brand) throw new NotFoundException('Brand not found');
+    return brand;
   }
 
   private async ensureCategoryExists(id: string) {
@@ -1134,11 +1161,41 @@ export class AdminService {
     };
   }
 
+  /**
+   * The URL must be the supplier's own page. The import fetches it server
+   * side and returns the error text, so any URL turned it into a probe of
+   * the internal network (`http://db:5432`, `http://frontend:3000`) for
+   * whoever held the admin token — and saved offers for foreign hosts.
+   */
+  private assertSupplierUrl(
+    url: string,
+    source: { code: string; url: string },
+  ) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new BadRequestException('Некорректный URL');
+    }
+    const host =
+      PARSER_SOURCES.find((known) => known.code === source.code)?.host ??
+      new URL(source.url).hostname;
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    const allowed = host.toLowerCase().replace(/^www\./, '');
+    if (
+      !/^https?:$/.test(parsed.protocol) ||
+      (hostname !== allowed && !hostname.endsWith(`.${allowed}`))
+    ) {
+      throw new BadRequestException(`URL должен вести на ${allowed}`);
+    }
+  }
+
   private async resolveSourceParser(dto: AdminImportSourceProductDto) {
     const source = await this.prisma.source.findUnique({
       where: { id: dto.sourceId },
     });
     if (!source) throw new NotFoundException('Source not found');
+    this.assertSupplierUrl(dto.url, source);
 
     const isDukon =
       source.code === 'dukon' ||

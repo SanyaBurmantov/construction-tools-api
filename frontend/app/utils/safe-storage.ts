@@ -47,3 +47,30 @@ export function removeStored(key: string, kind: Area = 'local') {
     // Nothing to remove when storage is unavailable.
   }
 }
+
+/**
+ * The array stored under `key` — or `null` when storage cannot be read at all
+ * (blocked, private mode), so a caller that re-reads before an edit keeps its
+ * in-memory copy instead of replacing it with nothing.
+ */
+export function readStoredArray<T>(key: string, kind: Area = 'local'): T[] | null {
+  const storage = area(kind)
+  if (!storage) return null
+  try {
+    const raw = storage.getItem(key)
+    if (!raw) return []
+    const value: unknown = JSON.parse(raw)
+    return Array.isArray(value) ? (value as T[]) : []
+  } catch {
+    return null
+  }
+}
+
+/** Calls `handler` when another tab changes `key` in localStorage. */
+export function onStorageChange(key: string, handler: () => void) {
+  if (!import.meta.client) return
+  window.addEventListener('storage', (event) => {
+    // `key === null` is another tab calling `localStorage.clear()`.
+    if (event.key === key || event.key === null) handler()
+  })
+}

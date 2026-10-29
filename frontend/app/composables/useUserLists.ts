@@ -38,5 +38,8 @@ export function useUserLists() {
   const replace = (payload: UserListsPayload) =>
     authFetch<UserLists>('/lists', { method: 'PUT', body: payload })
 
-  return { mergeLocal, replace }
+  /** The stored lists as they are (see `utils/server-mirror.ts`). */
+  const fetchStored = () => authFetch<UserLists>('/lists')
+
+  return { mergeLocal, replace, fetchStored }
 }

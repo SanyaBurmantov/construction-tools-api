@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminCreateBannerDto, AdminUpdateBannerDto } from './dto/banner.dto';
+import { definedOnly } from '../common/utils/defined-only';
 
 /** Fields safe to send to the storefront. */
 const PUBLIC_SELECT = {
@@ -81,7 +82,10 @@ export class BannersService {
     const existing = await this.prisma.banner.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Баннер не найден');
 
-    const merged = { ...existing, ...dto } as unknown as AdminCreateBannerDto;
+    const merged = {
+      ...existing,
+      ...definedOnly(dto),
+    } as unknown as AdminCreateBannerDto;
     return this.prisma.banner.update({
       where: { id },
       data: this.buildData(merged),
