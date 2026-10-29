@@ -22,7 +22,7 @@ describe('AiClient', () => {
     delete process.env.DEEPSEEK_MODEL;
     fetchMock.mockResolvedValue(
       reply(200, {
-        model: 'deepseek-chat',
+        model: 'deepseek-flash',
         choices: [{ message: { content: '{"items":[]}' } }],
       }),
     );
@@ -41,7 +41,7 @@ describe('AiClient', () => {
     expect(url).toBe('https://api.deepseek.com/chat/completions');
     expect(init.headers.Authorization).toBe('Bearer sk-test');
     const body = JSON.parse(init.body) as { model: string; models?: string[] };
-    expect(body.model).toBe('deepseek-chat');
+    expect(body.model).toBe('deepseek-flash');
     expect(body.models).toBeUndefined();
   });
 
