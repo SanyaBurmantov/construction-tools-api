@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
 import type { ProductDetail } from '~/types/api'
-import { toCardProduct } from '~/composables/useProductActions'
 import { company } from '~/data/company'
 
 const route = useRoute()
@@ -94,26 +93,6 @@ watch(() => product.value?.id, () => {
   // Each product starts on a tab with content, even when the page is reused.
   tab.value = hasDescription.value ? 'description' : 'specs'
 }, { immediate: true })
-
-/* ---- Related ----------------------------------------------------------- */
-// Keyed by what the result depends on — the category and the product it
-// excludes — so a new product re-fetches without a deep `watch` on it. Rows
-// are cut to what a card renders (see `toCardProduct`).
-const { data: related } = await useAsyncData(
-  () => `related:${product.value?.category?.slug ?? ''}:${product.value?.id ?? ''}`,
-  async () => {
-    const categorySlug = product.value?.category?.slug
-    if (!categorySlug) return []
-    const response = await $fetch<{ data: CatalogProduct[] }>(`${apiBase}/products`, {
-      params: { categorySlug, limit: 5 },
-    }).catch(() => ({ data: [] }))
-    return response.data
-      .filter((item) => item.id !== product.value?.id)
-      .slice(0, 4)
-      .map(toCardProduct)
-  },
-  { default: () => [] as CatalogProduct[] }
-)
 
 /* ---- Breadcrumbs ------------------------------------------------------- */
 const breadcrumbs = computed(() => {
@@ -444,17 +423,7 @@ useHead(() => {
 
       <ProductReviews :slug="product.slug" :product-name="product.name" />
 
-      <section v-if="related.length" class="related">
-        <h2>Похожие товары</h2>
-        <div class="product-grid">
-          <ProductCatalogCard
-            v-for="item in related"
-            :key="item.id"
-            :product="item"
-            compact
-          />
-        </div>
-      </section>
+      <ProductRecommendations :key="product.id" :slug="product.slug" />
 
       <!-- Sticky buy bar: on a phone the buy box scrolls away long before the
            customer has finished reading, so price and action follow them. -->
@@ -760,13 +729,6 @@ useHead(() => {
   color: var(--text-strong);
   font-size: var(--text-sm);
   font-weight: 600;
-}
-
-/* ---- Related ---- */
-.related {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
 /* ---- Sticky mobile buy bar ---- */

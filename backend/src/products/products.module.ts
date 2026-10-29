@@ -2,8 +2,16 @@ import { Module } from '@nestjs/common';
 import { ListingRankService } from './listing-rank.service';
 import { ProductService } from './products.service';
 import { ProductController } from './products.controller';
+import { CompatibilityRefreshService } from './relations/compatibility-refresh.service';
+import { RecommendationsController } from './relations/recommendations.controller';
+import { RecommendationsService } from './relations/recommendations.service';
 @Module({
-  providers: [ProductService, ListingRankService],
-  controllers: [ProductController],
+  providers: [
+    ProductService,
+    ListingRankService,
+    CompatibilityRefreshService,
+    RecommendationsService,
+  ],
+  controllers: [ProductController, RecommendationsController],
 })
 export class ProductsModule {}

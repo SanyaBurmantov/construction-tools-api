@@ -27,6 +27,13 @@ export interface Paginated<T> {
 
 export type ProductsResponse = Paginated<CatalogProduct>
 
+/** Separate from product/list payloads; relation evidence stays server-side. */
+export interface ProductRecommendations {
+  similar: CatalogProduct[]
+  accessories: Paginated<CatalogProduct>
+  fits: Paginated<CatalogProduct>
+}
+
 /**
  * A brand as the storefront sees it. Only `id`/`name` are guaranteed: the
  * admin product form, for instance, is served a bare `{ id, name }` list.
