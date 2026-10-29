@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url'
  * localhost-визиты в боевой счётчик. Счётчик сам отслеживает переходы через
  * History API, так что SPA-навигация считается без ручных `ym('hit')`.
  * Хосты, которые он грузит и куда шлёт данные, открыты в CSP (deploy/Caddyfile).
+ *
+ * В админке счётчика нет: там были почти все «прямые заходы» — свои же
+ * визиты и ссылки из Telegram-уведомлений. Сниппет не грузится на `/admin*`,
+ * а переход в админку с витрины — полная загрузка страницы
+ * (`plugins/metrika-admin.client.ts`), иначе его засчитал бы уже запущенный
+ * на витрине счётчик через History API.
  */
 const YANDEX_METRIKA_ID = 113800110
 const isProdBuild = process.env.NODE_ENV === 'production'
@@ -14,7 +20,7 @@ const metrikaHead = isProdBuild
       script: [
         {
           key: 'yandex-metrika',
-          innerHTML: `(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href,accurateTrackBounce:true,trackLinks:true});`,
+          innerHTML: `if(!/^\\/admin(\\/|$)/.test(location.pathname))(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href,accurateTrackBounce:true,trackLinks:true});`,
         },
       ],
       noscript: [
