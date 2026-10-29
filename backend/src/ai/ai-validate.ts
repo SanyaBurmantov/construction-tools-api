@@ -63,12 +63,39 @@ export function fixHomoglyphs(text: string) {
  * or a weight is one number, not two.
  */
 export function numbersIn(text: string): Set<string> {
-  const joined = text.replace(/(\d)[ \u00a0\u202f](?=\d{3}(?!\d))/g, '$1');
   const found = new Set<string>();
-  for (const match of joined.matchAll(/\d+(?:[.,]\d+)?/g)) {
-    found.add(normaliseNumber(match[0]));
+  for (const group of numberGroups(text)) {
+    found.add(group.joined);
+    for (const part of group.parts) found.add(part);
   }
   return found;
+}
+
+/** «1 200» could be a thousand-two-hundred or two numbers; the pilot showed
+ * product data is full of the second kind («GP0801-350 350х25», «TT 2211
+ * 224.5»), and joining them always made numbers nobody wrote (350350). */
+const NUMBER_GROUP =
+  /\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?(?!\d)|\d+(?:[.,]\d+)?/g;
+
+/** Each number of a text with both readings of a spaced group. */
+function numberGroups(text: string) {
+  return [...text.matchAll(NUMBER_GROUP)].map((match) => {
+    const parts = match[0].split(/[ \u00a0\u202f]/).map(normaliseNumber);
+    return {
+      joined: normaliseNumber(match[0].replace(/[ \u00a0\u202f]/g, '')),
+      parts,
+    };
+  });
+}
+
+/** The first number of a text that the source does not have, if any. */
+function unknownNumber(text: string, known: Set<string>) {
+  for (const group of numberGroups(text)) {
+    if (known.has(group.joined)) continue;
+    const missing = group.parts.find((part) => !known.has(part));
+    if (missing !== undefined) return missing;
+  }
+  return null;
 }
 
 function normaliseNumber(raw: string) {
@@ -260,7 +287,13 @@ function checkField(
     if (pattern.test(value)) return `недопустимо: ${what}`;
   }
 
-  const mixed = (value.match(/[A-Za-zА-Яа-яЁё]+/g) ?? []).find(isMixedScript);
+  // «ДxШxВ», «ВxГ» — a dimension label with a Latin x between Cyrillic
+  // letters, not a look-alike word; the pilot refused five good descriptions.
+  const mixed = (
+    value
+      .replace(/(?<=[А-ЯЁ])[xX×](?=[А-ЯЁ])/g, ' ')
+      .match(/[A-Za-zА-Яа-яЁё]+/g) ?? []
+  ).find(isMixedScript);
   if (mixed) return `слово из смешанных латиницы и кириллицы: «${mixed}»`;
 
   const letters = value.match(/[A-Za-zА-Яа-яЁё]/g) ?? [];
@@ -276,10 +309,8 @@ function checkField(
     return 'текст не на русском';
   }
 
-  for (const number of numbersIn(value)) {
-    if (!sourceNumbers.has(number))
-      return `число ${number} не из данных товара`;
-  }
+  const unknown = unknownNumber(value, sourceNumbers);
+  if (unknown !== null) return `число ${unknown} не из данных товара`;
 
   for (const word of latinWords(value)) {
     if (!sourceKey.includes(codeKey(word))) {
@@ -308,11 +339,18 @@ function checkField(
 }
 
 function checkName(value: string, input: ValidationInput): string | null {
-  if (/[.!?…]$/.test(value)) return 'название заканчивается знаком препинания';
+  // «… (2 шт.)», «… 3 мм.» end in an abbreviation's dot — that one is fine.
+  if (
+    /[!?…]$/.test(value) ||
+    (/\.$/.test(value) && !/(^|[\s(])[а-яёa-z]{1,4}\.\)?$/i.test(value))
+  )
+    return 'название заканчивается знаком препинания';
   if (/купить|цена|минск|доставк/i.test(value))
     return 'в названии продающие слова';
-  const letters = value.match(/[A-Za-zА-Яа-яЁё]/g) ?? [];
-  const upper = value.match(/[A-ZА-ЯЁ]/g) ?? [];
+  // Cyrillic only: brand, series and model are Latin capitals by nature
+  // («Бокорезы EXPERT STARTUL SE4260-16») and read as shouting.
+  const letters = value.match(/[А-Яа-яЁё]/g) ?? [];
+  const upper = value.match(/[А-ЯЁ]/g) ?? [];
   if (letters.length > 10 && upper.length / letters.length > 0.6) {
     return 'название капсом';
   }
@@ -338,9 +376,13 @@ function checkName(value: string, input: ValidationInput): string | null {
   }
 
   // Sizes and pack quantities stay: «М10х12х40», «(4 шт в зип-локе)».
-  const kept = numbersIn(fixHomoglyphs(value));
-  for (const number of numbersIn(old)) {
-    if (!kept.has(number)) return `пропало число ${number} из старого названия`;
+  // A size may come back more exact from the specs: «125х22» → «125х22,2».
+  const kept = [...numbersIn(fixHomoglyphs(value))];
+  for (const group of numberGroups(old)) {
+    const found = [group.joined, ...group.parts].some((number) =>
+      kept.some((next) => next === number || next.startsWith(`${number}.`)),
+    );
+    if (!found) return `пропало число ${group.parts[0]} из старого названия`;
   }
   return null;
 }

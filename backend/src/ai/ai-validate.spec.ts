@@ -21,14 +21,10 @@ const BOSCH = {
 };
 
 describe('numbersIn', () => {
-  it('normalises decimals, separators and thousands', () => {
-    expect([...numbersIn('12,5 Дж, 12.50, 1 200 об/мин, 0–2760, 08')]).toEqual([
-      '12.5',
-      '1200',
-      '0',
-      '2760',
-      '8',
-    ]);
+  it('normalises decimals and keeps both readings of a spaced group', () => {
+    const found = numbersIn('12,5 Дж, 12.50, 1 200 об/мин, 0–2760, 08');
+    for (const n of ['12.5', '1200', '1', '200', '0', '2760', '8'])
+      expect(found.has(n)).toBe(true);
   });
 });
 
@@ -235,6 +231,79 @@ describe('validateAnswer', () => {
       validateAnswer(bit, {
         name: 'Бур (сверло) SDS-plus EXPERT STARTUL 10х100х160 мм',
       }),
+    ).toEqual({});
+  });
+
+  // The pilot's false refusals, 29.10.
+  it('does not glue an article to a size («GP0801-350 350х25»)', () => {
+    const old = 'Алмазный круг 350х20/25.4 мм по бетону сегмент. GEPARD';
+    const disc = {
+      entity: 'PRODUCT' as const,
+      oldName: old,
+      brand: 'GEPARD',
+      source: `${old}\nАртикул: GP0801-350`,
+    };
+    expect(
+      validateAnswer(disc, {
+        name: 'Алмазный круг сегментный GEPARD GP0801-350 350х25,4/20 мм по бетону',
+      }),
+    ).toEqual({});
+  });
+
+  it('accepts a size made exact from the specs («125х22» → «125х22,2»)', () => {
+    const old =
+      'Алмазный круг 125х22 мм универс. Turbo EXPERT STARTUL (SE8004-125)';
+    const disc = {
+      entity: 'PRODUCT' as const,
+      oldName: old,
+      brand: 'STARTUL',
+      source: `${old}\nПосадочный диаметр: 22.2`,
+    };
+    expect(
+      validateAnswer(disc, {
+        name: 'Алмазный круг 125х22.2 мм универсальный Turbo EXPERT STARTUL SE8004-125',
+      }),
+    ).toEqual({});
+  });
+
+  it('reads «ДxШxВ» as a dimension label, not a look-alike word', () => {
+    const bag = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Сумка BULL WB 5520',
+      brand: 'BULL',
+      source: 'Сумка BULL WB 5520; 36 x 23 x 25 см; 3.55 кг',
+    };
+    expect(
+      validateAnswer(bag, {
+        descriptionFull:
+          'Сумка для инструмента BULL WB 5520. Габариты ДxШxВ: 36 x 23 x 25 см, вес 3,55 кг. '.repeat(
+            2,
+          ),
+      }),
+    ).toEqual({});
+  });
+
+  it('lets a name end in «шт.» and carry Latin capitals', () => {
+    const old = 'Бокорезы 160мм EXPERT STARTUL (SE4260-16)';
+    const nippers = {
+      entity: 'PRODUCT' as const,
+      oldName: old,
+      brand: 'STARTUL',
+      source: old,
+    };
+    expect(
+      validateAnswer(nippers, {
+        name: 'Бокорезы EXPERT STARTUL SE4260-16 160 мм',
+      }),
+    ).toEqual({});
+    const keys = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Ключ 005 (2шт.) для тележек TOPTUL',
+      brand: 'TOPTUL',
+      source: 'Ключ 005 (2шт.) для тележек TOPTUL',
+    };
+    expect(
+      validateAnswer(keys, { name: 'Ключ TOPTUL 005 для тележек, 2 шт.' }),
     ).toEqual({});
   });
 
