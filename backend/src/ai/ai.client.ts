@@ -43,7 +43,7 @@ function provider(): Provider | null {
       label: 'DeepSeek',
       api: process.env.DEEPSEEK_API_BASE?.trim() || 'https://api.deepseek.com',
       key: deepseek,
-      defaultModel: process.env.DEEPSEEK_MODEL?.trim() || 'deepseek-chat',
+      defaultModel: process.env.DEEPSEEK_MODEL?.trim() || 'deepseek-flash',
       allows: (model) => /^deepseek-/.test(model),
       // A paid key is limited per minute, not per day.
       rateLimitPauseMs: 60 * 1000,
@@ -240,6 +240,8 @@ export class AiClient implements OnModuleInit {
         id: string;
         name?: string;
         context_length?: number;
+        /** DeepSeek's name for it. */
+        context_window?: number;
         architecture?: { output_modalities?: string[] };
       }>;
     };
@@ -255,7 +257,7 @@ export class AiClient implements OnModuleInit {
       .map((model) => ({
         id: model.id,
         name: model.name ?? model.id,
-        contextLength: model.context_length ?? 0,
+        contextLength: model.context_length ?? model.context_window ?? 0,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
     this.modelsCache = { at: Date.now(), models };
