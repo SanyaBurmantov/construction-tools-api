@@ -65,15 +65,6 @@ describe('ParserSettingsService', () => {
     await expect(service.isSourceCronEnabled('th-tools')).resolves.toBe(false);
   });
 
-  it('keeps 7745 off by default — it is a sample site, not a supplier', async () => {
-    process.env.PARSER_CRON_ENABLED = 'true';
-    delete process.env.SUPPLIER_7745_CRON_ENABLED;
-    const { service } = createService();
-
-    await expect(service.isSourceCronEnabled('7745')).resolves.toBe(false);
-    await expect(service.isSourceCronEnabled('th-tools')).resolves.toBe(true);
-  });
-
   it('clamps the batch limit and prefers the stored value over env', async () => {
     process.env.TH_TOOLS_CRON_BATCH_LIMIT = '30';
     const { service } = createService([

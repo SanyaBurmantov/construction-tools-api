@@ -4,7 +4,6 @@ import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ToolsByParserService } from './tools-by-source.parser';
 import { ThToolsParserService } from './th-tools-source.parser';
 import { DukonParserService } from './dukon.parser';
-import { Supplier7745ParserService } from './7745-source.parser';
 
 jest.mock('../../common/utils/fetch-with-timeout', () => ({
   fetchWithTimeout: jest.fn(),
@@ -26,9 +25,6 @@ function deps() {
     sourceProduct: { upsert: jest.fn(() => Promise.resolve({})) },
     sitemapsDukon: { updateMany: jest.fn(() => Promise.resolve({ count: 1 })) },
     sitemapsToolsBy: {
-      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
-    },
-    sitemaps7745: {
       updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
   };
@@ -75,12 +71,6 @@ const cases = [
     Parser: DukonParserService,
     fixture: 'dukon-product.html',
     url: 'https://dukon.by/catalog/item/',
-  },
-  {
-    name: '7745',
-    Parser: Supplier7745ParserService,
-    fixture: '7745-product.html',
-    url: 'https://7745.by/product/item/',
   },
 ];
 
@@ -238,8 +228,7 @@ describe('Dukon offer lifecycle', () => {
  * queue became a second offer instead of an update.
  *
  * Each parser canonicalises its own way — tools.by drops the query and the
- * hash, 7745 drops the hash — so the fixtures below carry what that parser is
- * expected to strip.
+ * hash — so the fixtures below carry what that parser is expected to strip.
  */
 describe.each([
   {
@@ -249,14 +238,6 @@ describe.each([
     queueUrl: 'https://tools.by/product/1?utm_source=mail#gallery',
     canonical: 'https://tools.by/product/1',
     queueTable: 'sitemapsToolsBy' as const,
-  },
-  {
-    name: '7745',
-    Parser: Supplier7745ParserService,
-    fixture: '7745-product.html',
-    queueUrl: 'https://7745.by/product/item/#reviews',
-    canonical: 'https://7745.by/product/item/',
-    queueTable: 'sitemaps7745' as const,
   },
 ])(
   '$name offer identity',

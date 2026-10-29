@@ -7,7 +7,7 @@ description: Run, dry-run, monitor, and debug the supplier parsers in constructi
 
 All admin endpoints require header `x-admin-token: $ADMIN_TOKEN`. Base path is
 `/admin` on the backend directly, or `/api/admin` through Caddy in prod.
-Per-source code (`<code>`) examples: `7745`, `dukon`, `th-tools`.
+Per-source code (`<code>`) examples: `th-tools`, `tools-by`, `dukon`.
 
 ## Cron gating
 Crons only run when **both** the global and the per-source switch are on. Each

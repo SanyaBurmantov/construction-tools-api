@@ -945,8 +945,10 @@ off in the admin also sets `SourceCategory.isEnabled = false` for that branch,
 and the product parser skips (not fails) anything whose breadcrumb chain hits a
 disabled row — so an admin toggle stops the import, not just the crawl.
 
-Canonical, complete example to copy from: **`backend/src/parser/sites/7745-source.parser.ts`**
-(service) + `7745.parser.ts` (pure parse fn) + `7745.cron.ts` (cron). Every
+Canonical, complete example to copy from: **`backend/src/parser/sites/th-tools-source.parser.ts`**
+(service) + `th-tools.parser.ts` (pure parse fn) + `th-tools.cron.ts` (cron), with
+`th-tools.parser.spec.ts` against `fixtures/` (leave out its category crawler —
+th-tool.by specific). Every
 supplier service **extends `parser/supplier-queue-parser.ts`**, which owns the
 queue (stats, listing, retry, revalidate, claimed batches, per-URL outcome,
 delist/withdraw) — a parser supplies only `parseProductUrl`, `canonicalUrl`,
@@ -1016,15 +1018,13 @@ than SUCCESS when anything was deferred or dropped. `dukon.parse.ts` filters
 off-site `/brands/` and paginator links, and `PAGEN_2` is pagination, not a
 category.
 
-**Which sources are real.** `th-tool.by`, `dukon.by` and `tools.by` are actual
-suppliers.
-**`7745.by` is not** — it was a sample site from the client and survives only as
-the reference implementation of the parser shape. Its cron needs both
-`PARSER_CRON_ENABLED` and `SUPPLIER_7745_CRON_ENABLED`, and both default to
-`false`; keep it that way. Copy its structure, don't turn it on.
+**Sources.** `th-tool.by`, `dukon.by` and `tools.by` are the suppliers. The
+sample site `7745.by` (never a supplier) and its parser, cron, queue table
+(`Sitemaps7745`, dropped in `20261029130000_drop_7745`) and env vars were
+removed on 2026-10-29 at the owner's request — don't bring it back.
 
 **th-tool.by specifics** (`th-tools.parser.ts` pure + `th-tools-source.parser.ts`
-service, mirroring the 7745 split): it is a Webasyst shop with ~39k products on
+service): it is a Webasyst shop with ~39k products on
 flat one-segment URLs (`/<slug>/`), so `isThToolsProductUrl()` in
 `sitemaps.service.ts` filters `/category/` and static pages out of the queue
 *before* they cost an HTTP request. The page exposes `Штрихкод` in its spec

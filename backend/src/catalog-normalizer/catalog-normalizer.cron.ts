@@ -24,7 +24,7 @@ export class CatalogNormalizerCron {
   ) {}
 
   // :45 — the one slot no parser uses (th-tools :00/:30, categories :05,
-  // tools-by :10/:40, dukon :20/:50, 7745 :25/:55, watchdog :07/:37). At :40
+  // tools-by :10/:40, dukon :20/:50, watchdog :07/:37). At :40
   // it wrote the same tables as a tools-by batch.
   @Cron('0 45 3 * * *')
   async normalizeNightly() {

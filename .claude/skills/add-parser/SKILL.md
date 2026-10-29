@@ -7,13 +7,15 @@ description: Add a new supplier parser to the backend (construction-tools-api). 
 
 This project ingests supplier products into two layers — `Product` (normalized
 storefront card) and `SourceProduct` (raw supplier snapshot). A new parser plugs
-into a fixed pipeline. **Copy the `7745` source as the reference implementation.**
+into a fixed pipeline. **Copy the `th-tools` source as the reference implementation** (without its
+category crawler, which is th-tool.by specific).
 
 Reference files (read these before writing anything):
-- `backend/src/parser/sites/7745-source.parser.ts` — the full service (the template).
-- `backend/src/parser/sites/7745.parser.ts` — the pure `parse7745(html)` function.
-- `backend/src/parser/sites/7745.cron.ts` — the cron.
-- `backend/src/parser/sites/7745.parser.spec.ts` + `fixtures/7745-product.html` — the test.
+- `backend/src/parser/sites/th-tools-source.parser.ts` — the full service (the template).
+- `backend/src/parser/sites/th-tools.parser.ts` — the pure `parseThTools(html)` function.
+- `backend/src/parser/sites/th-tools.cron.ts` — the cron.
+- `backend/src/parser/sites/th-tools.parser.spec.ts` + `fixtures/` — the test.
+- `backend/src/parser/offer-price.ts` — how an offer's price is written (use it).
 - `SUPPLIER_PARSER_DEVELOPMENT_GUIDE.md` — field-by-field normalization rules (read it).
 
 ## Pipeline (what you are plugging into)
@@ -37,16 +39,16 @@ sitemap.xml ──refreshSitemaps()──▶ Sitemaps<Source> queue (PENDING)
 
 ## Decide the identifiers first
 
-- `SOURCE_CODE` — stable kebab/short code, e.g. `7745`, `dukon`. Used in `Source.code`,
+- `SOURCE_CODE` — stable kebab/short code, e.g. `tools-by`, `dukon`. Used in `Source.code`,
   cron env flags, and source matching. Pick once, never change.
-- `SOURCE_NAME` (display, e.g. `7745.by`), `SOURCE_BASE_URL`, `SOURCE_SITEMAP_URL`.
-- Queue model name: `Sitemaps<Pascal>` (e.g. `Sitemaps7745`, `SitemapsToolsBy`).
+- `SOURCE_NAME` (display, e.g. `tools.by`), `SOURCE_BASE_URL`, `SOURCE_SITEMAP_URL`.
+- Queue model name: `Sitemaps<Pascal>` (e.g. `SitemapsDukon`, `SitemapsToolsBy`).
 
 ## Steps
 
 ### 1. Queue model + migration
 Add a queue model to `backend/prisma/schema.prisma`, identical in shape to
-`Sitemaps7745` (fields: `id`, `url @unique`, `isVisited`, `status @default("PENDING")`,
+`SitemapsToolsBy` (fields: `id`, `url @unique`, `isVisited`, `status @default("PENDING")`,
 `attempts`, `lastError?`, `lastTriedAt?`, `visitedAt?`). Then:
 ```bash
 cd backend && npx prisma migrate dev --name add_<code>_sitemaps
@@ -64,7 +66,7 @@ Export `parse<Code>(html: string): TParsedProduct` (`{ name, price?, images, des
 
 ### 3. Parser service — `sites/<code>-source.parser.ts`
 `@Injectable()` with `PrismaService` + `ParserLogService`. Implement the public API
-(copy method bodies from `7745-source.parser.ts` and adjust selectors/URL rules):
+(copy method bodies from `th-tools-source.parser.ts` and adjust selectors/URL rules):
 - `refreshSitemaps()` — upsert source, fetch sitemap(s), `enqueueUrls()`.
 - `getQueueStats()`, `getSitemaps(query)`, `retrySitemap(id)`, `retryProblemSitemaps()`.
 - `processSitemapsBatch(limit = 30, concurrency = 1)` — `publishDraftProducts()` then
@@ -91,7 +93,7 @@ Mandatory data rules (see the guide for full detail):
   else fallback `unmapped-supplier-products`.
 
 ### 4. Cron — `sites/<code>.cron.ts`
-Copy `7745.cron.ts`. Two `@Cron` methods (process every 30 min, refresh daily) with:
+Copy `th-tools.cron.ts`. Two `@Cron` methods (process every 30 min, refresh daily) with:
 - in-memory overlap guards (`isProcessing`/`isRefreshing`),
 - `isEnabled()` = `PARSER_CRON_ENABLED === 'true' && <CODE>_CRON_ENABLED === 'true'`,
 - wrap in `runtimeStatus.start/success/failure` with a unique key (`<code>-process`, `<code>-refresh`).
@@ -101,10 +103,10 @@ Copy `7745.cron.ts`. Two `@Cron` methods (process every 30 min, refresh daily) w
 - `backend/src/admin/admin.module.ts` — add the service to `providers` (cron not needed here).
 
 ### 6. Admin endpoints (manual control / diagnostics)
-In `admin.controller.ts` + `admin.service.ts` add, mirroring the `7745` block
+In `admin.controller.ts` + `admin.service.ts` add, mirroring the `tools-by` block
 (`@Get('queue/<code>')`, `queue/<code>/sitemaps`, `@Post('queue/<code>/refresh-sitemaps')`,
 `queue/<code>/process`, `queue/<code>/sitemaps/retry-problems`, `queue/<code>/sitemaps/:id/retry`).
-Add source matching in `admin.service` `resolveParser` (the `is7745` pattern: match by
+Add source matching in `admin.service` `resolveParser` (the `isToolsBy` pattern: match by
 `Source.code`, base URL, or the submitted URL) so `POST source-products/preview` and
 `/import` route to your `previewProductUrl` / `parseProductUrl`.
 
@@ -120,11 +122,11 @@ frontend.
 Add to `.env.example`, `.env.prod.example`, and `docker-compose.prod.yml` (backend
 `environment:`): `<CODE>_CRON_ENABLED` (default `false`), `<CODE>_CRON_BATCH_LIMIT`
 (default `30`), and category include/exclude regex if the source needs filtering
-(see `SUPPLIER_7745_CATEGORY_*`). Keep cron **disabled** by default.
+(see `TOOLS_BY_CATEGORY_*`). Keep cron **disabled** by default.
 
 ### 8. Tests
 Add `sites/<code>.parser.spec.ts` + `fixtures/<code>-product.html` asserting
-`parse<Code>(html)` output (copy `7745.parser.spec.ts`).
+`parse<Code>(html)` output (copy `th-tools.parser.spec.ts`).
 
 ## Before you finish — verify
 ```bash

@@ -8,7 +8,6 @@ describe('Supplier snapshots refresh', () => {
       sitemapsThTools: { updateMany: update },
       sitemapsToolsBy: { updateMany: update },
       sitemapsDukon: { updateMany: update },
-      sitemaps7745: { updateMany: update },
     };
     const result = await new QueueRecoveryService(
       prisma as never,
@@ -69,7 +68,6 @@ describe('Supplier snapshots refresh', () => {
       sitemapsThTools: { updateMany: productUpdate },
       sitemapsToolsBy: { updateMany: productUpdate },
       sitemapsDukon: { updateMany: productUpdate },
-      sitemaps7745: { updateMany: productUpdate },
     };
     const result = await new QueueRecoveryService(
       prisma as never,

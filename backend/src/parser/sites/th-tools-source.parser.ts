@@ -422,7 +422,7 @@ export class ThToolsParserService extends SupplierQueueParser {
     },
   ) {
     // SourceProduct has no columns for brand/barcode/breadcrumbs — they ride
-    // along in the `specifications` snapshot, same as the 7745 parser.
+    // along in the `specifications` snapshot.
     const snapshot = this.toJson({
       attributes: Object.fromEntries(
         data.specifications.map((spec) => [spec.name, spec.value]),

@@ -24,7 +24,6 @@ import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { ThToolsParserService } from '../parser/sites/th-tools-source.parser';
 import { DukonParserService } from '../parser/sites/dukon.parser';
-import { Supplier7745ParserService } from '../parser/sites/7745-source.parser';
 import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
 import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
@@ -96,7 +95,6 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly thToolsParserService: ThToolsParserService,
     private readonly dukonParserService: DukonParserService,
-    private readonly supplier7745ParserService: Supplier7745ParserService,
     private readonly toolsByParserService: ToolsByParserService,
     private readonly parserLogService: ParserLogService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
@@ -541,11 +539,9 @@ export class AdminService {
 
     const product = parser.isDukon
       ? await this.dukonParserService.parseProductUrl(dto.url)
-      : parser.is7745
-        ? await this.supplier7745ParserService.parseProductUrl(dto.url)
-        : parser.isToolsBy
-          ? await this.toolsByParserService.parseProductUrl(dto.url)
-          : await this.thToolsParserService.parseProductUrl(dto.url);
+      : parser.isToolsBy
+        ? await this.toolsByParserService.parseProductUrl(dto.url)
+        : await this.thToolsParserService.parseProductUrl(dto.url);
 
     return { ok: true, product };
   }
@@ -555,11 +551,9 @@ export class AdminService {
 
     const parsed = parser.isDukon
       ? await this.dukonParserService.previewProductUrl(dto.url)
-      : parser.is7745
-        ? await this.supplier7745ParserService.previewProductUrl(dto.url)
-        : parser.isToolsBy
-          ? await this.toolsByParserService.previewProductUrl(dto.url)
-          : await this.thToolsParserService.previewProductUrl(dto.url);
+      : parser.isToolsBy
+        ? await this.toolsByParserService.previewProductUrl(dto.url)
+        : await this.thToolsParserService.previewProductUrl(dto.url);
 
     return { ok: true, dryRun: true, parsed };
   }
@@ -640,8 +634,6 @@ export class AdminService {
         return this.thToolsParserService;
       case 'dukon':
         return this.dukonParserService;
-      case '7745':
-        return this.supplier7745ParserService;
       case 'tools-by':
         return this.toolsByParserService;
     }
@@ -1205,18 +1197,14 @@ export class AdminService {
       source.code === 'th-tools' ||
       source.url.includes('th-tool.by') ||
       dto.url.includes('th-tool.by');
-    const is7745 =
-      source.code === '7745' ||
-      source.url.includes('7745.by') ||
-      dto.url.includes('7745.by');
     const isToolsBy =
       source.code === 'tools-by' ||
       source.url.includes('tools.by') ||
       dto.url.includes('tools.by');
-    if (!isThTools && !isDukon && !is7745 && !isToolsBy) {
+    if (!isThTools && !isDukon && !isToolsBy) {
       throw new BadRequestException('Unsupported source parser');
     }
 
-    return { isDukon, isThTools, is7745, isToolsBy };
+    return { isDukon, isThTools, isToolsBy };
   }
 }

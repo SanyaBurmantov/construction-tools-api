@@ -428,8 +428,7 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
    * Queue depth per source, in one round trip.
    *
    * The three queues are separate tables (`Sitemaps<Source>`), so this is a
-   * UNION rather than a `groupBy`; `7745` is left out for the same reason it
-   * is switched off — it is a reference implementation, not a supplier.
+   * UNION rather than a `groupBy`.
    */
   private async getQueueDepth(): Promise<QueueDepth[]> {
     const rows = await this.prisma.$queryRaw<QueueDepthRow[]>`

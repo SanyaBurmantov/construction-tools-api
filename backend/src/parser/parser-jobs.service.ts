@@ -9,7 +9,6 @@ import { SitemapsService } from './sitemaps/sitemaps.service';
 import { ThToolsParserService } from './sites/th-tools-source.parser';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
-import { Supplier7745ParserService } from './sites/7745-source.parser';
 
 /** What an admin request may pass to a job. */
 export type JobParams = {
@@ -73,7 +72,6 @@ export class ParserJobsService {
     private readonly thTools: ThToolsParserService,
     private readonly toolsBy: ToolsByParserService,
     private readonly dukon: DukonParserService,
-    private readonly supplier7745: Supplier7745ParserService,
   ) {}
 
   /** Jobs a source has, in the order they make sense to an operator. */
@@ -187,25 +185,6 @@ export class ParserJobsService {
             description:
               'Возвращает всю очередь в PENDING и перечитывает каталог заново.',
             run: () => this.dukon.revalidateAllSitemaps(),
-          },
-        ];
-      case '7745':
-        return [
-          {
-            name: 'refresh',
-            label: 'Загрузить sitemap',
-            description: 'Пример-источник, включать не нужно.',
-            run: () => this.supplier7745.refreshSitemaps(),
-          },
-          {
-            name: 'process',
-            label: 'Разобрать пачку',
-            description: 'Пример-источник, включать не нужно.',
-            run: async (params) =>
-              this.supplier7745.processSitemapsBatch(
-                params?.limit ?? (await this.settings.getBatchLimit(code)),
-                1,
-              ),
           },
         ];
       default:

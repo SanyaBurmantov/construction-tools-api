@@ -361,19 +361,6 @@ model SitemapsDukon {
   @@index([status, visitedAt])
 }
 
-model Sitemaps7745 {
-  id          String    @id @default(uuid())
-  url         String    @unique
-  isVisited   Boolean   @default(false)
-  status      String    @default("PENDING")
-  attempts    Int       @default(0)
-  lastError   String?
-  lastTriedAt DateTime?
-  visitedAt   DateTime?
-
-  @@index([status, visitedAt])
-}
-
 model SitemapsToolsBy {
   id          String    @id @default(uuid())
   url         String    @unique

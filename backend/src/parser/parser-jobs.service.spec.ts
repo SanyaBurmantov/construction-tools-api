@@ -42,7 +42,6 @@ function createService(
     {} as never,
     toolsBy as never,
     {} as never,
-    {} as never,
   );
 
   return { service, started, finished };
@@ -296,7 +295,6 @@ describe('ParserJobsService', () => {
         {} as never,
         { processSitemapsBatch } as never,
         {} as never,
-        {} as never,
       );
 
       await service.runRequested('tools-by', 'process', { limit: 25 });
@@ -329,7 +327,6 @@ describe('ParserJobsService', () => {
         {} as never,
         {} as never,
         {} as never,
-        {} as never,
       );
 
       const refresh = service
@@ -353,7 +350,6 @@ describe('ParserJobsService', () => {
         { getCategoryBatchLimit: () => Promise.resolve(20) } as never,
         {} as never,
         { processBatch } as never,
-        {} as never,
         {} as never,
         {} as never,
         {} as never,

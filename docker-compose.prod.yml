@@ -89,11 +89,6 @@ x-backend-environment: &backend-environment
   TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS: ${TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS:-60000}
   TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
   TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-товары для дома|товары для уборки|посуда|текстиль|игрушк|канцеляр|зоотовар|космет|бытовая химия|продукты питания}
-  SUPPLIER_7745_CRON_BATCH_LIMIT: ${SUPPLIER_7745_CRON_BATCH_LIMIT:-30}
-  # 7745 — не поставщик, а пример от заказчика. Крон держим выключенным.
-  SUPPLIER_7745_CRON_ENABLED: ${SUPPLIER_7745_CRON_ENABLED:-false}
-  SUPPLIER_7745_CATEGORY_INCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_INCLUDE_REGEX:-запчаст|инструмент|электроинструмент|оснаст|оборудован|строй|строител|отделоч|крепеж|фурнитур|сантех|климат|электрик|спецодеж|сиз|садовая техника|автотовар}
-  SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX: ${SUPPLIER_7745_CATEGORY_EXCLUDE_REGEX:-семена|зоотовары|аквариум|кухон|ванн|космет|спорт|единоборств|эпилятор|яйцевар|наушник|гарнитур}
   DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
   DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
   DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
