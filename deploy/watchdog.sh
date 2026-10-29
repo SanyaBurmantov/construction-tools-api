@@ -190,10 +190,19 @@ for svc in "${SERVICES[@]}"; do
       delta=$((restarts - prev_restarts))
       S[${svc}_quiet]=0
       if [[ "$(get "${svc}_restart_alerted" 0)" != 1 ]]; then
-        if [[ "$oom" == true ]]; then
-          cause="OOMKilled — упёрся в mem_limit"
+        # .State describes the container as it is now — already restarted, so
+        # OOMKilled=false and ExitCode=0 every time. The events log keeps how
+        # the previous process actually died.
+        events_since=$(get last_run $((now - 600)))
+        died=$(timeout 20s docker events --since "$events_since" --until "$now" \
+          --filter "container=$name" --filter event=oom --filter event=die \
+          --format '{{.Action}} {{index .Actor.Attributes "exitCode"}}' 2>/dev/null || true)
+        if [[ "$oom" == true ]] || grep -q '^oom' <<<"$died"; then
+          cause="OOM — упёрся в mem_limit"
+        elif last_die=$(grep '^die' <<<"$died" | tail -1) && [[ -n "$last_die" ]]; then
+          cause="не OOM, exit code ${last_die#die }"
         else
-          cause="не OOM, exit code $exit_code"
+          cause="неизвестна (exit code $exit_code)"
         fi
         if send_telegram "🟠 Контейнер $svc ($name) перезапустился: +$delta (всего $restarts). Причина: $cause. Последнее падение: ${finished%%.*}Z.$(mem_report)"; then
           S[${svc}_restart_alerted]=1

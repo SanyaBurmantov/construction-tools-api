@@ -223,6 +223,15 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOST: 0.0.0.0
+      # Left to itself V8 sized the heap at ~260 MB from the 384 MB limit, and
+      # sharp (IPX photo resizing) allocates outside it: the process reached
+      # ~365 MB RSS and the kernel OOM-killed it about once an hour. A smaller
+      # heap makes V8 collect before the cgroup kills, and two malloc arenas
+      # stop glibc fragmenting sharp's native buffers across one arena per
+      # thread (sharp's own advice on glibc).
+      NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=192}
+      MALLOC_ARENA_MAX: 2
+      NUXT_CACHE_MAX_MB: ${NUXT_CACHE_MAX_MB:-64}
       API_BASE_SERVER: http://backend:8000
       NUXT_API_BASE_SERVER: http://backend:8000
       NUXT_PUBLIC_API_BASE: /api
