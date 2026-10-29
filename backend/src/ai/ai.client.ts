@@ -92,8 +92,8 @@ export type AiQuota = {
   dailyRemaining: number | null;
   /** Paid key: what is left on the account, e.g. "12.40 CNY, 0.00 USD". */
   balance: string | null;
-  /** The same as one number (the account holds one currency in practice). */
-  balanceAmount: number | null;
+  /** The same per currency, `{ CNY: 39.97, USD: 0 }` — what the spend floor reads. */
+  balances: Record<string, number> | null;
 };
 
 @Injectable()
@@ -328,7 +328,7 @@ export class AiClient implements OnModuleInit {
         dailyUsed: daily?.used ?? null,
         dailyRemaining: daily?.remaining ?? null,
         balance: null,
-        balanceAmount: null,
+        balances: null,
       };
     } catch {
       return null;
@@ -345,10 +345,13 @@ export class AiClient implements OnModuleInit {
     const body = (await res.json()) as {
       balance_infos?: Array<{ currency?: string; total_balance?: string }>;
     };
-    const amount = body.balance_infos?.reduce(
-      (sum, info) => sum + (Number(info.total_balance) || 0),
-      0,
-    );
+    const balances: Record<string, number> = {};
+    for (const info of body.balance_infos ?? []) {
+      const amount = Number(info.total_balance);
+      if (info.currency && Number.isFinite(amount)) {
+        balances[info.currency.toUpperCase()] = amount;
+      }
+    }
     const balance =
       body.balance_infos
         ?.map((info) =>
@@ -361,7 +364,7 @@ export class AiClient implements OnModuleInit {
       dailyUsed: null,
       dailyRemaining: null,
       balance,
-      balanceAmount: amount ?? null,
+      balances: Object.keys(balances).length ? balances : null,
     };
   }
 

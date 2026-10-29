@@ -29,7 +29,7 @@ export function buildVerifyMessages(items: VerifyInput[]): ChatMessage[] {
     'утверждение, которого нет в data. Стиль, порядок слов и полнота — не ошибка.',
     'Если сомневаешься, считай поле верным: отклоняй только явные ошибки.',
     '',
-    'Отвечай ТОЛЬКО JSON: {"items":[{"id":"<id>","fields":{"<поле>":"ok" | "<ошибка, одно предложение>"}}]}',
+    'Отвечай ТОЛЬКО JSON: {"items":[{"id":"<id>","fields":{"<поле>":{"ok":true} или {"ok":false,"problem":"<ошибка, одно предложение>"}}}]}',
     'Один элемент на каждый id, по одному ключу на каждое поле из proposed.',
   ].join('\n');
   const user = `Товары:\n${JSON.stringify({ items })}`;
@@ -40,9 +40,12 @@ export function buildVerifyMessages(items: VerifyInput[]): ChatMessage[] {
 }
 
 /**
- * Field → problem, per id, from the verifier's answer. Anything that is not a
- * plain "ok" with some text is a problem; a missing verdict is *not* one — an
- * unreadable answer must not throw away a batch the code checks passed.
+ * Field → problem, per id, from the verifier's answer. A verdict is the
+ * object the prompt asks for — `{ ok: false, problem }` is an objection,
+ * `{ ok: true }` is not. A model that answers with a bare string instead is
+ * read leniently: «ok», «верно» and anything starting with them pass, other
+ * text is the problem. A missing or unreadable verdict is *not* an
+ * objection — it must not throw away a field the code checks passed.
  */
 export function parseVerifyAnswer(
   records: Map<string, Record<string, unknown>>,
@@ -55,13 +58,24 @@ export function parseVerifyAnswer(
     for (const [field, verdict] of Object.entries(
       fields as Record<string, unknown>,
     )) {
-      if (typeof verdict !== 'string') continue;
-      const text = verdict.trim();
-      if (!text || /^ok\.?$/i.test(text) || /^(верно|ок)\.?$/i.test(text))
-        continue;
-      problems[field] = text.slice(0, 300);
+      const problem = objection(verdict);
+      if (problem) problems[field] = problem.slice(0, 300);
     }
     if (Object.keys(problems).length) result.set(id, problems);
   }
   return result;
+}
+
+function objection(verdict: unknown): string | null {
+  if (verdict && typeof verdict === 'object') {
+    const { ok, problem } = verdict as { ok?: unknown; problem?: unknown };
+    if (ok !== false && ok !== 'false') return null;
+    return typeof problem === 'string' && problem.trim()
+      ? problem.trim()
+      : 'не прошло проверку смысла';
+  }
+  if (typeof verdict !== 'string') return null;
+  const text = verdict.trim();
+  if (!text || /^(ok|ок|верно|true)(?![a-zа-яё])/i.test(text)) return null;
+  return text;
 }

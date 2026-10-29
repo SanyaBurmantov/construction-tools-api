@@ -85,6 +85,35 @@ function squash(text: string) {
   return text.toLowerCase().replace(/[^a-zа-яё0-9]/gi, '');
 }
 
+/** Cyrillic letters that look Latin (and «×»), folded to the Latin one. */
+const FOLD: Record<string, string> = {
+  а: 'a',
+  в: 'b',
+  е: 'e',
+  к: 'k',
+  м: 'm',
+  н: 'h',
+  о: 'o',
+  р: 'p',
+  с: 'c',
+  т: 't',
+  х: 'x',
+  у: 'y',
+  '×': 'x',
+};
+
+/**
+ * A comparison key for codes and Latin words: squashed, and with look-alike
+ * letters folded. Suppliers type «М10х12х40» with Cyrillic М and х, a model
+ * writes «M10x12x40» with Latin ones — the same code, and it must not read
+ * as a word the data does not have.
+ */
+function codeKey(text: string) {
+  return squash(
+    text.toLowerCase().replace(/[авекмнорстху×]/g, (ch) => FOLD[ch]),
+  );
+}
+
 /** Latin words of two or more characters: brand, model, technology names. */
 function latinWords(text: string) {
   return (
@@ -113,14 +142,19 @@ function codeTokens(name: string) {
  * when the source itself says it (a spec «Гарантия: 3 года» is a fact).
  */
 const CLAIMS: Array<[RegExp, string]> = [
-  [/в\s+наличии|на\s+складе/i, 'наличие'],
+  // «на складе» alone is fine — «стеллаж для склада», «работа на складе».
+  [/в\s+наличии|(есть|всегда|имеется|имеются)\s+на\s+складе/i, 'наличие'],
   [/гаранти/i, 'гарантия'],
   [/бесплатн/i, '«бесплатно»'],
-  [/скидк|акци[яи]|распродаж/i, 'скидки и акции'],
+  // The lookbehind keeps «реакции» from reading as «акции».
+  [/скидк|(?<![а-яё])акци[яи]|распродаж/i, 'скидки и акции'],
   [/официальн\w*\s+(дилер|представител|дистрибьютор)/i, '«официальный дилер»'],
   [/сертифиц|сертификат/i, 'сертификация'],
   [
-    /(?<![а-яё])(лучш|самы[йхем]|сама[яю]|само[ейм]|идеальн|непревзойд|уникальн|№\s*1(?!\d)|номер\s+один)/i,
+    // Comparisons with other products only. «Идеально подходит» is a stock
+    // phrase, not a claim: the prompt discourages it, rejecting a whole
+    // description for it would only throw away a paid answer.
+    /(?<![а-яё])(лучш|самы[йхем]|сама[яю]|само[ейм]|непревзойд|№\s*1(?!\d)|номер\s+один)/i,
     'превосходная степень',
   ],
   [
@@ -131,7 +165,12 @@ const CLAIMS: Array<[RegExp, string]> = [
 
 /** Things no field may contain, whatever the source says. */
 const FORBIDDEN: Array<[RegExp, string]> = [
-  [/\+?\s?375[\s(-]*\d{2}|\(\d{2,3}\)\s*\d{3}[-\s]?\d{2}/, 'телефон'],
+  // A Belarusian number, or any «(29) 668-00-11» shape. Bounded so a length
+  // («375 мм», «37500 об/мин») is not a phone.
+  [
+    /(?<!\d)\+?375[\s(-]*\d{2}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?!\d)|\(\d{2,3}\)\s*\d{3}[-\s]?\d{2}[-\s]?\d{2}(?!\d)/,
+    'телефон',
+  ],
   [
     /https?:\/\/|www\.|\b[a-z0-9-]+\.(by|ru|com|net|org)\b/i,
     'ссылка или домен',
@@ -160,12 +199,17 @@ export type ValidationInput = {
 
 /** Hard limits per field — over them the field is not written. */
 const LIMITS: Record<string, { min: number; max: number }> = {
-  name: { min: 8, max: 150 },
+  // The name keeps every code and number of the supplier's, and BULL's run
+  // past 150 characters — the field's own cap (ai-fields.ts) is the limit.
+  name: { min: 8, max: 200 },
   descriptionShort: { min: 30, max: 320 },
-  descriptionFull: { min: 150, max: 3500 },
+  // A thin card's one honest paragraph can be short.
+  descriptionFull: { min: 80, max: 3500 },
   description: { min: 150, max: 3000 },
-  seoTitle: { min: 15, max: 75 },
-  seoDescription: { min: 60, max: 175 },
+  // The prompt asks for ≤ 70 / ≤ 160; a little over is cut by the search
+  // engine, not wrong — refusing it would waste a paid answer.
+  seoTitle: { min: 15, max: 80 },
+  seoDescription: { min: 60, max: 200 },
 };
 
 /** A thin card gets one honest paragraph, not a page of filler. */
@@ -182,7 +226,7 @@ export function validateAnswer(
   const rejected: Rejections = {};
   const source = fixHomoglyphs(input.source);
   const sourceNumbers = numbersIn(source);
-  const sourceSquashed = squash(source);
+  const sourceKey = codeKey(source);
 
   for (const [field, value] of Object.entries(values)) {
     const reason = checkField(
@@ -191,7 +235,7 @@ export function validateAnswer(
       input,
       source,
       sourceNumbers,
-      sourceSquashed,
+      sourceKey,
     );
     if (reason) rejected[field] = reason;
   }
@@ -204,7 +248,7 @@ function checkField(
   input: ValidationInput,
   source: string,
   sourceNumbers: Set<string>,
-  sourceSquashed: string,
+  sourceKey: string,
 ): string | null {
   const limit = LIMITS[field];
   if (limit && value.length < limit.min)
@@ -231,7 +275,7 @@ function checkField(
   }
 
   for (const word of latinWords(value)) {
-    if (!sourceSquashed.includes(squash(word))) {
+    if (!sourceKey.includes(codeKey(word))) {
       return `«${word}» нет в данных товара`;
     }
   }
@@ -267,21 +311,22 @@ function checkName(value: string, input: ValidationInput): string | null {
   }
 
   const old = fixHomoglyphs(input.oldName);
-  const next = squash(fixHomoglyphs(value));
+  const next = codeKey(fixHomoglyphs(value));
 
   // The brand stays, if the old name carried it.
   const brand = input.brand?.trim();
   if (
     brand &&
-    squash(old).includes(squash(brand)) &&
-    !next.includes(squash(brand))
+    codeKey(old).includes(codeKey(brand)) &&
+    !next.includes(codeKey(brand))
   ) {
     return `пропал бренд «${brand}»`;
   }
 
-  // Article numbers and model codes stay.
+  // Article numbers, model codes and the supplier's Latin series words
+  // (EXPERT, XLTpro, NYLON) stay — the prompt asks for exactly this.
   for (const token of codeTokens(old)) {
-    if (!next.includes(squash(token)))
+    if (!next.includes(codeKey(token)))
       return `пропал код или модель «${token}»`;
   }
 

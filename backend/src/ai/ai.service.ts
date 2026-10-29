@@ -1190,7 +1190,14 @@ export class AiService {
     if (entity === AiEntity.PRODUCT) {
       const oldSlug = String(current.slug);
       let newSlug = oldSlug;
-      if (changes.name) {
+      // The URL moves once. After an AI rename (or an admin's hand-set slug)
+      // it is ours; a later rewrite of the name keeps it, or every re-run of
+      // a task would leave the page at yet another address.
+      const urlIsOurs = [
+        ...((current.aiLockedFields as string[]) ?? []),
+        ...((current.lockedFields as string[]) ?? []),
+      ].includes('slug');
+      if (changes.name && !urlIsOurs) {
         const base = slugFromName(changes.name.new);
         const free =
           base && base !== oldSlug ? await freeProductSlug(db, base, id) : null;
@@ -1201,11 +1208,13 @@ export class AiService {
         }
       }
       // Lock what was written, or tomorrow's re-parse puts the supplier's
-      // text back (see ProductIdentityService.save). The slug is never
-      // parser-written, so it needs no lock.
+      // text back (see ProductIdentityService.save). A parser never writes
+      // the slug; its lock marks the URL as ours (see above), and a revert
+      // that restores the old one drops it.
       const locked = new Set([
         ...((current.aiLockedFields as string[]) ?? []),
         ...keys,
+        ...(newSlug !== oldSlug ? ['slug'] : []),
       ]);
       await db.product.update({
         where: { id },
@@ -1294,7 +1303,7 @@ export class AiService {
     if (entity === AiEntity.PRODUCT) {
       return db.product.findUnique({
         where: { id },
-        select: { ...select, aiLockedFields: true },
+        select: { ...select, aiLockedFields: true, lockedFields: true },
       }) as Promise<Record<string, unknown> | null>;
     }
     return db.category.findUnique({

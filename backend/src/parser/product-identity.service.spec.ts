@@ -150,7 +150,10 @@ describe('ProductIdentityService.save', () => {
       } as never,
     });
 
-    expect(updated[0].data).toEqual({ name: 'Молоток' });
+    expect(updated[0].data).toEqual({
+      name: 'Молоток',
+      contentUpdatedAt: expect.any(Date),
+    });
   });
 
   it('creates a new product when the offer is unknown', async () => {
@@ -286,7 +289,10 @@ describe('ProductIdentityService parser invariants', () => {
     });
     expect(createdData[0]).not.toHaveProperty('priceValue');
     expect(createdData[0]).not.toHaveProperty('oldPrice');
-    expect(updated[0].data).toEqual({ name: 'Молоток' });
+    expect(updated[0].data).toEqual({
+      name: 'Молоток',
+      contentUpdatedAt: expect.any(Date),
+    });
   });
 
   it('leaves fields an admin corrected alone on re-parse', async () => {
@@ -358,6 +364,7 @@ describe('ProductIdentityService: a product with several suppliers', () => {
     expect(updated[0].data).toEqual({
       descriptionFull: 'Текст второго поставщика',
       stockStatus: 'in_stock',
+      contentUpdatedAt: expect.any(Date),
     });
   });
 
@@ -398,7 +405,45 @@ describe('ProductIdentityService: a product with several suppliers', () => {
       data: { update, create: { name: 'x', slug: 'x' } } as never,
     });
 
-    expect(updated[0].data).toEqual(update);
+    expect(updated[0].data).toEqual({
+      ...update,
+      contentUpdatedAt: expect.any(Date),
+    });
+  });
+});
+
+describe('ProductIdentityService: sitemap lastmod', () => {
+  const save = async (current: Record<string, unknown>) => {
+    const { service, updated } = createService({
+      offers: { 's1|https://x/1': 'product-7' },
+      current: { 'product-7': current },
+    });
+    await service.save({
+      sourceId: 's1',
+      url: 'https://x/1',
+      baseSlug: 'x',
+      data: {
+        update: {
+          name: 'Молоток',
+          descriptionFull: 'Текст',
+          stockStatus: 'in_stock',
+        },
+        create: { name: 'x', slug: 'x' },
+      } as never,
+    });
+    return updated[0].data;
+  };
+
+  it('stays put when the supplier sends the same text again', async () => {
+    expect(
+      await save({ name: 'Молоток', descriptionFull: 'Текст' }),
+    ).not.toHaveProperty('contentUpdatedAt');
+  });
+
+  it('moves when the supplier rewrote an unlocked text', async () => {
+    expect(
+      await save({ name: 'Молоток', descriptionFull: 'Старый текст' }),
+    ).toHaveProperty('contentUpdatedAt', expect.any(Date));
   });
 });
 

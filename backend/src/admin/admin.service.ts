@@ -65,6 +65,17 @@ const PARSER_OWNED_FIELDS = [
   'seoDescription',
 ] as const;
 
+/** A form value against the stored one; a blank and `null` are the same. */
+function differs(value: unknown, stored: unknown) {
+  const norm = (v: unknown) =>
+    v === undefined || v === ''
+      ? null
+      : typeof v === 'string'
+        ? v.trim() || null
+        : v;
+  return norm(value) !== norm(stored);
+}
+
 /** The page's own text: a change moves `contentUpdatedAt` (sitemap lastmod). */
 const PAGE_TEXT_FIELDS = [
   'name',
@@ -389,9 +400,18 @@ export class AdminService {
     const slugChanged = slug !== undefined && slug !== current.slug;
     if (slugChanged) await this.ensureProductSlugFree(slug, id);
 
-    const locked = PARSER_OWNED_FIELDS.filter(
-      (field) => (dto as Record<string, unknown>)[field] !== undefined,
+    // Only what the admin actually changed. The product form sends every
+    // field on every save, so «sent» used to lock the name, the category and
+    // every description against the supplier's updates the first time anyone
+    // fixed a price — and made the supplier's SEO text count as ours.
+    const sent = dto as Record<string, unknown>;
+    const stored = current as Record<string, unknown>;
+    const locked: string[] = PARSER_OWNED_FIELDS.filter(
+      (field) =>
+        sent[field] !== undefined && differs(sent[field], stored[field]),
     );
+    // A URL set by hand is final: an AI rename must not move it again.
+    if (slugChanged) locked.push('slug');
     if (locked.length) {
       data.lockedFields = [...new Set([...current.lockedFields, ...locked])];
     }
@@ -400,17 +420,18 @@ export class AdminService {
     // The page text changed: the sitemap's lastmod moves and Yandex is told.
     const textChanged =
       slugChanged ||
-      PAGE_TEXT_FIELDS.some((field) => {
-        const value = (dto as Record<string, unknown>)[field];
-        return (
-          value !== undefined &&
-          value !== (current as Record<string, unknown>)[field]
-        );
-      });
+      PAGE_TEXT_FIELDS.some(
+        (field) =>
+          sent[field] !== undefined && differs(sent[field], stored[field]),
+      );
     if (textChanged) data.contentUpdatedAt = new Date();
-    // Saving the product is the admin's answer to a supplier rename.
-    data.supplierNameChange = Prisma.DbNull;
-    data.supplierNameChangedAt = null;
+    // Saving the card from the form (it always carries the name) is the
+    // admin's answer to a supplier rename; a one-field PATCH (a status toggle
+    // in the list) is not a review of it.
+    if (dto.name !== undefined) {
+      data.supplierNameChange = Prisma.DbNull;
+      data.supplierNameChangedAt = null;
+    }
 
     const priceTouched =
       dto.priceValue !== undefined || dto.oldPrice !== undefined;

@@ -213,7 +213,7 @@ model Product {
   /// lastmod that is always "today" is one search engines learn to ignore.
   contentUpdatedAt      DateTime               @default(now())
   /// A supplier changed what identifies the product (article, model code,
-  /// sizes in its name) while our name is locked: `{ source, from, to }`.
+  /// sizes in its name) while our name is locked: `{ sourceId, url, from, to }`.
   /// Shown in the data-quality panel until an admin saves the product.
   supplierNameChange    Json?
   supplierNameChangedAt DateTime?

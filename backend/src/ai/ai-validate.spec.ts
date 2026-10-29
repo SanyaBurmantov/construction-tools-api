@@ -152,6 +152,77 @@ describe('validateAnswer', () => {
     ).toMatch(/смешанных/);
   });
 
+  it('takes Latin M and x in sizes for the Cyrillic ones the supplier typed', () => {
+    const starfix = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX',
+      brand: 'STARFIX',
+      source: 'Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX',
+    };
+    expect(
+      validateAnswer(starfix, {
+        name: 'Анкер забиваемый STARFIX M10x12x40 мм, 4 шт. в зип-пакете',
+        descriptionShort:
+          'Анкер забиваемый M10x12x40 мм для крепления к бетону, 4 шт. в упаковке.',
+      }),
+    ).toEqual({});
+  });
+
+  it('does not read ordinary words as claims', () => {
+    const check = (text: string) =>
+      validateAnswer(BOSCH, { descriptionShort: text }).descriptionShort;
+    expect(
+      check(
+        'Контроль отдачи снижает риск резкой реакции инструмента при заклинивании бура.',
+      ),
+    ).toBeUndefined();
+    expect(
+      check(
+        'Перфоратор подходит для работы на складе, в цехе и на строительном объекте.',
+      ),
+    ).toBeUndefined();
+    expect(
+      check(
+        'Перфоратор идеально подходит для сверления бетона на строительных объектах.',
+      ),
+    ).toBeUndefined();
+    expect(
+      check(
+        'Перфоратор для бетона, он всегда есть на складе нашего магазина в Беларуси.',
+      ),
+    ).toMatch(/наличие/);
+  });
+
+  it('does not take a length for a phone', () => {
+    const bolt = {
+      entity: 'PRODUCT' as const,
+      oldName: 'Болторез 375мм TOPTUL',
+      brand: 'TOPTUL',
+      source: 'Болторез 375мм TOPTUL; Длина, мм: 375; Число оборотов: 37500',
+    };
+    expect(
+      validateAnswer(bolt, {
+        descriptionShort:
+          'Болторез TOPTUL длиной 375 мм для перекусывания прутков и болтов.',
+      }),
+    ).toEqual({});
+  });
+
+  it('accepts a long name that keeps everything the supplier listed', () => {
+    const old =
+      'Аккум. дрель-шуруповерт BULL SR 1805 Xcase XLTpro, 2х6 А*ч, БЕСЩЕТ., 18 В, 60 Н*м, 2 скор., 13 мм патрон, LED, реверс';
+    const bull = {
+      entity: 'PRODUCT' as const,
+      oldName: old,
+      brand: 'BULL',
+      source: old,
+    };
+    const name =
+      'Аккумуляторная дрель-шуруповерт BULL SR 1805 Xcase XLTpro, бесщеточная, 18 В, 60 Н·м, 2 аккумулятора по 6 А·ч, 2 скорости, патрон 13 мм, подсветка LED, реверс';
+    expect(name.length).toBeGreaterThan(150);
+    expect(validateAnswer(bull, { name })).toEqual({});
+  });
+
   it('wants the B2B payment line in the SEO description', () => {
     expect(
       validateAnswer(BOSCH, {

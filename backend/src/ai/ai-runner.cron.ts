@@ -26,31 +26,24 @@ export class AiRunnerCron {
     return Number.isFinite(value) && value > 0 ? value : 3;
   }
 
-  /**
-   * `AI_MIN_BALANCE`: the paid key's floor, in the account's currency. The
-   * runner stops before a batch once the balance is below it — the spend cap
-   * for a run is «balance at the start minus what we agreed to spend».
-   */
-  private get minBalance() {
-    const value = Number(process.env.AI_MIN_BALANCE);
-    return Number.isFinite(value) && value > 0 ? value : null;
-  }
-
   private lastFloorWarning = 0;
 
-  /** False when the balance is under the floor (or cannot be read while one is set). */
+  /**
+   * False when the paid key's balance is under `AI_MIN_BALANCE` — or cannot
+   * be read while a floor is set: a spend cap that fails open is no cap.
+   */
   private async aboveFloor() {
-    const floor = this.minBalance;
-    if (floor === null) return true;
+    const floor = parseBalanceFloor(process.env.AI_MIN_BALANCE);
+    if (!floor) return true;
     const quota = await this.client.quota();
-    const amount = quota?.balanceAmount ?? null;
-    if (amount !== null && amount >= floor) return true;
+    const amount = balanceFor(quota?.balances ?? null, floor.currency);
+    if (amount !== null && amount >= floor.amount) return true;
     if (Date.now() - this.lastFloorWarning > 60 * 60 * 1000) {
       this.lastFloorWarning = Date.now();
       this.logger.warn(
         amount === null
-          ? `AI runner stopped: AI_MIN_BALANCE=${floor} is set but the balance could not be read`
-          : `AI runner stopped: balance ${amount} is under AI_MIN_BALANCE=${floor}`,
+          ? `AI runner stopped: AI_MIN_BALANCE=${process.env.AI_MIN_BALANCE} is set but the balance could not be read`
+          : `AI runner stopped: balance ${amount} is under AI_MIN_BALANCE=${process.env.AI_MIN_BALANCE}`,
       );
     }
     return false;
@@ -77,4 +70,32 @@ export class AiRunnerCron {
       this.busy = false;
     }
   }
+}
+
+/**
+ * `AI_MIN_BALANCE`: the floor under which the runner stops — the spend cap of
+ * a run is «balance at the start minus what we agreed to spend». «36.4» or
+ * «36.4 CNY»; empty or unreadable means no floor.
+ */
+export function parseBalanceFloor(raw: string | undefined) {
+  const match = /^\s*(\d+(?:[.,]\d+)?)\s*([A-Za-z]{3})?\s*$/.exec(raw ?? '');
+  if (!match) return null;
+  const amount = Number(match[1].replace(',', '.'));
+  if (!(amount > 0)) return null;
+  return { amount, currency: match[2]?.toUpperCase() ?? null };
+}
+
+/**
+ * The balance a floor is compared with: the named currency, or — with none
+ * named — the one the account actually holds (the largest). DeepSeek lists
+ * CNY and USD side by side; adding them up compared yuan with dollars.
+ */
+export function balanceFor(
+  balances: Record<string, number> | null,
+  currency: string | null,
+) {
+  if (!balances) return null;
+  if (currency) return balances[currency] ?? null;
+  const amounts = Object.values(balances);
+  return amounts.length ? Math.max(...amounts) : null;
 }

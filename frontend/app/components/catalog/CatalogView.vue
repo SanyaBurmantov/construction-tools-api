@@ -594,7 +594,7 @@ useHead(() => ({
 /**
  * A category text, split for the layout: its first paragraph is the intro
  * under the heading (two lines, clamped), the whole of it sits below the
- * product grid. A one-paragraph text is the intro alone.
+ * product grid.
  */
 const descriptionAll = computed(() =>
   (category.value?.description ?? '')
@@ -603,7 +603,16 @@ const descriptionAll = computed(() =>
     .filter(Boolean)
 )
 const descriptionIntro = computed(() => descriptionAll.value[0] ?? '')
-const descriptionParagraphs = computed(() => (descriptionAll.value.length > 1 ? descriptionAll.value : []))
+/**
+ * The full text under the grid — on the first page only, so the paginated
+ * copies are not the same text again — whenever the intro cannot show it
+ * all: more than one paragraph, or one longer than two lines.
+ */
+const INTRO_CHARS = 180
+const showAbout = computed(() =>
+  page.value === 1
+  && (descriptionAll.value.length > 1 || descriptionIntro.value.length > INTRO_CHARS)
+)
 </script>
 
 <template>
@@ -613,10 +622,10 @@ const descriptionParagraphs = computed(() => (descriptionAll.value.length > 1 ? 
     <header class="catalog-head">
       <div>
         <h1>{{ category?.name || 'Каталог товаров' }}</h1>
-        <p v-if="descriptionIntro" class="intro">
-          {{ descriptionIntro }}
-          <a v-if="descriptionParagraphs.length" href="#category-about" class="more-link">Подробнее</a>
-        </p>
+        <!-- The link sits outside the clamped paragraph: inside, the clamp hid
+             it exactly when the text was long enough to need it. -->
+        <p v-if="descriptionIntro" class="intro">{{ descriptionIntro }}</p>
+        <a v-if="showAbout" href="#category-about" class="more-link">Подробнее о разделе</a>
       </div>
       <div class="head-links">
         <!-- Purchasers compare in their own sheet; same URL for everyone, so
@@ -794,11 +803,10 @@ const descriptionParagraphs = computed(() => (descriptionAll.value.length > 1 ? 
         />
 
         <!-- The category text lives under the grid: three paragraphs above it
-             pushed the products off the first screen. First page only, so the
-             paginated copies are not the same text again. -->
-        <section v-if="page === 1 && descriptionParagraphs.length" id="category-about" class="category-about">
+             pushed the products off the first screen. -->
+        <section v-if="showAbout" id="category-about" class="category-about">
           <h2>О разделе «{{ category?.name }}»</h2>
-          <p v-for="(paragraph, index) in descriptionParagraphs" :key="index">{{ paragraph }}</p>
+          <p v-for="(paragraph, index) in descriptionAll" :key="index">{{ paragraph }}</p>
         </section>
       </div>
     </div>
@@ -853,8 +861,10 @@ const descriptionParagraphs = computed(() => (descriptionAll.value.length > 1 ? 
 }
 
 .more-link {
-  margin-left: var(--space-1);
+  display: inline-block;
+  margin-top: var(--space-1);
   color: var(--brand);
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 

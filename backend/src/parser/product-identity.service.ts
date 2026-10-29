@@ -22,6 +22,15 @@ const SHARED_FIELDS = new Set([
   'priceCurrency',
 ]);
 
+/** The page's own text — a change moves `Product.contentUpdatedAt`. */
+const PAGE_TEXT_FIELDS = [
+  'name',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+] as const;
+
 /** How many `-2`, `-3`… suffixes to try before giving up on a slug. */
 const MAX_SLUG_ATTEMPTS = 50;
 
@@ -175,10 +184,10 @@ export class ProductIdentityService {
     const locked = new Set([...row.aiLockedFields, ...row.lockedFields]);
     for (const key of locked) delete fields[key];
 
+    const current = row as unknown as Record<string, unknown>;
     const owner = offers[0];
     const owns = !owner || (owner.sourceId === sourceId && owner.url === url);
     if (!owns) {
-      const current = row as unknown as Record<string, unknown>;
       for (const key of Object.keys(fields)) {
         if (SHARED_FIELDS.has(key)) continue;
         const keep =
@@ -191,6 +200,19 @@ export class ProductIdentityService {
                 current[key] === '';
         if (!keep) delete fields[key];
       }
+    }
+
+    // The page text changed (a supplier rewrote an unlocked description):
+    // the sitemap's lastmod moves. A re-parse that brings the same text does
+    // not — that is what makes lastmod worth believing.
+    if (
+      PAGE_TEXT_FIELDS.some(
+        (key) =>
+          typeof fields[key] === 'string' &&
+          fields[key] !== (current[key] ?? ''),
+      )
+    ) {
+      fields.contentUpdatedAt = new Date();
     }
 
     const previous = offers.find(

@@ -5,7 +5,7 @@
  * through the admin API, so it runs from any machine with Node 22.
  *
  *   node scripts/ai-pilot.mjs select   [--out DIR]   pick 300 cards + control + 5 categories (read-only)
- *   node scripts/ai-pilot.mjs create   --stage 1|2|categories [--out DIR]   create the AI tasks
+ *   node scripts/ai-pilot.mjs create   --stage 1|2|categories [--out DIR]   create the AI tasks (once per stage)
  *   node scripts/ai-pilot.mjs report   [--out DIR]   what the tasks wrote, refused, flagged and cost
  *
  * Auth: AI_PILOT_TOKEN (a bearer session token), or ADMIN_LOGIN + ADMIN_PASSWORD.
@@ -229,6 +229,15 @@ function loadSelection() {
 async function create() {
   const stage = option('stage')
   const selection = loadSelection()
+  const file = join(OUT, 'tasks.json')
+  let known = []
+  try {
+    known = JSON.parse(readFileSync(file, 'utf8'))
+  } catch {}
+  // A second run of the same stage would pay for the same cards twice.
+  if (known.some((task) => task.stage === stage) && !args.includes('--force')) {
+    throw new Error(`stage ${stage} was already created (${file}); --force to create it again`)
+  }
   const date = new Date().toISOString().slice(0, 10)
   let body
   if (stage === '1' || stage === '2') {
@@ -250,11 +259,6 @@ async function create() {
     body: JSON.stringify({ ...body, templates: true, batchSize: 5 }),
   })
   const tasks = created.tasks ?? [created]
-  const file = join(OUT, 'tasks.json')
-  let known = []
-  try {
-    known = JSON.parse(readFileSync(file, 'utf8'))
-  } catch {}
   known.push(...tasks.map((t) => ({ ...t, stage })))
   writeFileSync(file, JSON.stringify(known, null, 2))
   for (const t of tasks) console.log(`created ${t.id}  ${t.total}  ${t.name}`)

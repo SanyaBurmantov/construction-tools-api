@@ -290,7 +290,9 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   **Admin corrections survive the re-parse**: every parser-owned field an admin
   edits (`name`, `categoryId`, `brandId`, descriptions, SEO, sku/model/barcode)
   joins `Product.lockedFields`, which `save()` skips exactly like
-  `aiLockedFields`. "Удалить" in the admin **archives** the product
+  `aiLockedFields` — only a field whose value actually **changed**: the
+  product form sends every field on every save, and «sent» used to lock the
+  whole card against the supplier the first time someone fixed a price. "Удалить" in the admin **archives** the product
   (`ARCHIVED`, `statusSource: ADMIN`): a hard delete cascaded away customer
   reviews and price history, and the next parse recreated the product anyway.
   A new product and a stub of its `SourceProduct` are created in one
@@ -831,27 +833,36 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   утверждение (наличие, гарантия, страна, «лучший»), телефон/ссылка/цена/
   разметка, слово из смешанных алфавитов, плохая длина; у названия — пропал
   бренд, код модели или число старого названия. Затем `ai-verify.ts`: второй
-  запрос к модели проверяет смысл названия и краткого описания (молчащий
-  проверяющий = пачка повторяется, а не пишется непроверенное;
-  `AI_VERIFY=false` выключает). Описание, почти совпадающее с уже записанным
+  запрос к модели проверяет смысл названия и краткого описания (ответ —
+  `{ok:false, problem}` на поле; молчащий проверяющий = пачка повторяется,
+  а не пишется непроверенное; `AI_VERIFY=false` выключает). Латиница и коды
+  сравниваются со «сложенными» двойниками (М/M, х/x/×) — поставщик пишет
+  «М10х12х40» кириллицей, модель латиницей. Описание, почти совпадающее с уже записанным
   в той же задаче (варианты линейки), помечается в `AiTaskItem.warnings`.
   Предпросмотр гоняет те же две проверки. Токены копятся в `AiTask`;
-  `AI_MIN_BALANCE` останавливает раннер ниже порога баланса.
+  `AI_MIN_BALANCE` («36.4» или «36.4 CNY») останавливает раннер ниже порога
+  баланса одной валюты (DeepSeek отдаёт CNY и USD рядом — не складывать);
+  баланс не прочитался — тоже стоп.
   **Новое название = новый адрес**: slug строится из него
   (`products/product-slug.ts`, ≤ 90 символов), со старого — 301
   (`ProductRedirect`, тот же помощник, что у админки), в `changes.slug` —
   откат возвращает адрес. Парсер slug существующего товара не пишет.
+  **Адрес двигается один раз**: `slug` в `aiLockedFields`/`lockedFields`
+  значит «адрес уже наш» (после ИИ или ручной правки в админке) — повторный
+  прогон меняет название, но не URL.
   Витрина берёт `seoTitle`/`seoDescription` товара, только если их написали
   мы (ИИ или админ — поле в `aiLockedFields`/`lockedFields`): API отдаёт
   `null` вместо текста поставщика. Текст категории — под сеткой товаров
   (сверху первый абзац в две строки), только на первой странице.
   **Поисковики**: `Product.contentUpdatedAt` — когда менялся текст/адрес
-  страницы (ИИ, админ), это `lastmod` в sitemap (`updatedAt` двигает
-  ежедневный парсинг). `seo/indexnow.service.ts` шлёт изменённые адреса
+  страницы (ИИ, админ, или поставщик переписал незакреплённый текст), это
+  `lastmod` в sitemap (`updatedAt` двигает ежедневный парсинг). `seo/indexnow.service.ts` шлёт изменённые адреса
   Яндексу (IndexNow, очередь `IndexNowUrl`, раз в 10 мин в воркере); ключ
   `INDEXNOW_KEY`, файл `/<ключ>.txt` отдаёт фронт (`NUXT_INDEXNOW_KEY`).
   Скрипт пилота: `scripts/ai-pilot.mjs select|create|report` (подбор 300
-  карточек + контрольная группа, этапы, отчёт).
+  карточек + контрольная группа, этапы — каждый создаётся один раз, отчёт).
+  Сквозной тест на настоящей базе: `src/ai/ai-pipeline.db.spec.ts`
+  (пропускается без `AI_PIPELINE_TEST_DATABASE_URL` на базе `*_test`).
 - **A product with offers from several suppliers has one owner.**
   `ProductIdentityService.forExistingProduct()`: the oldest offer
   (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only
