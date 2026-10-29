@@ -38,7 +38,7 @@ import {
   AiUpdatePromptDto,
   MAX_TASK_ITEMS,
 } from './dto/ai.dto';
-import { AiRateLimitError, OpenRouterClient } from './openrouter.client';
+import { AiClient, AiRateLimitError } from './ai.client';
 
 /** A batch that fails this many times marks its items FAILED for good. */
 const MAX_ATTEMPTS = 3;
@@ -60,21 +60,22 @@ export class AiService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly openRouter: OpenRouterClient,
+    private readonly client: AiClient,
   ) {}
 
   /* ---- Status ---------------------------------------------------------- */
 
   async status() {
     const [quota, active] = await Promise.all([
-      this.openRouter.quota(),
+      this.client.quota(),
       this.prisma.aiTask.count({
         where: { status: { in: [AiTaskStatus.QUEUED, AiTaskStatus.RUNNING] } },
       }),
     ]);
     return {
-      enabled: this.openRouter.enabled,
-      defaultModel: this.openRouter.defaultModel,
+      enabled: this.client.enabled,
+      provider: this.client.providerLabel,
+      defaultModel: this.client.defaultModel,
       quota,
       activeTasks: active,
       fields: AI_FIELDS,
@@ -82,7 +83,17 @@ export class AiService {
   }
 
   models() {
-    return this.openRouter.freeModels();
+    return this.client.models();
+  }
+
+  /** A task names a model the current provider serves, or none (= default). */
+  private assertModel(model: string | undefined) {
+    const id = model?.trim();
+    if (id && !this.client.allowsModel(id)) {
+      throw new BadRequestException(
+        `Модель ${id} недоступна: у DeepSeek — deepseek-*, у OpenRouter — только бесплатные (:free)`,
+      );
+    }
   }
 
   /* ---- Pickers --------------------------------------------------------- */
@@ -304,6 +315,7 @@ export class AiService {
       );
     }
     if (dto.promptId) await this.ensurePrompt(dto.promptId);
+    this.assertModel(dto.model);
 
     const ids = dto.ids?.length
       ? [...new Set(dto.ids)]
@@ -330,7 +342,7 @@ export class AiService {
           fields,
           promptId: dto.promptId ?? null,
           promptText: dto.prompt.trim(),
-          model: dto.model?.trim() || this.openRouter.defaultModel,
+          model: dto.model?.trim() || this.client.defaultModel,
           batchSize: dto.batchSize ?? 5,
           scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : new Date(),
           total: entities.length,
@@ -631,9 +643,10 @@ export class AiService {
       instruction: dto.prompt,
       contexts: [context.prompt],
     });
-    const model = dto.model || this.openRouter.defaultModel;
+    this.assertModel(dto.model);
+    const model = dto.model || this.client.defaultModel;
     try {
-      const answer = await this.openRouter.chat(model, messages);
+      const answer = await this.client.chat(model, messages);
       const parsed = parseAnswer(answer.content);
       const record = parsed.get(dto.id) ?? [...parsed.values()][0] ?? {};
       return {
@@ -655,7 +668,7 @@ export class AiService {
   activeTaskId: string | null = null;
 
   /**
-   * The free tier's limit is per *key*, not per task. Remembered here so the
+   * A rate limit (or an empty balance) is per *key*, not per task. Remembered here so the
    * other queued tasks do not each spend a request discovering the same 429.
    */
   private quotaResetsAt: Date | null = null;
@@ -745,7 +758,7 @@ export class AiService {
 
     let answers: Map<string, Record<string, unknown>>;
     try {
-      const answer = await this.openRouter.chat(task.model, messages);
+      const answer = await this.client.chat(task.model, messages);
       answers = parseAnswer(answer.content);
     } catch (error) {
       const message = (error as Error).message;

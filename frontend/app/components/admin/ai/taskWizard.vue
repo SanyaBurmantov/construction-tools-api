@@ -177,7 +177,7 @@ const fieldLabel = (key: string) => fieldDefs.value.find((f) => f.key === key)?.
 <template>
   <UiModal v-model:open="open" title="Новая задача ИИ" size="lg">
     <UiAlert v-if="status && !status.enabled" tone="warning" class="block">
-      OPENROUTER_API_KEY не задан на сервере — задача встанет в очередь, но выполняться не будет.
+      Ключ ИИ (DEEPSEEK_API_KEY) не задан на сервере — задача встанет в очередь, но выполняться не будет.
     </UiAlert>
     <UiAlert v-if="formError" tone="danger" class="block">{{ formError }}</UiAlert>
 
@@ -187,6 +187,9 @@ const fieldLabel = (key: string) => fieldDefs.value.find((f) => f.key === key)?.
       · запросов к модели: <strong>{{ requests }}</strong>
       <template v-if="status?.quota?.dailyRemaining != null">
         · осталось сегодня: <strong>{{ status.quota.dailyRemaining }}</strong> из {{ status.quota.dailyLimit }}
+      </template>
+      <template v-if="status?.quota?.balance">
+        · баланс: <strong>{{ status.quota.balance }}</strong>
       </template>
     </p>
 
@@ -256,7 +259,7 @@ const fieldLabel = (key: string) => fieldDefs.value.find((f) => f.key === key)?.
     <section class="step">
       <h3><span>4</span> Модель и проверка</h3>
       <div class="row">
-        <UiField label="Модель (бесплатные OpenRouter)" for="ai-model">
+        <UiField :label="status?.provider === 'OpenRouter' ? 'Модель (бесплатные OpenRouter)' : 'Модель'" for="ai-model">
           <UiSelect id="ai-model" v-model="form.model" :options="modelOptions" />
         </UiField>
         <UiField label="Записей в одном запросе" hint="Бесплатный ключ считает запросы, не токены" for="ai-batch">

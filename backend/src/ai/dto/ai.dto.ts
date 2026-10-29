@@ -12,22 +12,16 @@ import {
   IsOptional,
   IsString,
   Length,
-  Matches,
   Max,
   Min,
 } from 'class-validator';
 import { emptyToUndefined } from '../../common/dto/empty-to-undefined';
 
-/** Cap on one task: a free key does ~250 products a day at batch size 5. */
-export const MAX_TASK_ITEMS = 5000;
-
 /**
- * Only free-tier models: a paid id typed into the form would bill the key's
- * credits, and the runner sends thousands of requests per task.
+ * Cap on one task — a guard against spending a paid key on the whole
+ * catalogue by one click; a free key does ~250 products a day at batch size 5.
  */
-const FREE_MODEL = /(:free$)|(^openrouter\/free$)/;
-const FREE_MODEL_MESSAGE =
-  'Разрешены только бесплатные модели OpenRouter (id оканчивается на :free)';
+export const MAX_TASK_ITEMS = 5000;
 
 export class AiProductFilterDto {
   @IsOptional()
@@ -180,7 +174,6 @@ export class AiCreateTaskDto {
   @Transform(emptyToUndefined)
   @IsString()
   @Length(1, 200)
-  @Matches(FREE_MODEL, { message: FREE_MODEL_MESSAGE })
   model?: string;
 
   @IsOptional()
@@ -228,7 +221,6 @@ export class AiPreviewDto {
   @IsOptional()
   @Transform(emptyToUndefined)
   @IsString()
-  @Matches(FREE_MODEL, { message: FREE_MODEL_MESSAGE })
   model?: string;
 }
 

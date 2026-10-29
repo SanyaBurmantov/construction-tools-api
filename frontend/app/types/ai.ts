@@ -9,6 +9,8 @@ export type AiFieldDef = { key: string, label: string, maxLength: number, hint: 
 
 export type AiStatus = {
   enabled: boolean
+  /** 'DeepSeek' | 'OpenRouter', null when no key is set. */
+  provider: string | null
   defaultModel: string
   activeTasks: number
   quota: {
@@ -16,6 +18,8 @@ export type AiStatus = {
     dailyLimit: number | null
     dailyUsed: number | null
     dailyRemaining: number | null
+    /** Paid key: what is left, e.g. "12.40 USD". */
+    balance: string | null
   } | null
   fields: Record<AiEntity, AiFieldDef[]>
 }
