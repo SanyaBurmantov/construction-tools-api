@@ -147,67 +147,76 @@ enum StatusSource {
 }
 
 model Product {
-  id                String                 @id @default(uuid())
-  slug              String                 @unique
-  name              String
-  brand             Brand?                 @relation(fields: [brandId], references: [id])
-  brandId           String?
-  category          Category               @relation(fields: [categoryId], references: [id])
-  categoryId        String
-  sku               String?
-  barcode           String?
+  id                    String                 @id @default(uuid())
+  slug                  String                 @unique
+  name                  String
+  brand                 Brand?                 @relation(fields: [brandId], references: [id])
+  brandId               String?
+  category              Category               @relation(fields: [categoryId], references: [id])
+  categoryId            String
+  sku                   String?
+  barcode               String?
   /// How complete the card is, for the default catalogue order: 2 for a real
   /// photo + 1 for a description (0–3). Recomputed hourly by
   /// ListingRankService; a bare card sinks below the ones a buyer can judge.
-  listingRank       Int                    @default(0)
-  model             String?
-  images            ProductImage[]
-  priceValue        Float?
-  priceCurrency     String?
-  oldPrice          Float?
+  listingRank           Int                    @default(0)
+  model                 String?
+  images                ProductImage[]
+  priceValue            Float?
+  priceCurrency         String?
+  oldPrice              Float?
   /// Supplier cost the storefront price is derived from.
-  costPrice         Float?
+  costPrice             Float?
   /// AUTO — recomputed from PricingRule on every parse. MANUAL — an admin set
   /// the price by hand and parsing must not overwrite it.
-  pricingMode       PricingMode            @default(AUTO)
-  appliedRule       PricingRule?           @relation(fields: [appliedRuleId], references: [id])
-  appliedRuleId     String?
+  pricingMode           PricingMode            @default(AUTO)
+  appliedRule           PricingRule?           @relation(fields: [appliedRuleId], references: [id])
+  appliedRuleId         String?
   /// Set when a cost jump looked like a supplier error; the old price is kept
   /// until an admin confirms.
-  priceReviewNeeded Boolean                @default(false)
-  priceHistory      PriceHistory[]
-  stockStatus       String?
-  stockQuantity     Int?
-  status            ProductStatus          @default(PUBLISHED)
-  statusSource      StatusSource           @default(SYSTEM)
-  descriptionShort  String?
-  descriptionFull   String?
-  seoTitle          String?
-  seoDescription    String?
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
-  productSpecs      ProductSpecification[]
-  sourceProducts    SourceProduct[]
-  orderItems        OrderItem[]
-  reviews           Review[]
-  redirects         ProductRedirect[]
+  priceReviewNeeded     Boolean                @default(false)
+  priceHistory          PriceHistory[]
+  stockStatus           String?
+  stockQuantity         Int?
+  status                ProductStatus          @default(PUBLISHED)
+  statusSource          StatusSource           @default(SYSTEM)
+  descriptionShort      String?
+  descriptionFull       String?
+  seoTitle              String?
+  seoDescription        String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  productSpecs          ProductSpecification[]
+  sourceProducts        SourceProduct[]
+  orderItems            OrderItem[]
+  reviews               Review[]
+  redirects             ProductRedirect[]
   /// Denormalized aggregate over APPROVED reviews, recomputed on moderation.
-  ratingAvg         Float?
-  ratingCount       Int                    @default(0)
+  ratingAvg             Float?
+  ratingCount           Int                    @default(0)
   /// Normalized dedup keys, rebuilt whenever identity fields change. Matching
   /// looks these up directly instead of re-normalizing the whole catalogue.
-  matchBarcode      String?
+  matchBarcode          String?
   /// brand + sku, normalized.
-  matchSku          String?
+  matchSku              String?
   /// brand + model, normalized.
-  matchModel        String?
+  matchModel            String?
   /// Text fields an AI task rewrote (`ai/`). Re-parsing leaves these alone —
   /// the daily refresh would otherwise put the supplier's text back within 24h.
   /// Reverting the task item unlocks them again.
-  aiLockedFields    String[]               @default([])
+  aiLockedFields        String[]               @default([])
   /// Fields an admin edited by hand. Same protection as `aiLockedFields`:
   /// the daily re-parse used to revert a corrected name or category.
-  lockedFields      String[]               @default([])
+  lockedFields          String[]               @default([])
+  /// When the page's own text last changed (name, descriptions, SEO, slug) —
+  /// the sitemap's `lastmod`. `updatedAt` moves on every daily re-parse, and a
+  /// lastmod that is always "today" is one search engines learn to ignore.
+  contentUpdatedAt      DateTime               @default(now())
+  /// A supplier changed what identifies the product (article, model code,
+  /// sizes in its name) while our name is locked: `{ source, from, to }`.
+  /// Shown in the data-quality panel until an admin saves the product.
+  supplierNameChange    Json?
+  supplierNameChangedAt DateTime?
 
   cartItems CartItem[]
 
@@ -316,6 +325,10 @@ model SourceProduct {
   productId        String?
   sourceCategory   SourceCategory? @relation(fields: [sourceCategoryId], references: [id])
   sourceCategoryId String?
+  /// When the offer first appeared. The oldest offer of a product owns its
+  /// card (ProductIdentityService.forExistingProduct); rows older than this
+  /// column share one timestamp and fall back to `id` — any stable order will do.
+  createdAt        DateTime        @default(now())
   lastSync         DateTime        @default(now())
 
   @@unique([sourceId, url])
@@ -1109,6 +1122,9 @@ model AiTaskItem {
   response   Json?
   /// `{ field: reason }` — what `ai-validate.ts` refused to write.
   rejected   Json?
+  /// `{ key: note }` — written, but worth a look (a text near-identical to a
+  /// sibling variant's).
+  warnings   Json?
   error      String?
   updatedAt  DateTime         @updatedAt
 
@@ -1193,4 +1209,14 @@ model PurchaseList {
   updatedAt DateTime @updatedAt
 
   @@index([userId, updatedAt])
+}
+
+/// Product and category URLs whose text changed, waiting to be announced to
+/// Yandex through IndexNow (`seo/indexnow.service.ts`). A row is deleted once
+/// the ping is accepted.
+model IndexNowUrl {
+  url       String   @id
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

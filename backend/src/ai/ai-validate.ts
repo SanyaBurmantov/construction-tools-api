@@ -292,3 +292,35 @@ function checkName(value: string, input: ValidationInput): string | null {
   }
   return null;
 }
+
+/**
+ * How alike two texts are, 0…1: Jaccard over three-word shingles with the
+ * numbers masked out. Masked, because the variants of one line (a 10 mm and
+ * a 12 mm bit, 4 or 50 anchors a pack) differ *only* in numbers — and a page
+ * that differs from its sibling only in numbers is the near-duplicate a
+ * search engine folds into one result.
+ */
+export function textSimilarity(a: string, b: string) {
+  const shingles = (text: string) => {
+    const words = text
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .replace(/\d+(?:[.,]\d+)?/g, '#')
+      .split(/[^a-zа-я#]+/i)
+      .filter(Boolean);
+    const set = new Set<string>();
+    for (let i = 0; i + 2 < words.length; i++) {
+      set.add(`${words[i]} ${words[i + 1]} ${words[i + 2]}`);
+    }
+    return set;
+  };
+  const left = shingles(a);
+  const right = shingles(b);
+  if (!left.size || !right.size) return 0;
+  let shared = 0;
+  for (const shingle of left) if (right.has(shingle)) shared++;
+  return shared / (left.size + right.size - shared);
+}
+
+/** Over this, a description is flagged as a near-copy of a sibling's. */
+export const NEAR_DUPLICATE_SIMILARITY = 0.7;

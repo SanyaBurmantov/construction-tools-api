@@ -77,6 +77,14 @@ export class AiRateLimitError extends Error {
 
 export type AiModel = { id: string; name: string; contextLength: number };
 
+/** Tokens one request was billed for. */
+export type AiUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  /** Part of promptTokens served from the provider's prompt cache. */
+  cacheHitTokens: number;
+};
+
 export type AiQuota = {
   isFreeTier: boolean;
   dailyLimit: number | null;

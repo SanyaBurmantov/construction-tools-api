@@ -32,6 +32,8 @@ import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
 import { ParserLogService } from '../parser/parser-log.service';
 import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
 import { AdminImportSourceProductDto } from './dto/admin-import-source-product.dto';
+import { redirectOldSlug } from '../products/product-slug';
+import { IndexNowService, productPath } from '../seo/indexnow.service';
 
 /**
  * A button press waits for its batch inside one HTTP request, so it is capped
@@ -63,6 +65,15 @@ const PARSER_OWNED_FIELDS = [
   'seoDescription',
 ] as const;
 
+/** The page's own text: a change moves `contentUpdatedAt` (sitemap lastmod). */
+const PAGE_TEXT_FIELDS = [
+  'name',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+] as const;
+
 /** Same budget CategoryMergeService gives a subtree rewrite. */
 const CATEGORY_TX_OPTIONS = { maxWait: 10_000, timeout: 120_000 };
 
@@ -78,6 +89,7 @@ export class AdminService {
     private readonly runtimeStatus: ParserRuntimeStatusService,
     private readonly pricing: PricingService,
     private readonly jobRequests: ParserJobRequestService,
+    private readonly indexNow: IndexNowService,
   ) {}
 
   async getStats() {
@@ -385,6 +397,21 @@ export class AdminService {
     }
     if (dto.status !== undefined) data.statusSource = 'ADMIN';
 
+    // The page text changed: the sitemap's lastmod moves and Yandex is told.
+    const textChanged =
+      slugChanged ||
+      PAGE_TEXT_FIELDS.some((field) => {
+        const value = (dto as Record<string, unknown>)[field];
+        return (
+          value !== undefined &&
+          value !== (current as Record<string, unknown>)[field]
+        );
+      });
+    if (textChanged) data.contentUpdatedAt = new Date();
+    // Saving the product is the admin's answer to a supplier rename.
+    data.supplierNameChange = Prisma.DbNull;
+    data.supplierNameChangedAt = null;
+
     const priceTouched =
       dto.priceValue !== undefined || dto.oldPrice !== undefined;
     const mode = dto.pricingMode ?? (priceTouched ? 'MANUAL' : undefined);
@@ -399,14 +426,7 @@ export class AdminService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.product.update({ where: { id }, data });
       if (slugChanged) {
-        // The new slug may be an alias of this or another product; a slug
-        // cannot be both a product and a redirect.
-        await tx.productRedirect.deleteMany({ where: { slug } });
-        await tx.productRedirect.upsert({
-          where: { slug: current.slug },
-          create: { slug: current.slug, productId: id },
-          update: { productId: id },
-        });
+        await redirectOldSlug(tx, id, current.slug, slug);
       }
       if (
         (data.priceValue !== undefined &&
@@ -425,6 +445,13 @@ export class AdminService {
       }
       return row;
     });
+
+    if (textChanged) {
+      await this.indexNow.enqueue([
+        productPath(updated.slug),
+        slugChanged ? productPath(current.slug) : null,
+      ]);
+    }
 
     if (mode === 'AUTO' && updated.costPrice != null) {
       await this.pricing.applyCost(id, updated.costPrice, {

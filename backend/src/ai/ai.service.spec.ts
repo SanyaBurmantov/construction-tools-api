@@ -5,6 +5,7 @@ function build(options: {
   task?: Record<string, unknown>;
   product?: Record<string, unknown>;
   items?: Array<Record<string, unknown>>;
+  redirect?: Record<string, unknown>;
 }) {
   const productUpdate = jest.fn(() => Promise.resolve({}));
   const prisma = {
@@ -30,11 +31,22 @@ function build(options: {
       findUnique: jest.fn(() => Promise.resolve(options.product ?? null)),
       update: productUpdate,
     },
+    productRedirect: {
+      findUnique: jest.fn(() => Promise.resolve(options.redirect ?? null)),
+      deleteMany: jest.fn(() => Promise.resolve({ count: 0 })),
+      upsert: jest.fn(() => Promise.resolve({})),
+    },
+    $transaction: jest.fn(),
   };
+  // Interactive transactions run against the same mock.
+  prisma.$transaction.mockImplementation(((fn: (tx: unknown) => unknown) =>
+    fn(prisma)) as never);
+  const indexNow = { enqueue: jest.fn(() => Promise.resolve()) };
   return {
-    service: new AiService(prisma as never, {} as never),
+    service: new AiService(prisma as never, {} as never, indexNow as never),
     prisma,
     productUpdate,
+    indexNow,
   };
 }
 
@@ -55,6 +67,8 @@ describe('AiService.revert', () => {
         },
       ],
       product: {
+        id: 'p1',
+        slug: 'drel',
         name: 'Дрель',
         seoTitle: 'ИИ-заголовок',
         descriptionFull: 'Текст задачи B',
@@ -67,8 +81,60 @@ describe('AiService.revert', () => {
     expect(result).toEqual({ reverted: 1, skippedFields: 1 });
     expect(productUpdate).toHaveBeenCalledWith({
       where: { id: 'p1' },
-      data: { seoTitle: 'Старый', aiLockedFields: ['descriptionFull'] },
+      data: {
+        seoTitle: 'Старый',
+        aiLockedFields: ['descriptionFull'],
+        contentUpdatedAt: expect.any(Date),
+      },
     });
+  });
+
+  // The rename moved the URL; the revert moves it back and leaves a 301 on
+  // the AI one, and tells Yandex about both.
+  it('moves the URL back with the name', async () => {
+    const { service, productUpdate, prisma, indexNow } = build({
+      items: [
+        {
+          id: 'i1',
+          entityId: 'p1',
+          status: AiTaskItemStatus.APPLIED,
+          changes: {
+            name: { old: 'Аккум. дрель', new: 'Аккумуляторная дрель' },
+            slug: { old: 'akkum-drel', new: 'akkumulyatornaya-drel' },
+          },
+        },
+      ],
+      product: {
+        id: 'p1',
+        name: 'Аккумуляторная дрель',
+        slug: 'akkumulyatornaya-drel',
+        aiLockedFields: ['name'],
+      },
+      // The old URL is this product's redirect now — free to take back.
+      redirect: { productId: 'p1' },
+    });
+
+    await service.revert('t1');
+
+    expect(productUpdate).toHaveBeenCalledWith({
+      where: { id: 'p1' },
+      data: {
+        name: 'Аккум. дрель',
+        slug: 'akkum-drel',
+        aiLockedFields: [],
+        contentUpdatedAt: expect.any(Date),
+      },
+    });
+    expect(prisma.productRedirect.deleteMany).toHaveBeenCalledWith({
+      where: { slug: 'akkum-drel' },
+    });
+    expect(prisma.productRedirect.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { slug: 'akkumulyatornaya-drel' } }),
+    );
+    expect(indexNow.enqueue).toHaveBeenCalledWith([
+      '/product/akkum-drel',
+      '/product/akkumulyatornaya-drel',
+    ]);
   });
 });
 

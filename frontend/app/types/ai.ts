@@ -107,6 +107,8 @@ export type AiTaskItem = {
   response: Record<string, unknown> | null
   /** Fields the checks refused to write, with the reason. */
   rejected: Record<string, string> | null
+  /** Written, but worth a look (a near-copy of a sibling variant's text). */
+  warnings: Record<string, string> | null
   error: string | null
   updatedAt: string
 }

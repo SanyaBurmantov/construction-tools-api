@@ -590,6 +590,20 @@ useSeoMeta({
 useHead(() => ({
   link: [{ rel: 'canonical', href: canonicalUrl.value }]
 }))
+
+/**
+ * A category text, split for the layout: its first paragraph is the intro
+ * under the heading (two lines, clamped), the whole of it sits below the
+ * product grid. A one-paragraph text is the intro alone.
+ */
+const descriptionAll = computed(() =>
+  (category.value?.description ?? '')
+    .split(/\n\s*\n|\n/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+)
+const descriptionIntro = computed(() => descriptionAll.value[0] ?? '')
+const descriptionParagraphs = computed(() => (descriptionAll.value.length > 1 ? descriptionAll.value : []))
 </script>
 
 <template>
@@ -599,7 +613,10 @@ useHead(() => ({
     <header class="catalog-head">
       <div>
         <h1>{{ category?.name || 'Каталог товаров' }}</h1>
-        <p v-if="category?.description">{{ category.description }}</p>
+        <p v-if="descriptionIntro" class="intro">
+          {{ descriptionIntro }}
+          <a v-if="descriptionParagraphs.length" href="#category-about" class="more-link">Подробнее</a>
+        </p>
       </div>
       <div class="head-links">
         <!-- Purchasers compare in their own sheet; same URL for everyone, so
@@ -775,6 +792,14 @@ useHead(() => ({
           :href-for="pageHref"
           @change="setPage"
         />
+
+        <!-- The category text lives under the grid: three paragraphs above it
+             pushed the products off the first screen. First page only, so the
+             paginated copies are not the same text again. -->
+        <section v-if="page === 1 && descriptionParagraphs.length" id="category-about" class="category-about">
+          <h2>О разделе «{{ category?.name }}»</h2>
+          <p v-for="(paragraph, index) in descriptionParagraphs" :key="index">{{ paragraph }}</p>
+        </section>
       </div>
     </div>
   </div>
@@ -817,6 +842,38 @@ useHead(() => ({
   margin-top: var(--space-2);
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+.catalog-head .intro {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.more-link {
+  margin-left: var(--space-1);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.category-about {
+  max-width: 80ch;
+  margin-top: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.category-about h2 {
+  margin-bottom: var(--space-3);
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+
+.category-about p + p {
+  margin-top: var(--space-3);
 }
 
 /* Second way out of a category, for visitors who never look at the sidebar

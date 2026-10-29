@@ -89,12 +89,14 @@ export type DataQualityReport = {
   summary: {
     publishedProducts: number, totalProducts: number, withoutImages: number, withoutPrice: number,
     withoutSpecs: number, withoutBrand: number, inFallbackCategory: number, staleProducts: number,
-    staleDays: number, duplicateGroups: number, allCapsNames: number
+    staleDays: number, duplicateGroups: number, allCapsNames: number,
+    /** Our name is locked and the supplier changed the article, size or pack. */
+    supplierRenamed?: number
   }
   samples: {
     withoutImages: ProductRef[], withoutPrice: ProductRef[], withoutSpecs: ProductRef[],
     inFallbackCategory: ProductRef[], stale: ProductRef[], allCapsNames: ProductRef[],
-    duplicates: DuplicateGroup[]
+    duplicates: DuplicateGroup[], supplierRenamed?: ProductRef[]
   }
 }
 

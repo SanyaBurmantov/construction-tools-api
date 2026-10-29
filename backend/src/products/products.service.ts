@@ -460,12 +460,21 @@ export class ProductService {
   }
 
   /** Slim list of published products for sitemap generation. */
-  getSitemapEntries() {
-    return this.prisma.product.findMany({
+  /**
+   * `lastmod` is when the page text changed (`contentUpdatedAt`), not
+   * `updatedAt`: every product is re-parsed daily, and a sitemap where all
+   * 74k URLs changed "today" is one search engines stop believing.
+   */
+  async getSitemapEntries() {
+    const rows = await this.prisma.product.findMany({
       where: { status: 'PUBLISHED' },
-      select: { slug: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
+      select: { slug: true, contentUpdatedAt: true },
+      orderBy: { contentUpdatedAt: 'desc' },
     });
+    return rows.map((row) => ({
+      slug: row.slug,
+      lastmod: row.contentUpdatedAt,
+    }));
   }
 
   async findAllFiltered(filter: ProductFilterDto) {

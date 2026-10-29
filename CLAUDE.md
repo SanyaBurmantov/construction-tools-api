@@ -816,7 +816,55 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   ключа на час, а не провал записей); иначе `OPENROUTER_API_KEY` и только
   `:free`-модели с цепочкой запасных. Задача, созданная под другим
   провайдером, идёт на модели по умолчанию текущего. Оба ключа пусты =
-  выключено.
+  выключено. У `deepseek-flash` «рассуждение» включено по умолчанию и
+  оплачивается как выход (~95% токенов короткого ответа) — клиент шлёт
+  `thinking: disabled` (`DEEPSEEK_THINKING=enabled` вернёт).
+  **Качество, до записи** (пилот 2026-10). Галочка «шаблоны» в мастере =
+  `ai-templates.ts`: общие правила магазина (только факты из данных, полные
+  названия, «оплата по безналу для организаций» в SEO-описании) + гайд на
+  вид товара (21 шт.: крепёж, буры, круги, головки, аккумуляторный…; вид —
+  по началу названия, затем по категории); такая задача делится на задачи
+  по видам. Правила задачи стоят в system-сообщении — постоянный префикс,
+  его DeepSeek считает по цене кеша. Ответ проходит `ai-validate.ts`: поле
+  **не пишется** (старое остаётся, причина — `AiTaskItem.rejected`), если в
+  нём число или латинское слово, которых нет в данных товара, неподтверждённое
+  утверждение (наличие, гарантия, страна, «лучший»), телефон/ссылка/цена/
+  разметка, слово из смешанных алфавитов, плохая длина; у названия — пропал
+  бренд, код модели или число старого названия. Затем `ai-verify.ts`: второй
+  запрос к модели проверяет смысл названия и краткого описания (молчащий
+  проверяющий = пачка повторяется, а не пишется непроверенное;
+  `AI_VERIFY=false` выключает). Описание, почти совпадающее с уже записанным
+  в той же задаче (варианты линейки), помечается в `AiTaskItem.warnings`.
+  Предпросмотр гоняет те же две проверки. Токены копятся в `AiTask`;
+  `AI_MIN_BALANCE` останавливает раннер ниже порога баланса.
+  **Новое название = новый адрес**: slug строится из него
+  (`products/product-slug.ts`, ≤ 90 символов), со старого — 301
+  (`ProductRedirect`, тот же помощник, что у админки), в `changes.slug` —
+  откат возвращает адрес. Парсер slug существующего товара не пишет.
+  Витрина берёт `seoTitle`/`seoDescription` товара, только если их написали
+  мы (ИИ или админ — поле в `aiLockedFields`/`lockedFields`): API отдаёт
+  `null` вместо текста поставщика. Текст категории — под сеткой товаров
+  (сверху первый абзац в две строки), только на первой странице.
+  **Поисковики**: `Product.contentUpdatedAt` — когда менялся текст/адрес
+  страницы (ИИ, админ), это `lastmod` в sitemap (`updatedAt` двигает
+  ежедневный парсинг). `seo/indexnow.service.ts` шлёт изменённые адреса
+  Яндексу (IndexNow, очередь `IndexNowUrl`, раз в 10 мин в воркере); ключ
+  `INDEXNOW_KEY`, файл `/<ключ>.txt` отдаёт фронт (`NUXT_INDEXNOW_KEY`).
+  Скрипт пилота: `scripts/ai-pilot.mjs select|create|report` (подбор 300
+  карточек + контрольная группа, этапы, отчёт).
+- **A product with offers from several suppliers has one owner.**
+  `ProductIdentityService.forExistingProduct()`: the oldest offer
+  (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only
+  fill empty fields, and move the category only out of the hidden fallback —
+  otherwise each parser wrote its own name, texts, photos, brand and category
+  every day and the card flipped between suppliers. Stock/price are per offer
+  as before. Specs are saved under the product's **actual** category
+  (`saveSpecifications` reads it), not the supplier's breadcrumb one — a
+  locked or owner-kept category used to lose its facets. And when a supplier
+  changes what identifies a product (article, short model suffix, SOLO/SET,
+  sizes, pack) while our name is locked, the product gets
+  `supplierNameChange` and shows in the data-quality panel («Поставщик
+  переименовал») until an admin saves it (`parser/name-drift.ts`).
 
 ## Database / migrations
 

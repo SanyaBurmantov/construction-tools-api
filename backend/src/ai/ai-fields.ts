@@ -95,6 +95,11 @@ export type ChatMessage = { role: 'system' | 'user'; content: string };
 /**
  * One request covers a batch of entities: the free tier is counted in
  * requests per day, so five products per call is five times the throughput.
+ *
+ * Everything that does not change between the batches of one task — the
+ * format, the fields, the task's instruction — goes first, in the system
+ * message; only the data differs. DeepSeek bills a repeated prefix as a cache
+ * hit at a fraction of the price, and the rules are most of the prompt.
  */
 export function buildMessages(params: {
   entity: AiEntity;
@@ -110,25 +115,24 @@ export function buildMessages(params: {
   for (const field of params.fields) example[field.key] = '...';
 
   const system = [
-    `Ты редактор каталога интернет-магазина строительных инструментов (Беларусь, цены в BYN).`,
+    `Ты редактор каталога интернет-магазина строительных инструментов (Беларусь).`,
     `Тебе дают JSON со списком ${what}. Для каждого верни новые значения полей:`,
     fieldList,
     ``,
-    `Правила:`,
+    `Формат:`,
     `- Отвечай ТОЛЬКО JSON-объектом вида {"items":[${JSON.stringify(example)}]} — без пояснений и без \`\`\`.`,
     `- Один элемент на каждый входной id, id копируй как есть.`,
     `- Только перечисленные поля. Если поле менять не нужно — верни текущее значение.`,
     `- Пиши по-русски. Не выдумывай характеристики, которых нет во входных данных.`,
     `- Не упоминай поставщиков, их телефоны, адреса и города.`,
-  ].join('\n');
-
-  const user = [
+    ``,
     `Задание:`,
     params.instruction.trim(),
-    ``,
-    `Данные:`,
-    JSON.stringify({ items: params.contexts }),
   ].join('\n');
+
+  const user = [`Данные:`, JSON.stringify({ items: params.contexts })].join(
+    '\n',
+  );
 
   return [
     { role: 'system', content: system },

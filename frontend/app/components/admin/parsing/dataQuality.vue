@@ -22,6 +22,8 @@ const metrics = computed(() => {
     { key: 'inFallbackCategory', label: 'Неразобранная категория', count: report.summary.inFallbackCategory, items: report.samples.inFallbackCategory },
     { key: 'stale', label: `Не обновлялись > ${report.summary.staleDays} дн.`, count: report.summary.staleProducts, items: report.samples.stale },
     { key: 'allCaps', label: 'Название КАПСОМ', count: report.summary.allCapsNames, items: report.samples.allCapsNames },
+    // Cleared when an admin saves the product (or edits its name).
+    { key: 'supplierRenamed', label: 'Поставщик переименовал (проверить)', count: report.summary.supplierRenamed ?? 0, items: report.samples.supplierRenamed ?? [] },
   ]
 })
 </script>

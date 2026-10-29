@@ -38,19 +38,44 @@ import {
   AiUpdatePromptDto,
   MAX_TASK_ITEMS,
 } from './dto/ai.dto';
-import { AiClient, AiRateLimitError } from './ai.client';
+import { AiClient, AiRateLimitError, AiUsage } from './ai.client';
 import {
   AiTemplate,
   categoryInstruction,
   productInstruction,
   productTemplate,
 } from './ai-templates';
-import { validateAnswer, ValidationInput } from './ai-validate';
+import {
+  NEAR_DUPLICATE_SIMILARITY,
+  Rejections,
+  textSimilarity,
+  validateAnswer,
+  ValidationInput,
+} from './ai-validate';
+import {
+  buildVerifyMessages,
+  parseVerifyAnswer,
+  VERIFIED_FIELDS,
+  VerifyInput,
+} from './ai-verify';
+import {
+  freeProductSlug,
+  redirectOldSlug,
+  isProductSlugFree,
+  slugFromName,
+} from '../products/product-slug';
+import {
+  categoryPath,
+  IndexNowService,
+  productPath,
+} from '../seo/indexnow.service';
 
 /** A batch that fails this many times marks its items FAILED for good. */
 const MAX_ATTEMPTS = 3;
 const SPEC_LIMIT = 25;
 const DESCRIPTION_CONTEXT_CHARS = 2500;
+/** How many of a task's written items a new description is compared with. */
+const NEAR_DUPLICATE_LOOKBACK = 300;
 
 export type BatchOutcome = 'done' | 'progress' | 'rate-limited' | 'error';
 
@@ -68,6 +93,7 @@ export class AiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly client: AiClient,
+    private readonly indexNow: IndexNowService,
   ) {}
 
   /* ---- Status ---------------------------------------------------------- */
@@ -716,6 +742,13 @@ export class AiService {
     }
 
     if (entity === AiEntity.PRODUCT) {
+      const aiSlug = String(current.slug);
+      const oldSlug = data.slug;
+      // The old URL goes back only if nobody took it meanwhile.
+      if (oldSlug && !(await isProductSlugFree(this.prisma, oldSlug, id))) {
+        delete data.slug;
+        skipped++;
+      }
       // Unlock only what was actually restored. A skipped field holds a newer
       // AI task's text or an admin's edit; unlocking it let the next re-parse
       // put the supplier text back over that work.
@@ -723,12 +756,27 @@ export class AiService {
       const locked = ((current.aiLockedFields as string[]) ?? []).filter(
         (key) => !restored.includes(key),
       );
-      await this.prisma.product.update({
-        where: { id },
-        data: { ...data, aiLockedFields: locked },
+      const slug = data.slug ?? aiSlug;
+      await this.prisma.$transaction(async (tx) => {
+        await tx.product.update({
+          where: { id },
+          data: {
+            ...data,
+            aiLockedFields: locked,
+            ...(restored.length ? { contentUpdatedAt: new Date() } : {}),
+          },
+        });
+        if (slug !== aiSlug) await redirectOldSlug(tx, id, aiSlug, slug);
       });
+      if (restored.length) {
+        await this.indexNow.enqueue([
+          productPath(slug),
+          slug !== aiSlug ? productPath(aiSlug) : null,
+        ]);
+      }
     } else if (Object.keys(data).length) {
       await this.prisma.category.update({ where: { id }, data });
+      await this.indexNow.enqueue([categoryPath(String(current.slug))]);
     }
     return { skipped };
   }
@@ -766,7 +814,18 @@ export class AiService {
       const parsed = parseAnswer(answer.content);
       const record = parsed.get(dto.id) ?? [...parsed.values()][0] ?? {};
       const changes = diffAnswer(fields, context.current, record);
-      const rejected = validateAnswer(context.validation, newValues(changes));
+      // The same two checks a task runs, so the preview shows what it would write.
+      const verdicts = await this.secondOpinion(
+        model,
+        null,
+        fields,
+        new Map([[dto.id, record]]),
+        contexts,
+      );
+      const rejected: Rejections = {
+        ...validateAnswer(context.validation, newValues(changes)),
+        ...pickKeys(verdicts.get(dto.id) ?? {}, Object.keys(changes)),
+      };
       return {
         model: answer.model,
         template: template?.label ?? null,
@@ -883,19 +942,31 @@ export class AiService {
       contexts: items.map((item) => contexts.get(item.entityId)!.prompt),
     });
 
-    let answers: Map<string, Record<string, unknown>>;
+    let records: Map<string, Record<string, unknown>>;
+    let verdicts: Map<string, Rejections>;
     try {
       const answer = await this.client.chat(task.model, messages);
       // Billed whether or not the answer parses.
-      await this.prisma.aiTask.update({
-        where: { id: task.id },
-        data: {
-          promptTokens: { increment: answer.usage.promptTokens },
-          completionTokens: { increment: answer.usage.completionTokens },
-          cacheHitTokens: { increment: answer.usage.cacheHitTokens },
-        },
-      });
-      answers = parseAnswer(answer.content);
+      await this.addUsage(task.id, answer.usage);
+      const answers = parseAnswer(answer.content);
+      // A single-item batch whose answer came back with a mangled id is still
+      // unambiguous.
+      const lone =
+        items.length === 1 && answers.size === 1
+          ? [...answers.values()][0]
+          : null;
+      records = new Map();
+      for (const item of items) {
+        const record = answers.get(item.entityId) ?? lone;
+        if (record) records.set(item.entityId, record);
+      }
+      verdicts = await this.secondOpinion(
+        task.model,
+        task.id,
+        fields,
+        records,
+        contexts,
+      );
     } catch (error) {
       const message = (error as Error).message;
       if (error instanceof AiRateLimitError) {
@@ -920,15 +991,9 @@ export class AiService {
       return 'error';
     }
 
-    // A single-item batch whose answer came back with a mangled id is still
-    // unambiguous.
-    const lone =
-      items.length === 1 && answers.size === 1
-        ? [...answers.values()][0]
-        : null;
-
+    const announce: Array<string | null> = [];
     for (const item of items) {
-      const record = answers.get(item.entityId) ?? lone;
+      const record = records.get(item.entityId);
       if (!record) {
         await this.chargeAttempt([item], 'Нет в ответе модели');
         continue;
@@ -949,18 +1014,26 @@ export class AiService {
           if (!current) throw new Error('Запись удалена');
           // What the checks refuse is not written; the old text stays.
           const proposed = diffAnswer(fields, current, record);
-          const rejected = validateAnswer(
-            contexts.get(item.entityId)!.validation,
-            newValues(proposed),
-          );
+          const rejected: Rejections = {
+            ...validateAnswer(
+              contexts.get(item.entityId)!.validation,
+              newValues(proposed),
+            ),
+            ...pickKeys(
+              verdicts.get(item.entityId) ?? {},
+              Object.keys(proposed),
+            ),
+          };
           const changes = withoutKeys(proposed, Object.keys(rejected));
-          await this.applyChanges(
+          const warnings = await this.nearDuplicates(tx, task.id, changes);
+          const paths = await this.applyChanges(
             task.entity,
             item.entityId,
             changes,
             current,
             tx,
           );
+          announce.push(...paths);
           await tx.aiTaskItem.update({
             where: { id: item.id },
             data: {
@@ -977,6 +1050,9 @@ export class AiService {
               rejected: Object.keys(rejected).length
                 ? (rejected as Prisma.InputJsonValue)
                 : Prisma.DbNull,
+              warnings: Object.keys(warnings).length
+                ? (warnings as Prisma.InputJsonValue)
+                : Prisma.DbNull,
               error: null,
             },
           });
@@ -985,34 +1061,168 @@ export class AiService {
         await this.chargeAttempt([item], (error as Error).message);
       }
     }
+    await this.indexNow.enqueue(announce);
     return 'progress';
   }
 
+  private async addUsage(taskId: string, usage: AiUsage) {
+    await this.prisma.aiTask.update({
+      where: { id: taskId },
+      data: {
+        promptTokens: { increment: usage.promptTokens },
+        completionTokens: { increment: usage.completionTokens },
+        cacheHitTokens: { increment: usage.cacheHitTokens },
+      },
+    });
+  }
+
+  /**
+   * The verifier's objections, per entity: field → problem. Checks only the
+   * fields that passed the code checks (no point paying to re-check a field
+   * that is rejected anyway) and only `VERIFIED_FIELDS`. Throws when the
+   * verifier does not answer — the batch is then retried, rather than a name
+   * written that nobody checked. `AI_VERIFY=false` turns it off.
+   */
+  private async secondOpinion(
+    model: string,
+    taskId: string | null,
+    fields: ReturnType<typeof fieldDefs>,
+    records: Map<string, Record<string, unknown>>,
+    contexts: Map<string, EntityContext>,
+  ): Promise<Map<string, Rejections>> {
+    const verdicts = new Map<string, Rejections>();
+    if (process.env.AI_VERIFY?.trim() === 'false') return verdicts;
+    const checked = fields.filter((field) =>
+      (VERIFIED_FIELDS as readonly string[]).includes(field.key),
+    );
+    if (!checked.length) return verdicts;
+
+    const inputs: VerifyInput[] = [];
+    for (const [id, record] of records) {
+      const context = contexts.get(id);
+      if (!context || context.validation.entity !== AiEntity.PRODUCT) continue;
+      const proposed = newValues(diffAnswer(checked, context.current, record));
+      const failed = validateAnswer(context.validation, proposed);
+      const toCheck = withoutKeys(proposed, Object.keys(failed));
+      if (Object.keys(toCheck).length) {
+        inputs.push({ id, data: context.prompt, proposed: toCheck });
+      }
+    }
+    if (!inputs.length) return verdicts;
+
+    const answer = await this.client.chat(model, buildVerifyMessages(inputs));
+    if (taskId) await this.addUsage(taskId, answer.usage);
+    for (const [id, problems] of parseVerifyAnswer(
+      parseAnswer(answer.content),
+    )) {
+      verdicts.set(
+        id,
+        Object.fromEntries(
+          Object.entries(problems).map(([field, problem]) => [
+            field,
+            `проверка смысла: ${problem}`,
+          ]),
+        ),
+      );
+    }
+    return verdicts;
+  }
+
+  /**
+   * Flags a description that is a near-copy of one this task already wrote —
+   * the variants of one line (sizes, packs) tend to come out the same, and a
+   * search engine shows one of a set of near-identical pages. A flag, not a
+   * rejection: the supplier text it replaces is just as duplicated.
+   */
+  private async nearDuplicates(
+    db: Prisma.TransactionClient,
+    taskId: string,
+    changes: Record<string, FieldChange>,
+  ) {
+    const warnings: Record<string, string> = {};
+    const keys = ['descriptionFull', 'descriptionShort', 'description'].filter(
+      (key) => changes[key],
+    );
+    if (!keys.length) return warnings;
+    const siblings = await db.aiTaskItem.findMany({
+      where: { taskId, status: AiTaskItemStatus.APPLIED },
+      select: { entityName: true, changes: true },
+      orderBy: { updatedAt: 'desc' },
+      take: NEAR_DUPLICATE_LOOKBACK,
+    });
+    for (const key of keys) {
+      let best = { score: 0, name: '' };
+      for (const sibling of siblings) {
+        const other = (sibling.changes as Record<string, FieldChange> | null)?.[
+          key
+        ];
+        if (!other) continue;
+        const score = textSimilarity(changes[key].new, other.new);
+        if (score > best.score) best = { score, name: sibling.entityName };
+      }
+      if (best.score >= NEAR_DUPLICATE_SIMILARITY) {
+        warnings[key] =
+          `почти как у «${best.name}» (${Math.round(best.score * 100)}%)`;
+      }
+    }
+    return warnings;
+  }
+
+  /**
+   * Writes the accepted changes; returns the storefront paths to announce.
+   * A new product name also moves the URL (`slugFromName`), with a 301 left
+   * on the old one; the move is recorded in `changes.slug`, so reverting the
+   * item moves it back.
+   */
   private async applyChanges(
     entity: AiEntity,
     id: string,
     changes: Record<string, FieldChange>,
     current: Record<string, unknown>,
     db: Prisma.TransactionClient = this.prisma,
-  ) {
+  ): Promise<string[]> {
     const keys = Object.keys(changes);
-    if (!keys.length) return;
-    const data = Object.fromEntries(keys.map((key) => [key, changes[key].new]));
+    if (!keys.length) return [];
+    const data: Record<string, unknown> = Object.fromEntries(
+      keys.map((key) => [key, changes[key].new]),
+    );
 
     if (entity === AiEntity.PRODUCT) {
+      const oldSlug = String(current.slug);
+      let newSlug = oldSlug;
+      if (changes.name) {
+        const base = slugFromName(changes.name.new);
+        const free =
+          base && base !== oldSlug ? await freeProductSlug(db, base, id) : null;
+        if (free && free !== oldSlug) {
+          newSlug = free;
+          data.slug = free;
+          changes.slug = { old: oldSlug, new: free };
+        }
+      }
       // Lock what was written, or tomorrow's re-parse puts the supplier's
-      // text back (see ProductIdentityService.save).
+      // text back (see ProductIdentityService.save). The slug is never
+      // parser-written, so it needs no lock.
       const locked = new Set([
         ...((current.aiLockedFields as string[]) ?? []),
         ...keys,
       ]);
       await db.product.update({
         where: { id },
-        data: { ...data, aiLockedFields: [...locked] },
+        data: {
+          ...data,
+          aiLockedFields: [...locked],
+          contentUpdatedAt: new Date(),
+        },
       });
-    } else {
-      await db.category.update({ where: { id }, data });
+      if (newSlug !== oldSlug) await redirectOldSlug(db, id, oldSlug, newSlug);
+      return [
+        productPath(newSlug),
+        newSlug !== oldSlug ? productPath(oldSlug) : '',
+      ].filter(Boolean);
     }
+    await db.category.update({ where: { id }, data });
+    return [categoryPath(String(current.slug))];
   }
 
   private async chargeAttempt(
@@ -1079,7 +1289,7 @@ export class AiService {
     db: Prisma.TransactionClient = this.prisma,
   ) {
     const select = Object.fromEntries(
-      [...keys, 'name'].map((key) => [key, true]),
+      [...keys, 'name', 'slug'].map((key) => [key, true]),
     );
     if (entity === AiEntity.PRODUCT) {
       return db.product.findUnique({
@@ -1259,5 +1469,11 @@ function newValues(changes: Record<string, FieldChange>) {
 function withoutKeys<T>(record: Record<string, T>, keys: string[]) {
   return Object.fromEntries(
     Object.entries(record).filter(([key]) => !keys.includes(key)),
+  );
+}
+
+function pickKeys<T>(record: Record<string, T>, keys: string[]) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => keys.includes(key)),
   );
 }

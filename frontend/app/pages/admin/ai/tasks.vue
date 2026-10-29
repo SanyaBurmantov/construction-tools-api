@@ -496,6 +496,9 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
             <p v-for="(reason, key) in item.rejected ?? {}" :key="`r-${key}`" class="error">
               {{ fieldLabel(detail.entity, String(key)) }} не записано: {{ reason }}
             </p>
+            <p v-for="(note, key) in item.warnings ?? {}" :key="`w-${key}`" class="warning">
+              {{ fieldLabel(detail.entity, String(key)) }}: {{ note }}
+            </p>
             <div v-for="(change, key) in item.changes ?? {}" :key="key" class="diff-row">
               <span class="diff-label">{{ fieldLabel(detail.entity, String(key)) }}</span>
               <del>{{ change.old || '—' }}</del>
@@ -675,6 +678,11 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
 }
 
 .bad,
+.warning {
+  color: var(--warning-soft-text);
+  font-size: var(--text-sm);
+}
+
 .error {
   color: var(--danger);
 }

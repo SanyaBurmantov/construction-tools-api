@@ -51,7 +51,12 @@ x-backend-environment: &backend-environment
   AI_BATCHES_PER_TICK: ${AI_BATCHES_PER_TICK:-3}
   # Порог баланса DeepSeek: ниже него ИИ-задачи останавливаются (лимит трат).
   AI_MIN_BALANCE: ${AI_MIN_BALANCE:-}
+  # Вторая проверка смысла (название и краткое описание). false = выключить.
+  AI_VERIFY: ${AI_VERIFY:-true}
   DEEPSEEK_THINKING: ${DEEPSEEK_THINKING:-disabled}
+  # IndexNow: изменённые страницы сразу сообщаются Яндексу. Пусто = выключено.
+  # Тот же ключ уходит фронту как NUXT_INDEXNOW_KEY (файл /<ключ>.txt).
+  INDEXNOW_KEY: ${INDEXNOW_KEY:-}
   AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
   # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
   REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
@@ -238,6 +243,7 @@ services:
       NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=192}
       MALLOC_ARENA_MAX: 2
       NUXT_CACHE_MAX_MB: ${NUXT_CACHE_MAX_MB:-64}
+      NUXT_INDEXNOW_KEY: ${INDEXNOW_KEY:-}
       API_BASE_SERVER: http://backend:8000
       NUXT_API_BASE_SERVER: http://backend:8000
       NUXT_PUBLIC_API_BASE: /api
