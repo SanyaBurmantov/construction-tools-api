@@ -95,8 +95,8 @@ export class RecommendationsService {
     this.cache.set(key, { expires: now + this.cacheMs, value });
     // A failure is not cached; the oldest entries go first.
     value.catch(() => this.cache.delete(key));
-    if (this.cache.size > CACHE_ENTRIES)
-      this.cache.delete(this.cache.keys().next().value);
+    const oldest = this.cache.keys().next().value as string | undefined;
+    if (this.cache.size > CACHE_ENTRIES && oldest) this.cache.delete(oldest);
     return value;
   }
 
