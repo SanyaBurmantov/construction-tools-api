@@ -28,13 +28,25 @@ const CURSOR_KEY = 'productRelations.cursor.v2';
 /** Most products are not accessories and cost a regex, not a query. */
 const BATCH_SIZE = 200;
 const MAX_CANDIDATES = 1000;
+// Products whose text changed (AI task, admin, supplier) since this moment.
+const CHANGED_KEY = 'productRelations.changedSince.v2';
+const CHANGED_BATCH = 100;
 
-type Accessory = RelationIdentity & { sourceName?: string | null };
+type Accessory = RelationIdentity & {
+  sourceName?: string | null;
+  sourceDescription?: string | null;
+};
+const TEXT_FIELDS = ['name', 'descriptionShort', 'descriptionFull'];
 
 /**
  * Bounded rolling sweep in the worker: 200 products every 30 s, so ~85k
  * products are re-read every ~3.5 h with no catalogue-sized heap and no work
  * in HTTP requests. Nobody has to start it.
+ *
+ * Before the sweep, each tick takes the products whose text changed
+ * (`contentUpdatedAt` — an AI task, an admin, a supplier rewrite) and the
+ * accessories linked to them: an edit hides a link at once (signatures), and
+ * this brings it back within a tick instead of a whole pass.
  */
 @Injectable()
 export class CompatibilityRefreshService {
@@ -49,6 +61,8 @@ export class CompatibilityRefreshService {
     if (!runsBackgroundJobs() || this.running) return 0;
     this.running = true;
     try {
+      const matcher = await this.brandMatcher();
+      let links = await this.refreshChanged(matcher);
       const cursor = await this.prisma.siteSetting.findUnique({
         where: { key: CURSOR_KEY },
       });
@@ -61,24 +75,7 @@ export class CompatibilityRefreshService {
         take: BATCH_SIZE,
         select: RELATION_IDENTITY_SELECT,
       });
-      const matcher = await this.brandMatcher();
-      const sourceNames = await this.sourceNames(
-        rows.filter((row) => row.aiLockedFields.includes('name')),
-      );
-      let links = 0;
-      const idle: string[] = [];
-      for (const row of rows) {
-        const accessory = { ...row, sourceName: sourceNames.get(row.id) };
-        const references = extractModelReferences(accessory, matcher);
-        if (references.length)
-          links += await this.replaceLinks(accessory, references, matcher);
-        else idle.push(row.id);
-      }
-      // Not (or no longer) an accessory: one statement for the whole batch.
-      if (idle.length)
-        await this.prisma.productCompatibility.deleteMany({
-          where: { accessoryId: { in: idle } },
-        });
+      links += await this.refreshRows(rows, matcher);
       await this.prisma.siteSetting.upsert({
         where: { key: CURSOR_KEY },
         create: { key: CURSOR_KEY, value: rows.at(-1)?.id ?? '' },
@@ -106,6 +103,104 @@ export class CompatibilityRefreshService {
     } finally {
       this.running = false;
     }
+  }
+
+  /** Products edited since the checkpoint, plus accessories pointing at them. */
+  private async refreshChanged(matcher: BrandMatcher): Promise<number> {
+    const checkpoint = await this.prisma.siteSetting.findUnique({
+      where: { key: CHANGED_KEY },
+    });
+    // Keyset (time, id): a bulk update stamps many rows with one millisecond,
+    // and a time-only checkpoint skipped all of them past the first batch.
+    const [at, lastId = ''] = (checkpoint?.value ?? '').split('|');
+    const since = new Date(at);
+    if (!checkpoint || Number.isNaN(since.getTime())) {
+      // First run: history is the sweep's job.
+      await this.saveSetting(CHANGED_KEY, `${new Date().toISOString()}|`);
+      return 0;
+    }
+    const changed = await this.prisma.product.findMany({
+      where: {
+        status: 'PUBLISHED',
+        OR: [
+          { contentUpdatedAt: { gt: since } },
+          { contentUpdatedAt: since, id: { gt: lastId } },
+        ],
+      },
+      orderBy: [{ contentUpdatedAt: 'asc' }, { id: 'asc' }],
+      take: CHANGED_BATCH,
+      select: { ...RELATION_IDENTITY_SELECT, contentUpdatedAt: true },
+    });
+    if (!changed.length) return 0;
+    const linked = await this.prisma.productCompatibility.findMany({
+      where: {
+        productId: { in: changed.map((row) => row.id) },
+        accessoryId: { notIn: changed.map((row) => row.id) },
+      },
+      select: { accessoryId: true },
+      distinct: ['accessoryId'],
+    });
+    const accessories = linked.length
+      ? await this.prisma.product.findMany({
+          where: {
+            id: { in: linked.map((row) => row.accessoryId) },
+            status: 'PUBLISHED',
+          },
+          select: RELATION_IDENTITY_SELECT,
+        })
+      : [];
+    const links = await this.refreshRows(
+      [
+        ...changed.map(({ contentUpdatedAt: _, ...row }) => row),
+        ...accessories,
+      ],
+      matcher,
+    );
+    const last = changed.at(-1)!;
+    await this.saveSetting(
+      CHANGED_KEY,
+      `${last.contentUpdatedAt.toISOString()}|${last.id}`,
+    );
+    return links;
+  }
+
+  private async refreshRows(
+    rows: RelationIdentity[],
+    matcher: BrandMatcher,
+  ): Promise<number> {
+    const sources = await this.sourceTexts(
+      rows.filter((row) =>
+        TEXT_FIELDS.some((field) => row.aiLockedFields.includes(field)),
+      ),
+    );
+    let links = 0;
+    const idle: string[] = [];
+    for (const row of rows) {
+      const source = sources.get(row.id);
+      const accessory = {
+        ...row,
+        sourceName: source?.name,
+        sourceDescription: source?.description,
+      };
+      const references = extractModelReferences(accessory, matcher);
+      if (references.length)
+        links += await this.replaceLinks(accessory, references, matcher);
+      else idle.push(row.id);
+    }
+    // Not (or no longer) an accessory: one statement for the whole batch.
+    if (idle.length)
+      await this.prisma.productCompatibility.deleteMany({
+        where: { accessoryId: { in: idle } },
+      });
+    return links;
+  }
+
+  private saveSetting(key: string, value: string) {
+    return this.prisma.siteSetting.upsert({
+      where: { key },
+      create: { key, value },
+      update: { value },
+    });
   }
 
   /** Rebuilds one product's links as an accessory. */
@@ -188,19 +283,25 @@ export class CompatibilityRefreshService {
     );
   }
 
-  /** The owning (oldest) offer's name: the supplier's words under an AI name. */
-  private async sourceNames(rows: Array<{ id: string }>) {
-    const names = new Map<string, string>();
-    if (!rows.length) return names;
+  /** The owning (oldest) offer's text: the supplier's words under AI text. */
+  private async sourceTexts(rows: Array<{ id: string }>) {
+    const texts = new Map<
+      string,
+      { name: string; description: string | null }
+    >();
+    if (!rows.length) return texts;
     const offers = await this.prisma.sourceProduct.findMany({
       where: { productId: { in: rows.map((row) => row.id) } },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      select: { productId: true, name: true },
+      select: { productId: true, name: true, description: true },
     });
     for (const offer of offers)
-      if (offer.productId && !names.has(offer.productId))
-        names.set(offer.productId, offer.name);
-    return names;
+      if (offer.productId && !texts.has(offer.productId))
+        texts.set(offer.productId, {
+          name: offer.name,
+          description: offer.description,
+        });
+    return texts;
   }
 
   private async brandMatcher(): Promise<BrandMatcher> {

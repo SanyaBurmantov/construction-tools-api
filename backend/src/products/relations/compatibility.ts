@@ -19,10 +19,12 @@ export type AccessoryEvidence = {
   descriptionFull: string | null;
   aiLockedFields?: string[];
   /**
-   * The owning supplier offer's own name. An AI-rewritten name is not the
-   * supplier's claim, so the claim is read from here instead.
+   * The owning supplier offer's own name and description. AI-rewritten text
+   * is not the supplier's claim (and DeepSeek rewrites the whole catalogue),
+   * so the claim is read from the supplier's words instead.
    */
   sourceName?: string | null;
+  sourceDescription?: string | null;
 };
 
 /** What identifies the tool an accessory is said to fit. */
@@ -135,7 +137,7 @@ function modelToken(raw: string): string | null {
 // Punctuation ends a model: «AS 3001 + аксессуары», «VC 2015 (2 шт)»; a
 // decimal («0,019"») stays one token, and not a model.
 const TOKEN = /\d+[.,]\d+|[^\s,;:()[\]+/«»"'*]+|[,;:()[\]+/«»"'*]/gu;
-const tokenize = (text: string) => text.match(TOKEN) ?? [];
+const tokenize = (text: string): string[] => text.match(TOKEN) ?? [];
 
 /** Reads the model tokens starting at `start`; returns them and where it stopped. */
 function readRun(
@@ -351,6 +353,11 @@ export function extractModelReferences(
   const evidence = texts.filter(
     ([field]) => field === 'name' || !locked.includes(field),
   );
+  if (
+    product.sourceDescription &&
+    (locked.includes('descriptionShort') || locked.includes('descriptionFull'))
+  )
+    evidence.push(['descriptionFull', product.sourceDescription]);
   if (evidence.some(([, text]) => INCOMPATIBLE.test(text))) return [];
 
   // «Шприц для масла Petropump PP100308»: the code after «для» is the item's

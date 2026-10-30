@@ -272,6 +272,75 @@ integration('product recommendations (PostgreSQL)', () => {
     await prisma.source.delete({ where: { id: source.id } });
   });
 
+  it('survives a DeepSeek rewrite of both sides within one worker tick', async () => {
+    const brand = await prisma.brand.findUniqueOrThrow({
+      where: { id: brandId },
+    });
+    const source = await prisma.source.create({
+      data: { name: 'test', code: randomUUID(), url: 'https://example.test' },
+    });
+    const tool = await create(`Триммер ${brand.name} UR 100 D в кор.`, '');
+    const head = await create(
+      'Головка триммерная полуавтоматическая',
+      '',
+      `Подходит для ${brand.name} UR 100 D.`,
+    );
+    await prisma.sourceProduct.create({
+      data: {
+        sourceId: source.id,
+        externalId: head.id,
+        url: `https://example.test/${head.id}`,
+        name: head.name,
+        description: head.descriptionFull,
+        specifications: {},
+        productId: head.id,
+      },
+    });
+    // Other tests' products are "changed" too: start the queue from now.
+    await prisma.siteSetting.deleteMany({
+      where: { key: { startsWith: 'productRelations.changedSince' } },
+    });
+    // A fresh worker: the brand table is cached for an hour, and this test's
+    // brand was created after an earlier test filled the cache.
+    const ticker = new CompatibilityRefreshService(prisma);
+    await ticker.refresh(); // first tick sets the change checkpoint
+    await ticker.refreshProduct(
+      await prisma.product.findUniqueOrThrow({
+        where: { id: head.id },
+        select: RELATION_IDENTITY_SELECT,
+      }),
+      [brand],
+    );
+    const accessoriesOf = async () =>
+      (
+        await service.get(tool.slug, new RecommendationsQueryDto())
+      ).accessories.data.map((row) => row.id);
+    expect(await accessoriesOf()).toEqual([head.id]);
+
+    // What ai.service writes: new text, the field locked, contentUpdatedAt.
+    await prisma.product.update({
+      where: { id: head.id },
+      data: {
+        descriptionFull: 'Надёжная головка для скашивания травы.',
+        aiLockedFields: ['descriptionFull'],
+        contentUpdatedAt: new Date(),
+      },
+    });
+    await prisma.product.update({
+      where: { id: tool.id },
+      data: {
+        name: `Триммер аккумуляторный ${brand.name} UR100D`,
+        aiLockedFields: ['name'],
+        contentUpdatedAt: new Date(),
+      },
+    });
+    expect(await accessoriesOf()).toEqual([]); // stale until rebuilt
+    await ticker.refresh();
+    expect(await accessoriesOf()).toEqual([head.id]);
+    await prisma.sourceProduct.deleteMany({ where: { sourceId: source.id } });
+    await prisma.source.delete({ where: { id: source.id } });
+  });
+
   it('fills «Похожие» from the category when the kind is shared by few', async () => {
     const anchor = await create('Анкер клиновой М10х120 мм', '');
     const sibling = await create('Анкер рамный 10х112 мм', '');

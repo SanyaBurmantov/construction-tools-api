@@ -876,9 +876,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   matching on those columns alone found 1 link in 85k products. A model's kits
   match (`DF333` → `DF333DWYE`, never `VX100` → `VX1000`) and every listing of
   the same model is linked (markdown copies are not ambiguity). An AI-renamed
-  accessory is read from its owning `SourceProduct.name`. Rows carry md5
-  signatures of their inputs that the read checks, so an edit hides a link at
-  once; bump `COMPATIBILITY_RULE_VERSION` when the rules change.
+  accessory is read from its owning `SourceProduct` (name and description) —
+  DeepSeek rewriting the catalogue must not erase supplier claims. Rows carry
+  md5 signatures of their inputs that the read checks, so an edit hides a
+  link at once, and each tick first re-reads products whose
+  `contentUpdatedAt` moved (keyset on time+id — a bulk update stamps one
+  millisecond) plus their linked accessories, so it comes back within a tick;
+  bump `COMPATIBILITY_RULE_VERSION` when the rules change.
 - **A product with offers from several suppliers has one owner.**
   `ProductIdentityService.forExistingProduct()`: the oldest offer
   (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only

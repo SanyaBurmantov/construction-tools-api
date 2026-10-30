@@ -280,6 +280,32 @@ describe('explicit compatibility', () => {
     ).toEqual([['maker', 'VX300']]);
   });
 
+  it('reads an AI-rewritten description from the supplier description', () => {
+    const row = {
+      ...accessory('Качественный фильтр для профессиональной уборки.'),
+      aiLockedFields: ['descriptionFull'],
+    };
+    expect(extractModelReferences(row, brands)).toEqual([]);
+    expect(
+      codes(
+        extractModelReferences(
+          { ...row, sourceDescription: 'Подходит для Maker VX100.' },
+          brands,
+        ),
+      ),
+    ).toEqual([['maker', 'VX100']]);
+    // Not locked: our own description is the evidence, the offer's is not read.
+    expect(
+      extractModelReferences(
+        {
+          ...accessory('Качественный фильтр.'),
+          sourceDescription: 'Подходит для Maker VX100.',
+        },
+        brands,
+      ),
+    ).toEqual([]);
+  });
+
   it('rejects contradictory statements across fields', () => {
     expect(
       extractModelReferences(
