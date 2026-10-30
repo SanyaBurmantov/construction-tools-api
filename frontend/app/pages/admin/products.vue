@@ -24,6 +24,9 @@ type AdminProduct = {
   descriptionFull: string | null
   seoTitle: string | null
   seoDescription: string | null
+  /** «Линейка» of the size switch; «—» keeps the product out of any. */
+  variantLine?: string | null
+  variantLabel?: string | null
   categoryId: string
   brandId: string | null
   brand?: { id: string, name: string } | null
@@ -108,6 +111,8 @@ const blankForm = () => ({
   descriptionFull: '',
   seoTitle: '',
   seoDescription: '',
+  variantLine: '',
+  variantLabel: '',
 })
 
 const form = reactive(blankForm())
@@ -144,6 +149,8 @@ function openEdit(product: AdminProduct) {
     descriptionFull: product.descriptionFull ?? '',
     seoTitle: product.seoTitle ?? '',
     seoDescription: product.seoDescription ?? '',
+    variantLine: product.variantLine ?? '',
+    variantLabel: product.variantLabel ?? '',
   })
   formError.value = ''
   editorTab.value = 'main'
@@ -218,6 +225,8 @@ async function save() {
     descriptionFull: textOrNull(form.descriptionFull),
     seoTitle: textOrNull(form.seoTitle),
     seoDescription: textOrNull(form.seoDescription),
+    variantLine: textOrNull(form.variantLine),
+    variantLabel: textOrNull(form.variantLabel),
   }
 
   saving.value = true
@@ -527,6 +536,19 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
         <UiField label="Статус" for="p-status">
           <UiSelect id="p-status" v-model="form.status" :options="productStatusOptions()" />
         </UiField>
+
+        <div class="admin-form-row">
+          <UiField
+            label="Линейка (переключатель размеров)"
+            hint="Пусто — линейка определяется по названию поставщика. Одинаковый текст у товаров одного бренда объединяет их; «—» — не показывать переключатель"
+            for="p-line"
+          >
+            <UiInput id="p-line" v-model="form.variantLine" placeholder="Сверла по металлу HSS-Co GEPARD" />
+          </UiField>
+          <UiField label="Подпись варианта" hint="Пусто — размер из названия" for="p-line-label">
+            <UiInput id="p-line-label" v-model="form.variantLabel" placeholder="6 мм" />
+          </UiField>
+        </div>
       </div>
 
       <div v-show="editorTab === 'price'" class="admin-form editor-pane">

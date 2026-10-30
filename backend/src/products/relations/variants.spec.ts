@@ -1,4 +1,9 @@
-import { familyKey, variantName, variantOptions } from './variants';
+import {
+  familyKey,
+  productFamily,
+  variantName,
+  variantOptions,
+} from './variants';
 
 const member = (
   id: string,
@@ -10,7 +15,6 @@ const member = (
   slug: id,
   name,
   priceValue,
-  priceCurrency: 'BYN',
   stockStatus,
 });
 const labels = (current: string, names: string[]) =>
@@ -34,8 +38,8 @@ describe('size variants', () => {
       variantName('Тройник ПП комб. вн. 25х3/4", сер. РТП')?.values,
     ).toEqual(['25х3/4"']);
     expect(variantName('Бита 6-гранная H7х30мм,10мм')?.values).toEqual([
-      'H7х30мм',
-      '10мм',
+      'H7х30 мм',
+      '10 мм',
     ]);
   });
 
@@ -53,6 +57,16 @@ describe('size variants', () => {
         'c',
       ),
     );
+  });
+
+  it('reads one size written with and without a space as one', () => {
+    expect(
+      labels('p0', [
+        'Саморез 3.5х32мм для ГКЛ к металлу, фосфат STARFIX',
+        'Саморез 3.5х32 мм для ГКЛ к металлу, фосфат STARFIX',
+        'Саморез 3.5х25 мм для ГКЛ к металлу, фосфат STARFIX',
+      ]),
+    ).toEqual(['3.5х25 мм', '3.5х32 мм*']);
   });
 
   it('does not read letters inside a code as a size', () => {
@@ -116,6 +130,47 @@ describe('size variants', () => {
         'Бита Torx T25 для винтов T25, 30 мм',
       ]),
     ).toEqual(['T25', 'T35*']);
+  });
+
+  it('keeps an AI-renamed card in its line by the supplier name', () => {
+    const supplier = productFamily({
+      name: 'Сверло по металлу ц/х 8.0х75х117 мм HSS-Co GEPARD',
+      brandId: 'b',
+      categoryId: 'c',
+    });
+    const renamed = productFamily({
+      name: 'Сверло по металлу с цилиндрическим хвостовиком 6.0х57х93 мм HSS-Co GEPARD',
+      sourceName: 'Сверло по металлу ц/х 6.0х57х93 мм HSS-Co GEPARD',
+      aiLockedFields: ['name'],
+      brandId: 'b',
+      categoryId: 'c',
+    });
+    expect(renamed.familyKey).toBe(supplier.familyKey);
+    expect(renamed.keyName).toBe(
+      'Сверло по металлу ц/х 6.0х57х93 мм HSS-Co GEPARD',
+    );
+  });
+
+  it('lets an admin draw a line across different names, or keep a card out', () => {
+    const line = (name: string, variantLine: string | null) =>
+      productFamily({ name, variantLine, brandId: 'b', categoryId: 'c' })
+        .familyKey;
+    expect(line('Шуруповёрт X 12 В', 'Линейка X')).toBe(
+      line('Дрель-шуруповёрт X Pro 18 В', ' линейка  x '),
+    );
+    expect(line('Анкер рамный 10х92 мм', '—')).toBeNull();
+    const options = variantOptions(
+      member('a', 'Шуруповёрт X 12 В'),
+      [
+        { ...member('b', 'Дрель-шуруповёрт X Pro 18 В'), label: 'Pro 18 В' },
+        member('a', 'Шуруповёрт X 12 В'),
+      ],
+      true,
+    );
+    expect(options.map((o) => [o.label, o.current])).toEqual([
+      ['12', true],
+      ['Pro 18 В', false],
+    ]);
   });
 
   it('keys a family by brand, or by category when there is none', () => {

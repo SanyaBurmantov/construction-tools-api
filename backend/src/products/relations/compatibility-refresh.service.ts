@@ -27,7 +27,8 @@ import {
   fitmentTags,
 } from './fitment';
 import { RELATION_IDENTITY_SELECT } from './relation-select';
-import { VARIANT_RULE_VERSION, familyKey } from './variants';
+import { parsePack } from './packs';
+import { VARIANT_RULE_VERSION, productFamily } from './variants';
 
 // Any rule change starts a pass from the beginning instead of resuming the
 // previous rules' cursor; until it reaches a product, reads show that
@@ -239,6 +240,8 @@ export class CompatibilityRefreshService {
         name: true,
         brandId: true,
         categoryId: true,
+        aiLockedFields: true,
+        variantLine: true,
         brand: { select: { name: true } },
         productSpecs: {
           where: {
@@ -268,13 +271,25 @@ export class CompatibilityRefreshService {
         ruleVersion: FITMENT_RULE_VERSION,
       })),
     );
+    // An AI-renamed card keeps its line by the supplier's name.
+    const sources = await this.sourceTexts(
+      products.filter((product) => product.aiLockedFields.includes('name')),
+    );
     const families = products.flatMap((product) => {
-      const key = familyKey(product.name, product.brandId, product.categoryId);
-      return key
+      const family = productFamily({
+        ...product,
+        sourceName: sources.get(product.id)?.name,
+      });
+      // A row also carries the name packs are read from.
+      return family.familyKey || parsePack(family.keyName)
         ? [
             {
               productId: product.id,
-              familyKey: key,
+              familyKey: family.familyKey,
+              keyName: family.keyName,
+              manual:
+                Boolean(product.variantLine?.trim()) &&
+                Boolean(family.familyKey),
               ruleVersion: VARIANT_RULE_VERSION,
             },
           ]

@@ -8,7 +8,7 @@ import { parsePack } from './packs';
  * tools are left out (their numbers are models and watts, not sizes), and a
  * standard's number («DIN 933») is part of the name, not a size.
  */
-export const VARIANT_RULE_VERSION = 2;
+export const VARIANT_RULE_VERSION = 3;
 /**
  * Listings read per family: STARFIX sells every bolt size in several packs,
  * so DIN 933 is ~470 cards for ~150 sizes. The size count is what is capped.
@@ -53,6 +53,9 @@ export type VariantName = {
 };
 
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim();
+// «3.5х32мм» and «3.5х32 мм» are one size: one space before a unit.
+const sizeValue = (value: string) =>
+  clean(value).replace(/(\d)\s?(мм|mm|см|cm|кг|мл|мкм)(?![\p{L}])/gu, '$1 $2');
 
 /** The name split into its fixed text and its sizes; null for a power tool. */
 export function variantName(name: string): VariantName | null {
@@ -81,7 +84,7 @@ export function variantName(name: string): VariantName | null {
     // «AG 1209-3» is a model, «6-гранная» a word.
     if (/^\d+$/.test(match[0]) && /^-[\p{L}\d]/u.test(after)) continue;
     template += `${text.slice(last, start)}§`;
-    values.push(clean(match[0]));
+    values.push(sizeValue(match[0]));
     last = start + match[0].length;
   }
   template += text.slice(last);
@@ -105,13 +108,54 @@ export function familyKey(
     .digest('hex');
 }
 
+/** «—» / «-» in the admin's «Линейка»: never in a switch. */
+export const NO_LINE = /^[-—–]$/;
+
+/**
+ * A product's family and the name its sizes are read from. The admin's
+ * «Линейка» wins (one line across different names); otherwise the family is
+ * the brand + the *supplier's* name with sizes masked — an AI rewrite of the
+ * shown name («ц/х» → «цилиндрический хвостовик») must not split a line.
+ */
+export function productFamily(product: {
+  name: string;
+  /** The owning offer's name, used when the shown name was rewritten by AI. */
+  sourceName?: string | null;
+  aiLockedFields?: string[];
+  variantLine?: string | null;
+  brandId: string | null;
+  categoryId: string;
+}): { familyKey: string | null; keyName: string } {
+  const keyName =
+    product.aiLockedFields?.includes('name') && product.sourceName
+      ? product.sourceName
+      : product.name;
+  const line = product.variantLine?.trim();
+  if (line && NO_LINE.test(line)) return { familyKey: null, keyName };
+  if (line)
+    return {
+      familyKey: createHash('md5')
+        .update(
+          `line\u001f${product.brandId ?? `category:${product.categoryId}`}\u001f${line.toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ')}`,
+        )
+        .digest('hex'),
+      keyName,
+    };
+  return {
+    familyKey: familyKey(keyName, product.brandId, product.categoryId),
+    keyName,
+  };
+}
+
 export type VariantMember = {
   id: string;
   slug: string;
+  /** The name sizes are read from (`ProductFamily.keyName`). */
   name: string;
   priceValue: number | null;
-  priceCurrency: string | null;
   stockStatus: string | null;
+  /** The admin's «Подпись варианта»; wins over the label read from the name. */
+  label?: string | null;
 };
 
 /**
@@ -135,30 +179,57 @@ const numbers = (value: string) =>
  * The family as switch options: labelled by the sizes that differ, one per
  * label (the current card, else the same pack as the current one, else in
  * stock and cheapest), ordered by those sizes. Fewer than two: nothing.
+ * `manual` — a line the admin drew across different names: each card is
+ * labelled by its own sizes (or the admin's label) instead of a shared
+ * template.
  */
 export function variantOptions(
   current: VariantMember,
   members: VariantMember[],
+  manual = false,
 ): VariantOption[] {
   const own = variantName(current.name);
-  if (!own) return [];
-  const parsed = members
-    .map((member) => ({ member, name: variantName(member.name) }))
-    .filter(
-      (row): row is { member: VariantMember; name: VariantName } =>
-        Boolean(row.name) &&
-        row.name!.template === own.template &&
-        row.name!.values.length === own.values.length,
-    );
-  if (!parsed.some((row) => row.member.id === current.id))
-    parsed.push({ member: current, name: own });
-  if (parsed.length < 2 || parsed.length > MAX_FAMILY) return [];
-  const differing = own.values
-    .map((_, index) => index)
-    .filter((index) =>
-      parsed.some((row) => row.name.values[index] !== own.values[index]),
-    );
-  if (!differing.length) return [];
+  if (!own && !manual) return [];
+  const all = members.some((member) => member.id === current.id)
+    ? members
+    : [...members, current];
+  if (all.length < 2 || all.length > MAX_FAMILY) return [];
+
+  let labelled: Array<{ member: VariantMember; label: string }>;
+  if (manual || !own) {
+    labelled = all.map((member) => ({
+      member,
+      label:
+        member.label?.trim() ||
+        variantName(member.name)?.values.join(' · ') ||
+        member.name.slice(0, 40),
+    }));
+  } else {
+    const parsed = all
+      .map((member) => ({ member, name: variantName(member.name) }))
+      .filter(
+        (row): row is { member: VariantMember; name: VariantName } =>
+          Boolean(row.name) &&
+          row.name!.template === own.template &&
+          row.name!.values.length === own.values.length,
+      );
+    const differing = own.values
+      .map((_, index) => index)
+      .filter((index) =>
+        parsed.some((row) => row.name.values[index] !== own.values[index]),
+      );
+    if (!differing.length) return [];
+    labelled = parsed.map((row) => ({
+      member: row.member,
+      // «Бита 10 мм Torx T35 30 мм»: one size written twice is one label part.
+      label:
+        row.member.label?.trim() ||
+        [...new Set(differing.map((index) => row.name.values[index]))].join(
+          ' · ',
+        ),
+    }));
+  }
+
   const ownPack = parsePack(current.name)?.quantity;
   const better = (a: VariantMember, b: VariantMember) => {
     if (a.id === current.id) return true;
@@ -171,15 +242,10 @@ export function variantOptions(
     return (a.priceValue ?? Infinity) < (b.priceValue ?? Infinity);
   };
   const byLabel = new Map<string, { member: VariantMember; sort: number[] }>();
-  for (const row of parsed) {
-    // «Бита 10 мм Torx T35 30 мм»: one size written twice is one label part.
-    const values = [
-      ...new Set(differing.map((index) => row.name.values[index])),
-    ];
-    const label = values.join(' · ');
+  for (const { member, label } of labelled) {
     const existing = byLabel.get(label);
-    if (!existing || better(row.member, existing.member))
-      byLabel.set(label, { member: row.member, sort: values.flatMap(numbers) });
+    if (!existing || better(member, existing.member))
+      byLabel.set(label, { member, sort: numbers(label) });
   }
   if (byLabel.size < 2 || byLabel.size > MAX_SIZES) return [];
   return [...byLabel.entries()]
