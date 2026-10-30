@@ -186,13 +186,16 @@ export default defineNuxtConfig({
      * frontend's heap grew with every distinct URL a crawler fetched until the
      * container hit its `mem_limit` and was killed (502s from Caddy while it
      * restarted). This driver is the same in-memory cache with an LRU budget;
-     * see server/storage/bounded-memory.ts. `NUXT_CACHE_MAX_MB` overrides the
-     * size at runtime.
+     * see server/storage/bounded-memory.ts. In production the cache is on
+     * disk instead (server/storage/bounded-fs.ts, `NUXT_CACHE_DIR`, 1.5 GB
+     * gzip-compressed, `NUXT_CACHE_DISK_MB`): ~45k pages instead of ~500, off
+     * the heap, and kept across restarts of the same build. Without
+     * `NUXT_CACHE_DIR` it is the bounded memory driver (`NUXT_CACHE_MAX_MB`).
      */
     storage: {
       cache: {
-        driver: fileURLToPath(new URL('./server/storage/bounded-memory.ts', import.meta.url)),
-        maxMb: 96,
+        driver: fileURLToPath(new URL('./server/storage/bounded-fs.ts', import.meta.url)),
+        maxMb: 1536,
       },
     },
     // Dev (and the build step itself) keep the stock driver.

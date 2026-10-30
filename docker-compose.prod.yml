@@ -238,6 +238,10 @@ services:
       NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=192}
       MALLOC_ARENA_MAX: 2
       NUXT_CACHE_MAX_MB: ${NUXT_CACHE_MAX_MB:-64}
+      # The page cache on disk (server/storage/bounded-fs.ts): gzip, LRU,
+      # one directory per build; stops writing below 1 GB free on the disk.
+      NUXT_CACHE_DIR: /var/cache/gost-pages
+      NUXT_CACHE_DISK_MB: ${NUXT_CACHE_DISK_MB:-1536}
       NUXT_INDEXNOW_KEY: ${INDEXNOW_KEY:-}
       # Same values the API charges (DELIVERY_COST_* above): the build has no
       # access to them, so without these the storefront kept showing 15/10
@@ -249,6 +253,8 @@ services:
       NUXT_PUBLIC_API_BASE: /api
       # Absolute origin for canonical URLs, sitemap.xml and robots.txt.
       NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-https://${DOMAIN:-localhost}}
+    volumes:
+      - page_cache:/var/cache/gost-pages
     depends_on:
       backend:
         condition: service_healthy
@@ -278,6 +284,7 @@ services:
 
 volumes:
   postgres_data:
+  page_cache:
   caddy_data:
   caddy_config:
 
