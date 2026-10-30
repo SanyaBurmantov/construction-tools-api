@@ -225,6 +225,7 @@ model Product {
   /// Derived relations live in their own table; never included in listings.
   compatibleAccessories ProductCompatibility[] @relation("CompatibleProduct")
   fitsProducts          ProductCompatibility[] @relation("CompatibleAccessory")
+  fitments              ProductFitment[]
 
   @@index([status, categoryId])
   @@index([status, brandId])
@@ -266,6 +267,20 @@ model ProductCompatibility {
 
   @@id([accessoryId, productId])
   @@index([productId, accessoryId])
+}
+
+/// Fit by standard (products/relations/fitment.ts): a TOOL takes `key`
+/// («disc:125», «battery:makita-lxt»), a PART provides it — across brands and
+/// suppliers. Derived from the product's own name/specs by the worker.
+model ProductFitment {
+  productId   String
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  key         String  @db.VarChar(40)
+  role        String  @db.VarChar(4)
+  ruleVersion Int
+
+  @@id([productId, key, role])
+  @@index([key, role])
 }
 
 model ProductSpecification {
@@ -490,6 +505,9 @@ model OrderItem {
   unitOldPrice Float?
   quantity     Int
   lineTotal    Float
+  /// Which recommendation block put the line in the cart (accessories,
+  /// consumables, fits, similar, cart, packs); null = added on its own.
+  upsellSource String?  @db.VarChar(16)
 
   @@index([orderId])
   @@index([productId])

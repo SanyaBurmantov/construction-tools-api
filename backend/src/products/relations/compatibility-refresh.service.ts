@@ -21,6 +21,11 @@ import {
   type RelationIdentity,
   type TargetIdentity,
 } from './compatibility';
+import {
+  FITMENT_RULE_VERSION,
+  FITMENT_SPEC_KEYS,
+  fitmentTags,
+} from './fitment';
 import { RELATION_IDENTITY_SELECT } from './relation-select';
 
 // v2: rule 2 starts its own pass instead of resuming rule 1's cursor.
@@ -89,6 +94,14 @@ export class CompatibilityRefreshService {
             OR: [
               { ruleVersion: { not: COMPATIBILITY_RULE_VERSION } },
               { accessory: { status: { not: 'PUBLISHED' } } },
+              { product: { status: { not: 'PUBLISHED' } } },
+            ],
+          },
+        });
+        await this.prisma.productFitment.deleteMany({
+          where: {
+            OR: [
+              { ruleVersion: { not: FITMENT_RULE_VERSION } },
               { product: { status: { not: 'PUBLISHED' } } },
             ],
           },
@@ -192,7 +205,53 @@ export class CompatibilityRefreshService {
       await this.prisma.productCompatibility.deleteMany({
         where: { accessoryId: { in: idle } },
       });
+    await this.refreshFitments(rows.map((row) => row.id));
     return links;
+  }
+
+  /** Standard-based tags (fitment.ts) of a batch, replaced in one go. */
+  async refreshFitments(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        brand: { select: { name: true } },
+        productSpecs: {
+          where: {
+            specification: { canonicalKey: { in: FITMENT_SPEC_KEYS } },
+          },
+          select: {
+            value: true,
+            specification: { select: { canonicalKey: true } },
+          },
+        },
+      },
+    });
+    const data = products.flatMap((product) =>
+      fitmentTags({
+        name: product.name,
+        brandName: product.brand?.name,
+        specs: Object.fromEntries(
+          product.productSpecs.map((spec) => [
+            spec.specification.canonicalKey ?? '',
+            spec.value,
+          ]),
+        ),
+      }).map((tag) => ({
+        productId: product.id,
+        key: tag.key,
+        role: tag.role,
+        ruleVersion: FITMENT_RULE_VERSION,
+      })),
+    );
+    await this.prisma.$transaction([
+      this.prisma.productFitment.deleteMany({
+        where: { productId: { in: ids } },
+      }),
+      this.prisma.productFitment.createMany({ data, skipDuplicates: true }),
+    ]);
   }
 
   private saveSetting(key: string, value: string) {

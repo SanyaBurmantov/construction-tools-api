@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
+import type { UpsellSource } from '~/types/api'
 
 const props = withDefaults(
   defineProps<{
@@ -12,8 +13,10 @@ const props = withDefaults(
      * loader instead of starting with the document.
      */
     priority?: boolean
+    /** Recommendation block this card is shown in — recorded on the order line. */
+    upsellSource?: UpsellSource
   }>(),
-  { compact: false, priority: false }
+  { compact: false, priority: false, upsellSource: undefined }
 )
 
 const {
@@ -129,7 +132,7 @@ const link = computed(() => `/product/${props.product.slug}`)
           :variant="inCart ? 'secondary' : 'primary'"
           size="sm"
           :aria-label="`Добавить «${product.name}» в корзину`"
-          @click="addToCart()"
+          @click="addToCart(1, upsellSource)"
         >
           {{ inCart ? 'В корзине' : 'В корзину' }}
         </UiButton>

@@ -3,7 +3,10 @@ import { ListingRankService } from './listing-rank.service';
 import { ProductService } from './products.service';
 import { ProductController } from './products.controller';
 import { CompatibilityRefreshService } from './relations/compatibility-refresh.service';
-import { RecommendationsController } from './relations/recommendations.controller';
+import {
+  CartRecommendationsController,
+  RecommendationsController,
+} from './relations/recommendations.controller';
 import { RecommendationsService } from './relations/recommendations.service';
 @Module({
   providers: [
@@ -12,6 +15,10 @@ import { RecommendationsService } from './relations/recommendations.service';
     CompatibilityRefreshService,
     RecommendationsService,
   ],
-  controllers: [ProductController, RecommendationsController],
+  controllers: [
+    ProductController,
+    RecommendationsController,
+    CartRecommendationsController,
+  ],
 })
 export class ProductsModule {}

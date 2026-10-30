@@ -35,6 +35,7 @@ import { redirectOldSlug } from '../products/product-slug';
 import { IndexNowService, productPath } from '../seo/indexnow.service';
 import { definedOnly } from '../common/utils/defined-only';
 import { PARSER_SOURCES } from '../parser/parser-settings.service';
+import { UPSELL_LABELS, type UpsellSource } from '../orders/upsell-source';
 
 /**
  * A button press waits for its batch inside one HTTP request, so it is capped
@@ -246,6 +247,58 @@ export class AdminService {
         revenue: Math.round((row._sum.lineTotal ?? 0) * 100) / 100,
       })),
       bySource: await this.salesBySource(),
+      upsell: await this.upsellBySource(),
+    };
+  }
+
+  /**
+   * What the recommendation blocks sold over the last 90 days: lines, orders
+   * and revenue per block (`OrderItem.upsellSource`), cancelled orders left
+   * out — the answer to «do the upsell blocks pay».
+   */
+  private async upsellBySource() {
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const where = {
+      order: {
+        createdAt: { gte: since },
+        status: { not: OrderStatus.CANCELLED },
+      },
+    };
+    const [lines, total] = await Promise.all([
+      this.prisma.orderItem.groupBy({
+        by: ['upsellSource'],
+        where: { ...where, upsellSource: { not: null } },
+        _count: { _all: true },
+        _sum: { lineTotal: true },
+      }),
+      this.prisma.orderItem.aggregate({ where, _sum: { lineTotal: true } }),
+    ]);
+    const orders = await Promise.all(
+      lines.map((line) =>
+        this.prisma.orderItem
+          .findMany({
+            where: { ...where, upsellSource: line.upsellSource },
+            distinct: ['orderId'],
+            select: { orderId: true },
+          })
+          .then((rows) => rows.length),
+      ),
+    );
+    const revenue = (value: number | null | undefined) =>
+      Math.round((value ?? 0) * 100) / 100;
+    return {
+      totalRevenue: revenue(total._sum.lineTotal),
+      sources: lines
+        .map((line, index) => ({
+          source: line.upsellSource!,
+          label:
+            UPSELL_LABELS[line.upsellSource as UpsellSource] ??
+            line.upsellSource!,
+          lines: line._count._all,
+          orders: orders[index],
+          revenue: revenue(line._sum.lineTotal),
+        }))
+        .sort((a, b) => b.revenue - a.revenue),
     };
   }
 

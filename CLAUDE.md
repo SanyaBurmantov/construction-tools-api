@@ -883,6 +883,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `contentUpdatedAt` moved (keyset on time+id — a bulk update stamps one
   millisecond) plus their linked accessories, so it comes back within a tick;
   bump `COMPATIBILITY_RULE_VERSION` when the rules change.
+  **Fit by standard** (`relations/fitment.ts`, `ProductFitment`): a TOOL takes
+  a key, a PART provides it — battery platform (Makita LXT/CXT/XGT — the G
+  series is *not* LXT —, WORTEX ALL1, BULL XLTpro, Milwaukee), grinder disc
+  diameter on a 22.2 arbor, SDS-plus/max, saw-blade diameter, 1/4" hex. It
+  crosses brands and suppliers on purpose; built by the same worker. The cart
+  shows «Не забудьте к заказу» (`GET /recommendations/cart`, not under
+  `/products` — `:slug` would take it), and the buy box compares packs per
+  piece (`relations/packs.ts`). Every block tags the cart line it adds;
+  `OrderItem.upsellSource` feeds the dashboard's «Допродажи» (bump
+  `FITMENT_RULE_VERSION` when tag rules change).
 - **A product with offers from several suppliers has one owner.**
   `ProductIdentityService.forExistingProduct()`: the oldest offer
   (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only

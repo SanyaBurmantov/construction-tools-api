@@ -6,6 +6,7 @@ import {
   IsArray,
   IsEmail,
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -24,6 +25,7 @@ import {
 } from '../../common/dto/requisites.validators';
 import { MAX_CART_LINES, MAX_LINE_QUANTITY } from '../../cart/cart-limits';
 import { AttributionDto } from '../../attribution/attribution.dto';
+import { UPSELL_SOURCES, type UpsellSource } from '../upsell-source';
 
 export class CreateOrderItemDto {
   @ApiProperty({ description: 'ID товара' })
@@ -40,6 +42,15 @@ export class CreateOrderItemDto {
   @Min(1)
   @Max(MAX_LINE_QUANTITY)
   quantity!: number;
+
+  @ApiProperty({
+    required: false,
+    enum: UPSELL_SOURCES,
+    description: 'Блок рекомендаций, из которого товар попал в корзину',
+  })
+  @IsOptional()
+  @IsIn(UPSELL_SOURCES)
+  upsellSource?: UpsellSource;
 }
 
 export class CreateOrderDto {
