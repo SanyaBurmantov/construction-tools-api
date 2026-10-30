@@ -222,8 +222,13 @@ model Product {
 
   listItems UserListItem[]
 
+  /// Derived relations live in their own table; never included in listings.
+  compatibleAccessories ProductCompatibility[] @relation("CompatibleProduct")
+  fitsProducts          ProductCompatibility[] @relation("CompatibleAccessory")
+
   @@index([status, categoryId])
   @@index([status, brandId])
+  @@index([contentUpdatedAt])
   @@index([status, priceValue])
   @@index([status, createdAt])
   @@index([status, name])
@@ -242,6 +247,25 @@ model Product {
   /// Search matches `model` with ILIKE too; without this the OR across
   /// name/sku/model fell back to a sequential scan.
   @@index([model(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+/// One directed fact, read in both directions: accessory -> compatible product.
+/// Fingerprints invalidate the fact immediately when its inputs change, before
+/// the worker gets around to rebuilding it. No descriptions are copied here.
+model ProductCompatibility {
+  accessoryId        String
+  productId          String
+  accessory          Product  @relation("CompatibleAccessory", fields: [accessoryId], references: [id], onDelete: Cascade)
+  product            Product  @relation("CompatibleProduct", fields: [productId], references: [id], onDelete: Cascade)
+  accessorySignature String   @db.Char(32)
+  productSignature   String   @db.Char(32)
+  modelCode          String   @db.VarChar(80)
+  evidenceField      String   @db.VarChar(32)
+  ruleVersion        Int
+  createdAt          DateTime @default(now())
+
+  @@id([accessoryId, productId])
+  @@index([productId, accessoryId])
 }
 
 model ProductSpecification {
