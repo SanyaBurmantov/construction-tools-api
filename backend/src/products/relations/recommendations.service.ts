@@ -9,6 +9,12 @@ import {
   type FitmentRole,
 } from './fitment';
 import { packOptions, parsePack } from './packs';
+import {
+  MAX_FAMILY,
+  VARIANT_RULE_VERSION,
+  familyKey,
+  variantOptions,
+} from './variants';
 import { similarityScore } from './similarity';
 import {
   RECOMMENDATION_CARD_SELECT,
@@ -71,15 +77,23 @@ export class RecommendationsService {
           .filter((tag) => tag.role !== role)
           .map((tag) => this.fitmentGroup(product, tag.key, role, 1)),
       );
-    const [similar, accessories, fits, consumables, compatibleTools, packs] =
-      await Promise.all([
-        this.similar(product),
-        this.compatible(product.id, 'accessories', query.accessoriesPage),
-        this.compatible(product.id, 'fits', query.fitsPage),
-        groups('PART'),
-        groups('TOOL'),
-        this.packs(product),
-      ]);
+    const [
+      similar,
+      accessories,
+      fits,
+      consumables,
+      compatibleTools,
+      packs,
+      variants,
+    ] = await Promise.all([
+      this.similar(product),
+      this.compatible(product.id, 'accessories', query.accessoriesPage),
+      this.compatible(product.id, 'fits', query.fitsPage),
+      groups('PART'),
+      groups('TOOL'),
+      this.packs(product),
+      this.variants(product),
+    ]);
     return {
       similar,
       accessories,
@@ -89,14 +103,42 @@ export class RecommendationsService {
         (group) => group.pagination.total,
       ),
       packs,
+      variants,
     };
+  }
+
+  /**
+   * Other sizes of the same line (variants.ts). The key is computed from the
+   * current name, so a renamed card finds its family before the worker has
+   * re-read it; members come from the worker's table.
+   */
+  private async variants(product: SimilarityRow) {
+    const key = familyKey(product.name, product.brandId, product.categoryId);
+    if (!key) return [];
+    const members = await this.prisma.product.findMany({
+      where: {
+        status: 'PUBLISHED',
+        id: { not: product.id },
+        family: { familyKey: key, ruleVersion: VARIANT_RULE_VERSION },
+      },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        priceValue: true,
+        priceCurrency: true,
+        stockStatus: true,
+      },
+      take: MAX_FAMILY + 1,
+    });
+    return variantOptions(product, members);
   }
 
   /** One page of one standard-fit group, for paging it on its own. */
   async group(slug: string, key: string, role: FitmentRole, page: number) {
     const product = await this.prisma.product.findFirst({
       where: { slug, status: 'PUBLISHED' },
-      select: { id: true, brandId: true },
+      select: { id: true, brandId: true, name: true },
     });
     if (!product) throw new NotFoundException('Товар не найден');
     // Only a group the product actually has: no catalogue browsing by key.
@@ -118,11 +160,16 @@ export class RecommendationsService {
    * is bought by price (cutting discs before diamond ones).
    */
   private async fitmentGroup(
-    product: { id: string; brandId: string | null },
+    product: { id: string; brandId: string | null; name?: string },
     key: string,
     role: FitmentRole,
     requestedPage: number,
   ) {
+    // A stainless bolt takes stainless nuts: the same material first.
+    const stainless = /нерж|aisi/i.test(product.name ?? '');
+    const material = key.startsWith('thread:')
+      ? Prisma.sql`(p."name" ~* 'нерж|aisi') = ${stainless} DESC,`
+      : Prisma.empty;
     const from = Prisma.sql`
       FROM "ProductFitment" f JOIN "Product" p ON p."id" = f."productId"
       WHERE f."key" = ${key} AND f."role" = ${role}
@@ -136,7 +183,7 @@ export class RecommendationsService {
     const ids = count.total
       ? await this.prisma.$queryRaw<Array<{ id: string }>>`
           SELECT p."id" ${from}
-          ORDER BY (p."stockStatus" = 'in_stock') DESC NULLS LAST,
+          ORDER BY ${material} (p."stockStatus" = 'in_stock') DESC NULLS LAST,
             coalesce(p."brandId" = ${product.brandId}, false) DESC,
             p."listingRank" DESC, p."priceValue", p."id"
           LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`

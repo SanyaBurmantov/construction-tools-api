@@ -120,6 +120,7 @@ describe('fitment by standard', () => {
     expect(tags('Перфоратор MAKITA HR 2470 в чем.', 'MAKITA')).toEqual([]);
     expect(tags('8х150х210 мм бур (сверло) SDS-plus QUADRO-X ВОЛАТ')).toEqual([
       'PART sds:plus',
+      'PART hole:8',
     ]);
     expect(tags('Пиковое зубило SDS-plus 250мм BOSCH')).toEqual([
       'PART sds:plus',
@@ -141,6 +142,7 @@ describe('fitment by standard', () => {
   it('pairs screwdrivers with 1/4" bits, not with socket bits', () => {
     expect(tags("Бита TORX T25 1/4''х25мм (25шт./комп.)")).toEqual([
       'PART hex:1/4',
+      'PART slot:T25',
     ]);
     expect(
       tags('Набор бит (28 шт) с магнитным адаптером MAKITA', 'MAKITA'),
@@ -150,10 +152,114 @@ describe('fitment by standard', () => {
     ).toEqual(['PART hex:1/4']);
     expect(
       tags('Вставка (бита) торцевая 1/2", Spline, M10, L = 55 мм KING TONY'),
-    ).toEqual([]);
+    ).toEqual(['PART drive:1/2']);
     expect(tags('Набор отверток реверсивных телескопических с битами')).toEqual(
       [],
     );
+  });
+
+  it('pairs ratchets and wrenches with sockets of the same drive', () => {
+    expect(tags('Трещотка 1/2" 45 зубьев 255мм ВОЛАТ')).toEqual([
+      'TOOL drive:1/2',
+    ]);
+    expect(
+      tags('Ключ динамометрический JTC-4935 (1/2", 10-100 Нм, 405 мм)'),
+    ).toEqual(['TOOL drive:1/2']);
+    expect(tags("Вороток Т-образный 500мм 3/4''")).toEqual(['TOOL drive:3/4']);
+    expect(
+      tags('Головка торцевая глубокая шестигранная 1/2" 13 мм TOLSEN TT16563'),
+    ).toEqual(['PART drive:1/2']);
+    expect(tags("Головка 3/8'', 14мм (6гр.)")).toEqual(['PART drive:3/8']);
+    // An adapter has two drives; a trimmer head is not a socket.
+    expect(tags("Вороток Г-образный двухсторонний 450мм 3/4''х1/2''")).toEqual(
+      [],
+    );
+    expect(tags('Головка триммерная WORTEX ТН 3018 леска 1/2"')).toEqual([]);
+  });
+
+  it('pairs bolts and screws with nuts and washers of the thread', () => {
+    expect(
+      tags(
+        'Болт М10х80 мм шестигр., цинк, кл.пр. 5.8, DIN 933 (5 кг) STARFIX',
+        'STARFIX',
+      ),
+    ).toEqual(['TOOL thread:M10']);
+    expect(
+      tags(
+        'Гайка М10 со стопорным кольцом, цинк, DIN 985 (10 шт в зип-локе) STARFIX',
+      ),
+    ).toEqual(['PART thread:M10']);
+    expect(
+      tags('Шайба М10 плоская, цинк, DIN 125 (100 шт в пласт. конт.) STARFIX'),
+    ).toEqual(['PART thread:M10']);
+    expect(tags('Гайковерт пневматический 1/2" 680 Нм')).not.toContain(
+      'PART thread:M680',
+    );
+    expect(tags('Гайка М5/8 врезная, цинк, DIN 1624')).toEqual([]);
+  });
+
+  it('pairs anchors and plugs with masonry bits of the hole they need', () => {
+    expect(
+      tags('Дюбель распорный 10х80 мм тип N, нейлон (250 шт в пакете) STARFIX'),
+    ).toEqual(['TOOL hole:10']);
+    expect(tags('Анкер клиновой М10х120 мм STARFIX')).toEqual(['TOOL hole:10']);
+    // A drop-in or sleeve anchor: the second size is the hole.
+    expect(
+      tags('Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) STARFIX'),
+    ).toEqual(['TOOL hole:12']);
+    expect(tags('Анкер с гайкой двухраспорный М6х10х100 мм STARFIX')).toEqual([
+      'TOOL hole:10',
+    ]);
+    expect(tags('10х150х210 мм бур (сверло) SDS-plus GEPARD')).toEqual([
+      'PART sds:plus',
+      'PART hole:10',
+    ]);
+    expect(tags('Сверло по бетону ц/х 10х80х120 мм CYL-1 BOSCH')).toEqual([
+      'PART hole:10',
+    ]);
+    // A metal drill is not for an anchor.
+    expect(tags('Сверло по металлу ц/х 10.0х87х133 мм HSS-Co GEPARD')).toEqual(
+      [],
+    );
+  });
+
+  it('pairs screws with bits of their recess, stated or by standard', () => {
+    expect(
+      tags(
+        'Шуруп конструкционный 6.0х300 мм по дереву, потай, T30 (500 шт в коробе) STARFIX',
+      ),
+    ).toEqual(['TOOL slot:T30']);
+    expect(
+      tags('Саморез 3.5х25 мм для монтажа ГКЛ к дереву, фосфат (5 кг) STARFIX'),
+    ).toEqual(['TOOL slot:PH2']);
+    expect(
+      tags(
+        'Шуруп 4.2х19 мм полусф. головка, белый цинк, острый, DIN 7981 (100 шт в зип-локе) STARFIX',
+      ),
+    ).toEqual(['TOOL slot:PH2']);
+    expect(
+      tags(
+        'Винт М3х12 мм полусфера, нерж.сталь (А2), DIN 7985 (50 шт в зип-локе) STARFIX',
+      ),
+    ).toEqual(['TOOL thread:M3', 'TOOL slot:PH1']);
+    // Hex head roofing screws name no recess: no guess.
+    expect(
+      tags(
+        'Саморез кровельный 4.8х35 мм цинк, шайба с прокл., PT1 (200 шт) STARFIX',
+      ),
+    ).toEqual([]);
+    expect(tags('Бита TORX JTC-1132525 (Т25х25 мм, 1/4")')).toEqual([
+      'PART hex:1/4',
+      'PART slot:T25',
+    ]);
+    expect(
+      tags('Набор бит (3 шт; РH1/РH2/РH3; 25 мм) MAKITA', 'MAKITA'),
+    ).toEqual([
+      'PART hex:1/4',
+      'PART slot:PH1',
+      'PART slot:PH2',
+      'PART slot:PH3',
+    ]);
   });
 
   it('titles groups for both sides', () => {

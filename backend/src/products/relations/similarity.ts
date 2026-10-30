@@ -64,9 +64,11 @@ const ADJECTIVE = /(?:ый|ий|ой|ая|яя|ое|ые)$/u;
 const ENDING = /(?:ами|ями|ов|ев|ей|ах|ях|ы|и|а|я|у|ю|е|о)$/u;
 
 /**
- * The kind of item, from its name: a known tool/accessory noun anywhere,
- * otherwise the first noun of the name («Анкер забиваемый …» → «анкер»,
- * «Гайки М6» → «гайк»). Adjectives, brand and voltage never decide it.
+ * The kind of item: the first noun of its name («Анкер забиваемый …» →
+ * «анкер», «Гайки М6» → «гайк»), normalised through TYPES («дрели» →
+ * «дрель»). Adjectives, abbreviations, Latin words and the brand never decide
+ * it — and neither does a noun further on: «Шуруп … полусф. головка» is a
+ * screw, «Мешок для пылесоса» is not a vacuum cleaner.
  */
 export function productKind(
   product: Pick<SimilarityProduct, 'name' | 'brand'>,
@@ -82,21 +84,21 @@ export function productKind(
   ).filter((value) => !brandWords.has(value));
   let set = false;
   for (const word of ordered) {
-    if (word === 'набор' || word === 'комплект') set = true;
+    if (word === 'набор' || word === 'комплект') {
+      set = true;
+      continue;
+    }
+    if (!/^[а-я]+$/u.test(word) || NOT_A_KIND.has(word) || ADJECTIVE.test(word))
+      continue;
     const type = TYPES.find(([, pattern]) => pattern.test(word));
-    if (type) return `${set ? 'набор ' : ''}${type[0]}`;
+    const kind = type
+      ? type[0]
+      : word.length > 4
+        ? word.replace(ENDING, '')
+        : word;
+    return `${set ? 'набор ' : ''}${kind}`;
   }
-  const noun = ordered.find(
-    (word) =>
-      /^[а-я]+$/u.test(word) &&
-      word !== 'набор' &&
-      word !== 'комплект' &&
-      !NOT_A_KIND.has(word) &&
-      !ADJECTIVE.test(word),
-  );
-  if (!noun) return '';
-  const stem = noun.length > 4 ? noun.replace(ENDING, '') : noun;
-  return `${set ? 'набор ' : ''}${stem}`;
+  return '';
 }
 
 function properties(product: SimilarityProduct): Map<string, string> {

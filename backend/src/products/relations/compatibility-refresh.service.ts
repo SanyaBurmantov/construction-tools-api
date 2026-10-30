@@ -27,6 +27,7 @@ import {
   fitmentTags,
 } from './fitment';
 import { RELATION_IDENTITY_SELECT } from './relation-select';
+import { VARIANT_RULE_VERSION, familyKey } from './variants';
 
 // v2: rule 2 starts its own pass instead of resuming rule 1's cursor.
 const CURSOR_KEY = 'productRelations.cursor.v2';
@@ -102,6 +103,14 @@ export class CompatibilityRefreshService {
           where: {
             OR: [
               { ruleVersion: { not: FITMENT_RULE_VERSION } },
+              { product: { status: { not: 'PUBLISHED' } } },
+            ],
+          },
+        });
+        await this.prisma.productFamily.deleteMany({
+          where: {
+            OR: [
+              { ruleVersion: { not: VARIANT_RULE_VERSION } },
               { product: { status: { not: 'PUBLISHED' } } },
             ],
           },
@@ -209,7 +218,10 @@ export class CompatibilityRefreshService {
     return links;
   }
 
-  /** Standard-based tags (fitment.ts) of a batch, replaced in one go. */
+  /**
+   * A batch's own-name derivations, replaced in one go: standard-based tags
+   * (fitment.ts) and the size-variant family (variants.ts).
+   */
   async refreshFitments(ids: string[]): Promise<void> {
     if (!ids.length) return;
     const products = await this.prisma.product.findMany({
@@ -217,6 +229,8 @@ export class CompatibilityRefreshService {
       select: {
         id: true,
         name: true,
+        brandId: true,
+        categoryId: true,
         brand: { select: { name: true } },
         productSpecs: {
           where: {
@@ -246,11 +260,30 @@ export class CompatibilityRefreshService {
         ruleVersion: FITMENT_RULE_VERSION,
       })),
     );
+    const families = products.flatMap((product) => {
+      const key = familyKey(product.name, product.brandId, product.categoryId);
+      return key
+        ? [
+            {
+              productId: product.id,
+              familyKey: key,
+              ruleVersion: VARIANT_RULE_VERSION,
+            },
+          ]
+        : [];
+    });
     await this.prisma.$transaction([
       this.prisma.productFitment.deleteMany({
         where: { productId: { in: ids } },
       }),
       this.prisma.productFitment.createMany({ data, skipDuplicates: true }),
+      this.prisma.productFamily.deleteMany({
+        where: { productId: { in: ids } },
+      }),
+      this.prisma.productFamily.createMany({
+        data: families,
+        skipDuplicates: true,
+      }),
     ]);
   }
 

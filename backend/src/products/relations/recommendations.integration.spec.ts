@@ -448,6 +448,59 @@ integration('product recommendations (PostgreSQL)', () => {
     ]);
   });
 
+  it('switches between sizes of one line and pairs bolts with nuts of their material', async () => {
+    const brand = await prisma.brand.findUniqueOrThrow({
+      where: { id: brandId },
+    });
+    const drills = [];
+    for (const size of ['8.0х75х117', '6.0х57х93', '10.0х87х133'])
+      drills.push(
+        await create(
+          `Сверло по металлу ц/х ${size} мм HSS-Co ${brand.name}`,
+          '',
+        ),
+      );
+    const bolt = await create(
+      `Болт М10х80 мм шестигр., нерж.сталь (А2), DIN 933 ${brand.name}`,
+      '',
+    );
+    const zincNut = await create(
+      `Гайка М10 шестигр., цинк, DIN 934 ${brand.name}`,
+      '',
+    );
+    const steelNut = await create(
+      `Гайка М10 шестигр., нерж.сталь (А2), DIN 934 ${brand.name}`,
+      '',
+    );
+    await worker.refreshFitments([
+      ...drills.map((d) => d.id),
+      bolt.id,
+      zincNut.id,
+      steelNut.id,
+    ]);
+    const variants = (
+      await service.get(drills[1].slug, new RecommendationsQueryDto())
+    ).variants;
+    expect(variants.map((v) => [v.label, v.current])).toEqual([
+      ['6.0х57х93 мм', true],
+      ['8.0х75х117 мм', false],
+      ['10.0х87х133 мм', false],
+    ]);
+    // A size that is gone is gone from the switch.
+    await prisma.product.update({
+      where: { id: drills[2].id },
+      data: { status: 'HIDDEN' },
+    });
+    expect(
+      (await service.get(drills[1].slug, new RecommendationsQueryDto()))
+        .variants,
+    ).toHaveLength(2);
+    const nuts = (await service.get(bolt.slug, new RecommendationsQueryDto()))
+      .consumables[0];
+    expect(nuts.title).toBe('Гайки и шайбы М10');
+    expect(nuts.data.map((row) => row.id)).toEqual([steelNut.id, zincNut.id]);
+  });
+
   it('serves cart suggestions over HTTP and validates the ids', async () => {
     const { host } = await fixture();
     expect(
