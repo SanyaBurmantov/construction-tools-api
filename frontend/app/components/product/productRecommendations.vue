@@ -27,6 +27,12 @@ const groupPages = ref<Record<string, FitmentGroup>>({})
 const paging = ref(false)
 const data = computed(() => paged.value ?? props.initial)
 
+// Under load the API answers 503 rather than fall over; the server-rendered
+// page then has no blocks — the browser asks again once it is idle.
+onMounted(() => {
+  if (props.error && !props.initial) setTimeout(() => emit('retry'), 1500)
+})
+
 interface Section {
   id: string
   title: string

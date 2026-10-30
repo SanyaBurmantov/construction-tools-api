@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { withoutPlaceholderImages } from '../../common/utils/product-images';
@@ -15,7 +19,15 @@ import {
 import { RecommendationsQueryDto } from './recommendations.dto';
 
 const PAGE_SIZE = 4;
-const CANDIDATE_LIMIT = 120;
+// Each candidate brings its specs: 120 of them per product page, times a
+// cold-cache crawl after a deploy, ran the 256 MB API out of heap twice.
+const CANDIDATE_LIMIT = 48;
+/** Recommendations computed at once; the rest wait (bounded) or get a 503. */
+const MAX_RUNNING = 6;
+const MAX_WAITING = 40;
+/** SSR, the browser and crawlers ask for the same card within seconds. */
+const DEFAULT_CACHE_MS = 120_000;
+const CACHE_ENTRIES = 500;
 const CART_SUGGESTIONS = 8;
 const PACK_CANDIDATES = 200;
 type Card = Prisma.ProductGetPayload<{
@@ -49,7 +61,58 @@ export function recommendationCard(product: Card) {
 export class RecommendationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async get(slug: string, query: RecommendationsQueryDto) {
+  private running = 0;
+  /** `RECOMMENDATIONS_CACHE_MS` (0 = off, as the integration tests run). */
+  private readonly cacheMs = Number(
+    process.env.RECOMMENDATIONS_CACHE_MS ?? DEFAULT_CACHE_MS,
+  );
+  private readonly waiting: Array<() => void> = [];
+  private readonly cache = new Map<
+    string,
+    { expires: number; value: Promise<unknown> }
+  >();
+
+  /**
+   * The product page's recommendations, cached for two minutes and computed
+   * at most MAX_RUNNING at a time: a cold-cache crawl after a deploy used to
+   * pile requests up until the API's heap gave out. Over the queue bound the
+   * answer is a quick 503 — the page renders, the block reloads client-side.
+   */
+  async get(
+    slug: string,
+    query: RecommendationsQueryDto,
+  ): Promise<Awaited<ReturnType<RecommendationsService['compute']>>> {
+    const key = `${slug}|${query.accessoriesPage ?? 1}|${query.fitsPage ?? 1}`;
+    const now = Date.now();
+    const hit = this.cache.get(key);
+    if (hit && hit.expires > now)
+      return hit.value as ReturnType<RecommendationsService['compute']>;
+    const value = this.gated(() => this.compute(slug, query));
+    if (!this.cacheMs) return value;
+    this.cache.set(key, { expires: now + this.cacheMs, value });
+    // A failure is not cached; the oldest entries go first.
+    value.catch(() => this.cache.delete(key));
+    if (this.cache.size > CACHE_ENTRIES)
+      this.cache.delete(this.cache.keys().next().value);
+    return value;
+  }
+
+  private async gated<T>(work: () => Promise<T>): Promise<T> {
+    if (this.running >= MAX_RUNNING) {
+      if (this.waiting.length >= MAX_WAITING)
+        throw new ServiceUnavailableException('Подборки временно недоступны');
+      await new Promise<void>((resolve) => this.waiting.push(resolve));
+    }
+    this.running += 1;
+    try {
+      return await work();
+    } finally {
+      this.running -= 1;
+      this.waiting.shift()?.();
+    }
+  }
+
+  private async compute(slug: string, query: RecommendationsQueryDto) {
     const product = await this.prisma.product.findFirst({
       where: { slug, status: 'PUBLISHED' },
       select: SIMILARITY_SELECT,
