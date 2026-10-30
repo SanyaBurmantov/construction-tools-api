@@ -34,6 +34,14 @@ const shown = computed(() => {
   const current = props.variants.find((variant) => variant.current)
   return current && !first.includes(current) ? [...first.slice(0, LIMIT - 1), current] : first
 })
+// A long table opens at the current size, not at the smallest one.
+const rowsBox = ref<HTMLElement | null>(null)
+onMounted(() => {
+  const box = rowsBox.value
+  const current = box?.querySelector<HTMLElement>('[aria-current="page"]')
+  if (box && current) box.scrollTop = Math.max(0, current.offsetTop - box.offsetTop - box.clientHeight / 2)
+})
+
 const hint = (variant: VariantOption) =>
   [
     variant.priceValue != null ? formatPrice(variant.priceValue, 'BYN') : null,
@@ -47,7 +55,7 @@ const hint = (variant: VariantOption) =>
   <nav class="variants" aria-label="Другие размеры">
     <h2>Варианты</h2>
 
-    <dl v-if="rows" class="rows">
+    <dl v-if="rows" ref="rowsBox" class="rows">
       <div v-for="[head, items] in rows" :key="head" class="row">
         <dt>{{ head }}</dt>
         <dd>

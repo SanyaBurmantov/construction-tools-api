@@ -363,7 +363,7 @@ integration('product recommendations (PostgreSQL)', () => {
       '',
     );
     const discs = [];
-    for (let i = 0; i < 5; i += 1)
+    for (let i = 0; i < 13; i += 1)
       discs.push(
         await create(`Круг отрезной 125х1.${i}x22.2 мм для металла №${i}`, ''),
       );
@@ -384,7 +384,7 @@ integration('product recommendations (PostgreSQL)', () => {
     expect(page.consumables[0]).toMatchObject({
       key: 'disc:125',
       title: 'Круги и диски 125 мм',
-      pagination: { total: 5, pages: 2 },
+      pagination: { total: 13, pages: 2 },
     });
     expect(page.consumables[0].data[0]).not.toHaveProperty('costPrice');
     const second = await service.group(grinder.slug, 'disc:125', 'PART', 2);
@@ -638,12 +638,12 @@ integration('product recommendations (PostgreSQL)', () => {
 
   it('paginates reverse links and bounds invalid page parameters', async () => {
     const { brand, accessory } = await fixture();
-    for (let i = 0; i < 5; i += 1)
+    for (let i = 0; i < 14; i += 1)
       await create(`Пылесос VX${200 + i}`, `VX${200 + i}`);
     const updated = await prisma.product.update({
       where: { id: accessory.id },
       data: {
-        descriptionFull: `Подходит для ${brand.name} VX100, VX200, VX201, VX202, VX203, VX204.`,
+        descriptionFull: `Подходит для ${brand.name} VX100, ${Array.from({ length: 14 }, (_, i) => `VX${200 + i}`).join(', ')}.`,
       },
     });
     await worker.refreshProduct(updated, [brand]);
@@ -658,15 +658,15 @@ integration('product recommendations (PostgreSQL)', () => {
     expect(first.fits.pagination).toEqual({
       page: 1,
       pages: 2,
-      total: 6,
-      limit: 4,
+      total: 15,
+      limit: 12,
     });
-    expect(first.fits.data).toHaveLength(4);
-    expect(second.fits.data).toHaveLength(2);
+    expect(first.fits.data).toHaveLength(12);
+    expect(second.fits.data).toHaveLength(3);
     expect(
       new Set([...first.fits.data, ...second.fits.data].map((row) => row.id))
         .size,
-    ).toBe(6);
+    ).toBe(15);
     expect(
       (
         await fetch(

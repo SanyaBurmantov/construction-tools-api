@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
-import type {
-  FitmentGroup,
-  Pagination,
-  ProductRecommendations,
-  UpsellSource,
-} from '~/types/api'
+import type { FitmentGroup, ProductRecommendations, UpsellSource } from '~/types/api'
 
-// The page fetches the first page (SSR — links for crawlers; the buy box
-// shows its packs from the same answer); paging happens here, in place.
+/**
+ * The product page's upsell blocks, Ozon / Lamoda style: one block per
+ * question — «what goes with it» for a tool, «what it fits» for a part — with
+ * a chip per group (the stated accessories, then each standard: batteries of
+ * the platform, discs of the diameter…) over one sideways shelf, then the
+ * similar products. The page fetches the first page on the server (links for
+ * crawlers); «Показать ещё» appends the next page to the same shelf.
+ */
 const props = defineProps<{
   slug: string
   initial: ProductRecommendations | null | undefined
@@ -20,119 +21,141 @@ const { apiBase } = useSite()
 const toast = useAppToast()
 const endpoint = computed(() => `${apiBase}/products/${encodeURIComponent(props.slug)}/recommendations`)
 
-// A key change would blank the whole block (and jump the page) while the next
-// page loads, so pages replace their own section's data.
-const paged = ref<ProductRecommendations | null>(null)
-const groupPages = ref<Record<string, FitmentGroup>>({})
-const paging = ref(false)
-const data = computed(() => paged.value ?? props.initial)
-
 // Under load the API answers 503 rather than fall over; the server-rendered
 // page then has no blocks — the browser asks again once it is idle.
 onMounted(() => {
   if (props.error && !props.initial) setTimeout(() => emit('retry'), 1500)
 })
 
-interface Section {
+interface Shelf {
   id: string
-  title: string
-  items: CatalogProduct[]
-  pagination?: Pagination
+  label: string
   source: UpsellSource
-  group?: FitmentGroup
+  items: CatalogProduct[]
+  page: number
+  pages: number
+  total: number
+  /** How to fetch page N of this shelf. */
+  next: (page: number) => Promise<{ data: CatalogProduct[] }> // eslint-disable-line no-unused-vars
 }
 
-const groupId = (group: FitmentGroup) => `${group.role}|${group.key}`
-const current = (group: FitmentGroup) => groupPages.value[groupId(group)] ?? group
+const loaded = ref<Record<string, { items: CatalogProduct[], page: number }>>({})
+const loading = ref('')
 
-const sections = computed<Section[]>(() => {
-  const value = data.value
+function explicit(kind: 'accessories' | 'fits', label: string, source: UpsellSource): Shelf | null {
+  const list = props.initial?.[kind]
+  if (!list?.pagination.total) return null
+  const id = kind
+  return {
+    id,
+    label,
+    source,
+    items: loaded.value[id]?.items ?? list.data,
+    page: loaded.value[id]?.page ?? list.pagination.page,
+    pages: list.pagination.pages,
+    total: list.pagination.total,
+    next: async page => (await $fetch<ProductRecommendations>(endpoint.value, {
+      params: kind === 'accessories' ? { accessoriesPage: page } : { fitsPage: page },
+    }))[kind],
+  }
+}
+
+function group(item: FitmentGroup, source: UpsellSource): Shelf {
+  const id = `${item.role}|${item.key}`
+  return {
+    id,
+    label: item.title,
+    source,
+    items: loaded.value[id]?.items ?? item.data,
+    page: loaded.value[id]?.page ?? item.pagination.page,
+    pages: item.pagination.pages,
+    total: item.pagination.total,
+    next: page => $fetch<FitmentGroup>(`${endpoint.value}/group`, {
+      params: { key: item.key, role: item.role, page },
+    }),
+  }
+}
+
+const blocks = computed(() => {
+  const value = props.initial
   if (!value) return []
-  const groups = (list: FitmentGroup[] | undefined, source: UpsellSource, prefix = '') =>
-    (list ?? []).map(current).map((group) => ({
-      id: groupId(group),
-      title: `${prefix}${group.title}`,
-      items: group.data,
-      pagination: group.pagination,
-      source,
-      group,
-    }))
+  const goesWith = [
+    explicit('accessories', 'К этой модели', 'accessories'),
+    ...value.consumables.map(item => group(item, 'consumables')),
+  ].filter((shelf): shelf is Shelf => Boolean(shelf))
+  const fitsTo = [
+    explicit('fits', 'Модели', 'fits'),
+    ...value.compatibleTools.map(item => group(item, 'fits')),
+  ].filter((shelf): shelf is Shelf => Boolean(shelf))
   return [
-    {
-      id: 'accessories',
-      title: 'Аксессуары к этой модели',
-      items: value.accessories.data,
-      pagination: value.accessories.pagination,
-      source: 'accessories',
-    },
-    ...groups(value.consumables, 'consumables'),
-    {
-      id: 'fits',
-      title: 'Подходит для',
-      items: value.fits.data,
-      pagination: value.fits.pagination,
-      source: 'fits',
-    },
-    ...groups(value.compatibleTools, 'fits', 'Подходит к: '),
-    { id: 'similar', title: 'Похожие товары', items: value.similar, source: 'similar' },
-  ].filter((section) => section.items.length) as Section[]
+    { id: 'goes-with', title: 'Аксессуары и расходники', shelves: goesWith },
+    { id: 'fits-to', title: 'Подходит для', shelves: fitsTo },
+  ].filter(block => block.shelves.length)
 })
 
-async function changePage(section: Section, page: number) {
-  const value = data.value
-  if (!value || paging.value) return
-  paging.value = true
+const active = ref<Record<string, string>>({})
+const current = (block: { id: string, shelves: Shelf[] }) =>
+  block.shelves.find(shelf => shelf.id === active.value[block.id]) ?? block.shelves[0]!
+
+async function more(shelf: Shelf) {
+  if (loading.value || shelf.page >= shelf.pages) return
+  loading.value = shelf.id
   try {
-    if (section.group) {
-      groupPages.value = {
-        ...groupPages.value,
-        [section.id]: await $fetch<FitmentGroup>(`${endpoint.value}/group`, {
-          params: { key: section.group.key, role: section.group.role, page },
-        }),
-      }
-    } else {
-      paged.value = await $fetch<ProductRecommendations>(endpoint.value, {
-        params: {
-          accessoriesPage: section.id === 'accessories' ? page : value.accessories.pagination.page,
-          fitsPage: section.id === 'fits' ? page : value.fits.pagination.page,
-        },
-      })
+    const page = shelf.page + 1
+    const answer = await shelf.next(page)
+    const seen = new Set(shelf.items.map(item => item.id))
+    loaded.value = {
+      ...loaded.value,
+      [shelf.id]: { items: [...shelf.items, ...answer.data.filter(item => !seen.has(item.id))], page },
     }
   } catch {
-    toast.error('Не удалось загрузить страницу подборки')
+    toast.error('Не удалось загрузить ещё')
   } finally {
-    paging.value = false
+    loading.value = ''
   }
 }
 </script>
 
 <template>
-  <div v-if="data || error" class="recommendations" :aria-busy="paging">
-    <section v-for="section in sections" :key="section.id" :aria-label="section.title">
-      <h2>
-        {{ section.title }}
-        <span v-if="section.pagination && section.pagination.total > section.items.length" class="count">
-          {{ section.pagination.total }}
-        </span>
-      </h2>
-      <div class="product-grid">
-        <ProductCatalogCard
-          v-for="item in section.items"
-          :key="item.id"
-          :product="item"
-          :upsell-source="section.source"
-          compact
-        />
-      </div>
-      <UiPagination
-        v-if="section.pagination && section.pagination.pages > 1"
-        :page="section.pagination.page"
-        :pages="section.pagination.pages"
-        :total="section.pagination.total"
-        @change="changePage(section, $event)"
+  <div v-if="initial || error" class="recommendations">
+    <section v-for="block in blocks" :key="block.id" class="block" :aria-label="block.title">
+      <header class="block-head">
+        <h2>{{ block.title }}</h2>
+        <UiScroller v-if="block.shelves.length > 1" class="chips" :fade="false" label="Группы">
+          <button
+            v-for="shelf in block.shelves"
+            :key="shelf.id"
+            type="button"
+            class="chip"
+            :class="{ 'is-active': current(block).id === shelf.id }"
+            :aria-pressed="current(block).id === shelf.id"
+            @click="active = { ...active, [block.id]: shelf.id }"
+          >
+            {{ shelf.label }} <span>{{ shelf.total }}</span>
+          </button>
+        </UiScroller>
+        <p v-else class="single">{{ block.shelves[0]!.label }} · {{ block.shelves[0]!.total }}</p>
+      </header>
+      <ProductShelf
+        :key="current(block).id"
+        :items="current(block).items"
+        :source="current(block).source"
+        :total="current(block).total"
+        :has-more="current(block).page < current(block).pages"
+        :loading="loading === current(block).id"
+        :label="current(block).label"
+        @more="more(current(block))"
       />
     </section>
-    <p v-if="error && !data" class="recommendations-error" role="status">
+
+    <section v-if="initial?.similar.length" class="block" aria-label="Похожие товары">
+      <header class="block-head">
+        <h2>Похожие товары</h2>
+      </header>
+      <ProductShelf :items="initial.similar" source="similar" label="Похожие товары" />
+    </section>
+
+    <p v-if="error && !initial" class="recommendations-error" role="status">
       Не удалось загрузить подборки.
       <UiButton size="sm" variant="ghost" @click="emit('retry')">Повторить</UiButton>
     </p>
@@ -140,29 +163,74 @@ async function changePage(section: Section, page: number) {
 </template>
 
 <style scoped>
-.recommendations,
-section {
+.recommendations {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-}
-
-.recommendations {
   gap: var(--space-10);
 }
 
-h2 {
+.block {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.block-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+h2 {
   margin: 0;
   font-size: var(--text-2xl);
+}
+
+.chips :deep(.viewport) {
   gap: var(--space-2);
 }
 
-.count {
-  color: var(--text-subtle);
-  font-size: var(--text-base);
+.chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-default);
+  font-size: var(--text-sm);
   font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  gap: var(--space-2);
+}
+
+.chip span {
+  color: var(--text-subtle);
+  font-weight: 500;
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+}
+
+.chip.is-active {
+  border-color: var(--surface-inverse);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+.chip.is-active span {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.single {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .recommendations-error {

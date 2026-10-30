@@ -18,7 +18,8 @@ import {
 } from './relation-select';
 import { RecommendationsQueryDto } from './recommendations.dto';
 
-const PAGE_SIZE = 4;
+// A shelf on the product page: a dozen cards scroll sideways, more on demand.
+const PAGE_SIZE = 12;
 // Each candidate brings its specs: 120 of them per product page, times a
 // cold-cache crawl after a deploy, ran the 256 MB API out of heap twice.
 const CANDIDATE_LIMIT = 48;
@@ -30,6 +31,8 @@ const DEFAULT_CACHE_MS = 120_000;
 const CACHE_ENTRIES = 500;
 const CART_SUGGESTIONS = 8;
 const PACK_CANDIDATES = 200;
+/** «(20 кг)» in a name — a weighed pack; a parameter, not SQL text. */
+const BY_WEIGHT_SQL = '\\(\\s*[0-9.,]+\\s*кг';
 type Card = Prisma.ProductGetPayload<{
   select: typeof RECOMMENDATION_CARD_SELECT;
 }>;
@@ -263,9 +266,12 @@ export class RecommendationsService {
     requestedPage: number,
   ) {
     // A stainless bolt takes stainless nuts: the same material first.
+    // and a 20 kg box of bolts takes nuts by weight, not a 10-piece zip bag.
     const stainless = /нерж|aisi/i.test(product.name ?? '');
+    const byWeight = /\(\s*[\d.,]+\s*кг/i.test(product.name ?? '');
     const material = key.startsWith('thread:')
-      ? Prisma.sql`(p."name" ~* 'нерж|aisi') = ${stainless} DESC,`
+      ? Prisma.sql`(p."name" ~* 'нерж|aisi') = ${stainless} DESC,
+          (p."name" ~* ${BY_WEIGHT_SQL}) = ${byWeight} DESC,`
       : Prisma.empty;
     const from = Prisma.sql`
       FROM "ProductFitment" f JOIN "Product" p ON p."id" = f."productId"
