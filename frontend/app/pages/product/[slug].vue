@@ -83,6 +83,7 @@ const { formatPrice } = useFormatPrice()
 
 /* ---- Description tabs -------------------------------------------------- */
 const tab = ref<'description' | 'specs'>('description')
+const shortOpen = ref(false)
 const hasDescription = computed(
   () => Boolean(product.value?.descriptionFull || product.value?.descriptionShort)
 )
@@ -276,10 +277,12 @@ useHead(() => {
       <UiBreadcrumbs :items="breadcrumbs" />
 
       <div class="layout">
-        <!-- Gallery -->
-        <ProductGallery :images="product.images ?? []" :name="product.name">
-          <UiBadge v-if="hasDiscount" tone="sale">−{{ discountPercent }}%</UiBadge>
-        </ProductGallery>
+        <!-- Gallery: stays in view while the summary column scrolls. -->
+        <div class="gallery-col">
+          <ProductGallery :images="product.images ?? []" :name="product.name">
+            <UiBadge v-if="hasDiscount" tone="sale">−{{ discountPercent }}%</UiBadge>
+          </ProductGallery>
+        </div>
 
         <!-- Summary + buy box -->
         <section class="summary">
@@ -308,9 +311,18 @@ useHead(() => {
             </div>
           </div>
 
-          <p v-if="product.descriptionShort" class="short-description">
-            {{ product.descriptionShort }}
-          </p>
+          <!-- Supplier texts run long: four lines, the rest one tap away. -->
+          <div v-if="product.descriptionShort" class="short-description" :class="{ 'is-open': shortOpen }">
+            <p>{{ product.descriptionShort }}</p>
+            <button
+              v-if="product.descriptionShort.length > 260"
+              type="button"
+              class="more-link"
+              @click="shortOpen = !shortOpen"
+            >
+              {{ shortOpen ? 'Свернуть' : 'Читать полностью' }}
+            </button>
+          </div>
 
           <!-- Key specs before the buy box, so the fit question is answered
                without scrolling into a tab. -->
@@ -362,6 +374,8 @@ useHead(() => {
             <UiAlert v-else tone="warning">
               Цена уточняется — свяжитесь с нами, чтобы оформить заказ.
             </UiAlert>
+
+            <ProductBundle v-if="canBuy && recommendations" :product="product" :recommendations="recommendations" />
 
             <div class="secondary-actions">
               <button
@@ -443,8 +457,6 @@ useHead(() => {
         </div>
       </section>
 
-      <ProductReviews :slug="product.slug" :product-name="product.name" />
-
       <ProductRecommendations
         :key="product.id"
         :slug="product.slug"
@@ -452,6 +464,9 @@ useHead(() => {
         :error="recommendationsError"
         @retry="refreshRecommendations()"
       />
+
+      <ProductReviews :slug="product.slug" :product-name="product.name" />
+
 
       <!-- Sticky buy bar: on a phone the buy box scrolls away long before the
            customer has finished reading, so price and action follow them. -->
@@ -538,6 +553,35 @@ useHead(() => {
 
 .short-description {
   color: var(--text-muted);
+}
+
+.short-description p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.short-description.is-open p {
+  display: block;
+}
+
+.more-link {
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.gallery-col {
+  position: sticky;
+  top: var(--space-6);
+  min-width: 0;
 }
 
 .buy-box {
@@ -798,6 +842,10 @@ useHead(() => {
 @media (max-width: 1024px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .gallery-col {
+    position: static;
   }
 
   .loading {
