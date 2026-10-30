@@ -438,6 +438,7 @@ integration('product recommendations (PostgreSQL)', () => {
       where: { id: box.id },
       data: { priceValue: 30 },
     });
+    await worker.refreshFitments([small.id, box.id]);
     const packs = (await service.get(small.slug, new RecommendationsQueryDto()))
       .packs;
     expect(
@@ -486,6 +487,34 @@ integration('product recommendations (PostgreSQL)', () => {
       ['8.0х75х117 мм', false],
       ['10.0х87х133 мм', false],
     ]);
+    // AI rewrote one drill's name: it stays in the line by the supplier's name.
+    const source = await prisma.source.create({
+      data: { name: 'test', code: randomUUID(), url: 'https://example.test' },
+    });
+    await prisma.sourceProduct.create({
+      data: {
+        sourceId: source.id,
+        externalId: drills[0].id,
+        url: `https://example.test/${drills[0].id}`,
+        name: drills[0].name,
+        specifications: {},
+        productId: drills[0].id,
+      },
+    });
+    await prisma.product.update({
+      where: { id: drills[0].id },
+      data: {
+        name: `Сверло по металлу с цилиндрическим хвостовиком 8.0х75х117 мм HSS-Co ${brand.name}`,
+        aiLockedFields: ['name'],
+      },
+    });
+    await worker.refreshFitments([drills[0].id]);
+    expect(
+      (await service.get(drills[1].slug, new RecommendationsQueryDto()))
+        .variants,
+    ).toHaveLength(3);
+    await prisma.sourceProduct.deleteMany({ where: { sourceId: source.id } });
+    await prisma.source.delete({ where: { id: source.id } });
     // A size that is gone is gone from the switch.
     await prisma.product.update({
       where: { id: drills[2].id },

@@ -227,6 +227,12 @@ model Product {
   fitsProducts          ProductCompatibility[] @relation("CompatibleAccessory")
   fitments              ProductFitment[]
   family                ProductFamily?
+  /// «Линейка» set by an admin: products of one brand with the same line are
+  /// one size switch whatever their names; «—» keeps a product out of any.
+  /// Parsers never write it.
+  variantLine           String?                @db.VarChar(120)
+  /// The admin's label of this card in the switch («6 мм»).
+  variantLabel          String?                @db.VarChar(60)
 
   @@index([status, categoryId])
   @@index([status, brandId])
@@ -289,7 +295,12 @@ model ProductFitment {
 model ProductFamily {
   productId   String  @id
   product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  familyKey   String  @db.Char(32)
+  /// Null: no switch (no sizes, or the admin's «—»); the row still feeds packs.
+  familyKey   String? @db.Char(32)
+  /// The name sizes and packs are read from: the supplier's when AI rewrote ours.
+  keyName     String  @default("")
+  /// The family comes from the admin's «Линейка».
+  manual      Boolean @default(false)
   ruleVersion Int
 
   @@index([familyKey])

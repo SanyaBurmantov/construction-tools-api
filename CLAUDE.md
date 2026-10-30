@@ -908,6 +908,9 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   name with sizes masked is one line; the buy box switches between its
   sizes (each stays its own page). Standards, models, long codes and power
   tools are deliberately not sizes — see the module before loosening it.
+  The family is read from the supplier's name when AI rewrote ours
+  (`ProductFamily.keyName`); `Product.variantLine/variantLabel` are an
+  optional override (nobody has to fill them — the site is automatic).
 - **A product with offers from several suppliers has one owner.**
   `ProductIdentityService.forExistingProduct()`: the oldest offer
   (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only

@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { withoutPlaceholderImages } from '../../common/utils/product-images';
 import { fitmentTitles, type FitmentRole } from './fitment';
 import { packOptions, parsePack } from './packs';
-import { MAX_FAMILY, familyKey, variantOptions } from './variants';
+import { MAX_FAMILY, productFamily, variantOptions } from './variants';
 import { similarityScore } from './similarity';
 import {
   RECOMMENDATION_CARD_SELECT,
@@ -55,6 +55,7 @@ export class RecommendationsService {
       select: SIMILARITY_SELECT,
     });
     if (!product) throw new NotFoundException('Товар не найден');
+    const family = this.familyRow(product);
     const tags = await this.prisma.productFitment.findMany({
       where: { productId: product.id },
       select: { key: true, role: true },
@@ -81,8 +82,8 @@ export class RecommendationsService {
       this.compatible(product.id, 'fits', query.fitsPage),
       groups('PART'),
       groups('TOOL'),
-      this.packs(product),
-      this.variants(product),
+      family.then((row) => this.packs(product, row.keyName)),
+      family.then((row) => this.variants(product, row)),
     ]);
     return {
       similar,
@@ -98,30 +99,74 @@ export class RecommendationsService {
   }
 
   /**
-   * Other sizes of the same line (variants.ts). The key is computed from the
-   * current name, so a renamed card finds its family before the worker has
-   * re-read it; members come from the worker's table.
+   * The product's line row: the worker's (keyed by the supplier's name, or
+   * the admin's «Линейка»), else computed from the current card so a new or
+   * just-edited card has its switch before the worker reaches it.
    */
-  private async variants(product: SimilarityRow) {
-    const key = familyKey(product.name, product.brandId, product.categoryId);
-    if (!key) return [];
-    const members = await this.prisma.product.findMany({
+  private async familyRow(product: SimilarityRow) {
+    const [row, own] = await Promise.all([
+      this.prisma.productFamily.findUnique({
+        where: { productId: product.id },
+      }),
+      this.prisma.product.findUnique({
+        where: { id: product.id },
+        select: { variantLine: true, variantLabel: true },
+      }),
+    ]);
+    if (row?.keyName) return { ...row, label: own?.variantLabel ?? null };
+    const family = productFamily({ ...product, variantLine: own?.variantLine });
+    return {
+      ...family,
+      manual: Boolean(own?.variantLine?.trim()) && Boolean(family.familyKey),
+      label: own?.variantLabel ?? null,
+    };
+  }
+
+  /** Other sizes of the same line (variants.ts). */
+  private async variants(
+    product: SimilarityRow,
+    family: Awaited<ReturnType<RecommendationsService['familyRow']>>,
+  ) {
+    if (!family.familyKey) return [];
+    const rows = await this.prisma.productFamily.findMany({
       where: {
-        status: 'PUBLISHED',
-        id: { not: product.id },
-        family: { familyKey: key },
+        familyKey: family.familyKey,
+        productId: { not: product.id },
+        product: { status: 'PUBLISHED' },
       },
       select: {
-        id: true,
-        slug: true,
-        name: true,
-        priceValue: true,
-        priceCurrency: true,
-        stockStatus: true,
+        keyName: true,
+        product: {
+          select: {
+            id: true,
+            slug: true,
+            priceValue: true,
+            stockStatus: true,
+            variantLabel: true,
+          },
+        },
       },
       take: MAX_FAMILY + 1,
     });
-    return variantOptions(product, members);
+    return variantOptions(
+      {
+        id: product.id,
+        slug: product.slug,
+        name: family.keyName,
+        priceValue: product.priceValue,
+        stockStatus: product.stockStatus,
+        label: family.label,
+      },
+      rows.map((row) => ({
+        id: row.product.id,
+        slug: row.product.slug,
+        name: row.keyName || '',
+        priceValue: row.product.priceValue,
+        stockStatus: row.product.stockStatus,
+        label: row.product.variantLabel,
+      })),
+      family.manual,
+    );
   }
 
   /** One page of one standard-fit group, for paging it on its own. */
@@ -200,42 +245,60 @@ export class RecommendationsService {
     });
   }
 
-  /** Other packs of the same item and their price per piece/kg (packs.ts). */
-  private async packs(product: SimilarityRow) {
-    const own = parsePack(product.name);
+  /**
+   * Other packs of the same item and their price per piece/kg (packs.ts),
+   * read from each card's family name (the supplier's when AI rewrote ours).
+   */
+  private async packs(product: SimilarityRow, keyName: string) {
+    const own = parsePack(keyName);
     if (!own) return [];
-    const candidates = await this.prisma.product.findMany({
+    const rows = await this.prisma.productFamily.findMany({
       where: {
-        status: 'PUBLISHED',
         // Not the category: suppliers file a box and a bag of the same anchor
         // under different branches. Brand + the exact name prefix suffice.
-        brandId: product.brandId,
-        name: { startsWith: own.prefix.trim() },
-        priceValue: { gt: 0 },
+        keyName: { startsWith: own.prefix.trim() },
+        productId: { not: product.id },
+        product: {
+          status: 'PUBLISHED',
+          brandId: product.brandId,
+          priceValue: { gt: 0 },
+        },
       },
       select: {
-        id: true,
-        slug: true,
-        name: true,
-        priceValue: true,
-        priceCurrency: true,
-        stockStatus: true,
-        images: {
-          orderBy: { order: 'asc' },
-          take: 2,
-          select: { url: true, alt: true },
+        keyName: true,
+        product: {
+          select: {
+            id: true,
+            slug: true,
+            name: true,
+            priceValue: true,
+            priceCurrency: true,
+            stockStatus: true,
+            images: {
+              orderBy: { order: 'asc' },
+              take: 2,
+              select: { url: true, alt: true },
+            },
+          },
         },
       },
       take: PACK_CANDIDATES,
     });
     const image = (images: Array<{ url: string; alt: string | null }>) =>
       withoutPlaceholderImages(images)[0]?.url ?? null;
-    return packOptions(product, [
-      ...candidates
-        .filter((candidate) => candidate.id !== product.id)
-        .map((candidate) => ({ ...candidate, image: image(candidate.images) })),
-      { ...product, image: image(product.images) },
-    ]);
+    const shown = new Map<string, string>([[product.id, product.name]]);
+    for (const row of rows) shown.set(row.product.id, row.product.name);
+    return packOptions({ id: product.id, name: keyName }, [
+      ...rows.map((row) => ({
+        ...row.product,
+        name: row.keyName,
+        image: image(row.product.images),
+      })),
+      { ...product, name: keyName, image: image(product.images) },
+    ]).map((option) => ({
+      ...option,
+      name: shown.get(option.id) ?? option.name,
+    }));
   }
 
   /**

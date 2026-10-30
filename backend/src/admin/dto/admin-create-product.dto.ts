@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class AdminCreateProductDto {
   @IsString()
@@ -65,6 +72,21 @@ export class AdminCreateProductDto {
   @IsOptional()
   @IsString()
   seoDescription?: string;
+
+  /**
+   * «Линейка» for the size switch: the same text on products of one brand
+   * makes them one switch; «—» keeps the product out of any. Null clears.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  variantLine?: string | null;
+
+  /** This card's label in the switch («6 мм»); null = read from the name. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  variantLabel?: string | null;
 
   @IsOptional()
   @IsIn(['DRAFT', 'PUBLISHED', 'HIDDEN', 'ARCHIVED'])

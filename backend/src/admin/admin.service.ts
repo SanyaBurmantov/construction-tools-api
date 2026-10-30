@@ -87,6 +87,12 @@ const PAGE_TEXT_FIELDS = [
   'seoDescription',
 ] as const;
 
+/**
+ * The size switch (relations/variants.ts): a change moves `contentUpdatedAt`
+ * too, so the relations worker re-reads the card within a tick.
+ */
+const VARIANT_FIELDS = ['variantLine', 'variantLabel'] as const;
+
 /** Same budget CategoryMergeService gives a subtree rewrite. */
 const CATEGORY_TX_OPTIONS = { maxWait: 10_000, timeout: 120_000 };
 
@@ -479,7 +485,7 @@ export class AdminService {
     // The page text changed: the sitemap's lastmod moves and Yandex is told.
     const textChanged =
       slugChanged ||
-      PAGE_TEXT_FIELDS.some(
+      [...PAGE_TEXT_FIELDS, ...VARIANT_FIELDS].some(
         (field) =>
           sent[field] !== undefined && differs(sent[field], stored[field]),
       );
@@ -1202,6 +1208,12 @@ export class AdminService {
       ...(dto.seoTitle !== undefined ? { seoTitle: dto.seoTitle } : {}),
       ...(dto.seoDescription !== undefined
         ? { seoDescription: dto.seoDescription }
+        : {}),
+      ...(dto.variantLine !== undefined
+        ? { variantLine: dto.variantLine?.trim() || null }
+        : {}),
+      ...(dto.variantLabel !== undefined
+        ? { variantLabel: dto.variantLabel?.trim() || null }
         : {}),
     };
   }
