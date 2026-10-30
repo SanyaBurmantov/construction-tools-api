@@ -892,7 +892,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/products` — `:slug` would take it), and the buy box compares packs per
   piece (`relations/packs.ts`). Every block tags the cart line it adds;
   `OrderItem.upsellSource` feeds the dashboard's «Допродажи» (bump
-  `FITMENT_RULE_VERSION` when tag rules change).
+  `FITMENT_RULE_VERSION` when tag rules change). Fasteners and hand tools
+  too: socket drive, metric thread (bolt ↔ nut/washer, same material
+  first), anchor hole ↔ masonry bit, screw recess ↔ bit.
+  **Size variants** (`relations/variants.ts`, `ProductFamily`): brand + the
+  name with sizes masked is one line; the buy box switches between its
+  sizes (each stays its own page). Standards, models, long codes and power
+  tools are deliberately not sizes — see the module before loosening it.
 - **A product with offers from several suppliers has one owner.**
   `ProductIdentityService.forExistingProduct()`: the oldest offer
   (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only

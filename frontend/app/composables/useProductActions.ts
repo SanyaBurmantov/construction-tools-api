@@ -128,7 +128,8 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
   function addToCart(quantity = 1, upsellSource?: UpsellSource) {
     const line = toCartLine(item.value)
     if (!line) return
-    cart.add({ ...line, upsellSource }, quantity)
+    // '' marks «added on its own»: a later add from a block keeps it that way.
+    cart.add({ ...line, upsellSource: upsellSource ?? '' }, quantity)
     toast.success(`«${item.value.name}» в корзине`)
   }
 

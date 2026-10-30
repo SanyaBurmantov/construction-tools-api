@@ -349,6 +349,8 @@ useHead(() => {
               <span v-if="priceCheckedLabel" class="price-checked">· цена обновлена {{ priceCheckedLabel }}</span>
             </p>
 
+            <ProductVariants v-if="recommendations?.variants?.length" :variants="recommendations.variants" />
+
             <ProductPacks v-if="recommendations?.packs?.length" :packs="recommendations.packs" />
 
             <div v-if="canBuy" class="buy-actions">

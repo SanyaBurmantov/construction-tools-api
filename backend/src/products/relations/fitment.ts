@@ -7,7 +7,7 @@ import { productKind } from './similarity';
  * product gets tags: a TOOL takes `key`, a PART provides it. Read from the
  * name first (that is where suppliers put it), specs as a fallback.
  */
-export const FITMENT_RULE_VERSION = 1;
+export const FITMENT_RULE_VERSION = 3;
 
 export type FitmentRole = 'TOOL' | 'PART';
 export type FitmentTag = { key: string; role: FitmentRole };
@@ -91,7 +91,7 @@ export function batteryPlatform(input: FitmentInput): string | null {
 
 // «Аккумуляторная дрель» is a tool: the battery word must stand alone.
 const BATTERY_ITEM =
-  /^(?:аккумулятор(?:ы|ов)?(?=\s|$)|аккумуляторн\S* батаре|батаре|зарядн|комплект аккумулятор|набор аккумулятор|комплект (?:из )?\d+ аккумулятор|зу(?=\s|$)|сетев\S* адаптер)/i;
+  /^(?:(?:комплект |набор )?аккумулятор(?:ы|ов)?(?=\s|$)|аккумуляторн\S* батаре|батаре|зарядн|комплект (?:из )?\d+ аккумулятор|зу(?=\s|$)|сетев\S* адаптер)/i;
 
 /* ---- Sizes --------------------------------------------------------------- */
 
@@ -149,6 +149,80 @@ function makitaGrinderDiameter(input: FitmentInput): number | null {
   return model ? (sizes[model[1]] ?? null) : null;
 }
 
+/* ---- Fasteners and hand tools ------------------------------------------- */
+
+/** Square drives named in the text («1/2"», «3/8''», «1/4" DR»). */
+function drives(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.matchAll(
+    /(?:^|[^\d/&])(1\/4|3\/8|1\/2|3\/4|1)\s?(?:"|''|”|″|дюйм|dr\b)/gi,
+  ))
+    found.add(match[1]);
+  return [...found];
+}
+
+/** Metric thread diameter: «М10х40» → 10, «M8» → 8; «М5/8» is not one. */
+function threadSize(name: string): string | null {
+  const match =
+    /(?:^|[^\p{L}\d])[МM]\s?(\d{1,2}(?:[.,]\d)?)(?![\d.,]*\s*\/)/u.exec(name);
+  if (!match) return null;
+  const value = Number(match[1].replace(',', '.'));
+  return value >= 2 && value <= 64 ? String(value) : null;
+}
+
+/** «Анкер клиновой М10х120» → 10; «Анкер забиваемый М10х12х40» (drop-in) → 12. */
+function holeSize(name: string): string | null {
+  const dropIn = /[МM]\s?\d+\s?[хx×]\s?(\d{1,2}(?:[.,]\d)?)\s?[хx×]\s?\d+/.exec(
+    name,
+  );
+  const plain =
+    /(?:^|[^\d.,])(?:[МMØø]\s?)?(\d{1,2}(?:[.,]\d)?)\s?[хx×*]\s?\d+/.exec(name);
+  const value = Number((dropIn ?? plain)?.[1].replace(',', '.'));
+  return value >= 4 && value <= 32 ? String(value) : null;
+}
+
+const TORX = new Set([
+  5, 6, 7, 8, 9, 10, 15, 20, 25, 27, 30, 40, 45, 50, 55, 60,
+]);
+
+/**
+ * Recess profiles in the text: PH2, PZ2, T25 (TX/TORX/Т25, Cyrillic РН). Read
+ * as written, capitals only and not inside a word: «Набор бит 10пр.» is not
+ * T10, «7шт» is not T7.
+ */
+function profiles(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.matchAll(
+    /(?:^|[^\p{L}])(PH|PZ|РН|РZ|PН|РH|TORX|Torx|TX|T|Т)\s?-?(\d{1,2})(?!\d)/gu,
+  )) {
+    const prefix = match[1]
+      .toUpperCase()
+      .replace(/Р/g, 'P')
+      .replace(/Н/g, 'H')
+      .replace(/Т/g, 'T');
+    const size = Number(match[2]);
+    if (prefix === 'PH' || prefix === 'PZ') {
+      if (size <= 4) found.add(`${prefix}${size}`);
+    } else if (TORX.has(size)) found.add(`T${size}`);
+  }
+  return [...found];
+}
+
+/**
+ * A screw's recess when only its standard says it: DIN 7981/7982/7983/7985
+ * and drywall screws are Phillips, sized by the diameter.
+ */
+function impliedProfile(name: string, text: string): string | null {
+  if (!/din\s?798[1235]|гкл|гипсокартон/.test(text)) return null;
+  const diameter = Number(
+    /(?:^|[^\d.,])[МM]?\s?(\d(?:[.,]\d)?)\s?[хx×]/
+      .exec(name)?.[1]
+      .replace(',', '.'),
+  );
+  if (!diameter) return null;
+  return diameter <= 3 ? 'PH1' : diameter <= 5 ? 'PH2' : 'PH3';
+}
+
 /* ---- Rules --------------------------------------------------------------- */
 
 const ACCESSORY_START =
@@ -193,7 +267,9 @@ export function fitmentTags(input: FitmentInput): FitmentTag[] {
   // Angle grinders ↔ cutting/grinding discs on a 22.2 mm arbor.
   const grinder =
     /^(?:углошлифмашин|ушм|болгарк)/.test(kind) ||
-    (/^шлифмашин/.test(kind) && /углов/.test(text));
+    (/^шлифмашин/.test(kind) && /углов/.test(text)) ||
+    // «Машина шлифовальная угловая», «Угловая шлифовальная машина»
+    (/^машин/.test(kind) && /шлифовальн/.test(text) && /углов/.test(text));
   if (grinder && isItemTool(name, kind)) {
     const diameter =
       millimetres(name, (value) => GRINDER_DIAMETERS.has(value)) ??
@@ -282,6 +358,59 @@ export function fitmentTags(input: FitmentInput): FitmentTag[] {
   )
     add('hex:1/4', 'PART');
 
+  // Ratchets, breaker bars, torque and impact wrenches ↔ sockets by drive.
+  const drive = drives(text);
+  if (drive.length === 1) {
+    if (
+      /^(?:трещотк|вороток|рукоятк|ключ|гайковерт)/.test(kind) &&
+      /(?:трещот|вороток|динамометр|гайковерт|рукоятк)/.test(text) &&
+      !/^(?:набор|комплект)/.test(text)
+    )
+      add(`drive:${drive[0]}`, 'TOOL');
+    if (
+      (/^(?:набор )?головк/.test(kind) &&
+        !/(?:триммер|косил|леск)/.test(text)) ||
+      (/^вставк/.test(kind) && /торцев/.test(text))
+    )
+      add(`drive:${drive[0]}`, 'PART');
+  }
+
+  // Bolts, screws, studs ↔ nuts and washers of the same metric thread.
+  const thread = threadSize(name);
+  if (thread) {
+    if (/^(?:набор )?(?:болт|винт|шпильк)$/.test(kind))
+      add(`thread:M${thread}`, 'TOOL');
+    if (/^(?:набор )?(?:гайк|шайб)$/.test(kind))
+      add(`thread:M${thread}`, 'PART');
+  }
+
+  // Anchors and wall plugs ↔ masonry bits of the hole they need.
+  if (/^(?:набор )?(?:анкер|дюбел)/.test(kind)) {
+    const hole = holeSize(name);
+    if (hole) add(`hole:${hole}`, 'TOOL');
+  }
+  if (
+    /^(?:набор )?бур/.test(kind) ||
+    (/^(?:набор )?сверл/.test(kind) &&
+      /(?:бетон|камн|кирпич|sds|победит|универсальн)/.test(text))
+  ) {
+    const hole = holeSize(name);
+    if (hole) add(`hole:${hole}`, 'PART');
+  }
+
+  // Screws ↔ bits of their recess (PH2, PZ2, T25).
+  if (/^(?:набор )?(?:саморез|шуруп|винт)$/.test(kind)) {
+    const recess = profiles(name);
+    const implied = recess.length ? null : impliedProfile(name, text);
+    for (const profile of implied ? [implied] : recess)
+      add(`slot:${profile}`, 'TOOL');
+  }
+  if (
+    /^(?:бит[аы]?|биты|набор бит|вставка \(бита\))(?=[\s(]|$)/.test(item) &&
+    !/торцев/.test(text)
+  )
+    for (const profile of profiles(name)) add(`slot:${profile}`, 'PART');
+
   return tags;
 }
 
@@ -315,6 +444,26 @@ export function fitmentTitles(key: string): { parts: string; tools: string } {
       };
     case 'hex':
       return { parts: 'Биты 1/4"', tools: 'Шуруповёрты' };
+    case 'drive':
+      return {
+        parts: `Головки ${value}"`,
+        tools: `Трещотки, воротки и ключи ${value}"`,
+      };
+    case 'thread':
+      return {
+        parts: `Гайки и шайбы ${value.replace('M', 'М')}`,
+        tools: `Болты, винты и шпильки ${value.replace('M', 'М')}`,
+      };
+    case 'hole':
+      return {
+        parts: `Буры и свёрла по бетону ${value} мм`,
+        tools: `Анкеры и дюбели под ${value} мм`,
+      };
+    case 'slot':
+      return {
+        parts: `Биты ${value}`,
+        tools: `Саморезы и шурупы под ${value}`,
+      };
     default:
       return { parts: 'Расходники', tools: 'Инструмент' };
   }

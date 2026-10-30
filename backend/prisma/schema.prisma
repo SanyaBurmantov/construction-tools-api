@@ -226,6 +226,7 @@ model Product {
   compatibleAccessories ProductCompatibility[] @relation("CompatibleProduct")
   fitsProducts          ProductCompatibility[] @relation("CompatibleAccessory")
   fitments              ProductFitment[]
+  family                ProductFamily?
 
   @@index([status, categoryId])
   @@index([status, brandId])
@@ -281,6 +282,17 @@ model ProductFitment {
 
   @@id([productId, key, role])
   @@index([key, role])
+}
+
+/// Size variants of one line (products/relations/variants.ts): the brand +
+/// the name with its sizes masked. Members share `familyKey`.
+model ProductFamily {
+  productId   String  @id
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  familyKey   String  @db.Char(32)
+  ruleVersion Int
+
+  @@index([familyKey])
 }
 
 model ProductSpecification {

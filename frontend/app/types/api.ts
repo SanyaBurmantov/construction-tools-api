@@ -58,6 +58,17 @@ export interface PackOption {
   current: boolean
 }
 
+/** Another size of the same line, labelled by the sizes that differ. */
+export interface VariantOption {
+  slug: string
+  label: string
+  /** In BYN, like every storefront price. */
+  priceValue: number | null
+  /** «in_stock» or null. */
+  stockStatus: string | null
+  current: boolean
+}
+
 /** Separate from product/list payloads; relation evidence stays server-side. */
 export interface ProductRecommendations {
   similar: CatalogProduct[]
@@ -68,6 +79,8 @@ export interface ProductRecommendations {
   /** A part's tools by standard. */
   compatibleTools: FitmentGroup[]
   packs: PackOption[]
+  /** Other sizes of the same line, the current one marked. */
+  variants: VariantOption[]
 }
 
 export interface CartSuggestion {
