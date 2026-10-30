@@ -39,6 +39,12 @@ describe('size variants', () => {
     ]);
   });
 
+  it('does not read letters inside a code as a size', () => {
+    expect(
+      variantName('Головка торцевая JONNESWAY S04H2109 (1/4", 9 мм)')?.values,
+    ).toEqual(['1/4"', '9 мм']);
+  });
+
   it('never makes a family of power tools, codes or models', () => {
     expect(
       variantName(
@@ -84,7 +90,7 @@ describe('size variants', () => {
         member('p2', 'Дюбель распорный 8х40 мм (100 шт в пакете) STARFIX', 9),
       ],
     );
-    expect(options.find((option) => !option.current)?.id).toBe('p2');
+    expect(options.find((option) => !option.current)?.slug).toBe('p2');
   });
 
   it('labels a size written twice once', () => {

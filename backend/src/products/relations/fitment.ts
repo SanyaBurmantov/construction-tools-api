@@ -7,7 +7,7 @@ import { productKind } from './similarity';
  * product gets tags: a TOOL takes `key`, a PART provides it. Read from the
  * name first (that is where suppliers put it), specs as a fallback.
  */
-export const FITMENT_RULE_VERSION = 2;
+export const FITMENT_RULE_VERSION = 3;
 
 export type FitmentRole = 'TOOL' | 'PART';
 export type FitmentTag = { key: string; role: FitmentRole };
@@ -91,7 +91,7 @@ export function batteryPlatform(input: FitmentInput): string | null {
 
 // «Аккумуляторная дрель» is a tool: the battery word must stand alone.
 const BATTERY_ITEM =
-  /^(?:аккумулятор(?:ы|ов)?(?=\s|$)|аккумуляторн\S* батаре|батаре|зарядн|комплект аккумулятор|набор аккумулятор|комплект (?:из )?\d+ аккумулятор|зу(?=\s|$)|сетев\S* адаптер)/i;
+  /^(?:(?:комплект |набор )?аккумулятор(?:ы|ов)?(?=\s|$)|аккумуляторн\S* батаре|батаре|зарядн|комплект (?:из )?\d+ аккумулятор|зу(?=\s|$)|сетев\S* адаптер)/i;
 
 /* ---- Sizes --------------------------------------------------------------- */
 
@@ -185,21 +185,24 @@ const TORX = new Set([
   5, 6, 7, 8, 9, 10, 15, 20, 25, 27, 30, 40, 45, 50, 55, 60,
 ]);
 
-/** Recess profiles in the text: PH2, PZ2, T25 (TX/TORX/Т25, Cyrillic РН). */
+/**
+ * Recess profiles in the text: PH2, PZ2, T25 (TX/TORX/Т25, Cyrillic РН). Read
+ * as written, capitals only and not inside a word: «Набор бит 10пр.» is not
+ * T10, «7шт» is not T7.
+ */
 function profiles(text: string): string[] {
-  const folded = text
-    .toUpperCase()
-    .replace(/Р/g, 'P')
-    .replace(/Н/g, 'H')
-    .replace(/Т/g, 'T')
-    .replace(/З/g, 'Z');
   const found = new Set<string>();
-  for (const match of folded.matchAll(
-    /(?:^|[^A-Z])(PH|PZ|TORX|TX|T)\s?-?(\d{1,2})(?!\d)/g,
+  for (const match of text.matchAll(
+    /(?:^|[^\p{L}])(PH|PZ|РН|РZ|PН|РH|TORX|Torx|TX|T|Т)\s?-?(\d{1,2})(?!\d)/gu,
   )) {
+    const prefix = match[1]
+      .toUpperCase()
+      .replace(/Р/g, 'P')
+      .replace(/Н/g, 'H')
+      .replace(/Т/g, 'T');
     const size = Number(match[2]);
-    if (match[1] === 'PH' || match[1] === 'PZ') {
-      if (size <= 4) found.add(`${match[1]}${size}`);
+    if (prefix === 'PH' || prefix === 'PZ') {
+      if (size <= 4) found.add(`${prefix}${size}`);
     } else if (TORX.has(size)) found.add(`T${size}`);
   }
   return [...found];
@@ -264,7 +267,9 @@ export function fitmentTags(input: FitmentInput): FitmentTag[] {
   // Angle grinders ↔ cutting/grinding discs on a 22.2 mm arbor.
   const grinder =
     /^(?:углошлифмашин|ушм|болгарк)/.test(kind) ||
-    (/^шлифмашин/.test(kind) && /углов/.test(text));
+    (/^шлифмашин/.test(kind) && /углов/.test(text)) ||
+    // «Машина шлифовальная угловая», «Угловая шлифовальная машина»
+    (/^машин/.test(kind) && /шлифовальн/.test(text) && /углов/.test(text));
   if (grinder && isItemTool(name, kind)) {
     const diameter =
       millimetres(name, (value) => GRINDER_DIAMETERS.has(value)) ??

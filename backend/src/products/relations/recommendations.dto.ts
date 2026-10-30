@@ -27,7 +27,8 @@ export class RecommendationsQueryDto {
 
 export class RecommendationGroupQueryDto {
   @IsString()
-  @Matches(/^[a-z]+:[a-z0-9./-]{1,32}$/)
+  // Values keep their case: «thread:M10», «slot:PH2».
+  @Matches(/^[a-z]+:[A-Za-z0-9./-]{1,32}$/)
   key!: string;
 
   @IsIn(['PART', 'TOOL'])

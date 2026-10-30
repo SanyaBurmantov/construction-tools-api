@@ -499,6 +499,14 @@ integration('product recommendations (PostgreSQL)', () => {
       .consumables[0];
     expect(nuts.title).toBe('Гайки и шайбы М10');
     expect(nuts.data.map((row) => row.id)).toEqual([steelNut.id, zincNut.id]);
+    // Keys keep their case through the validation pipe.
+    expect(
+      (
+        await fetch(
+          `${origin}/products/${bolt.slug}/recommendations/group?key=thread:M10&role=PART&page=1`,
+        )
+      ).status,
+    ).toBe(200);
   });
 
   it('serves cart suggestions over HTTP and validates the ids', async () => {

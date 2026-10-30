@@ -262,6 +262,21 @@ describe('fitment by standard', () => {
     ]);
   });
 
+  it('regressions from the review', () => {
+    // «10пр.», «7шт» are not TORX sizes.
+    expect(
+      tags('Набор бит 10пр. в пластиковом футляре Forsage F-2101'),
+    ).toEqual(['PART hex:1/4']);
+    expect(tags('Набор бит 7шт смеш. Max Grip')).toEqual(['PART hex:1/4']);
+    // A kit of cordless tools is a tool, not a battery.
+    expect(
+      tags('Набор аккумуляторного инструмента MAKITA DLX2283 LXT', 'MAKITA'),
+    ).toEqual(['TOOL battery:makita-lxt']);
+    expect(tags('Машина шлифовальная угловая 125 мм, 1100 Вт ЗУБР')).toEqual([
+      'TOOL disc:125',
+    ]);
+  });
+
   it('titles groups for both sides', () => {
     expect(fitmentTitles('disc:125')).toEqual({
       parts: 'Круги и диски 125 мм',

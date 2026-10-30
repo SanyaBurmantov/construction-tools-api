@@ -36,7 +36,7 @@ const shown = computed(() => {
 })
 const hint = (variant: VariantOption) =>
   [
-    variant.priceValue != null ? formatPrice(variant.priceValue, variant.priceCurrency) : null,
+    variant.priceValue != null ? formatPrice(variant.priceValue, 'BYN') : null,
     variant.stockStatus === 'in_stock' ? 'в наличии' : 'под заказ',
   ]
     .filter(Boolean)
@@ -51,7 +51,7 @@ const hint = (variant: VariantOption) =>
       <div v-for="[head, items] in rows" :key="head" class="row">
         <dt>{{ head }}</dt>
         <dd>
-          <template v-for="{ variant, tail } in items" :key="variant.id">
+          <template v-for="{ variant, tail } in items" :key="variant.slug">
             <span v-if="variant.current" class="chip is-current" aria-current="page">{{ tail }}</span>
             <NuxtLink
               v-else
@@ -68,7 +68,7 @@ const hint = (variant: VariantOption) =>
     </dl>
 
     <ul v-else>
-      <li v-for="variant in shown" :key="variant.id">
+      <li v-for="variant in shown" :key="variant.slug">
         <span v-if="variant.current" class="chip is-current" aria-current="page">{{ variant.label }}</span>
         <NuxtLink
           v-else

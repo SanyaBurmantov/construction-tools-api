@@ -102,6 +102,50 @@ describe('explicit compatibility', () => {
     ).toEqual(expected);
   });
 
+  it('regressions from the review: profiles, refrigerants, remarks, counts', () => {
+    const kingTony = createBrandMatcher([
+      ...brands,
+      { id: 'kt', name: 'KING TONY' },
+      { id: 'jtc', name: 'JTC' },
+      { id: 'nb', name: 'NORDBERG' },
+      { id: '3ton', name: '3TON' },
+    ]);
+    expect(
+      extractModelReferences(
+        {
+          ...accessory(''),
+          name: 'Вставка (бита) прецизионная для отвертки 91230, TORX T6 /TORX T10 KING TONY',
+          brandId: 'kt',
+        },
+        kingTony,
+      ).flatMap((r) => r.codes),
+    ).not.toContain('TORXT6');
+    expect(
+      extractModelReferences(
+        { ...accessory(''), name: 'Шланг заправочный для NORDBERG R134a' },
+        kingTony,
+      ),
+    ).toEqual([]);
+    expect(
+      extractModelReferences(
+        {
+          ...accessory(''),
+          name: 'Головка для JTC-1614 (MERCEDES 107, 114, 115, 116, 126)',
+          brandId: 'jtc',
+        },
+        kingTony,
+      ).flatMap((r) => r.codes),
+    ).not.toContain('115');
+    expect(
+      ownModelCodes(
+        tool('kit', 'Набор инструментов JTC-I4100S (115 предметов)', 'jtc'),
+        'JTC',
+      ),
+    ).not.toContain('115');
+    // A brand that starts with a digit is still a brand.
+    expect(kingTony.at('3TON SH 3000')?.brand.id).toBe('3ton');
+  });
+
   it('takes the accessory brand when the claim names only the model', () => {
     expect(
       codes(

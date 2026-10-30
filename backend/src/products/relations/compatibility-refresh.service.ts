@@ -29,8 +29,10 @@ import {
 import { RELATION_IDENTITY_SELECT } from './relation-select';
 import { VARIANT_RULE_VERSION, familyKey } from './variants';
 
-// v2: rule 2 starts its own pass instead of resuming rule 1's cursor.
-const CURSOR_KEY = 'productRelations.cursor.v2';
+// Any rule change starts a pass from the beginning instead of resuming the
+// previous rules' cursor; until it reaches a product, reads show that
+// product's previous rows (each product's rows are replaced whole).
+const CURSOR_KEY = `productRelations.cursor.c${COMPATIBILITY_RULE_VERSION}.f${FITMENT_RULE_VERSION}.v${VARIANT_RULE_VERSION}`;
 /** Most products are not accessories and cost a regex, not a query. */
 const BATCH_SIZE = 200;
 const MAX_CANDIDATES = 1000;
@@ -68,7 +70,13 @@ export class CompatibilityRefreshService {
     this.running = true;
     try {
       const matcher = await this.brandMatcher();
-      let links = await this.refreshChanged(matcher);
+      // A failure here must not stall the sweep, which is also its backstop.
+      let links = await this.refreshChanged(matcher).catch((error: unknown) => {
+        this.logger.error(
+          `Changed-products refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return 0;
+      });
       const cursor = await this.prisma.siteSetting.findUnique({
         where: { key: CURSOR_KEY },
       });

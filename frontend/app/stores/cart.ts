@@ -12,7 +12,8 @@ export interface CartItem {
   quantity: number
   /**
    * The recommendation block the line came from (`UpsellSource`), sent with
-   * the order for the admin's upsell report. The first one sticks.
+   * the order for the admin's upsell report; '' = added on its own. The
+   * first one sticks.
    */
   upsellSource?: string
 }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 /** Bump whenever extraction or matching changes: older rows are never read. */
-export const COMPATIBILITY_RULE_VERSION = 2;
+export const COMPATIBILITY_RULE_VERSION = 3;
 /** Links kept per accessory. */
 export const MAX_LINKS = 16;
 /** One reference never fans out further than this — beyond it, it is a family. */
@@ -173,6 +173,13 @@ function readRun(
  */
 function isCode(code: string): boolean {
   if (code.length > 30 || !/\d/.test(code)) return false;
+  // A recess profile («TORX T6», «PH2») or a refrigerant («R134a») is shared by
+  // every screwdriver and every A/C fitting — never a model.
+  if (
+    /^(?:TORX|TX)?T?\d{1,2}H?$|^(?:PH|PZ|SL|HEX|SW|H)\d{1,2}$/.test(code) ||
+    /^R\d{2,4}[A-Z]{0,2}$/.test(code)
+  )
+    return false;
   return /[A-Z]/.test(code)
     ? code.length >= 4
     : code.length >= 3 && !code.startsWith('0');
@@ -249,8 +256,10 @@ export function createBrandMatcher(brands: RelationBrand[]): BrandMatcher {
   return {
     at(text) {
       const match = pattern?.exec(text);
-      // «Практик», «Помощник» are brands and words: a brand is capitalised.
-      if (!match || match[0][0] === match[0][0].toLowerCase()) return null;
+      // «Практик», «Помощник» are brands and words: a brand is capitalised
+      // (its first letter — «3TON» starts with a digit).
+      const letter = match?.[0].match(/\p{L}/u)?.[0];
+      if (!match || !letter || letter === letter.toLowerCase()) return null;
       const brand = byName.get(match[0].toLowerCase());
       return brand ? { brand, length: match[0].length } : null;
     },
@@ -299,7 +308,9 @@ function sentenceReferences(
   field: ModelReference['field'],
   ownBrand: RelationBrand | undefined,
 ): ModelReference[] {
-  const body = tail.replace(LEADING_WORDS, '');
+  // A parenthesis is a remark, not the list: «JTC-1614 (MERCEDES 107, 114)»
+  // would carry the brand onto a car's model numbers.
+  const body = tail.replace(LEADING_WORDS, '').split('(')[0];
   const found: ModelReference[] = [];
   // «Шина MAKITA для SP 6000»: a maker's part names only the model.
   let brand: RelationBrand | undefined = ownBrand;
@@ -433,7 +444,12 @@ export function ownModelCodes(
   const codes = new Set<string>();
   for (let index = 0; index < tokens.length; ) {
     const { parts, end: next } = readRun(tokens, index);
-    for (const code of leadingVariants(parts)) codes.add(code);
+    // «115 предметов», «4 зуба»: a bare number before a word is a count.
+    const count =
+      parts.length === 1 &&
+      /^\d+$/.test(parts[0]) &&
+      /^[а-яё]/u.test(tokens[next] ?? '');
+    if (!count) for (const code of leadingVariants(parts)) codes.add(code);
     index = next;
   }
   // An accessory's article («фильтр … JA-3808AN») is not a tool's model.

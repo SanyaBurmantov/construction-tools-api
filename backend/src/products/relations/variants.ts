@@ -8,7 +8,7 @@ import { parsePack } from './packs';
  * tools are left out (their numbers are models and watts, not sizes), and a
  * standard's number («DIN 933») is part of the name, not a size.
  */
-export const VARIANT_RULE_VERSION = 1;
+export const VARIANT_RULE_VERSION = 2;
 /**
  * Listings read per family: STARFIX sells every bolt size in several packs,
  * so DIN 933 is ~470 cards for ~150 sizes. The size count is what is capped.
@@ -70,9 +70,8 @@ export function variantName(name: string): VariantName | null {
   for (const match of text.matchAll(SIZE)) {
     const start = match.index;
     const before = text.slice(0, start);
-    // Inside a word or a code («AG1209», «DF333») — not a size.
-    if (/[\p{L}\d-]$/u.test(before) && !/[МMØøPHZTWXS]$/iu.test(match[0][0]))
-      continue;
+    // Inside a word or a code («AG1209», «S04H2109») — not a size.
+    if (/[\p{L}\d-]$/u.test(before)) continue;
     if (/[\p{L}]$/u.test(before) || FIXED_BEFORE.test(before)) continue;
     if (/^\d/.test(match[0]) && MODEL_BEFORE.test(before)) continue;
     // Inside a code: «CS-15.50.300», «СТФ 744-1,8», «AG 1209-3».
@@ -115,12 +114,14 @@ export type VariantMember = {
   stockStatus: string | null;
 };
 
+/**
+ * Lean on purpose: a DIN 933 family is ~165 sizes and every one of them goes
+ * into the product page's SSR payload.
+ */
 export type VariantOption = {
-  id: string;
   slug: string;
   label: string;
   priceValue: number | null;
-  priceCurrency: string | null;
   stockStatus: string | null;
   current: boolean;
 };
@@ -190,12 +191,11 @@ export function variantOptions(
       return la.localeCompare(lb, 'ru');
     })
     .map(([label, { member }]) => ({
-      id: member.id,
       slug: member.slug,
       label,
       priceValue: member.priceValue,
-      priceCurrency: member.priceCurrency,
-      stockStatus: member.stockStatus,
+      // «in_stock» or nothing: the switch only dims what is not on hand.
+      stockStatus: member.stockStatus === 'in_stock' ? 'in_stock' : null,
       current: member.id === current.id,
     }));
 }

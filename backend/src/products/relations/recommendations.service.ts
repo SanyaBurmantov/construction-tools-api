@@ -2,19 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { withoutPlaceholderImages } from '../../common/utils/product-images';
-import { COMPATIBILITY_RULE_VERSION } from './compatibility';
-import {
-  FITMENT_RULE_VERSION,
-  fitmentTitles,
-  type FitmentRole,
-} from './fitment';
+import { fitmentTitles, type FitmentRole } from './fitment';
 import { packOptions, parsePack } from './packs';
-import {
-  MAX_FAMILY,
-  VARIANT_RULE_VERSION,
-  familyKey,
-  variantOptions,
-} from './variants';
+import { MAX_FAMILY, familyKey, variantOptions } from './variants';
 import { similarityScore } from './similarity';
 import {
   RECOMMENDATION_CARD_SELECT,
@@ -66,7 +56,7 @@ export class RecommendationsService {
     });
     if (!product) throw new NotFoundException('Товар не найден');
     const tags = await this.prisma.productFitment.findMany({
-      where: { productId: product.id, ruleVersion: FITMENT_RULE_VERSION },
+      where: { productId: product.id },
       select: { key: true, role: true },
       orderBy: { key: 'asc' },
     });
@@ -119,7 +109,7 @@ export class RecommendationsService {
       where: {
         status: 'PUBLISHED',
         id: { not: product.id },
-        family: { familyKey: key, ruleVersion: VARIANT_RULE_VERSION },
+        family: { familyKey: key },
       },
       select: {
         id: true,
@@ -147,7 +137,6 @@ export class RecommendationsService {
         productId: product.id,
         key,
         role: role === 'PART' ? 'TOOL' : 'PART',
-        ruleVersion: FITMENT_RULE_VERSION,
       },
     });
     if (!own) throw new NotFoundException('Подборка не найдена');
@@ -173,7 +162,6 @@ export class RecommendationsService {
     const from = Prisma.sql`
       FROM "ProductFitment" f JOIN "Product" p ON p."id" = f."productId"
       WHERE f."key" = ${key} AND f."role" = ${role}
-        AND f."ruleVersion" = ${FITMENT_RULE_VERSION}
         AND p."status" = 'PUBLISHED' AND p."priceValue" > 0
         AND p."id" <> ${product.id}`;
     const [count] = await this.prisma.$queryRaw<Array<{ total: number }>>`
@@ -259,27 +247,32 @@ export class RecommendationsService {
     const ids = [...new Set(productIds)].slice(0, 50);
     if (!ids.length) return { data: [] };
     const inCart = Prisma.join(ids);
+    // At most 5 per tool before the turns: one tool with forty accessories
+    // must not crowd the others out of the query.
     const stated = await this.prisma.$queryRaw<
       Array<{ id: string; forName: string }>
     >`
-      SELECT a."id", p."name" AS "forName"
-      FROM "ProductCompatibility" r
-      JOIN "Product" a ON a."id" = r."accessoryId"
-      JOIN "Product" p ON p."id" = r."productId"
-      WHERE r."productId" IN (${inCart}) AND a."id" NOT IN (${inCart})
-        AND r."ruleVersion" = ${COMPATIBILITY_RULE_VERSION}
-        AND a."status" = 'PUBLISHED' AND p."status" = 'PUBLISHED'
-        AND a."priceValue" > 0
-        AND r."accessorySignature" = ${accessorySignatureSql('a')}
-        AND r."productSignature" = ${targetSignatureSql('p')}
-      ORDER BY (a."stockStatus" = 'in_stock') DESC NULLS LAST,
-        a."listingRank" DESC, a."name"
-      LIMIT 40`;
+      SELECT "id", "forName" FROM (
+        SELECT a."id", p."name" AS "forName", row_number() OVER (
+          PARTITION BY r."productId"
+          ORDER BY (a."stockStatus" = 'in_stock') DESC NULLS LAST,
+            a."listingRank" DESC, a."name"
+        ) AS "rank"
+        FROM "ProductCompatibility" r
+        JOIN "Product" a ON a."id" = r."accessoryId"
+        JOIN "Product" p ON p."id" = r."productId"
+        WHERE r."productId" IN (${inCart}) AND a."id" NOT IN (${inCart})
+          AND a."status" = 'PUBLISHED' AND p."status" = 'PUBLISHED'
+          AND a."priceValue" > 0
+          AND r."accessorySignature" = ${accessorySignatureSql('a')}
+          AND r."productSignature" = ${targetSignatureSql('p')}
+      ) ranked
+      WHERE "rank" <= 5
+      ORDER BY "rank", "forName"`;
     const tools = await this.prisma.productFitment.findMany({
       where: {
         productId: { in: ids },
         role: 'TOOL',
-        ruleVersion: FITMENT_RULE_VERSION,
         product: { status: 'PUBLISHED' },
       },
       select: { key: true, product: { select: { brandId: true } } },
@@ -292,7 +285,6 @@ export class RecommendationsService {
           SELECT p."id"
           FROM "ProductFitment" f JOIN "Product" p ON p."id" = f."productId"
           WHERE f."key" = ${key} AND f."role" = 'PART'
-            AND f."ruleVersion" = ${FITMENT_RULE_VERSION}
             AND p."status" = 'PUBLISHED' AND p."priceValue" > 0
             AND p."id" NOT IN (${inCart})
           ORDER BY (p."stockStatus" = 'in_stock') DESC NULLS LAST,
@@ -390,7 +382,7 @@ export class RecommendationsService {
       FROM "ProductCompatibility" r
       JOIN "Product" a ON a."id" = r."accessoryId"
       JOIN "Product" p ON p."id" = r."productId"
-      WHERE ${anchor} AND r."ruleVersion" = ${COMPATIBILITY_RULE_VERSION}
+      WHERE ${anchor}
         AND a."status" = 'PUBLISHED' AND p."status" = 'PUBLISHED'
         AND r."accessorySignature" = ${accessorySignatureSql('a')}
         AND r."productSignature" = ${targetSignatureSql('p')}`;

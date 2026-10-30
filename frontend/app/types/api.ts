@@ -60,11 +60,11 @@ export interface PackOption {
 
 /** Another size of the same line, labelled by the sizes that differ. */
 export interface VariantOption {
-  id: string
   slug: string
   label: string
+  /** In BYN, like every storefront price. */
   priceValue: number | null
-  priceCurrency: string | null
+  /** «in_stock» or null. */
   stockStatus: string | null
   current: boolean
 }
