@@ -44,7 +44,8 @@ export const SIMILARITY_SELECT = {
       specification: { canonicalKey: { not: null } },
     },
     orderBy: { specificationId: 'asc' },
-    take: 40,
+    // Enough to compare; every product page loads this for ~48 candidates.
+    take: 16,
     select: {
       valueNorm: true,
       specification: { select: { canonicalKey: true, name: true } },

@@ -14,6 +14,8 @@ import { RecommendationsQueryDto } from './recommendations.dto';
 import { RELATION_IDENTITY_SELECT } from './relation-select';
 
 const testUrl = process.env.PRODUCT_RELATIONS_TEST_DATABASE_URL;
+// The tests change data and read it back at once.
+process.env.RECOMMENDATIONS_CACHE_MS = '0';
 const integration = testUrl ? describe : describe.skip;
 
 /** Opt-in only: migrations must be applied to an isolated test database. */
