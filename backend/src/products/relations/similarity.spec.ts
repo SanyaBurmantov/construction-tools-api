@@ -62,8 +62,34 @@ describe('similarity ranking', () => {
         categoryId: 'other',
       }),
     ).toBe(0);
+    expect(similarityScore(product('a', 'Новый'), product('b', 'Новый'))).toBe(
+      0,
+    );
+  });
+
+  // 68% of the production catalogue had no kind and so no «Похожие».
+  it('falls back to the first noun of the name', () => {
     expect(
-      similarityScore(product('a', 'Прочее'), product('b', 'Прочее')),
+      productKind(product('a', 'Анкер забиваемый М10х12х40 мм (4 шт) STARFIX')),
+    ).toBe('анкер');
+    expect(productKind(product('a', 'Гайка М24 шестигр., цинк, DIN 934'))).toBe(
+      productKind(product('b', 'Гайки М6 барашковые')),
+    );
+    expect(productKind(product('a', 'Строительный фен 2000 Вт'))).toBe('фен');
+    expect(productKind(product('a', 'Набор для ремонта шин'))).toBe(
+      'набор ремонт',
+    );
+    expect(
+      similarityScore(
+        product('a', 'Анкер клиновой М10х120 мм'),
+        product('b', 'Болт М10х120 мм'),
+      ),
     ).toBe(0);
+    expect(
+      similarityScore(
+        product('a', 'Анкер клиновой М10х120 мм'),
+        product('b', 'Анкер рамный 10х112 мм'),
+      ),
+    ).toBeGreaterThan(0);
   });
 });

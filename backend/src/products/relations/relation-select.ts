@@ -4,7 +4,6 @@ import { Prisma } from '@prisma/client';
 export const RELATION_IDENTITY_SELECT = {
   id: true,
   name: true,
-  categoryId: true,
   brandId: true,
   model: true,
   sku: true,
@@ -53,17 +52,19 @@ export const SIMILARITY_SELECT = {
   },
 } satisfies Prisma.ProductSelect;
 
-/** Fixed aliases only. SQL and compatibilitySignature() must stay identical. */
-export function signatureSql(alias: 'a' | 'p') {
-  const column = (name: string) => Prisma.raw(`"${alias}"."${name}"`);
-  const columns = [
-    'name',
-    'categoryId',
-    'brandId',
-    'model',
-    'sku',
-    'descriptionShort',
-    'descriptionFull',
-  ].map((name) => Prisma.sql`coalesce(${column(name)}, '')`);
-  return Prisma.sql`md5(concat_ws(chr(31), ${Prisma.join(columns)}, coalesce(array_to_string(${column('aiLockedFields')}, chr(30)), '')))`;
+const column = (alias: string, name: string) =>
+  Prisma.raw(`"${alias}"."${name}"`);
+const text = (alias: string, name: string) =>
+  Prisma.sql`coalesce(${column(alias, name)}, '')`;
+
+/**
+ * Fixed aliases only. Must stay identical to accessorySignature() /
+ * targetSignature() in compatibility.ts — same fields, order, separators.
+ */
+export function accessorySignatureSql(alias: 'a') {
+  return Prisma.sql`md5(concat_ws(chr(31), ${text(alias, 'name')}, ${text(alias, 'descriptionShort')}, ${text(alias, 'descriptionFull')}, coalesce(array_to_string(${column(alias, 'aiLockedFields')}, chr(30)), '')))`;
+}
+
+export function targetSignatureSql(alias: 'p') {
+  return Prisma.sql`md5(concat_ws(chr(31), ${text(alias, 'name')}, ${text(alias, 'brandId')}, ${text(alias, 'model')}, ${text(alias, 'sku')}))`;
 }

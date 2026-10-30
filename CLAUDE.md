@@ -863,6 +863,22 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   карточек + контрольная группа, этапы — каждый создаётся один раз, отчёт).
   Сквозной тест на настоящей базе: `src/ai/ai-pipeline.db.spec.ts`
   (пропускается без `AI_PIPELINE_TEST_DATABASE_URL` на базе `*_test`).
+- **Product page recommendations** (`products/relations/`,
+  `GET /products/:slug/recommendations`, details in `feature.md`). «Похожие»
+  are computed per request (same category, pg_trgm-closest names, ranked by
+  kind/specs/price; filled from the category so the row is never empty).
+  «Аксессуары» / «Подходит для» read one table, `ProductCompatibility`
+  (accessory → tool), built by `CompatibilityRefreshService` in the worker —
+  200 products / 30 s, a full pass ≈ 3.6 h, no button. Only an explicit
+  supplier claim («Мешок для пылесоса BULL AS 3001», «подходит для …») with a
+  brand and a model code counts. **The tool's model is read from its name**:
+  in production `model` is empty and `sku` is the supplier's internal number —
+  matching on those columns alone found 1 link in 85k products. A model's kits
+  match (`DF333` → `DF333DWYE`, never `VX100` → `VX1000`) and every listing of
+  the same model is linked (markdown copies are not ambiguity). An AI-renamed
+  accessory is read from its owning `SourceProduct.name`. Rows carry md5
+  signatures of their inputs that the read checks, so an edit hides a link at
+  once; bump `COMPATIBILITY_RULE_VERSION` when the rules change.
 - **A product with offers from several suppliers has one owner.**
   `ProductIdentityService.forExistingProduct()`: the oldest offer
   (`SourceProduct.createdAt`, then `id`) rewrites the card; the others only

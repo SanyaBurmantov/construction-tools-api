@@ -44,25 +44,59 @@ const TYPES: Array<[string, RegExp]> = [
   ['бита', /^бит(?:а|ы|у)?$/u],
 ];
 
-/** Adjectives/brand/voltage cannot establish the kind of an item. */
+// Abbreviations and qualifiers that open a name without naming the item.
+const NOT_A_KIND = new Set([
+  'аккум',
+  'электр',
+  'электро',
+  'бензо',
+  'пневмо',
+  'проф',
+  'новый',
+  'new',
+  'для',
+  'под',
+  'без',
+  'при',
+]);
+// «Строительный», «Пильная», «Монтажное» describe; «Соединение» names.
+const ADJECTIVE = /(?:ый|ий|ой|ая|яя|ое|ые)$/u;
+const ENDING = /(?:ами|ями|ов|ев|ей|ах|ях|ы|и|а|я|у|ю|е|о)$/u;
+
+/**
+ * The kind of item, from its name: a known tool/accessory noun anywhere,
+ * otherwise the first noun of the name («Анкер забиваемый …» → «анкер»,
+ * «Гайки М6» → «гайк»). Adjectives, brand and voltage never decide it.
+ */
 export function productKind(
   product: Pick<SimilarityProduct, 'name' | 'brand'>,
 ): string {
   const brandWords = new Set(
     normalizeName(product.brand?.name ?? '').split(' '),
   );
-  const ordered =
+  const ordered = (
     product.name
       .toLowerCase()
       .replace(/ё/g, 'е')
-      .match(/[a-zа-я]{3,}/gu) ?? [];
+      .match(/[a-zа-я]{3,}/gu) ?? []
+  ).filter((value) => !brandWords.has(value));
   let set = false;
-  for (const word of ordered.filter((value) => !brandWords.has(value))) {
+  for (const word of ordered) {
     if (word === 'набор' || word === 'комплект') set = true;
     const type = TYPES.find(([, pattern]) => pattern.test(word));
     if (type) return `${set ? 'набор ' : ''}${type[0]}`;
   }
-  return '';
+  const noun = ordered.find(
+    (word) =>
+      /^[а-я]+$/u.test(word) &&
+      word !== 'набор' &&
+      word !== 'комплект' &&
+      !NOT_A_KIND.has(word) &&
+      !ADJECTIVE.test(word),
+  );
+  if (!noun) return '';
+  const stem = noun.length > 4 ? noun.replace(ENDING, '') : noun;
+  return `${set ? 'набор ' : ''}${stem}`;
 }
 
 function properties(product: SimilarityProduct): Map<string, string> {

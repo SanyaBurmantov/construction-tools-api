@@ -154,7 +154,7 @@ integration('product recommendations (PostgreSQL)', () => {
     expect(result.fits.data.map((row) => row.id)).toEqual([host.id]);
   });
 
-  it('keeps suffix variants separate and rejects ambiguity even before the next sweep', async () => {
+  it('keeps suffix variants separate and links every listing of the same model', async () => {
     const { brand, host, accessory } = await fixture();
     await create('Пылесос VX100D', 'VX100D');
     expect(
@@ -162,18 +162,125 @@ integration('product recommendations (PostgreSQL)', () => {
         await service.get(accessory.slug, new RecommendationsQueryDto())
       ).fits.data.map((row) => row.id),
     ).toEqual([host.id]);
-    const duplicate = await create('Пылесос VX100 другой', 'VX-100');
-    expect(
-      (await service.get(accessory.slug, new RecommendationsQueryDto())).fits
-        .data,
-    ).toEqual([]);
+    // A markdown copy is the same model, not ambiguity.
+    const markdown = await create('Пылесос VX100 уцененный', 'VX-100');
     await worker.refreshProduct(accessory, [brand]);
     expect(
-      await prisma.productCompatibility.count({
-        where: { accessoryId: accessory.id },
-      }),
-    ).toBe(0);
-    await prisma.product.delete({ where: { id: duplicate.id } });
+      (
+        await service.get(accessory.slug, new RecommendationsQueryDto())
+      ).fits.data
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual([host.id, markdown.id].sort());
+  });
+
+  it('finds the tool by the model in its name, in either alphabet, and its kits', async () => {
+    const brand = await prisma.brand.findUniqueOrThrow({
+      where: { id: brandId },
+    });
+    // Production: the tool's model column is empty, its sku is an internal
+    // number — only the name says «AS 3001».
+    const vacuum = await create(
+      `Пылесос ${brand.name} AS 3001 + аксессуары 1400 Вт, 30 л`,
+      '',
+    );
+    await prisma.product.update({
+      where: { id: vacuum.id },
+      data: { model: null, sku: '15030129' },
+    });
+    const kit = await create(
+      `Аккум. дрель-шуруповерт ${brand.name} DF 333 DWYE в чем.`,
+      '',
+    );
+    const trimmer = await create(
+      `Триммер ${brand.name} ТЕ 4217-1 S в кор.`,
+      '',
+    );
+    const bag = await create(
+      `Мешок для пылесоса ${brand.name} AS 3001 сменный`,
+      '',
+    );
+    const battery = await create(
+      'Аккумулятор 12 В',
+      '',
+      `Подходит для ${brand.name} DF 333.`,
+    );
+    const knife = await create(
+      `Нож для триммера ${brand.name} TE 4217-1 S`,
+      '',
+    );
+    for (const row of [bag, battery, knife])
+      await worker.refreshProduct(
+        await prisma.product.findUniqueOrThrow({
+          where: { id: row.id },
+          select: RELATION_IDENTITY_SELECT,
+        }),
+        [brand],
+      );
+    const fitsOf = async (slug: string) =>
+      (await service.get(slug, new RecommendationsQueryDto())).fits.data.map(
+        (row) => row.id,
+      );
+    expect(await fitsOf(bag.slug)).toEqual([vacuum.id]);
+    expect(await fitsOf(battery.slug)).toEqual([kit.id]);
+    expect(await fitsOf(knife.slug)).toEqual([trimmer.id]);
+    expect(
+      (
+        await service.get(vacuum.slug, new RecommendationsQueryDto())
+      ).accessories.data.map((row) => row.id),
+    ).toEqual([bag.id]);
+  });
+
+  it('sweeps the catalogue on its own, reading an AI-renamed accessory from its offer', async () => {
+    const { brand, host } = await fixture();
+    const renamed = await create('Фильтр тонкой очистки', '');
+    await prisma.product.update({
+      where: { id: renamed.id },
+      data: { aiLockedFields: ['name'] },
+    });
+    const source = await prisma.source.create({
+      data: { name: 'test', code: randomUUID(), url: 'https://example.test' },
+    });
+    await prisma.sourceProduct.create({
+      data: {
+        sourceId: source.id,
+        externalId: renamed.id,
+        url: `https://example.test/${renamed.id}`,
+        name: `Фильтр для пылесоса ${brand.name} VX100`,
+        specifications: {},
+        productId: renamed.id,
+      },
+    });
+    await prisma.siteSetting.deleteMany({
+      where: { key: { startsWith: 'productRelations.cursor' } },
+    });
+    // Runs until the pass wraps around: no button, no manual step.
+    for (let tick = 0; tick < 50 && (await worker.refresh()) >= 0; tick += 1) {
+      const cursor = await prisma.siteSetting.findUnique({
+        where: { key: 'productRelations.cursor.v2' },
+      });
+      if (cursor?.value === '') break;
+    }
+    expect(
+      (
+        await service.get(host.slug, new RecommendationsQueryDto())
+      ).accessories.data
+        .map((row) => row.id)
+        .sort(),
+    ).toContain(renamed.id);
+    await prisma.sourceProduct.deleteMany({ where: { sourceId: source.id } });
+    await prisma.source.delete({ where: { id: source.id } });
+  });
+
+  it('fills «Похожие» from the category when the kind is shared by few', async () => {
+    const anchor = await create('Анкер клиновой М10х120 мм', '');
+    const sibling = await create('Анкер рамный 10х112 мм', '');
+    const neighbour = await create('Болт М10х120 мм', '');
+    const similar = (
+      await service.get(anchor.slug, new RecommendationsQueryDto())
+    ).similar.map((row) => row.id);
+    expect(similar[0]).toBe(sibling.id);
+    expect(similar).toContain(neighbour.id);
   });
 
   it('hides changed source evidence immediately and rebuilds the reverse link', async () => {

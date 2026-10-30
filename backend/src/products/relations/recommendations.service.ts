@@ -3,11 +3,12 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { withoutPlaceholderImages } from '../../common/utils/product-images';
 import { COMPATIBILITY_RULE_VERSION } from './compatibility';
-import { productKind, similarityScore } from './similarity';
+import { similarityScore } from './similarity';
 import {
   RECOMMENDATION_CARD_SELECT,
   SIMILARITY_SELECT,
-  signatureSql,
+  accessorySignatureSql,
+  targetSignatureSql,
 } from './relation-select';
 import { RecommendationsQueryDto } from './recommendations.dto';
 
@@ -58,21 +59,27 @@ export class RecommendationsService {
     return { similar, accessories, fits };
   }
 
+  /**
+   * Same category, the closest names first (pg_trgm), ranked by kind, title,
+   * specs, price and brand. When fewer than four share the kind, the rest of
+   * the row is the category's closest names — the block never goes empty for
+   * a product that has neighbours.
+   */
   private async similar(product: SimilarityRow) {
-    const kind = productKind(product);
-    if (!kind) return [];
-    const candidates = await this.prisma.product.findMany({
-      where: {
-        id: { not: product.id },
-        status: 'PUBLISHED',
-        categoryId: product.categoryId,
-        priceValue: { gt: 0 },
-      },
-      orderBy: [{ listingRank: 'desc' }, { id: 'asc' }],
-      take: CANDIDATE_LIMIT,
+    const ids = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Product"
+      WHERE "categoryId" = ${product.categoryId} AND "status" = 'PUBLISHED'
+        AND "id" <> ${product.id} AND "priceValue" > 0
+      ORDER BY similarity("name", ${product.name}) DESC, "listingRank" DESC, "id"
+      LIMIT ${CANDIDATE_LIMIT}`;
+    if (!ids.length) return [];
+    const rows = await this.prisma.product.findMany({
+      where: { id: { in: ids.map((row) => row.id) } },
       select: SIMILARITY_SELECT,
     });
-    return candidates
+    const order = new Map(ids.map((row, index) => [row.id, index]));
+    const candidates = rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+    const ranked = candidates
       .map((candidate) => ({
         candidate,
         score: similarityScore(product, candidate),
@@ -82,8 +89,14 @@ export class RecommendationsService {
         (a, b) =>
           b.score - a.score || a.candidate.id.localeCompare(b.candidate.id),
       )
+      .map(({ candidate }) => candidate);
+    const picked = new Set(ranked.map((candidate) => candidate.id));
+    return [
+      ...ranked,
+      ...candidates.filter((candidate) => !picked.has(candidate.id)),
+    ]
       .slice(0, PAGE_SIZE)
-      .map(({ candidate }) => recommendationCard(candidate));
+      .map((candidate) => recommendationCard(candidate));
   }
 
   async compatible(
@@ -105,48 +118,34 @@ export class RecommendationsService {
       JOIN "Product" p ON p."id" = r."productId"
       WHERE ${anchor} AND r."ruleVersion" = ${COMPATIBILITY_RULE_VERSION}
         AND a."status" = 'PUBLISHED' AND p."status" = 'PUBLISHED'
-        AND r."accessorySignature" = ${signatureSql('a')}
-        AND r."productSignature" = ${signatureSql('p')}
-        AND NOT EXISTS (
-          SELECT 1 FROM "Product" other
-          WHERE other."brandId" = p."brandId" AND other."status" = 'PUBLISHED'
-            AND other."id" <> p."id" AND other."id" <> a."id"
-            AND (
-              regexp_replace(upper(other."model"), '[[:space:]‐‑–—_-]', '', 'g') = r."modelCode"
-              OR regexp_replace(upper(other."sku"), '[[:space:]‐‑–—_-]', '', 'g') = r."modelCode"
-            )
-        )`;
-    // Count, validation and card reads share a snapshot: neither stale links
-    // nor hidden products may slip in between the queries.
-    return this.prisma.$transaction(
-      async (tx) => {
-        const [count] = await tx.$queryRaw<Array<{ total: number }>>`
-        SELECT count(*)::int AS total ${from}`;
-        const pages = Math.ceil(count.total / PAGE_SIZE);
-        const page = Math.min(Math.max(1, requestedPage), Math.max(1, pages));
-        const ids = await tx.$queryRaw<Array<{ id: string }>>`
-        SELECT ${selectedId} AS id ${from}
-        ORDER BY ${selectedName}, ${selectedId}
-        LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`;
-        const cards = ids.length
-          ? await tx.product.findMany({
-              where: {
-                id: { in: ids.map((row) => row.id) },
-                status: 'PUBLISHED',
-              },
-              select: RECOMMENDATION_CARD_SELECT,
-            })
-          : [];
-        const byId = new Map(cards.map((card) => [card.id, card]));
-        return {
-          data: ids.flatMap(({ id }) => {
-            const card = byId.get(id);
-            return card ? [recommendationCard(card)] : [];
-          }),
-          pagination: { page, pages, total: count.total, limit: PAGE_SIZE },
-        };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+        AND r."accessorySignature" = ${accessorySignatureSql('a')}
+        AND r."productSignature" = ${targetSignatureSql('p')}`;
+    // Plain statements, not an interactive transaction: a product page must
+    // not hold a pooled connection across round trips. A link that goes stale
+    // between them is dropped by the card read's status filter.
+    const [count] = await this.prisma.$queryRaw<Array<{ total: number }>>`
+      SELECT count(*)::int AS total ${from}`;
+    const pages = Math.ceil(count.total / PAGE_SIZE);
+    const page = Math.min(Math.max(1, requestedPage), Math.max(1, pages));
+    const ids = count.total
+      ? await this.prisma.$queryRaw<Array<{ id: string }>>`
+          SELECT ${selectedId} AS id ${from}
+          ORDER BY ${selectedName}, ${selectedId}
+          LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`
+      : [];
+    const cards = ids.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: ids.map((row) => row.id) }, status: 'PUBLISHED' },
+          select: RECOMMENDATION_CARD_SELECT,
+        })
+      : [];
+    const byId = new Map(cards.map((card) => [card.id, card]));
+    return {
+      data: ids.flatMap(({ id }) => {
+        const card = byId.get(id);
+        return card ? [recommendationCard(card)] : [];
+      }),
+      pagination: { page, pages, total: count.total, limit: PAGE_SIZE },
+    };
   }
 }
