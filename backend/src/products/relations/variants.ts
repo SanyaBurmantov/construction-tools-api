@@ -39,7 +39,7 @@ const SIZE = new RegExp(
 );
 // A number that names a standard, a class or a colour stays in the name.
 const FIXED_BEFORE =
-  /(?:din|гост|ост|iso|en|ral|кл\.?\s?пр\.?|класс|тип|сери[яи]|модель|№|арт\.?|art\.?)\s*$/iu;
+  /(?:din|гост|ост|iso|en|ral|кл\.?\s?пр\.?|класс(?:а|ом)?(?:\s+прочности)?|тип|сери[яи]|модель|№|арт\.?|art\.?)\s*$/iu;
 // A model prefix in Latin capitals («HYVST SPX 1100», «LG 435»): a model.
 const MODEL_BEFORE = /(?:^|\s)[A-Z][A-Z0-9-]{1,}\s$/u;
 const POWER_TOOL =

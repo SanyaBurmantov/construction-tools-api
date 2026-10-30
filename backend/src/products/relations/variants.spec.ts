@@ -39,6 +39,22 @@ describe('size variants', () => {
     ]);
   });
 
+  it('keeps a strength class written out by the AI in the name', () => {
+    expect(
+      familyKey(
+        'Болт шестигранный М10х80 мм, цинк, класс прочности 8.8, DIN 933 STARFIX',
+        'b',
+        'c',
+      ),
+    ).toBe(
+      familyKey(
+        'Болт шестигранный М10х40 мм, цинк, класс прочности 8.8, DIN 933 STARFIX',
+        'b',
+        'c',
+      ),
+    );
+  });
+
   it('does not read letters inside a code as a size', () => {
     expect(
       variantName('Головка торцевая JONNESWAY S04H2109 (1/4", 9 мм)')?.values,
