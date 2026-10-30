@@ -191,8 +191,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `deploy/Caddyfile` no longer allows it). That cache lives in the
   frontend's heap, and Nitro's stock production driver never evicts — a crawl
   over 52k products filled the 384 MB container until it was OOM-killed (502s
-  while it restarted). `nitro.storage.cache` is therefore a **bounded LRU**
-  (`server/storage/bounded-memory.ts`, 96 MB, `NUXT_CACHE_MAX_MB`); don't swap
+  while it restarted). `nitro.storage.cache` is therefore a **bounded LRU** — in production **on
+  disk** (`server/storage/bounded-fs.ts`, volume `page_cache` at
+  `NUXT_CACHE_DIR`, gzip, 1.5 GB = ~45k pages, `NUXT_CACHE_DISK_MB`; stops
+  writing below 1 GB free disk), one directory per frontend build (a cached
+  page points at that build's `/_nuxt/` hashes) — so a restart of the same
+  build keeps the cache and serves pages even with the API down; without
+  `NUXT_CACHE_DIR` it is `bounded-memory.ts` (`NUXT_CACHE_MAX_MB`). Don't swap
   it back for the plain memory driver.
 - **Data model**: products are stored in two layers — `Product` (normalized
   storefront card) and `SourceProduct` (raw supplier snapshot, identity
