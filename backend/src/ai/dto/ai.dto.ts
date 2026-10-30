@@ -240,6 +240,33 @@ export class AiPreviewDto {
   model?: string;
 }
 
+/** «Объяснить по товару»: no model call, so no model. */
+export class AiExplainDto {
+  @IsEnum(AiEntity)
+  entity!: AiEntity;
+
+  @IsString()
+  id!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fields?: string[];
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 8000)
+  prompt?: string;
+}
+
+export class AiTemplateTextDto {
+  /** Empty or null goes back to the code default. */
+  @IsOptional()
+  @IsString()
+  @Length(0, 8000)
+  text?: string | null;
+}
+
 export class AiRescheduleDto {
   @IsOptional()
   @Transform(emptyToUndefined)

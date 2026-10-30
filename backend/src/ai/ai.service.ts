@@ -29,6 +29,7 @@ import {
   AiCategoryFilterDto,
   AiCategoryQueryDto,
   AiCreateTaskDto,
+  AiExplainDto,
   AiPreviewDto,
   AiProductFilterDto,
   AiProductQueryDto,
@@ -39,11 +40,18 @@ import {
   MAX_TASK_ITEMS,
 } from './dto/ai.dto';
 import { AiClient, AiRateLimitError, AiUsage } from './ai.client';
+import { AiTemplateTextsService } from './ai-template-texts.service';
+import { AI_CHECKS } from './ai-validate';
+import { FIELD_GUIDE, PROMPT_SCAFFOLDS } from './ai-scaffolds';
+import { VERIFY_SYSTEM_PROMPT } from './ai-verify';
 import {
   AiTemplate,
+  PRODUCT_TEMPLATES,
   categoryInstruction,
+  explainTemplate,
   productInstruction,
   productTemplate,
+  templateKeywords,
 } from './ai-templates';
 import {
   NEAR_DUPLICATE_SIMILARITY,
@@ -94,6 +102,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     private readonly client: AiClient,
     private readonly indexNow: IndexNowService,
+    private readonly texts: AiTemplateTextsService,
   ) {}
 
   /* ---- Status ---------------------------------------------------------- */
@@ -344,16 +353,18 @@ export class AiService {
    * with `templates` — the built-in rules (+ the kind's guide for a product)
    * with the admin's text added at the end.
    */
-  private instruction(
+  private async instruction(
     entity: AiEntity,
     prompt: string | undefined,
     templates: boolean | undefined,
     template: AiTemplate | null,
   ) {
     if (templates) {
+      // The admin's edited texts («Шаблоны и проверки») over the defaults.
+      const texts = await this.texts.effective();
       return entity === AiEntity.PRODUCT && template
-        ? productInstruction(template, prompt)
-        : categoryInstruction(prompt);
+        ? productInstruction(template, prompt, texts)
+        : categoryInstruction(prompt, texts);
     }
     if (!prompt?.trim()) throw new BadRequestException('Напишите промпт');
     return prompt.trim();
@@ -410,10 +421,20 @@ export class AiService {
     }
     // Validates the prompt before anything is written.
     const instructions = new Map(
-      [...groups].map(([key, group]) => [
-        key,
-        this.instruction(dto.entity, dto.prompt, dto.templates, group.template),
-      ]),
+      await Promise.all(
+        [...groups].map(
+          async ([key, group]) =>
+            [
+              key,
+              await this.instruction(
+                dto.entity,
+                dto.prompt,
+                dto.templates,
+                group.template,
+              ),
+            ] as const,
+        ),
+      ),
     );
 
     const tasks = await this.prisma.$transaction(async (tx) => {
@@ -781,6 +802,68 @@ export class AiService {
     return { skipped };
   }
 
+  /* ---- Templates and checks («Шаблоны и проверки») -------------------- */
+
+  /** Everything the tasks send and check, readable and editable. */
+  async templates() {
+    return {
+      texts: await this.texts.list(),
+      kinds: PRODUCT_TEMPLATES.map((template) => ({
+        key: template.key,
+        label: template.label,
+        keywords: templateKeywords(template),
+      })),
+      checks: AI_CHECKS,
+      verifyPrompt: VERIFY_SYSTEM_PROMPT,
+      fieldGuide: FIELD_GUIDE,
+      scaffolds: PROMPT_SCAFFOLDS,
+    };
+  }
+
+  setTemplateText(id: string, text: string | null | undefined) {
+    return this.texts.set(id, text);
+  }
+
+  /**
+   * «Объяснить по товару»: which kind's guide a product gets and why, and the
+   * exact messages a task with templates would send for it. No model call.
+   */
+  async explain(dto: AiExplainDto) {
+    const contexts = await this.contexts(dto.entity, [dto.id]);
+    const context = contexts.get(dto.id);
+    if (!context) throw new NotFoundException('Запись не найдена');
+    const choice =
+      dto.entity === AiEntity.PRODUCT ? explainTemplate(context.kind) : null;
+    const fields = fieldDefs(
+      dto.entity,
+      dto.fields?.length
+        ? dto.fields
+        : AI_FIELDS[dto.entity].map((field) => field.key),
+    );
+    const instruction = await this.instruction(
+      dto.entity,
+      dto.prompt,
+      true,
+      choice?.template ?? null,
+    );
+    return {
+      template: choice
+        ? {
+            key: choice.template.key,
+            label: choice.template.label,
+            by: choice.by,
+            subject: choice.subject,
+          }
+        : null,
+      messages: buildMessages({
+        entity: dto.entity,
+        fields,
+        instruction,
+        contexts: [context.prompt],
+      }),
+    };
+  }
+
   /* ---- Preview --------------------------------------------------------- */
 
   /** One live call for one entity, nothing written. Costs one request. */
@@ -795,7 +878,7 @@ export class AiService {
       dto.templates && dto.entity === AiEntity.PRODUCT
         ? productTemplate(context.kind)
         : null;
-    const instruction = this.instruction(
+    const instruction = await this.instruction(
       dto.entity,
       dto.prompt,
       dto.templates,

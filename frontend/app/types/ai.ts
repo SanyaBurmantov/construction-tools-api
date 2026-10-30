@@ -146,3 +146,28 @@ export type AiPickerRow = {
   lengths: Record<string, number>
   aiLockedFields?: string[]
 }
+
+/** One editable text of «Шаблоны и проверки» over its code default. */
+export type AiTemplateText = { id: string, text: string, default: string, edited: boolean }
+
+/** `GET /ai/templates`: what the tasks send and the checks they run. */
+export type AiTemplates = {
+  texts: {
+    productRules: AiTemplateText
+    categoryRules: AiTemplateText
+    guides: Record<string, AiTemplateText>
+  }
+  kinds: Array<{ key: string, label: string, keywords: string[] }>
+  checks: Array<{ id: string, title: string, detail: string }>
+  verifyPrompt: string
+  /** What each field is and where it is seen — for whoever writes prompts. */
+  fieldGuide: Array<{ entity: AiEntity, key: string, label: string, where: string, length: string, notes: string }>
+  /** Ready prompt frameworks; [в скобках] — what to fill in. */
+  scaffolds: Array<{ id: string, title: string, entity: AiEntity, fields: string[], goal: string, text: string }>
+}
+
+/** `POST /ai/templates/explain`: the guide a record gets and the exact messages. */
+export type AiExplain = {
+  template: { key: string, label: string, by: 'name' | 'category' | 'chain' | 'default', subject: string } | null
+  messages: Array<{ role: string, content: string }>
+}

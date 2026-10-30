@@ -11,6 +11,7 @@
  *   AI_PIPELINE_TEST_DATABASE_URL=postgresql://…/ai_pipeline_test \
  *     npx jest src/ai/ai-pipeline.db.spec.ts --runInBand
  */
+import { AiTemplateTextsService } from './ai-template-texts.service';
 import { PrismaClient } from '@prisma/client';
 import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
 import { ProductIdentityService } from '../parser/product-identity.service';
@@ -257,7 +258,12 @@ describeDb('AI pipeline on a real database', () => {
       name: 'в данных фасовка 50 шт в картонной коробке, а не в пакете',
     };
 
-    ai = new AiService(prisma, client as never, new IndexNowService(prisma));
+    ai = new AiService(
+      prisma,
+      client as never,
+      new IndexNowService(prisma),
+      new AiTemplateTextsService(prisma),
+    );
     identity = new ProductIdentityService(prisma);
   });
 

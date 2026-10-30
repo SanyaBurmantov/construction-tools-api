@@ -3,6 +3,7 @@ import { AdminModule } from '../admin/admin.module';
 import { AiController } from './ai.controller';
 import { AiRunnerCron } from './ai-runner.cron';
 import { AiService } from './ai.service';
+import { AiTemplateTextsService } from './ai-template-texts.service';
 import { AiClient } from './ai.client';
 import { SeoModule } from '../seo/seo.module';
 
@@ -13,6 +14,6 @@ import { SeoModule } from '../seo/seo.module';
 @Module({
   imports: [AdminModule, SeoModule],
   controllers: [AiController],
-  providers: [AiService, AiClient, AiRunnerCron],
+  providers: [AiService, AiClient, AiRunnerCron, AiTemplateTextsService],
 })
 export class AiModule {}

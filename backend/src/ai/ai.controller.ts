@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -18,10 +19,12 @@ import { AiService } from './ai.service';
 import {
   AiCategoryQueryDto,
   AiCreateTaskDto,
+  AiExplainDto,
   AiPreviewDto,
   AiProductQueryDto,
   AiPromptDto,
   AiRescheduleDto,
+  AiTemplateTextDto,
   AiTaskItemsQueryDto,
   AiTaskListQueryDto,
   AiUpdatePromptDto,
@@ -73,6 +76,24 @@ export class AiController {
   @Delete('prompts/:id')
   deletePrompt(@Param('id') id: string) {
     return this.ai.deletePrompt(id);
+  }
+
+  /** «Шаблоны и проверки»: the texts the tasks send and the checks they run. */
+  @Get('templates')
+  templates() {
+    return this.ai.templates();
+  }
+
+  /** Edits one text (`product-rules`, `category-rules`, `kind:<key>`); empty = default. */
+  @Put('templates/:id')
+  setTemplate(@Param('id') id: string, @Body() dto: AiTemplateTextDto) {
+    return this.ai.setTemplateText(id, dto.text);
+  }
+
+  /** Which guide a record gets and the exact messages; no model call. */
+  @Post('templates/explain')
+  explain(@Body() dto: AiExplainDto) {
+    return this.ai.explain(dto);
   }
 
   @Post('preview')

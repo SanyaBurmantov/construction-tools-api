@@ -859,6 +859,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `lastmod` в sitemap (`updatedAt` двигает ежедневный парсинг). `seo/indexnow.service.ts` шлёт изменённые адреса
   Яндексу (IndexNow, очередь `IndexNowUrl`, раз в 10 мин в воркере); ключ
   `INDEXNOW_KEY`, файл `/<ключ>.txt` отдаёт фронт (`NUXT_INDEXNOW_KEY`).
+  **Всё видно и правится в админке** (`/admin/ai/templates`, «ИИ ·
+  Шаблоны»): общие правила товаров/категорий и гайды по видам
+  (`AiTemplateTextsService`, `SiteSetting ai.text.*` поверх кода; задача
+  сохраняет свой текст при создании), список проверок (`AI_CHECKS`),
+  промпт второй проверки, «показать запрос» по товару (`POST
+  /admin/ai/templates/explain`, без вызова модели) и живой предпросмотр.
+  Для сеошника — справочник полей (где видно на сайте, длина) и каркасы
+  промптов с [местами для заполнения] (`ai/ai-scaffolds.ts`); каркас
+  дополняет встроенные правила, сохраняется в «Промпты».
   Скрипт пилота: `scripts/ai-pilot.mjs select|create|report` (подбор 300
   карточек + контрольная группа, этапы — каждый создаётся один раз, отчёт).
   Сквозной тест на настоящей базе: `src/ai/ai-pipeline.db.spec.ts`
