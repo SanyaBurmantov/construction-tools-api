@@ -56,6 +56,7 @@ const nav = computed(() => [
   { label: 'ИИ · Товары', to: '/admin/ai/products', icon: 'spark' },
   { label: 'ИИ · Категории', to: '/admin/ai/categories', icon: 'spark' },
   { label: 'ИИ · Задачи', to: '/admin/ai/tasks', icon: 'spark' },
+  { label: 'ИИ · Шаблоны', to: '/admin/ai/templates', icon: 'spark' },
   { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
 

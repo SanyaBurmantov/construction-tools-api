@@ -43,7 +43,12 @@ function build(options: {
     fn(prisma)) as never);
   const indexNow = { enqueue: jest.fn(() => Promise.resolve()) };
   return {
-    service: new AiService(prisma as never, {} as never, indexNow as never),
+    service: new AiService(
+      prisma as never,
+      {} as never,
+      indexNow as never,
+      { effective: () => Promise.resolve({}) } as never,
+    ),
     prisma,
     productUpdate,
     indexNow,
