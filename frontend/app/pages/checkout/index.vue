@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
 import { company } from '~/data/company'
-import type { DeliveryMethod, Order, PaymentMethod } from '~/types/api'
+import { knownUpsellSource, type DeliveryMethod, type Order, type PaymentMethod } from '~/types/api'
 import type { CompanyRequisitesModel } from '~/utils/requisites'
 
 const cart = useCartStore()
@@ -200,6 +200,7 @@ async function submit() {
         items: cart.items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
+          upsellSource: knownUpsellSource(item.upsellSource),
         })),
         customerName: form.customerName.trim(),
         customerPhone: form.customerPhone.trim(),

@@ -5,7 +5,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ProductService } from '../products.service';
 import { buildMatchKeys } from '../../offers/product-matching';
 import { CompatibilityRefreshService } from './compatibility-refresh.service';
-import { RecommendationsController } from './recommendations.controller';
+import {
+  CartRecommendationsController,
+  RecommendationsController,
+} from './recommendations.controller';
 import { RecommendationsService } from './recommendations.service';
 import { RecommendationsQueryDto } from './recommendations.dto';
 import { RELATION_IDENTITY_SELECT } from './relation-select';
@@ -32,7 +35,7 @@ integration('product recommendations (PostgreSQL)', () => {
     service = new RecommendationsService(prisma);
     worker = new CompatibilityRefreshService(prisma);
     const module = await Test.createTestingModule({
-      controllers: [RecommendationsController],
+      controllers: [RecommendationsController, CartRecommendationsController],
       providers: [{ provide: RecommendationsService, useValue: service }],
     }).compile();
     app = module.createNestApplication();
@@ -339,6 +342,120 @@ integration('product recommendations (PostgreSQL)', () => {
     expect(await accessoriesOf()).toEqual([head.id]);
     await prisma.sourceProduct.deleteMany({ where: { sourceId: source.id } });
     await prisma.source.delete({ where: { id: source.id } });
+  });
+
+  it('lists consumables by standard across brands, pages a group, and fills the cart', async () => {
+    const brand = await prisma.brand.findUniqueOrThrow({
+      where: { id: brandId },
+    });
+    const otherBrand = await prisma.brand.create({
+      data: {
+        name: `Volat${randomUUID().slice(0, 6)}`,
+        slug: randomUUID(),
+        seoTitle: '',
+        seoDescription: '',
+      },
+    });
+    const grinder = await create(
+      `Одноручная углошлифмашина ${brand.name} AG 1209 в кор. 900 Вт, 125 мм`,
+      '',
+    );
+    const discs = [];
+    for (let i = 0; i < 5; i += 1)
+      discs.push(
+        await create(`Круг отрезной 125х1.${i}x22.2 мм для металла №${i}`, ''),
+      );
+    // Another make — a standard is not a brand.
+    await prisma.product.update({
+      where: { id: discs[4].id },
+      data: { brandId: otherBrand.id },
+    });
+    const wrong = await create('Круг отрезной 180х1.6x22.2 мм для металла', '');
+    await worker.refreshFitments([
+      grinder.id,
+      wrong.id,
+      ...discs.map((d) => d.id),
+    ]);
+
+    const page = await service.get(grinder.slug, new RecommendationsQueryDto());
+    expect(page.consumables).toHaveLength(1);
+    expect(page.consumables[0]).toMatchObject({
+      key: 'disc:125',
+      title: 'Круги и диски 125 мм',
+      pagination: { total: 5, pages: 2 },
+    });
+    expect(page.consumables[0].data[0]).not.toHaveProperty('costPrice');
+    const second = await service.group(grinder.slug, 'disc:125', 'PART', 2);
+    expect(second.data).toHaveLength(1);
+    expect(
+      new Set([...page.consumables[0].data, ...second.data].map((d) => d.id)),
+    ).toEqual(new Set(discs.map((d) => d.id)));
+    expect(
+      (
+        await service.get(discs[4].slug, new RecommendationsQueryDto())
+      ).compatibleTools[0].data.map((row) => row.id),
+    ).toEqual([grinder.id]);
+    // Only a group the product has.
+    await expect(
+      service.group(grinder.slug, 'disc:180', 'PART', 1),
+    ).rejects.toThrow('Подборка не найдена');
+    expect(
+      (
+        await fetch(
+          `${origin}/products/${grinder.slug}/recommendations/group?key=disc:125&role=PART&page=2`,
+        )
+      ).status,
+    ).toBe(200);
+
+    const cart = await service.forCart([grinder.id, discs[0].id]);
+    expect(cart.data.map((row) => row.product.id)).not.toContain(discs[0].id);
+    expect(cart.data[0].reason).toBe('Круги и диски 125 мм');
+    expect(cart.data.length).toBe(3); // three per standard
+    await prisma.product.updateMany({
+      where: { brandId: otherBrand.id },
+      data: { brandId },
+    });
+    await prisma.brand.delete({ where: { id: otherBrand.id } });
+  });
+
+  it('compares packs of the same item per piece', async () => {
+    const brand = await prisma.brand.findUniqueOrThrow({
+      where: { id: brandId },
+    });
+    const small = await create(
+      `Анкер забиваемый М10х12х40 мм (4 шт в зип-локе) ${brand.name}`,
+      '',
+    );
+    const box = await create(
+      `Анкер забиваемый М10х12х40 мм (100 шт в карт. уп.) ${brand.name}`,
+      '',
+    );
+    await prisma.product.update({
+      where: { id: small.id },
+      data: { priceValue: 2 },
+    });
+    await prisma.product.update({
+      where: { id: box.id },
+      data: { priceValue: 30 },
+    });
+    const packs = (await service.get(small.slug, new RecommendationsQueryDto()))
+      .packs;
+    expect(
+      packs.map((pack) => [pack.quantity, pack.unitPrice, pack.current]),
+    ).toEqual([
+      [4, 0.5, true],
+      [100, 0.3, false],
+    ]);
+  });
+
+  it('serves cart suggestions over HTTP and validates the ids', async () => {
+    const { host } = await fixture();
+    expect(
+      (await fetch(`${origin}/recommendations/cart?ids=${host.id}`)).status,
+    ).toBe(200);
+    expect(
+      (await fetch(`${origin}/recommendations/cart?ids=not-an-id`)).status,
+    ).toBe(400);
   });
 
   it('fills «Похожие» from the category when the kind is shared by few', async () => {

@@ -222,6 +222,46 @@ describe('OrdersService.createOrder', () => {
     expect(data.itemsTotal).toBe(50);
   });
 
+  it('records which recommendation block sold a line', async () => {
+    const { service, createMock } = buildService([
+      {
+        id: 'p1',
+        name: 'Болгарка',
+        slug: 'bolgarka',
+        status: 'PUBLISHED',
+        priceValue: 100,
+        priceCurrency: 'BYN',
+        images: [],
+      },
+      {
+        id: 'p2',
+        name: 'Круг 125',
+        slug: 'krug',
+        status: 'PUBLISHED',
+        priceValue: 2,
+        priceCurrency: 'BYN',
+        images: [],
+      },
+    ]);
+
+    await service.createOrder({
+      ...baseCustomer,
+      deliveryMethod: 'PICKUP',
+      items: [
+        { productId: 'p1', quantity: 1 },
+        { productId: 'p2', quantity: 5, upsellSource: 'consumables' },
+      ],
+    });
+
+    const data = createMock.mock.calls[0][0].data as {
+      items: { create: { upsellSource: string | null }[] };
+    };
+    expect(data.items.create.map((item) => item.upsellSource)).toEqual([
+      null,
+      'consumables',
+    ]);
+  });
+
   it('rejects unavailable products', async () => {
     const { service } = buildService([]);
     await expect(

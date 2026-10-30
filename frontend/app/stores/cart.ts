@@ -10,6 +10,11 @@ export interface CartItem {
   price: number
   currency: string
   quantity: number
+  /**
+   * The recommendation block the line came from (`UpsellSource`), sent with
+   * the order for the admin's upsell report. The first one sticks.
+   */
+  upsellSource?: string
 }
 
 const STORAGE_KEY = 'cart:v1'
@@ -59,6 +64,7 @@ export const useCartStore = defineStore('cart', {
       const existing = this.items.find((i) => i.productId === item.productId)
       if (existing) {
         existing.quantity = Math.min(existing.quantity + quantity, MAX_QTY)
+        existing.upsellSource ??= item.upsellSource
       } else {
         this.items.push({ ...item, quantity: Math.min(quantity, MAX_QTY) })
       }
@@ -110,8 +116,11 @@ export const useCartStore = defineStore('cart', {
      * `plugins/cart-sync.client.ts`.
      */
     applyServerCart(items: CartItem[]) {
+      // The server stores ids and quantities only; keep what this device knew.
+      const sources = new Map(this.items.map((item) => [item.productId, item.upsellSource]))
       this.items = items.map((item) => ({
         ...item,
+        upsellSource: item.upsellSource ?? sources.get(item.productId),
         quantity: Math.max(1, Math.min(item.quantity, MAX_QTY)),
       }))
       this.loaded = true

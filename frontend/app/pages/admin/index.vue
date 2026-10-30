@@ -175,6 +175,23 @@ const maxRevenue = computed(() =>
           </ul>
         </UiCard>
 
+        <UiCard title="Допродажи за 90 дней">
+          <p v-if="!stats.upsell?.sources.length" class="empty">
+            Пока ни одна строка заказа не пришла из блоков рекомендаций
+          </p>
+          <ul v-else class="top-list">
+            <li v-for="row in stats.upsell.sources" :key="row.source">
+              <span class="top-name">{{ row.label }}</span>
+              <span class="top-qty">{{ row.orders }} зак. · {{ row.lines }} поз.</span>
+              <strong>{{ formatPrice(row.revenue, 'BYN') }}</strong>
+            </li>
+          </ul>
+          <p v-if="stats.upsell?.sources.length && stats.upsell.totalRevenue" class="empty">
+            {{ Math.round(stats.upsell.sources.reduce((sum, row) => sum + row.revenue, 0) / stats.upsell.totalRevenue * 100) }}%
+            выручки по товарам
+          </p>
+        </UiCard>
+
         <UiCard title="Топ товаров">
           <p v-if="!stats.topProducts.length" class="empty">Продаж пока нет</p>
           <ul v-else class="top-list">

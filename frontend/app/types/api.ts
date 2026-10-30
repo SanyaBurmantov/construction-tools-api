@@ -27,11 +27,52 @@ export interface Paginated<T> {
 
 export type ProductsResponse = Paginated<CatalogProduct>
 
+/** Recommendation blocks — mirrors the backend's `orders/upsell-source.ts`. */
+export const UPSELL_SOURCES = ['accessories', 'consumables', 'fits', 'similar', 'cart', 'packs'] as const
+export type UpsellSource = (typeof UPSELL_SOURCES)[number]
+
+/** A stored cart line's source, only if the API knows it (else a 400). */
+export function knownUpsellSource(value: unknown): UpsellSource | undefined {
+  return UPSELL_SOURCES.includes(value as UpsellSource) ? (value as UpsellSource) : undefined
+}
+
+/** Products fitting by a standard (disc 125 mm, Makita LXT, SDS-plus…). */
+export interface FitmentGroup extends Paginated<CatalogProduct> {
+  key: string
+  role: 'PART' | 'TOOL'
+  title: string
+}
+
+/** Another pack of the same item, priced per piece/kg. */
+export interface PackOption {
+  id: string
+  slug: string
+  name: string
+  image: string | null
+  quantity: number
+  unit: 'шт' | 'кг'
+  priceValue: number
+  priceCurrency: string | null
+  unitPrice: number
+  stockStatus: string | null
+  current: boolean
+}
+
 /** Separate from product/list payloads; relation evidence stays server-side. */
 export interface ProductRecommendations {
   similar: CatalogProduct[]
   accessories: Paginated<CatalogProduct>
   fits: Paginated<CatalogProduct>
+  /** A tool's parts by standard, one group per standard. */
+  consumables: FitmentGroup[]
+  /** A part's tools by standard. */
+  compatibleTools: FitmentGroup[]
+  packs: PackOption[]
+}
+
+export interface CartSuggestion {
+  reason: string
+  product: CatalogProduct
 }
 
 /**
@@ -241,6 +282,11 @@ export interface AdminStats {
   }>
   /** Last 90 days per traffic source («yandex / cpc», «direct»…). */
   bySource?: Array<{ source: string, orders: number, revenue: number, leads: number }>
+  /** Last 90 days: what each recommendation block sold (OrderItem.upsellSource). */
+  upsell?: {
+    totalRevenue: number
+    sources: Array<{ source: string, label: string, lines: number, orders: number, revenue: number }>
+  }
 }
 
 /** An account as `/admin/users` lists it: the profile plus its live session count. */

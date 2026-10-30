@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
-import type { ProductDetail } from '~/types/api'
+import type { ProductDetail, ProductRecommendations } from '~/types/api'
 import { company } from '~/data/company'
 
 const route = useRoute()
@@ -93,6 +93,24 @@ watch(() => product.value?.id, () => {
   // Each product starts on a tab with content, even when the page is reused.
   tab.value = hasDescription.value ? 'description' : 'specs'
 }, { immediate: true })
+
+/* ---- Recommendations ---------------------------------------------------- */
+// One answer feeds the packs in the buy box and the blocks under the reviews.
+// Rendered on the server (links for crawlers); client navigation stays lazy.
+const {
+  data: recommendations,
+  error: recommendationsError,
+  refresh: refreshRecommendations,
+} = await useAsyncData<ProductRecommendations | null>(
+  () => `recommendations:${product.value?.slug ?? ''}`,
+  () =>
+    product.value
+      ? $fetch<ProductRecommendations>(
+        `${apiBase}/products/${encodeURIComponent(product.value.slug)}/recommendations`
+      )
+      : Promise.resolve(null),
+  { lazy: true }
+)
 
 /* ---- Breadcrumbs ------------------------------------------------------- */
 const breadcrumbs = computed(() => {
@@ -331,6 +349,8 @@ useHead(() => {
               <span v-if="priceCheckedLabel" class="price-checked">· цена обновлена {{ priceCheckedLabel }}</span>
             </p>
 
+            <ProductPacks v-if="recommendations?.packs?.length" :packs="recommendations.packs" />
+
             <div v-if="canBuy" class="buy-actions">
               <UiQuantity v-model="quantity" />
               <UiButton size="lg" class="buy-button" @click="addToCart(quantity)">
@@ -423,7 +443,13 @@ useHead(() => {
 
       <ProductReviews :slug="product.slug" :product-name="product.name" />
 
-      <ProductRecommendations :key="product.id" :slug="product.slug" />
+      <ProductRecommendations
+        :key="product.id"
+        :slug="product.slug"
+        :initial="recommendations"
+        :error="recommendationsError"
+        @retry="refreshRecommendations()"
+      />
 
       <!-- Sticky buy bar: on a phone the buy box scrolls away long before the
            customer has finished reading, so price and action follow them. -->

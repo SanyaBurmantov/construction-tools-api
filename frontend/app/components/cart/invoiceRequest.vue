@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
 import { company } from '~/data/company'
-import type { DeliveryMethod, Order } from '~/types/api'
+import { knownUpsellSource, type DeliveryMethod, type Order } from '~/types/api'
 import type { CompanyRequisitesModel } from '~/utils/requisites'
 
 /**
@@ -98,7 +98,7 @@ async function submit() {
     const order = await authFetch<Pick<Order, 'id'>>('/orders', {
       method: 'POST',
       body: {
-        items: cart.items.map(item => ({ productId: item.productId, quantity: item.quantity })),
+        items: cart.items.map(item => ({ productId: item.productId, quantity: item.quantity, upsellSource: knownUpsellSource(item.upsellSource) })),
         customerName: form.contactName.trim(),
         customerPhone: form.phone.trim(),
         customerEmail: form.email.trim(),

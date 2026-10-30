@@ -138,6 +138,8 @@ useHead({
         <CartB2bPanel />
         </div>
       </div>
+
+      <CartSuggestions v-if="!cart.isEmpty" />
     </ClientOnly>
   </div>
 </template>

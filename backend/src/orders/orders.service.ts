@@ -87,7 +87,11 @@ export class OrdersService {
     // Collapse duplicate productIds into summed quantities, capped like a
     // single line (and like POST /cart/validate, so the totals agree).
     const quantities = new Map<string, number>();
+    // The first line that names a block wins for a product listed twice.
+    const upsell = new Map<string, string>();
     for (const item of dto.items) {
+      if (item.upsellSource && !upsell.has(item.productId))
+        upsell.set(item.productId, item.upsellSource);
       quantities.set(
         item.productId,
         Math.min(
@@ -142,6 +146,7 @@ export class OrdersService {
             : null,
         quantity,
         lineTotal,
+        upsellSource: upsell.get(product.id) ?? null,
       });
     }
 

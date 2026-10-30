@@ -1,3 +1,4 @@
+import type { UpsellSource } from '~/types/api'
 import { useCartStore, type CartItem } from '~/stores/cart'
 import { normalizeCurrency } from '~/composables/useFormatPrice'
 import { useWishlistStore } from '~/stores/wishlist'
@@ -123,10 +124,11 @@ export function useProductActions(product: MaybeRefOrGetter<CatalogProduct>) {
   const isComparing = computed(() => compare.has(item.value.id))
   const inCart = computed(() => cart.items.some((i) => i.productId === item.value.id))
 
-  function addToCart(quantity = 1) {
+  /** `upsellSource`: the recommendation block the click came from. */
+  function addToCart(quantity = 1, upsellSource?: UpsellSource) {
     const line = toCartLine(item.value)
     if (!line) return
-    cart.add(line, quantity)
+    cart.add({ ...line, upsellSource }, quantity)
     toast.success(`«${item.value.name}» в корзине`)
   }
 
