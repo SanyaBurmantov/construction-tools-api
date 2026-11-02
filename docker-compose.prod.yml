@@ -273,7 +273,11 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-localhost}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The directory, not the file: a single-file bind mount pins the inode,
+      # and `git checkout` replaces the file with a new one — Caddy ran the
+      # 12.10 Caddyfile (no CSP, no HSTS) for weeks after it changed. The
+      # auto-deploy reloads Caddy after every release.
+      - ./deploy/caddy:/etc/caddy:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

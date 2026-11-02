@@ -33,6 +33,9 @@ deploy() {
   "${compose[@]}" config --quiet || return 1
   "${compose[@]}" build backend frontend || return 1
   "${compose[@]}" up -d --no-build || return 1
+  # A changed Caddyfile alone does not recreate the container; an invalid one
+  # fails here, before the health checks, and the release is rolled back.
+  "${compose[@]}" exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || return 1
   for _ in {1..60}; do
     if curl --fail --silent --show-error --max-time 10 "https://$domain/api/health/ready" >/dev/null 2>&1 &&
        curl --fail --silent --show-error --max-time 10 "https://$domain/api/products?limit=1" >/dev/null 2>&1 &&

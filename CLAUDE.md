@@ -188,7 +188,7 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   not rendered (`<ClientOnly>`, `v-if`) — into `preload`; Vite's import helper
   attaches it on the client. Keep component styles `scoped` for that to hold.
   Manrope is self-hosted from `public/fonts/` (no Google Fonts, and the CSP in
-  `deploy/Caddyfile` no longer allows it). That cache lives in the
+  `deploy/caddy/Caddyfile` no longer allows it). That cache lives in the
   frontend's heap, and Nitro's stock production driver never evicts — a crawl
   over 52k products filled the 384 MB container until it was OOM-killed (502s
   while it restarted). `nitro.storage.cache` is therefore a **bounded LRU** — in production **on
