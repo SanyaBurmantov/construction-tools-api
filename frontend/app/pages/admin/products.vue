@@ -35,6 +35,8 @@ type AdminProduct = {
   productSpecs?: Array<{ name: string, value: string }>
   ratingAvg?: number | null
   ratingCount?: number
+  /** The supplier renamed a product whose name we locked; saving the card answers it. */
+  supplierNameChange?: unknown
 }
 
 const { adminFetch, errorMessage } = useAdminApi()
@@ -127,8 +129,10 @@ function openCreate() {
   editorOpen.value = true
 }
 
-function openEdit(product: AdminProduct) {
-  editing.value = product
+/** The form as loaded, in request shape: a save sends only what differs. */
+let loadedBody: Record<string, unknown> | null = null
+
+function fillForm(product: AdminProduct) {
   Object.assign(form, {
     ...blankForm(),
     name: product.name,
@@ -152,9 +156,35 @@ function openEdit(product: AdminProduct) {
     variantLine: product.variantLine ?? '',
     variantLabel: product.variantLabel ?? '',
   })
+}
+
+/**
+ * The list row can be minutes old — an AI task or a parse may have rewritten
+ * the texts or the price since — so the editor re-reads the product, and a
+ * save sends only the fields the admin changed. Sending the whole form put
+ * the stale values back and re-priced from a stale cost (audit 2026-10-30).
+ */
+async function openEdit(product: AdminProduct) {
+  editing.value = product
+  fillForm(product)
+  loadedBody = formBody()
   formError.value = ''
   editorTab.value = 'main'
   editorOpen.value = true
+  try {
+    const fresh = await adminFetch<AdminProduct>(`/products/${product.id}`)
+    // Only while the admin has not started typing and is still on this card.
+    if (editing.value?.id !== product.id || !sameBody(formBody(), loadedBody)) return
+    editing.value = fresh
+    fillForm(fresh)
+    loadedBody = formBody()
+  } catch {
+    // The list row stays the baseline; the save still sends only changes.
+  }
+}
+
+function sameBody(a: Record<string, unknown>, b: Record<string, unknown> | null) {
+  return !!b && Object.keys(a).every(key => JSON.stringify(a[key]) === JSON.stringify(b[key]))
 }
 
 // Auto-fill the slug from the name, but only while creating — changing a live
@@ -204,17 +234,56 @@ async function save() {
     return
   }
 
+  const body = formBody()
+
+  saving.value = true
+  try {
+    if (editing.value) {
+      const changed: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(body)) {
+        if (JSON.stringify(value) !== JSON.stringify(loadedBody?.[key])) changed[key] = value
+      }
+      // Saving the card is the admin's answer to a supplier rename, even
+      // when the name is kept.
+      if (editing.value.supplierNameChange && !('name' in changed)) changed.name = body.name
+      // A typed price without a mode makes the product MANUAL on the server;
+      // the form shows the mode, so it goes along with any price change.
+      if (('priceValue' in changed || 'oldPrice' in changed) && !('pricingMode' in changed)) {
+        changed.pricingMode = body.pricingMode
+      }
+      if (!Object.keys(changed).length) {
+        toast.info('Изменений нет')
+        editorOpen.value = false
+        return
+      }
+      await adminFetch(`/products/${editing.value.id}`, { method: 'PATCH', body: changed })
+      toast.success('Товар сохранён')
+    } else {
+      await adminFetch('/products', { method: 'POST', body })
+      toast.success('Товар создан')
+    }
+    editorOpen.value = false
+    await load()
+  } catch (error) {
+    formError.value = errorMessage(error, 'Не удалось сохранить товар')
+  } finally {
+    saving.value = false
+  }
+}
+
+/** The form in request shape. */
+function formBody(): Record<string, unknown> {
   // Blanks go as `null`, not dropped: the update applies only the fields it
   // is sent, so an emptied old price or description used to stay forever.
-  const body = {
+  return {
     name: form.name.trim(),
     slug: form.slug.trim(),
     categoryId: form.categoryId,
     brandId: form.brandId || null,
     sku: textOrNull(form.sku),
     model: textOrNull(form.model),
-    priceValue: price,
-    oldPrice,
+    priceValue: numOrNull(form.priceValue),
+    oldPrice: numOrNull(form.oldPrice),
     costPrice: numOrNull(form.costPrice),
     pricingMode: form.pricingMode,
     priceCurrency: form.priceCurrency || 'BYN',
@@ -227,23 +296,6 @@ async function save() {
     seoDescription: textOrNull(form.seoDescription),
     variantLine: textOrNull(form.variantLine),
     variantLabel: textOrNull(form.variantLabel),
-  }
-
-  saving.value = true
-  try {
-    if (editing.value) {
-      await adminFetch(`/products/${editing.value.id}`, { method: 'PATCH', body })
-      toast.success('Товар сохранён')
-    } else {
-      await adminFetch('/products', { method: 'POST', body })
-      toast.success('Товар создан')
-    }
-    editorOpen.value = false
-    await load()
-  } catch (error) {
-    formError.value = errorMessage(error, 'Не удалось сохранить товар')
-  } finally {
-    saving.value = false
   }
 }
 
