@@ -1,15 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { pickBestOffer } from './best-offer';
 import { ProductMergeService } from './product-merge.service';
+import { articleKey } from './offer-split';
 import {
   MatchConfidence,
   MatchSignal,
   compareProducts,
-  differentArticles,
   isAutoMergeable,
 } from './product-matching';
+
+/** A supplier's article, normalised like `articleKey()` in offer-split.ts. */
+const ARTICLE_SQL = Prisma.raw(
+  `upper(regexp_replace(coalesce(sp."sku", ''), '[^0-9A-Za-zА-Яа-яЁё]', '', 'g'))`,
+);
 
 export type DuplicateGroup = {
   signal: MatchSignal;
@@ -310,21 +316,26 @@ export class OffersService {
     for (const dimension of dimensions) {
       if (groups.length >= limit) break;
 
-      // Dynamic groupBy keys defeat Prisma's generated types, so the args are
-      // assembled and cast once here rather than duplicating this block per field.
-      const rows = (await this.prisma.product.groupBy({
-        by: [dimension.field],
-        where: { [dimension.field]: { not: null } },
-        _count: { _all: true },
-        having: { [dimension.field]: { _count: { gt: 1 } } },
-        orderBy: { [dimension.field]: 'asc' },
-        take: limit,
-      } as never)) as unknown as Array<Record<string, string | null>>;
-
+      // A key shared by products one supplier lists under different articles
+      // is a reused barcode (one EAN per th-tool.by series), not a duplicate:
+      // left out here, in SQL, so thousands of them at the head of the list
+      // cannot hide the real duplicates behind them.
+      const column = Prisma.raw(`"${dimension.field}"`);
+      const rows = await this.prisma.$queryRaw<Array<{ key: string }>>`
+        SELECT p.${column} AS key FROM "Product" p
+        WHERE p.${column} IS NOT NULL
+        GROUP BY p.${column}
+        HAVING count(*) > 1 AND NOT EXISTS (
+          SELECT 1 FROM "SourceProduct" sp
+          JOIN "Product" q ON q."id" = sp."productId"
+          WHERE q.${column} = p.${column}
+          GROUP BY sp."sourceId"
+          HAVING count(DISTINCT ${ARTICLE_SQL}) FILTER (WHERE ${ARTICLE_SQL} <> '') > 1)
+        ORDER BY 1
+        LIMIT ${limit}`;
       for (const row of rows) {
         if (groups.length >= limit) break;
-        const key = row[dimension.field];
-        if (!key) continue;
+        const key = row.key;
 
         const products = await this.prisma.product.findMany({
           where: { [dimension.field]: key },
@@ -376,6 +387,29 @@ export class OffersService {
   }
 
   /**
+   * One supplier listing two of the group's products under different
+   * articles is that supplier saying they are different products — however
+   * much a reused barcode says otherwise (th-tool.by gives one EAN to a whole
+   * series). Articles of *different* suppliers prove nothing: each supplier's
+   * `sku` is its own number. See offer-split.ts.
+   */
+  private async supplierSaysDifferent(products: Array<{ id: string }>) {
+    const offers = await this.prisma.sourceProduct.findMany({
+      where: { productId: { in: products.map((p) => p.id) } },
+      select: { sourceId: true, sku: true },
+    });
+    const articles = new Map<string, Set<string>>();
+    for (const offer of offers) {
+      const article = articleKey(offer.sku);
+      if (!article) continue;
+      const set = articles.get(offer.sourceId) ?? new Set<string>();
+      set.add(article);
+      articles.set(offer.sourceId, set);
+    }
+    return [...articles.values()].some((set) => set.size > 1);
+  }
+
+  /**
    * Merges every group matched by barcode or brand+sku.
    *
    * Weaker signals are deliberately excluded — a wrong merge destroys a product
@@ -387,12 +421,9 @@ export class OffersService {
     let skipped = 0;
 
     for (const group of groups) {
-      // A barcode shared by different articles is a reused barcode, not one
-      // product (see compareProducts); such a group stays in /admin/duplicates.
       if (
         !isAutoMergeable(group) ||
-        (group.signal === 'barcode' &&
-          differentArticles(group.products.map((product) => product.sku)))
+        (await this.supplierSaysDifferent(group.products))
       ) {
         skipped += 1;
         continue;

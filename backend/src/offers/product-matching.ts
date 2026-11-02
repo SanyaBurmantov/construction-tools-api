@@ -129,12 +129,7 @@ export function compareProducts(
   const keysB = buildMatchKeys(b);
 
   if (keysA.matchBarcode && keysA.matchBarcode === keysB.matchBarcode) {
-    // A supplier that reuses one barcode for a whole series (th-tool.by's
-    // trim clips: C0044, C0046… one EAN) gave 317 different articles one
-    // card. Different articles under one barcode are a question for a human.
-    return differentArticles([a.sku, b.sku])
-      ? { signal: 'barcode', confidence: 'likely', score: 0.85 }
-      : { signal: 'barcode', confidence: 'exact', score: 1 };
+    return { signal: 'barcode', confidence: 'exact', score: 1 };
   }
 
   if (keysA.matchSku && keysA.matchSku === keysB.matchSku) {
@@ -164,11 +159,6 @@ export function compareProducts(
   }
 
   return null;
-}
-
-/** Two or more distinct article numbers among the given ones. */
-export function differentArticles(skus: Array<string | null | undefined>) {
-  return new Set(skus.map(normalizeCode).filter(Boolean)).size > 1;
 }
 
 export function isAutoMergeable(
