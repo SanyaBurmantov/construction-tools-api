@@ -3,6 +3,13 @@ import type { CatalogProduct } from '~/composables/useProductActions'
 import type { ProductDetail, ProductRecommendations } from '~/types/api'
 import { company } from '~/data/company'
 
+// Slugs are `[a-z0-9-]` (prod has no other), and anything else 404s before
+// a fetch: `/product/..%2Fprice-list.xlsx` used to send SSR — unthrottled,
+// from the private network — to any backend GET (audit 2026-10-30).
+definePageMeta({
+  validate: route => /^[a-z0-9-]{1,200}$/.test(String(route.params.slug)),
+})
+
 const route = useRoute()
 const config = useRuntimeConfig()
 const slug = computed(() => String(route.params.slug))
@@ -11,7 +18,7 @@ const { apiBase, absoluteUrl, siteUrl } = useSite()
 // The key follows the slug, so it alone re-runs the fetch on navigation.
 const { data: product, status, error } = await useAsyncData<ProductDetail>(
   () => `product:${slug.value}`,
-  () => $fetch(`${apiBase}/products/${slug.value}`)
+  () => $fetch(`${apiBase}/products/${encodeURIComponent(slug.value)}`)
 )
 
 if (error.value) {

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import type { BrandCategoriesResponse, BrandCategory } from '~/types/api'
 
+// Slugs are `[a-z0-9-]` (prod has no other), and anything else 404s before
+// a fetch: `/product/..%2Fprice-list.xlsx` used to send SSR — unthrottled,
+// from the private network — to any backend GET (audit 2026-10-30).
+definePageMeta({
+  validate: route => /^[a-z0-9-]{1,200}$/.test(String(route.params.slug)),
+})
+
 const route = useRoute()
 const { apiBase, absoluteUrl } = useSite()
 const slug = computed(() => String(route.params.slug || ''))
@@ -8,7 +15,7 @@ const slug = computed(() => String(route.params.slug || ''))
 const { data, status, error } = await useAsyncData<BrandCategoriesResponse>(
   () => `brand-categories:${slug.value}`,
   // The key follows the slug, so no `watch` is needed to re-fetch.
-  () => $fetch<BrandCategoriesResponse>(`${apiBase}/brands/${slug.value}/categories`)
+  () => $fetch<BrandCategoriesResponse>(`${apiBase}/brands/${encodeURIComponent(slug.value)}/categories`)
 )
 
 if (error.value) {

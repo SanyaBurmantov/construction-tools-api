@@ -41,7 +41,11 @@ const { isAuthenticated } = useAuth()
 const { loadSeller, invoiceUrl, isInvoiceable } = useB2b()
 const invoiceReady = ref(false)
 
-const orderId = computed(() => String(route.query.id || ''))
+// Order ids are UUIDs; nothing else is worth a request.
+const orderId = computed(() => {
+  const id = String(route.query.id || '')
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : ''
+})
 const order = ref<OrderConfirmation | null>(null)
 const pending = ref(true)
 const failed = ref(false)
