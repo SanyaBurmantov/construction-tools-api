@@ -483,6 +483,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   carried over (`mergedState()`), and auto-merge never folds away or into a
   product an admin hid or archived — the survivor is the one on sale with the
   most live offers.
+  **One supplier, two articles = two products.** The old slug-keyed parser
+  attached every th-tool.by listing with the same title (Forsage F-…,
+  RockForce RF-…) to one card — 7 471 cards, 23 813 offers on 2026-11-02.
+  `OfferSplitCron` (worker, `offers/offer-split*.ts`) gives each other
+  (supplier, article) its own DRAFT product, queues the URLs first and lets
+  the parse fill and publish them; it keeps running, so a card that collapses
+  again is taken apart within ten minutes. The same rule keeps auto-merge and
+  `/admin/duplicates` off such groups (th-tool.by also reuses one EAN per
+  series). Articles of *different* suppliers prove nothing — each `sku` is
+  that supplier's own number.
   **`Product.costPrice` comes from the cheapest offer**, not from whichever
   parser ran last — in-stock offers outrank a cheaper unavailable one. Parsers
   call `offers.onProductParsed(productId)` *after* saving their SourceProduct.
