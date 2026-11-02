@@ -210,6 +210,7 @@
 
   .gallery-stage {
     position: relative;
+    max-width: 100%;
     height: 480px;
     overflow: hidden;
     border: 1px solid var(--border-subtle);
@@ -230,6 +231,7 @@
   .gallery-empty {
     display: flex;
     width: 100%;
+    min-width: 0;
     height: 100%;
     align-items: center;
     justify-content: center;
@@ -240,10 +242,15 @@
     cursor: zoom-in;
   }
 
+  /* min-width/max-width: the photo is a flex item, and Safari sizes a flex
+     image's minimum from its aspect ratio — a wide supplier photo stretched
+     its box, and with it the page, past the phone's screen. */
   .gallery-image :deep(img),
   .zoom-image {
     display: block;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     height: 100%;
     object-fit: contain;
   }
@@ -315,6 +322,7 @@
   .gallery-thumbnails {
     position: relative;
     display: flex;
+    max-width: 100%;
     overflow-x: auto;
     padding: 4px;
     margin-top: 12px;
@@ -359,6 +367,14 @@
 
   .zoom-image {
     padding: 32px 56px;
+  }
+
+  /* A screen too short for the whole gallery under the header would pin a
+     cut-off one and hide the thumbnails; it scrolls with the page instead. */
+  @media (max-height: 700px) {
+    .product-gallery {
+      position: static;
+    }
   }
 
   @media (max-width: 1024px) {

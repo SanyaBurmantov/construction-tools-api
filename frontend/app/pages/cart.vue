@@ -81,6 +81,7 @@ useHead({
       <div v-else class="layout">
         <CartIssues class="issues" />
 
+        <div class="main">
         <section class="items">
           <header class="items-head">
             <span>{{ pluralize(cart.distinctCount, 'position') }} · {{ cart.count }} шт.</span>
@@ -120,6 +121,9 @@ useHead({
           </ul>
         </section>
 
+        <CartB2bPanel class="b2b" />
+        </div>
+
         <div class="aside">
         <CartOrderSummary title="Итого" total-label="К оплате">
           <UiAlert v-if="belowMinimum" tone="warning">
@@ -152,8 +156,6 @@ useHead({
           </p>
           <UiButton variant="ghost" block to="/catalog">Продолжить покупки</UiButton>
         </CartOrderSummary>
-
-        <CartB2bPanel />
         </div>
       </div>
 
@@ -180,11 +182,20 @@ useHead({
   grid-template-columns: minmax(0, 1fr) 360px;
 }
 
-/* The summary and the panel for organisations, one right-hand column. */
-.aside {
+/* Items, then the panel for organisations under them. The panel used to sit
+   under the sticky summary in the right-hand column and scrolled up over it,
+   the two cards' texts on top of each other. */
+.main {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+/* The summary alone on the right, stretched to the row so it stays in view
+   (it is sticky itself) for the whole length of the cart. */
+.aside {
+  align-self: stretch;
 }
 
 /* Warnings span both columns, above the items and the summary. */
@@ -318,7 +329,16 @@ useHead({
 
 @media (max-width: 1000px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* One column: items, the total, then the panel for organisations. */
+  .main {
+    display: contents;
+  }
+
+  .b2b {
+    order: 1;
   }
 }
 
