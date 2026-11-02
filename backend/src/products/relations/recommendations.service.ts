@@ -34,6 +34,75 @@ const CART_SUGGESTIONS = 8;
 const PACK_CANDIDATES = 200;
 /** «(20 кг)» in a name — a weighed pack; a parameter, not SQL text. */
 const BY_WEIGHT_SQL = '\\(\\s*[0-9.,]+\\s*кг';
+
+/**
+ * One row per item on a shelf: the same product from two suppliers, or listed
+ * twice by one, is the same brand under the same name — the best copy (in
+ * stock, cheapest) stands for it (audit 2026-10-30: «дубли в лентах»).
+ */
+const SAME_ITEM_COPY = Prisma.raw(`row_number() OVER (
+  PARTITION BY coalesce(p."brandId", ''),
+    lower(regexp_replace(btrim(p."name"), '\\s+', ' ', 'g'))
+  ORDER BY (p."stockStatus" = 'in_stock') DESC NULLS LAST, p."priceValue", p."id")`);
+
+/**
+ * What a shelf puts first, beyond «in stock, own brand, complete card,
+ * cheapest» — read from the names of the shelf (`u`) and of the anchor product.
+ * `priority` is a list of ORDER BY terms ending in a comma (or empty); `mix`
+ * groups the rows into kinds that take turns (a constant when they do not).
+ */
+export function shelfOrder(
+  key: string,
+  role: FitmentRole,
+  anchorName: string,
+): { priority: Prisma.Sql; mix: Prisma.Sql } {
+  const type = key.slice(0, key.indexOf(':'));
+  const none = { priority: Prisma.empty, mix: Prisma.sql`0` };
+  if (type === 'thread') {
+    // A stainless bolt takes stainless nuts, and a 20 kg box of bolts takes
+    // nuts by weight, not a 10-piece zip bag.
+    const stainless = /нерж|aisi/i.test(anchorName);
+    const byWeight = /\(\s*[\d.,]+\s*кг/i.test(anchorName);
+    const material = Prisma.sql`(u."name" ~* 'нерж|aisi') = ${stainless} DESC,
+      (u."name" ~* ${BY_WEIGHT_SQL}) = ${byWeight} DESC,`;
+    if (role !== 'PART') return { ...none, priority: material };
+    // A bolt's set: the standard nut (DIN 934), washer (DIN 125) and spring
+    // washer (DIN 127) first, the same coating as the bolt, taking turns.
+    const zinc = /цинк/i.test(anchorName);
+    return {
+      priority: Prisma.sql`${material}
+        (u."name" ~* 'din ?(934|125|127)|iso ?(4032|7089)|гровер') DESC,
+        (u."name" ~* 'цинк') = ${zinc} DESC,`,
+      mix: Prisma.sql`CASE
+        WHEN u."name" ~* 'гровер|пружин|din ?127' THEN 3
+        WHEN u."name" ~* 'шайб' THEN 2
+        WHEN u."name" ~* 'гайк' THEN 1
+        ELSE 4 END`,
+    };
+  }
+  if (role !== 'PART') return none;
+  if (type === 'battery') {
+    // A «solo» tool needs power first: kits and batteries before chargers.
+    return {
+      ...none,
+      priority: Prisma.sql`(u."name" ~* 'комплект|набор|стартов') DESC,
+        (u."name" ~* '^\s*аккумулятор') DESC,`,
+    };
+  }
+  if (type === 'hex' || type === 'slot') {
+    // Sets first, then the bits everyone uses.
+    return {
+      ...none,
+      priority: Prisma.sql`(u."name" ~* 'набор') DESC,
+        (u."name" ~* 'ph ?2|pz ?2') DESC,`,
+    };
+  }
+  if (type === 'drive' && /гайков[её]рт/i.test(anchorName)) {
+    // An impact wrench cracks ordinary sockets: impact ones first.
+    return { ...none, priority: Prisma.sql`(u."name" ~* 'ударн') DESC,` };
+  }
+  return none;
+}
 type Card = Prisma.ProductGetPayload<{
   select: typeof RECOMMENDATION_CARD_SELECT;
 }>;
@@ -144,7 +213,7 @@ export class RecommendationsService {
       packs,
       variants,
     ] = await Promise.all([
-      this.similar(product),
+      family.then((row) => this.similar(product, row.familyKey)),
       this.compatible(product.id, 'accessories', query.accessoriesPage),
       this.compatible(product.id, 'fits', query.fitsPage),
       groups('PART'),
@@ -266,29 +335,37 @@ export class RecommendationsService {
     role: FitmentRole,
     requestedPage: number,
   ) {
-    // A stainless bolt takes stainless nuts: the same material first.
-    // and a 20 kg box of bolts takes nuts by weight, not a 10-piece zip bag.
-    const stainless = /нерж|aisi/i.test(product.name ?? '');
-    const byWeight = /\(\s*[\d.,]+\s*кг/i.test(product.name ?? '');
-    const material = key.startsWith('thread:')
-      ? Prisma.sql`(p."name" ~* 'нерж|aisi') = ${stainless} DESC,
-          (p."name" ~* ${BY_WEIGHT_SQL}) = ${byWeight} DESC,`
-      : Prisma.empty;
-    const from = Prisma.sql`
-      FROM "ProductFitment" f JOIN "Product" p ON p."id" = f."productId"
-      WHERE f."key" = ${key} AND f."role" = ${role}
-        AND p."status" = 'PUBLISHED' AND p."priceValue" > 0
-        AND p."id" <> ${product.id}`;
+    const shelf = shelfOrder(key, role, product.name ?? '');
+    const uniq = Prisma.sql`
+      WITH base AS (
+        SELECT p."id", p."name", p."brandId", p."stockStatus",
+          p."listingRank", p."priceValue",
+          ${SAME_ITEM_COPY} AS copy
+        FROM "ProductFitment" f JOIN "Product" p ON p."id" = f."productId"
+        WHERE f."key" = ${key} AND f."role" = ${role}
+          AND p."status" = 'PUBLISHED' AND p."priceValue" > 0
+          AND p."id" <> ${product.id}
+      ), u AS (SELECT * FROM base WHERE copy = 1)`;
     const [count] = await this.prisma.$queryRaw<Array<{ total: number }>>`
-      SELECT count(*)::int AS total ${from}`;
+      ${uniq} SELECT count(*)::int AS total FROM u`;
     const pages = Math.ceil(count.total / PAGE_SIZE);
     const page = Math.min(Math.max(1, requestedPage), Math.max(1, pages));
+    const order = Prisma.sql`${shelf.priority}
+      (u."stockStatus" = 'in_stock') DESC NULLS LAST,
+      coalesce(u."brandId" = ${product.brandId}, false) DESC,
+      u."listingRank" DESC, u."priceValue", u."id"`;
+    // A bolt's row alternates nut, washer, spring washer instead of twelve
+    // nuts in a row: every kind's best first, then every kind's second…
     const ids = count.total
       ? await this.prisma.$queryRaw<Array<{ id: string }>>`
-          SELECT p."id" ${from}
-          ORDER BY ${material} (p."stockStatus" = 'in_stock') DESC NULLS LAST,
-            coalesce(p."brandId" = ${product.brandId}, false) DESC,
-            p."listingRank" DESC, p."priceValue", p."id"
+          ${uniq}, ranked AS (
+            SELECT u."id", row_number() OVER (
+              PARTITION BY ${shelf.mix} ORDER BY ${order}) AS turn,
+              ${shelf.mix} AS mix_kind
+            FROM u
+          )
+          SELECT r."id" FROM ranked r JOIN u ON u."id" = r."id"
+          ORDER BY r."turn", r."mix_kind", ${order}
           LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`
       : [];
     const titles = fitmentTitles(key);
@@ -464,11 +541,18 @@ export class RecommendationsService {
    * the row is the category's closest names — the block never goes empty for
    * a product that has neighbours.
    */
-  private async similar(product: SimilarityRow) {
+  private async similar(product: SimilarityRow, familyKey?: string | null) {
+    // Other sizes of the same line are the variant switch's job; here they
+    // crowded out real alternatives (audit 2026-10-30).
+    const otherLine = familyKey
+      ? Prisma.sql`AND NOT EXISTS (
+          SELECT 1 FROM "ProductFamily" pf
+          WHERE pf."productId" = "Product"."id" AND pf."familyKey" = ${familyKey})`
+      : Prisma.empty;
     const ids = await this.prisma.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "Product"
       WHERE "categoryId" = ${product.categoryId} AND "status" = 'PUBLISHED'
-        AND "id" <> ${product.id} AND "priceValue" > 0
+        AND "id" <> ${product.id} AND "priceValue" > 0 ${otherLine}
       ORDER BY similarity("name", ${product.name}) DESC, "listingRank" DESC, "id"
       LIMIT ${CANDIDATE_LIMIT}`;
     if (!ids.length) return [];
@@ -490,12 +574,38 @@ export class RecommendationsService {
       )
       .map(({ candidate }) => candidate);
     const picked = new Set(ranked.map((candidate) => candidate.id));
-    return [
+    const ordered = [
       ...ranked,
       ...candidates.filter((candidate) => !picked.has(candidate.id)),
-    ]
+    ];
+    // In stock first, then — for a cordless tool — the same battery
+    // platform: an alternative the buyer's batteries do not fit is a lesser
+    // one. Otherwise the similarity order stands.
+    const platforms = await this.prisma.productFitment.findMany({
+      where: {
+        productId: { in: [product.id, ...ordered.map((c) => c.id)] },
+        key: { startsWith: 'battery:' },
+      },
+      select: { productId: true, key: true },
+    });
+    const own = new Set(
+      platforms.filter((t) => t.productId === product.id).map((t) => t.key),
+    );
+    const samePlatform = new Set(
+      platforms
+        .filter((t) => t.productId !== product.id && own.has(t.key))
+        .map((t) => t.productId),
+    );
+    const rank = (candidate: (typeof ordered)[number]) =>
+      (candidate.stockStatus === 'in_stock' ? 0 : 2) +
+      (own.size && !samePlatform.has(candidate.id) ? 1 : 0);
+    return ordered
+      .map((candidate, index) => ({ candidate, index }))
+      .sort(
+        (a, b) => rank(a.candidate) - rank(b.candidate) || a.index - b.index,
+      )
       .slice(0, PAGE_SIZE)
-      .map((candidate) => recommendationCard(candidate));
+      .map(({ candidate }) => recommendationCard(candidate));
   }
 
   async compatible(
@@ -509,27 +619,39 @@ export class RecommendationsService {
         : Prisma.sql`r."accessoryId" = ${productId}`;
     const selectedId =
       direction === 'accessories' ? Prisma.sql`a."id"` : Prisma.sql`p."id"`;
-    const selectedName =
-      direction === 'accessories' ? Prisma.sql`a."name"` : Prisma.sql`p."name"`;
-    const from = Prisma.sql`
-      FROM "ProductCompatibility" r
-      JOIN "Product" a ON a."id" = r."accessoryId"
-      JOIN "Product" p ON p."id" = r."productId"
-      WHERE ${anchor}
-        AND a."status" = 'PUBLISHED' AND p."status" = 'PUBLISHED'
-        AND r."accessorySignature" = ${accessorySignatureSql('a')}
-        AND r."productSignature" = ${targetSignatureSql('p')}`;
+    const selected = direction === 'accessories' ? 'a' : 'p';
+    const column = (name: string) => Prisma.raw(`${selected}."${name}"`);
+    // One row per item (the same accessory from two suppliers is one), in
+    // stock first, then by name: the shelf used to be alphabetical, with the
+    // unavailable copies interleaved (audit 2026-10-30).
+    const uniq = Prisma.sql`
+      WITH base AS (
+        SELECT ${selectedId} AS id, ${column('name')} AS name,
+          ${column('stockStatus')} AS "stockStatus",
+          row_number() OVER (
+            PARTITION BY coalesce(${column('brandId')}, ''),
+              lower(regexp_replace(btrim(${column('name')}), '\s+', ' ', 'g'))
+            ORDER BY (${column('stockStatus')} = 'in_stock') DESC NULLS LAST,
+              ${column('priceValue')}, ${selectedId}) AS copy
+        FROM "ProductCompatibility" r
+        JOIN "Product" a ON a."id" = r."accessoryId"
+        JOIN "Product" p ON p."id" = r."productId"
+        WHERE ${anchor}
+          AND a."status" = 'PUBLISHED' AND p."status" = 'PUBLISHED'
+          AND r."accessorySignature" = ${accessorySignatureSql('a')}
+          AND r."productSignature" = ${targetSignatureSql('p')}
+      ), u AS (SELECT * FROM base WHERE copy = 1)`;
     // Plain statements, not an interactive transaction: a product page must
     // not hold a pooled connection across round trips. A link that goes stale
     // between them is dropped by the card read's status filter.
     const [count] = await this.prisma.$queryRaw<Array<{ total: number }>>`
-      SELECT count(*)::int AS total ${from}`;
+      ${uniq} SELECT count(*)::int AS total FROM u`;
     const pages = Math.ceil(count.total / PAGE_SIZE);
     const page = Math.min(Math.max(1, requestedPage), Math.max(1, pages));
     const ids = count.total
       ? await this.prisma.$queryRaw<Array<{ id: string }>>`
-          SELECT ${selectedId} AS id ${from}
-          ORDER BY ${selectedName}, ${selectedId}
+          ${uniq} SELECT u."id" FROM u
+          ORDER BY (u."stockStatus" = 'in_stock') DESC NULLS LAST, u."name", u."id"
           LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`
       : [];
     const cards = ids.length

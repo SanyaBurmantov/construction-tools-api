@@ -540,6 +540,67 @@ integration('product recommendations (PostgreSQL)', () => {
     ).toBe(200);
   });
 
+  it('gives a bolt one of each item, nut, washer and spring washer in turn', async () => {
+    const brand = await prisma.brand.findUniqueOrThrow({
+      where: { id: brandId },
+    });
+    const bolt = await create(`Болт М8х40 мм, цинк, DIN 933 ${brand.name}`, '');
+    const nuts = [
+      await create(`Гайка М8 шестигр., цинк, DIN 934 ${brand.name}`, ''),
+      await create(`Гайка М8 с фланцем, цинк ${brand.name}`, ''),
+    ];
+    // The same nut listed twice (two suppliers): one row.
+    const copy = await create(
+      `Гайка  М8 шестигр., цинк, DIN 934 ${brand.name}`,
+      '',
+    );
+    await prisma.product.update({
+      where: { id: copy.id },
+      data: { stockStatus: 'out_of_stock' },
+    });
+    const washer = await create(
+      `Шайба М8 плоская, цинк, DIN 125 ${brand.name}`,
+      '',
+    );
+    const grover = await create(
+      `Шайба М8 пружинная (гровер), цинк, DIN 127 ${brand.name}`,
+      '',
+    );
+    await worker.refreshFitments([
+      bolt.id,
+      ...nuts.map((n) => n.id),
+      copy.id,
+      washer.id,
+      grover.id,
+    ]);
+    const shelf = (await service.get(bolt.slug, new RecommendationsQueryDto()))
+      .consumables[0];
+    expect(shelf.data.map((row) => row.id)).toEqual([
+      nuts[0].id,
+      washer.id,
+      grover.id,
+      nuts[1].id,
+    ]);
+    expect(shelf.pagination.total).toBe(4);
+  });
+
+  it('leaves the other sizes of the line out of «Похожие»', async () => {
+    const brand = await prisma.brand.findUniqueOrThrow({
+      where: { id: brandId },
+    });
+    const sizes = [];
+    for (const size of ['6.0х57х93', '8.0х75х117'])
+      sizes.push(
+        await create(`Сверло по металлу ц/х ${size} мм HSS ${brand.name}`, ''),
+      );
+    const other = await create('Сверло по металлу ступенчатое 4-20 мм', '');
+    await worker.refreshFitments([...sizes.map((p) => p.id), other.id]);
+    const similar = (
+      await service.get(sizes[0].slug, new RecommendationsQueryDto())
+    ).similar.map((row) => row.id);
+    expect(similar).toEqual([other.id]);
+  });
+
   it('serves cart suggestions over HTTP and validates the ids', async () => {
     const { host } = await fixture();
     expect(
