@@ -6,7 +6,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { DeliveryMethod, OrderStatus, Prisma } from '@prisma/client';
+import { CustomerType, OrderStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
@@ -21,6 +21,7 @@ import {
   buildOrderMail,
 } from '../notifications/order-mail';
 import { resolvePayer } from './order-payer';
+import { deliveryCostFor, orderMinimum, orderTerms } from './order-terms';
 import { attributionColumns } from '../attribution/traffic-source';
 import { SellerService } from '../b2b/seller.service';
 import { ServerCartService } from '../cart/server-cart.service';
@@ -69,18 +70,6 @@ export class OrdersService {
     private mail: MailService,
     @Optional() private seller?: SellerService,
   ) {}
-
-  private deliveryCost(method: DeliveryMethod): number {
-    switch (method) {
-      case 'COURIER':
-        return Number(process.env.DELIVERY_COST_COURIER ?? 15);
-      case 'POST':
-        return Number(process.env.DELIVERY_COST_POST ?? 10);
-      case 'PICKUP':
-      default:
-        return 0;
-    }
-  }
 
   /**
    * `userId` is passed only when the checkout request carried a session; guest
@@ -190,20 +179,42 @@ export class OrdersService {
       });
     }
 
-    let deliveryCost = this.deliveryCost(dto.deliveryMethod);
+    // The terms of sale (order-terms.ts): an organisation — an order with a
+    // payer — has its own minimum and free delivery from a threshold.
+    const terms = orderTerms();
+    const isCompany = payer.payerType === CustomerType.COMPANY;
+    const minimum = orderMinimum(terms, isCompany);
+    if (itemsTotal < minimum) {
+      throw new BadRequestException({
+        message: isCompany
+          ? `Минимальная сумма заказа для организаций — ${minimum} BYN`
+          : `Минимальная сумма заказа — ${minimum} BYN. Организации заказывают по безналичному расчёту от ${terms.minCompany} BYN`,
+        code: 'ORDER_MINIMUM',
+        minimum,
+      });
+    }
 
     // Re-evaluate the promo code against server-side totals; the client's
     // preview is never trusted, same as the line prices above.
     let discountTotal = 0;
     let promoCodeId: string | null = null;
     let promoCodeLabel: string | null = null;
+    let promoFreeDelivery = false;
     if (dto.promoCode?.trim()) {
       const promo = await this.promo.evaluate(dto.promoCode, itemsTotal);
       discountTotal = promo.discount;
       promoCodeId = promo.code.id;
       promoCodeLabel = promo.code.code;
-      if (promo.freeDelivery) deliveryCost = 0;
+      promoFreeDelivery = promo.freeDelivery;
     }
+    const deliveryCost = promoFreeDelivery
+      ? 0
+      : deliveryCostFor(
+          terms,
+          dto.deliveryMethod,
+          isCompany,
+          itemsTotal - discountTotal,
+        );
 
     const total =
       Math.round((itemsTotal - discountTotal + deliveryCost) * 100) / 100;

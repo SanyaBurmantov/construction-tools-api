@@ -224,8 +224,13 @@ export default defineNuxtConfig({
       // Must mirror the backend's DELIVERY_COST_* — the API is the authority
       // and recomputes them on every order; these only drive what we promise
       // on the storefront, so a mismatch would show the customer a wrong total.
-      deliveryCourier: Number(process.env.DELIVERY_COST_COURIER ?? 15),
+      deliveryCourier: Number(process.env.DELIVERY_COST_COURIER ?? 20),
       deliveryPost: Number(process.env.DELIVERY_COST_POST ?? 10),
+      // Terms of sale — the API enforces them (orders/order-terms.ts); these
+      // only say them on the storefront.
+      minOrderIndividual: Number(process.env.ORDER_MIN_INDIVIDUAL ?? 200),
+      minOrderCompany: Number(process.env.ORDER_MIN_COMPANY ?? 50),
+      freeDeliveryCompanyFrom: Number(process.env.FREE_DELIVERY_COMPANY_FROM ?? 300),
     },
   }
 })

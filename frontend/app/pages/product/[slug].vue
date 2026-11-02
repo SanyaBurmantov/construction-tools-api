@@ -85,6 +85,7 @@ const KEY_SPEC_COUNT = 5
 const keySpecs = computed(() => product.value?.productSpecs?.slice(0, KEY_SPEC_COUNT) ?? [])
 
 const courierCost = computed(() => Number(config.public.deliveryCourier))
+const { terms } = useOrderTerms()
 const postCost = computed(() => Number(config.public.deliveryPost))
 const { formatPrice } = useFormatPrice()
 
@@ -424,7 +425,8 @@ useHead(() => {
                 <dd>
                   курьер {{ formatPrice(courierCost, 'BYN') }} ·
                   почта {{ formatPrice(postCost, 'BYN') }} ·
-                  самовывоз бесплатно
+                  самовывоз бесплатно · организациям бесплатно от
+                  {{ formatPrice(terms.freeDeliveryCompanyFrom, 'BYN') }}
                 </dd>
               </div>
               <div>

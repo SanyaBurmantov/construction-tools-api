@@ -390,7 +390,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   code **server-side**, and snapshots product name/slug/image/price into
   `OrderItem`. Admin manages orders via `GET /admin/orders`,
   `GET /admin/orders/:id`, `PATCH /admin/orders/:id/status`.
-  Delivery costs are env-tunable (`DELIVERY_COST_COURIER`, `DELIVERY_COST_POST`).
+  **Terms of sale** (owner, 2026-11-02; `orders/order-terms.ts`, pure and
+  tested): an individual orders from 200 BYN, an organisation — an order with
+  a payer, i.e. by invoice or from a company account — from 50 BYN; courier
+  20 BYN, post 10 BYN, pickup free, and courier/post are free for an
+  organisation from 300 BYN of goods (after the promo discount). `POST /orders`
+  answers 400 `ORDER_MINIMUM` below the minimum. All env-tunable
+  (`ORDER_MIN_INDIVIDUAL`, `ORDER_MIN_COMPANY`, `FREE_DELIVERY_COMPANY_FROM`,
+  `DELIVERY_COST_COURIER`, `DELIVERY_COST_POST`), mirrored to the storefront as
+  `NUXT_PUBLIC_*` and read there through `useOrderTerms()` (cart, checkout,
+  the invoice form, /delivery, /usloviya, /organizaciyam, product and home).
 - **Cart is client-side, prices are not.** The cart lives in `localStorage` and
   stores the price captured when an item was added, but supplier prices are
   re-parsed daily — so a restored cart drifts. `POST /cart/validate` (`cart/`

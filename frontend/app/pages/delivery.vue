@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { company } from '~/data/company'
 
+const { terms } = useOrderTerms()
+const { formatPrice } = useFormatPrice()
+
 const description =
-  'Способы оплаты и доставки в интернет-магазине Gost.by: самовывоз в Витебске, курьер, почта. Оплата наличными, картой или по счёту.'
+  'Оплата и доставка в Gost.by: самовывоз в Витебске бесплатно, курьер, почта; организациям доставка бесплатно от 300 BYN. Оплата наличными, картой или по счёту.'
 
 usePageSeo({ title: 'Оплата и доставка', description, path: '/delivery' })
 </script>
@@ -10,6 +13,17 @@ usePageSeo({ title: 'Оплата и доставка', description, path: '/del
 <template>
   <section class="legal-page">
     <h1>Оплата и доставка</h1>
+
+    <h2>Минимальная сумма заказа</h2>
+    <ul>
+      <li>
+        <strong>Для физических лиц</strong> — от {{ formatPrice(terms.minIndividual, 'BYN') }}.
+      </li>
+      <li>
+        <strong>Для организаций</strong> при оплате по безналичному расчёту — от
+        {{ formatPrice(terms.minCompany, 'BYN') }}.
+      </li>
+    </ul>
 
     <h2>Способы получения заказа</h2>
     <ul>
@@ -19,13 +33,16 @@ usePageSeo({ title: 'Оплата и доставка', description, path: '/del
         сообщим, когда товар будет готов к выдаче.
       </li>
       <li>
-        <strong>Курьерская доставка.</strong>
-        Стоимость рассчитывается и показывается при оформлении заказа.
+        <strong>Курьерская доставка — {{ formatPrice(terms.courier, 'BYN') }}.</strong>
         Срок и время доставки согласуем по телефону при подтверждении заказа.
       </li>
       <li>
-        <strong>Почта.</strong>
-        Отправка по Беларуси; стоимость рассчитывается при оформлении заказа.
+        <strong>Почта — {{ formatPrice(terms.post, 'BYN') }}.</strong>
+        Отправка по Беларуси.
+      </li>
+      <li>
+        <strong>Организациям — бесплатно</strong> курьером или почтой при заказе от
+        {{ formatPrice(terms.freeDeliveryCompanyFrom, 'BYN') }}.
       </li>
     </ul>
 
