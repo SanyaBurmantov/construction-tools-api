@@ -119,8 +119,22 @@ Daily compressed PostgreSQL backups are made by
 are retained for three days. Restore a backup into an empty database with
 `gunzip -c <backup>.sql.gz | docker compose --env-file .env.prod -f
 docker-compose.prod.yml exec -T db psql -U postgres -d construction_tools`.
-These backups are on the same server; configure an external backup destination
-when one is available.
+Each dump is also uploaded off-site to S3 (hoster.by MinIO,
+`S3_BACKUP_*` in `.env.prod`): `daily/` kept 14 days, and the first dump of
+each month copied to `monthly/` and kept 180 days — the script creates the
+bucket and (re)applies that expiry rule on every run. An upload failure leaves
+the local backup and the run successful (a pre-migration backup must not block
+a release on an S3 outage); the watchdog alerts when the last verified upload
+is older than 26 h. Restore from S3:
+
+```bash
+curl --aws-sigv4 "aws:amz:us-east-1:s3" --user "$S3_BACKUP_ACCESS_KEY:$S3_BACKUP_SECRET_KEY" \
+  "$S3_BACKUP_ENDPOINT/$S3_BACKUP_BUCKET?list-type=2&prefix=daily/"      # list
+curl --aws-sigv4 "aws:amz:us-east-1:s3" --user "$S3_BACKUP_ACCESS_KEY:$S3_BACKUP_SECRET_KEY" \
+  -o backup.sql.gz "$S3_BACKUP_ENDPOINT/$S3_BACKUP_BUCKET/daily/<name>.sql.gz"
+```
+
+then restore `backup.sql.gz` as above.
 
 ## Host watchdog (502s, OOM restarts)
 

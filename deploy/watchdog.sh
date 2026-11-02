@@ -300,6 +300,16 @@ check_flag backup "$(( backup_age_h > BACKUP_MAX_AGE_HOURS ))" \
   "🔴 Бэкап базы устарел: последний $( [[ $backup_age_h == 9999 ]] && echo 'не найден' || echo "$backup_age_h ч назад") ($BACKUP_DIR). Проверьте construction-tools-backup.timer и место на диске." \
   "✅ Бэкап базы снова свежий ($backup_age_h ч)."
 
+# The off-site copy (backup-db.sh stamps backup-s3.ok after a verified upload).
+# Checked only once S3 is configured, so a server without it stays quiet.
+if [[ -n "$(env_value S3_BACKUP_BUCKET)" ]]; then
+  s3_ok=$(stat -c %Y "$STATE_DIR/backup-s3.ok" 2>/dev/null || true)
+  if [[ -z "$s3_ok" ]]; then s3_age_h=9999; else s3_age_h=$(( (now - s3_ok) / 3600 )); fi
+  check_flag backup_s3 "$(( s3_age_h > BACKUP_MAX_AGE_HOURS ))" \
+    "🔴 Бэкап базы не выгружается в S3: последняя выгрузка $( [[ $s3_age_h == 9999 ]] && echo 'не найдена' || echo "$s3_age_h ч назад"). Локальные копии есть; смотрите journalctl -u construction-tools-backup." \
+    "✅ Бэкап базы снова выгружается в S3 ($s3_age_h ч)."
+fi
+
 free_mb=$(df -Pm / | awk 'NR == 2 { print $4 }')
 check_flag disk "$(( ${free_mb:-0} < DISK_MIN_FREE_MB ))" \
   "🟠 На диске сервера осталось ${free_mb} МБ (порог ${DISK_MIN_FREE_MB}). При <1 ГБ перестают писаться бэкапы и кеш страниц." \
