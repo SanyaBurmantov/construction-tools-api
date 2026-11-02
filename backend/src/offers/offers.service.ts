@@ -7,6 +7,7 @@ import {
   MatchConfidence,
   MatchSignal,
   compareProducts,
+  differentArticles,
   isAutoMergeable,
 } from './product-matching';
 
@@ -386,7 +387,13 @@ export class OffersService {
     let skipped = 0;
 
     for (const group of groups) {
-      if (!isAutoMergeable(group)) {
+      // A barcode shared by different articles is a reused barcode, not one
+      // product (see compareProducts); such a group stays in /admin/duplicates.
+      if (
+        !isAutoMergeable(group) ||
+        (group.signal === 'barcode' &&
+          differentArticles(group.products.map((product) => product.sku)))
+      ) {
         skipped += 1;
         continue;
       }

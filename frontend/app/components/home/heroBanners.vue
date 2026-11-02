@@ -9,6 +9,10 @@ let timer: ReturnType<typeof setInterval> | undefined
 
 const AUTOPLAY_MS = 6000
 
+/** Our path or an http(s) address — never `javascript:` (the API refuses it too). */
+const linkOf = (url?: string | null) =>
+  url && /^(?:\/(?!\/)|https?:\/\/)/i.test(url) ? url : undefined
+
 function go(index: number) {
   const total = props.banners.length
   if (!total) return
@@ -71,10 +75,10 @@ function onTouchEnd(event: TouchEvent) {
   >
     <div class="viewport">
       <component
-        :is="banner.linkUrl ? 'NuxtLink' : 'div'"
+        :is="linkOf(banner.linkUrl) ? 'NuxtLink' : 'div'"
         v-for="(banner, index) in banners"
         :key="banner.id"
-        :to="banner.linkUrl || undefined"
+        :to="linkOf(banner.linkUrl)"
         class="slide"
         :class="{ 'is-active': index === active }"
         :style="{ background: banner.bgColor || undefined }"

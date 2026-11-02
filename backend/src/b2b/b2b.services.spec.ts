@@ -194,9 +194,14 @@ describe('DocumentsService', () => {
     ],
   };
 
+  const freeze = jest.fn(() => Promise.resolve({ count: 1 }));
+
   function documents(seller: Seller = readySeller, row: unknown = order) {
     const prisma = {
-      order: { findUnique: jest.fn(() => Promise.resolve(row)) },
+      order: {
+        findUnique: jest.fn(() => Promise.resolve(row)),
+        updateMany: freeze,
+      },
     } as unknown as PrismaService;
     const sellerService = {
       get: jest.fn(() => Promise.resolve(seller)),
@@ -208,6 +213,27 @@ describe('DocumentsService', () => {
     const file = await documents().invoiceForOrder('o1');
     expect(file.filename).toBe('schet-42.pdf');
     expect(file.pdf.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('freezes the requisites into the order at the first issue', async () => {
+    freeze.mockClear();
+    await documents().invoiceForOrder('o1');
+    expect(freeze).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { sellerSnapshot: readySeller },
+      }),
+    );
+  });
+
+  // A change of bank in the settings must not rewrite an issued invoice.
+  it('prints the frozen requisites, whatever the settings say now', async () => {
+    freeze.mockClear();
+    const file = await documents(SELLER_DEFAULTS, {
+      ...order,
+      sellerSnapshot: readySeller,
+    }).invoiceForOrder('o1');
+    expect(file.pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(freeze).not.toHaveBeenCalled();
   });
 
   it('refuses until the seller requisites are complete', async () => {

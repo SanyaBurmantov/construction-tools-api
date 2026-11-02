@@ -114,15 +114,27 @@ export class ProductIdentityService {
     const existingId = await this.findByOffer(params.sourceId, params.url);
 
     if (existingId) {
-      return this.prisma.product.update({
-        where: { id: existingId },
-        data: await this.forExistingProduct(
-          existingId,
-          params.sourceId,
-          params.url,
-          params.data.update,
-        ),
-      });
+      // The locks are read and honoured under a row lock. Read outside it, an
+      // AI task (or an admin) could write a text and lock it between the
+      // parser's read and its update — and the supplier's text went back over
+      // it for good, under a lock that now protected the wrong value
+      // (audit 2026-10-30). The AI writer updates the same row, so it waits.
+      return this.prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT 1 FROM "Product" WHERE id = ${existingId} FOR UPDATE`;
+          return tx.product.update({
+            where: { id: existingId },
+            data: await this.forExistingProduct(
+              existingId,
+              params.sourceId,
+              params.url,
+              params.data.update,
+              tx,
+            ),
+          });
+        },
+        { maxWait: 10_000, timeout: 30_000 },
+      );
     }
 
     return this.createWithFreeSlug(params, params.data);
@@ -152,9 +164,10 @@ export class ProductIdentityService {
     sourceId: string,
     url: string,
     update: ProductWriteData['update'],
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<ProductWriteData['update']> {
     const [row, offers] = await Promise.all([
-      this.prisma.product.findUnique({
+      db.product.findUnique({
         where: { id: productId },
         select: {
           aiLockedFields: true,
@@ -172,7 +185,7 @@ export class ProductIdentityService {
           _count: { select: { images: true } },
         },
       }),
-      this.prisma.sourceProduct.findMany({
+      db.sourceProduct.findMany({
         where: { productId },
         select: { sourceId: true, url: true, name: true },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],

@@ -208,3 +208,34 @@ describe('compareProducts', () => {
     expect(compareProducts(a, b)).toBeNull();
   });
 });
+
+describe('a barcode reused across a series', () => {
+  // th-tool.by gives one EAN to every trim clip of a car make: C0044, C0046…
+  // Merged on the barcode, 317 different articles became one card.
+  it('is only a suggestion when the articles differ', () => {
+    const match = compareProducts(
+      {
+        id: 'a',
+        name: 'Клипса GM',
+        barcode: '4811450262728',
+        sku: 'C0044[ GM ]',
+      },
+      {
+        id: 'b',
+        name: 'Клипса GM',
+        barcode: '4811450262728',
+        sku: 'C0046[ GM ]',
+      },
+    );
+    expect(match).toMatchObject({ signal: 'barcode', confidence: 'likely' });
+    expect(isAutoMergeable(match!)).toBe(false);
+  });
+
+  it('still merges the same article sold twice', () => {
+    const match = compareProducts(
+      { id: 'a', name: 'Клипса GM', barcode: '4811450262728', sku: 'C0044' },
+      { id: 'b', name: 'Клипса GM', barcode: '4811450262728', sku: null },
+    );
+    expect(match).toMatchObject({ confidence: 'exact' });
+  });
+});

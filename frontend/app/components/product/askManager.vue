@@ -82,7 +82,8 @@ async function send() {
   </button>
 
   <UiModal v-model:open="open" title="Вопрос менеджеру">
-    <form class="ask-form" novalidate @submit.prevent="send">
+    <!-- ym-*: Webvisor records neither the phone typed here nor its keys. -->
+    <form class="ask-form ym-hide-content ym-disable-keys" novalidate @submit.prevent="send">
       <p class="about">{{ productName }}</p>
       <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
       <div class="grid">

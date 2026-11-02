@@ -3,10 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { LeadKind } from '@prisma/client';
+import { LeadKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadsService } from './leads.service';
-import { SellerService, missingForInvoice } from './seller.service';
+import {
+  SellerService,
+  missingForInvoice,
+  type Seller,
+} from './seller.service';
 import { renderDocument, type DocumentLine } from './pdf-documents';
 import { QuoteRequestDto } from './dto/b2b.dto';
 import { MAX_LINE_QUANTITY } from '../cart/cart-limits';
@@ -62,6 +66,37 @@ export class DocumentsService {
     );
   }
 
+  /**
+   * The requisites this order's invoice carries. Frozen into the order the
+   * first time the invoice is issued: it used to be rendered from the current
+   * settings on every download, so a change of bank silently rewrote invoices
+   * customers had already paid by (audit 2026-10-30).
+   */
+  private async invoiceSeller(
+    orderId: string,
+    snapshot: Prisma.JsonValue | null,
+  ): Promise<Seller> {
+    if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+      return snapshot as unknown as Seller;
+    }
+    const seller = await this.seller.get();
+    if (missingForInvoice(seller).length) {
+      throw new ConflictException(
+        'Счёт подготовит менеджер и пришлёт на e-mail в рабочее время',
+      );
+    }
+    // Conditional: two first downloads at once freeze one version.
+    await this.prisma.order.updateMany({
+      where: { id: orderId, sellerSnapshot: { equals: Prisma.DbNull } },
+      data: { sellerSnapshot: seller as unknown as Prisma.InputJsonObject },
+    });
+    const frozen = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { sellerSnapshot: true },
+    });
+    return (frozen?.sellerSnapshot as unknown as Seller | null) ?? seller;
+  }
+
   async invoiceForOrder(orderId: string): Promise<PdfFile> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -71,12 +106,7 @@ export class DocumentsService {
     if (!DocumentsService.isInvoiceable(order)) {
       throw new NotFoundException('Для этого заказа счёт не выставляется');
     }
-    const seller = await this.seller.get();
-    if (missingForInvoice(seller).length) {
-      throw new ConflictException(
-        'Счёт подготовит менеджер и пришлёт на e-mail в рабочее время',
-      );
-    }
+    const seller = await this.invoiceSeller(order.id, order.sellerSnapshot);
 
     const lines: DocumentLine[] = order.items.map((item) => ({
       name: item.productName,
