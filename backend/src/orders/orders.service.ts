@@ -29,6 +29,9 @@ import { MAX_LINE_QUANTITY } from '../cart/cart-limits';
 
 const DEFAULT_CURRENCY = 'BYN';
 const MAX_INT4 = 2_147_483_647;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Confirmation letters to one address per 24 h; a buyer places a few at most. */
+const CUSTOMER_MAILS_PER_DAY = 5;
 
 /**
  * Who placed the order, when it came from an account. Admin-only: the public
@@ -291,6 +294,22 @@ export class OrdersService {
       const to = order.customerEmail;
       Promise.resolve()
         .then(async () => {
+          // A guest order takes any address, and the letter goes out from
+          // our mailbox: without a cap, 10 orders a minute per IP was a way to
+          // mail-bomb someone and get gost.by's SMTP listed as spam
+          // (audit 2026-10-30). The order itself is unaffected.
+          const recent = await this.prisma.order.count({
+            where: {
+              customerEmail: { equals: to, mode: 'insensitive' },
+              createdAt: { gte: new Date(Date.now() - DAY_MS) },
+            },
+          });
+          if (recent > CUSTOMER_MAILS_PER_DAY) {
+            this.logger.warn(
+              `Order #${order.number}: no customer letter, ${recent} orders to that address in 24 h`,
+            );
+            return false;
+          }
           // A company paying by invoice gets the PDF link straight away —
           // when the seller's requisites are complete.
           const invoiceUrl =

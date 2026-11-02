@@ -44,6 +44,7 @@ describe('AdminBootstrapService', () => {
     delete process.env.ADMIN_LOGIN;
     delete process.env.ADMIN_PASSWORD;
     delete process.env.ADMIN_TOKEN;
+    process.env.NODE_ENV = 'test';
   });
 
   afterEach(() => {
@@ -64,6 +65,28 @@ describe('AdminBootstrapService', () => {
     expect(created[0].role).toBe(UserRole.ADMIN);
     await expect(
       verifyPassword('test-111', created[0].passwordHash),
+    ).resolves.toBe(true);
+  });
+
+  it('creates nothing in production without ADMIN_PASSWORD', async () => {
+    process.env.NODE_ENV = 'production';
+    const { service, created } = buildService();
+
+    await service.onModuleInit();
+
+    expect(created).toHaveLength(0);
+  });
+
+  it('creates the account in production from ADMIN_PASSWORD', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.ADMIN_PASSWORD = 'long-and-secret';
+    const { service, created } = buildService();
+
+    await service.onModuleInit();
+
+    expect(created).toHaveLength(1);
+    await expect(
+      verifyPassword('long-and-secret', created[0].passwordHash),
     ).resolves.toBe(true);
   });
 

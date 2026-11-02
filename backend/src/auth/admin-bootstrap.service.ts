@@ -25,6 +25,9 @@ const INITIAL_ADMIN_PASSWORD = 'test-111';
  * set, `INITIAL_ADMIN_PASSWORD`. So the first login is always known in
  * advance: `admin` / `test-111` on a fresh install.
  *
+ * Not in production without `ADMIN_PASSWORD`: the repository is public, and
+ * `test-111` there would be everyone's admin password.
+ *
  * It never touches an existing account: a password an admin changed stays
  * changed, and an admin deleted on purpose is not resurrected while another
  * one is still active.
@@ -64,6 +67,17 @@ export class AdminBootstrapService implements OnModuleInit {
     // service-to-service header, and reusing it as a password made the first
     // login differ per deployment.
     const configured = process.env.ADMIN_PASSWORD;
+    // The repository is public, so in production the committed password is
+    // a door anyone can open (audit 2026-10-30). There, no ADMIN_PASSWORD
+    // means no account — the `x-admin-token` header stays the rescue path.
+    if (!configured && process.env.NODE_ENV === 'production') {
+      this.logger.error(
+        'No active admin account, and ADMIN_PASSWORD is not set — none was ' +
+          'created: the committed initial password is not used in production. ' +
+          'Set ADMIN_PASSWORD and restart, or create one with x-admin-token.',
+      );
+      return;
+    }
     const password = configured || INITIAL_ADMIN_PASSWORD;
 
     const taken = await this.prisma.user.findUnique({

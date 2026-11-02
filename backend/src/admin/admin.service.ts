@@ -1241,7 +1241,11 @@ export class AdminService {
     const allowed = host.toLowerCase().replace(/^www\./, '');
     if (
       !/^https?:$/.test(parsed.protocol) ||
-      (hostname !== allowed && !hostname.endsWith(`.${allowed}`))
+      (hostname !== allowed && !hostname.endsWith(`.${allowed}`)) ||
+      // The supplier's site, not some other service on its address.
+      parsed.port !== '' ||
+      parsed.username !== '' ||
+      parsed.password !== ''
     ) {
       throw new BadRequestException(`URL должен вести на ${allowed}`);
     }
@@ -1254,18 +1258,11 @@ export class AdminService {
     if (!source) throw new NotFoundException('Source not found');
     this.assertSupplierUrl(dto.url, source);
 
-    const isDukon =
-      source.code === 'dukon' ||
-      source.url.includes('dukon.by') ||
-      dto.url.includes('dukon.by');
-    const isThTools =
-      source.code === 'th-tools' ||
-      source.url.includes('th-tool.by') ||
-      dto.url.includes('th-tool.by');
-    const isToolsBy =
-      source.code === 'tools-by' ||
-      source.url.includes('tools.by') ||
-      dto.url.includes('tools.by');
+    // By the source alone: a URL that merely *mentions* another supplier
+    // (`?r=dukon.by`) used to pick that supplier's parser.
+    const isDukon = source.code === 'dukon';
+    const isThTools = source.code === 'th-tools';
+    const isToolsBy = source.code === 'tools-by';
     if (!isThTools && !isDukon && !isToolsBy) {
       throw new BadRequestException('Unsupported source parser');
     }

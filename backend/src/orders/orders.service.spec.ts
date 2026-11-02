@@ -45,6 +45,8 @@ function buildService(
   products: ProductRow[],
   promoCode?: PromoCode,
   account?: PayerAccount,
+  /** Orders to the customer's address in the last 24 h, this one included. */
+  recentOrdersToAddress = 1,
 ) {
   const createMock = jest.fn((args: { data: unknown }) => {
     const data = args.data as { items?: { create?: unknown[] } };
@@ -68,6 +70,7 @@ function buildService(
     },
     order: {
       create: createMock,
+      count: jest.fn(() => Promise.resolve(recentOrdersToAddress)),
     },
     promoCode: {
       findUnique: jest.fn(() => Promise.resolve(promoCode ?? null)),
@@ -767,5 +770,26 @@ describe('OrdersService.createOrder — payer', () => {
       expect.objectContaining({ to: 'buyer@example.by' }),
       expect.any(String),
     );
+  });
+
+  // Guest orders take any address: past a handful a day, someone is using
+  // our mailbox against that address.
+  it('stops mailing an address that got too many orders today', async () => {
+    const { service, customerMailMock, mailMock } = buildService(
+      [drill],
+      undefined,
+      undefined,
+      6,
+    );
+    await service.createOrder({
+      ...baseCustomer,
+      customerEmail: 'victim@example.by',
+      deliveryMethod: 'PICKUP',
+      items: [{ productId: 'p1', quantity: 1 }],
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(customerMailMock).not.toHaveBeenCalled();
+    // The shop still hears about the order.
+    expect(mailMock).toHaveBeenCalled();
   });
 });

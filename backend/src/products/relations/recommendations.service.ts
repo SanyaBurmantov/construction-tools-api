@@ -24,7 +24,8 @@ const PAGE_SIZE = 12;
 // cold-cache crawl after a deploy, ran the 256 MB API out of heap twice.
 const CANDIDATE_LIMIT = 48;
 /** Recommendations computed at once; the rest wait (bounded) or get a 503. */
-const MAX_RUNNING = 6;
+// 6 while the API had a 256 MB heap; 448 MB since the RAM upgrade (02.11).
+const MAX_RUNNING = 10;
 const MAX_WAITING = 40;
 /** SSR, the browser and crawlers ask for the same card within seconds. */
 const DEFAULT_CACHE_MS = 120_000;

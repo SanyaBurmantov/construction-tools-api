@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ErrorLogService } from '../../errors/error-log.service';
-import { actorLabel, isAdminScope } from '../admin-scope';
+import { actorLabel, isAdminPath, isAdminScope } from '../admin-scope';
 import type { AuthenticatedRequest } from '../../auth/auth-request';
 
 type ErrorResponse = {
@@ -42,8 +42,6 @@ const UNEXPECTED_CLIENT_ERROR = new Set([400, 405, 409, 413, 415, 422]);
  * storefront session is not logged.
  */
 const REJECTED_ADMIN_ATTEMPT = new Set([401, 403]);
-const isAdminPath = (request: AuthenticatedRequest) =>
-  request.path?.startsWith('/admin') === true;
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
