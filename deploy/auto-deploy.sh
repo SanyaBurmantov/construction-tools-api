@@ -46,7 +46,7 @@ pending_migrations() {
 }
 
 migrate() {
-  /opt/construction-tools/app/deploy/backup-db.sh || {
+  bash "$APP_DIR/deploy/backup-db.sh" || {
     echo "Backup before migration failed; not migrating" >&2
     return 1
   }
