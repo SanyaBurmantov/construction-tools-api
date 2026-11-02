@@ -6,4 +6,4 @@ Requires=docker.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/construction-tools-backup
-TimeoutStartSec=900
+TimeoutStartSec=2700

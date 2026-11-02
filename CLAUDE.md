@@ -962,7 +962,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   migration never replaces the running containers or leaves P3009 behind.
   After a good release it also refreshes its own copies in `/usr/local/sbin`
   (auto-deploy, watchdog, backup). The watchdog alerts when the newest backup
-  is older than 26 h or the disk has under 2 GB free.
+  is older than 26 h or the disk has under 2 GB free. **Backups are also
+  off-site**: `deploy/backup-db.sh` uploads every dump to S3 (hoster.by
+  MinIO, `S3_BACKUP_*`; `daily/` 14 days, `monthly/` 180 days, expiry set by
+  the script) and stamps `/var/lib/construction-tools/backup-s3.ok` after a
+  size-verified upload — the watchdog alerts when that is over 26 h old. A
+  failed upload never fails the backup: auto-deploy runs it before migrations.
 - Add schema changes as new migrations and commit them. Never re-introduce
   `prisma db push` for prod.
 
