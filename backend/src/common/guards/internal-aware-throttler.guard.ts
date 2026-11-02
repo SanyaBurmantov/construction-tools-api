@@ -47,11 +47,33 @@ export function isInternalAddress(raw: string | undefined): boolean {
  * inside the private network resolves to a private address. Nitro's ISR cache
  * is what bounds the SSR load.
  */
+/**
+ * The exemption covers the **global** limit only. A route with its own
+ * `@Throttle` (price list, invoice PDF, login…) is expensive or abusable on
+ * purpose-built terms, and SSR has no business calling it: when it did, it was
+ * a crafted page URL making the frontend fetch it for an attacker
+ * (`/product/..%2Fprice-list.xlsx`, audit 2026-10-30) — unthrottled.
+ */
 @Injectable()
 export class InternalAwareThrottlerGuard extends ThrottlerGuard {
   protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    if (isInternalAddress(request.ip)) return true;
+    if (isInternalAddress(request.ip) && !this.hasRouteThrottle(context))
+      return true;
     return super.shouldSkip(context);
   }
+
+  private hasRouteThrottle(context: ExecutionContext): boolean {
+    const targets = [context.getHandler(), context.getClass()];
+    return this.throttlers.some(
+      (throttler) =>
+        this.reflector.getAllAndOverride(
+          THROTTLER_LIMIT + (throttler.name ?? 'default'),
+          targets,
+        ) !== undefined,
+    );
+  }
 }
+
+/** `@nestjs/throttler`'s metadata key for a `@Throttle()` limit. */
+const THROTTLER_LIMIT = 'THROTTLER:LIMIT';

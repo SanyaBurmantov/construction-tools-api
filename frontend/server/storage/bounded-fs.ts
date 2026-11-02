@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { gunzip, gzip } from 'node:zlib'
 import type { Driver } from 'unstorage'
 import boundedMemoryDriver from './bounded-memory'
+import { isCacheableEntry } from './cacheable'
 
 /**
  * Nitro's page cache on disk: gzip-compressed, least recently used first out
@@ -20,8 +21,19 @@ import boundedMemoryDriver from './bounded-memory'
  *
  * Without `NUXT_CACHE_DIR` (dev) or an unwritable one, it is the bounded
  * memory driver — the site never depends on the disk being there.
+ *
+ * Bounds besides the byte budget (audit 2026-10-30): an entry is counted at
+ * least one filesystem block (`MIN_ENTRY_BYTES`) — a 300-byte redirect still
+ * takes 4 KB of disk —, there are at most `MAX_ENTRIES` files, and writing
+ * stops when the filesystem runs low on inodes as well as on space.
+ * Redirects and search results are not stored at all (./cacheable.ts).
  */
 type Options = { dir?: string, maxMb?: number, minFreeMb?: number }
+
+const MIN_ENTRY_BYTES = 4096
+const MAX_ENTRIES = 100_000
+/** Free inodes below which no new page is written (the cache is one file per page). */
+const MIN_FREE_INODES = 50_000
 type Entry = { size: number }
 
 const gzipAsync = promisify(gzip)
@@ -74,7 +86,7 @@ export default function boundedFsDriver(opts: Options = {}): Driver {
 
   function evict() {
     for (const [id] of entries) {
-      if (total <= maxBytes) break
+      if (total <= maxBytes && entries.size <= MAX_ENTRIES) break
       forget(id)
       void unlink(id).catch(() => {})
     }
@@ -95,7 +107,7 @@ export default function boundedFsDriver(opts: Options = {}): Driver {
         }
         const path = join(dir, name)
         const info = await stat(path).catch(() => null)
-        if (info) found.push({ id: path, size: info.size, mtime: info.mtimeMs })
+        if (info) found.push({ id: path, size: Math.max(info.size, MIN_ENTRY_BYTES), mtime: info.mtimeMs })
       }
       found.sort((a, b) => a.mtime - b.mtime)
       for (const entry of found) {
@@ -116,9 +128,13 @@ export default function boundedFsDriver(opts: Options = {}): Driver {
     try {
       const info = await statfs(dir)
       const free = info.bavail * info.bsize
-      if (free < minFree !== diskFull) {
-        diskFull = free < minFree
-        console.warn(`[page-cache] ${diskFull ? 'disk nearly full — not caching new pages' : 'caching again'} (${Math.round(free / 1048576)} MB free)`)
+      // `files` is 0 on filesystems without an inode table (btrfs, some
+      // overlays): nothing to run out of there.
+      const inodesLow = info.files > 0 && info.ffree < MIN_FREE_INODES
+      const full = free < minFree || inodesLow
+      if (full !== diskFull) {
+        diskFull = full
+        console.warn(`[page-cache] ${diskFull ? 'disk nearly full — not caching new pages' : 'caching again'} (${Math.round(free / 1048576)} MB, ${info.ffree} inodes free)`)
       }
     } catch {
       // statfs unsupported: keep the last verdict.
@@ -141,8 +157,10 @@ export default function boundedFsDriver(opts: Options = {}): Driver {
   }
 
   async function set(key: string, value: unknown) {
-    if (!(await spaceLeft())) return
     const text = typeof value === 'string' ? value : JSON.stringify(value ?? null)
+    // A page that became a redirect must not keep serving its old copy.
+    if (!isCacheableEntry(text)) return remove(key)
+    if (!(await spaceLeft())) return
     const body = await gzipAsync(Buffer.from(text, 'utf8'))
     if (body.length > maxBytes) return
     const id = idOf(key)
@@ -157,8 +175,9 @@ export default function boundedFsDriver(opts: Options = {}): Driver {
       return
     }
     forget(id)
-    entries.set(id, { size: body.length })
-    total += body.length
+    const size = Math.max(body.length, MIN_ENTRY_BYTES)
+    entries.set(id, { size })
+    total += size
     evict()
   }
 

@@ -1,4 +1,5 @@
 import type { Driver } from 'unstorage'
+import { isCacheableEntry } from './cacheable'
 
 /**
  * A memory driver for Nitro's `cache` mount that **forgets** — least recently
@@ -48,6 +49,7 @@ export default function boundedMemoryDriver(opts: Options = {}): Driver {
 
   function set(key: string, value: unknown) {
     remove(key)
+    if (typeof value === 'string' && !isCacheableEntry(value)) return
     const size = sizeOf(key, value)
     // A single entry bigger than the whole budget is not worth evicting
     // everything else for.

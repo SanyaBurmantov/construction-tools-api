@@ -108,6 +108,7 @@ const popularProducts = computed(() =>
 const recentlyViewed = useRecentlyViewed()
 
 const courierCost = computed(() => Number(config.public.deliveryCourier))
+const { terms } = useOrderTerms()
 const postCost = computed(() => Number(config.public.deliveryPost))
 
 function submitSearch() {
@@ -231,6 +232,7 @@ useHead({
         <p>
           Курьер — {{ formatPrice(courierCost, 'BYN') }}, почта —
           {{ formatPrice(postCost, 'BYN') }}, самовывоз бесплатно.
+          Организациям — бесплатно от {{ formatPrice(terms.freeDeliveryCompanyFrom, 'BYN') }}.
         </p>
         <NuxtLink to="/delivery">Условия доставки →</NuxtLink>
       </article>

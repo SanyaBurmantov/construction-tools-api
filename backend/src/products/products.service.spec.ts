@@ -1,4 +1,7 @@
+import { Prisma } from '@prisma/client';
 import {
+  ADMIN_ONLY_PRODUCT_FIELDS,
+  PUBLIC_PRODUCT_FIELDS,
   ProductService,
   barcodeTerm,
   facetsCacheKey,
@@ -769,6 +772,18 @@ describe('public product payload', () => {
     expect(product.images).toEqual([
       { url: 'https://th-tool.by/shop/products/real.970.webp' },
     ]);
+  });
+});
+
+describe('product field classification', () => {
+  it('names every Product column as public or admin-only', () => {
+    const classified = [
+      ...PUBLIC_PRODUCT_FIELDS,
+      ...ADMIN_ONLY_PRODUCT_FIELDS,
+    ].sort();
+    expect(classified).toEqual(
+      Object.keys(Prisma.ProductScalarFieldEnum).sort(),
+    );
   });
 });
 

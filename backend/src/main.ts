@@ -7,6 +7,7 @@ import { json, urlencoded } from 'express';
 import { PrismaService } from './prisma/prisma.service';
 import { AppModule } from './app.module';
 import { installMemoryGuard } from './common/utils/install-memory-guard';
+import { rejectNulBytes } from './common/http/reject-nul-bytes';
 import { processRole } from './common/utils/process-role';
 
 // Safety net: a stray rejected promise from a background job (e.g. a parser
@@ -38,6 +39,7 @@ async function bootstrap() {
   // Explicit body parsers with a size limit (Nest's defaults are disabled above).
   app.use(json({ limit: bodyLimit }));
   app.use(urlencoded({ extended: true, limit: bodyLimit }));
+  app.use(rejectNulBytes);
 
   app.enableCors({
     origin: corsOrigin

@@ -210,7 +210,7 @@ const [
   useAsyncData<CategoryPage | null>(
     () => `catalog-category:${props.categorySlug || ''}`,
     () => props.categorySlug
-      ? $fetch<CategoryPage>(`${apiBase}/categories/${props.categorySlug}`).catch(error => {
+      ? $fetch<CategoryPage>(`${apiBase}/categories/${encodeURIComponent(props.categorySlug)}`).catch(error => {
           if (isApiUnavailable(error)) {
             categoryUnavailable.value = true
             return null

@@ -264,4 +264,45 @@ for svc in "${SERVICES[@]}"; do
   fi
 done
 
+# --- backups and disk -------------------------------------------------------
+# Neither is visible from the site: a backup timer that stopped (a full disk
+# skips it on purpose) and a disk filling with images and page cache both look
+# fine until the day they are needed (audit 2026-10-30).
+BACKUP_DIR=${WATCHDOG_BACKUP_DIR:-/opt/construction-tools/backups}
+BACKUP_MAX_AGE_HOURS=26
+DISK_MIN_FREE_MB=2048
+
+# check_flag <key> <bad: 0|1> <alert text> <recovery text>
+check_flag() {
+  local key=$1 bad=$2 alert=$3 recovered=$4
+  if [[ "$bad" == 1 ]]; then
+    [[ -n "$(get "${key}_since")" ]] || S[${key}_since]=$now
+    if [[ "$(get "${key}_alerted" 0)" != 1 ]] && send_telegram "$alert"; then
+      S[${key}_alerted]=1
+    fi
+  else
+    if [[ "$(get "${key}_alerted" 0)" == 1 ]]; then
+      send_telegram "$recovered" || true
+    fi
+    S[${key}_alerted]=0
+    unset 'S[${key}_since]'
+  fi
+}
+
+latest_backup=$(find "$BACKUP_DIR" -maxdepth 1 -name 'database-*.sql.gz' -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
+latest_backup=${latest_backup%.*}
+if [[ -z "$latest_backup" ]]; then
+  backup_age_h=9999
+else
+  backup_age_h=$(( (now - latest_backup) / 3600 ))
+fi
+check_flag backup "$(( backup_age_h > BACKUP_MAX_AGE_HOURS ))" \
+  "🔴 Бэкап базы устарел: последний $( [[ $backup_age_h == 9999 ]] && echo 'не найден' || echo "$backup_age_h ч назад") ($BACKUP_DIR). Проверьте construction-tools-backup.timer и место на диске." \
+  "✅ Бэкап базы снова свежий ($backup_age_h ч)."
+
+free_mb=$(df -Pm / | awk 'NR == 2 { print $4 }')
+check_flag disk "$(( ${free_mb:-0} < DISK_MIN_FREE_MB ))" \
+  "🟠 На диске сервера осталось ${free_mb} МБ (порог ${DISK_MIN_FREE_MB}). При <1 ГБ перестают писаться бэкапы и кеш страниц." \
+  "✅ Место на диске освободилось: ${free_mb} МБ."
+
 S[last_run]=$now

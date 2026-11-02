@@ -486,6 +486,10 @@ model Order {
   payerAccount       String?
   payerBankName      String?
   payerBankBic       String?
+  /// The seller's requisites as printed on this order's invoice, frozen the
+  /// first time it is issued: a later change of bank must not rewrite an
+  /// invoice the customer already paid or filed.
+  sellerSnapshot     Json?
   /// Where the buyer came from — «yandex / cpc», «google / organic»,
   /// «direct» (attribution/traffic-source.ts, last non-direct touch).
   trafficSource      String?

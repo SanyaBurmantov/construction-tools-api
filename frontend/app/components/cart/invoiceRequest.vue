@@ -17,7 +17,6 @@ const cart = useCartStore()
 // The discount the cart summary beside this panel shows must be on the invoice
 // too — the order used to go out at full price.
 const promo = usePromoCode()
-const config = useRuntimeConfig()
 const toast = useAppToast()
 const { user, authFetch, errorMessage } = useAuth()
 const cartValidation = useCartValidation()
@@ -42,17 +41,25 @@ const consent = ref(false)
 const submitting = ref(false)
 const error = ref('')
 
+// An invoice is always an organisation's: its minimum and free delivery.
+const { terms, deliveryFor } = useOrderTerms()
+const goodsTotal = computed(() => Math.max(0, cart.totalPrice - promo.discount.value))
+const deliveryHint = (method: 'COURIER' | 'POST') => {
+  const cost = deliveryFor(method, true, goodsTotal.value)
+  return cost ? `${cost} BYN` : `бесплатно (от ${terms.freeDeliveryCompanyFrom} BYN)`
+}
+const belowMinimum = computed(() => cart.totalPrice < terms.minCompany)
 const deliveryOptions = computed(() => [
   { value: 'PICKUP' as const, label: DELIVERY_LABEL.PICKUP, hint: company.storeAddress },
   {
     value: 'COURIER' as const,
     label: DELIVERY_LABEL.COURIER,
-    hint: `${Number(config.public.deliveryCourier)} BYN, 1–2 дня`,
+    hint: `${deliveryHint('COURIER')}, 1–2 дня`,
   },
   {
     value: 'POST' as const,
     label: DELIVERY_LABEL.POST,
-    hint: `${Number(config.public.deliveryPost)} BYN, по всей стране`,
+    hint: `${deliveryHint('POST')}, по всей стране`,
   },
 ])
 
@@ -91,7 +98,9 @@ function validate(): string {
 }
 
 async function submit() {
-  error.value = validate()
+  error.value = belowMinimum.value
+    ? `Минимальная сумма заказа для организаций — ${terms.minCompany} BYN`
+    : validate()
   if (error.value) return
   submitting.value = true
   try {

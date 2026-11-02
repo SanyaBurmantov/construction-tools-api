@@ -17,7 +17,7 @@ export type QueueSourceCode = keyof typeof QUEUE_TABLES;
 /** The subset of a queue delegate the shared code uses. */
 export type QueueTable = Pick<
   PrismaService['sitemapsThTools'],
-  'updateMany' | 'count' | 'findMany' | 'update'
+  'updateMany' | 'count' | 'findMany' | 'update' | 'createMany'
 >;
 
 export function queueTable(

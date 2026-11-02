@@ -202,7 +202,8 @@ async function submit() {
     />
 
     <UiModal v-model:open="formOpen" title="Написать отзыв" size="md">
-      <form class="review-form" @submit.prevent="submit">
+      <!-- ym-*: the author's name and e-mail stay out of Webvisor. -->
+      <form class="review-form ym-hide-content ym-disable-keys" @submit.prevent="submit">
         <UiAlert v-if="!isAuthenticated" tone="info">
           Войдите в аккаунт — отзыв на купленный товар получит отметку
           «подтверждённая покупка».

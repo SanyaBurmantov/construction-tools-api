@@ -56,6 +56,16 @@ check "Каталог" "$SITE_URL/catalog" "gost.by"
 # The API's readiness probe: process up and the database answering.
 check "API" "$SITE_URL/api/health/ready" ""
 
+# Caddy's security headers: a Caddy left on a stale Caddyfile served the site
+# without them for weeks and nothing noticed.
+headers="$(curl -sS -I --connect-timeout 5 --max-time 20 -A 'gost-uptime-check' "$SITE_URL/" 2>/dev/null || true)"
+if grep -qi '^content-security-policy:' <<<"$headers"; then
+  echo "OK   security headers"
+else
+  failures+=("Нет заголовка Content-Security-Policy — Caddy на старом конфиге?")
+  echo "FAIL security headers: no Content-Security-Policy"
+fi
+
 # TLS certificate: Caddy renews it itself; this catches a renewal that
 # silently stopped working weeks before browsers start refusing the site.
 # `timeout`: s_client has none of its own and hangs ~2 min on a host that

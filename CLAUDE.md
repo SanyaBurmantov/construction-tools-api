@@ -188,7 +188,7 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   not rendered (`<ClientOnly>`, `v-if`) — into `preload`; Vite's import helper
   attaches it on the client. Keep component styles `scoped` for that to hold.
   Manrope is self-hosted from `public/fonts/` (no Google Fonts, and the CSP in
-  `deploy/Caddyfile` no longer allows it). That cache lives in the
+  `deploy/caddy/Caddyfile` no longer allows it). That cache lives in the
   frontend's heap, and Nitro's stock production driver never evicts — a crawl
   over 52k products filled the 384 MB container until it was OOM-killed (502s
   while it restarted). `nitro.storage.cache` is therefore a **bounded LRU** — in production **on
@@ -390,7 +390,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   code **server-side**, and snapshots product name/slug/image/price into
   `OrderItem`. Admin manages orders via `GET /admin/orders`,
   `GET /admin/orders/:id`, `PATCH /admin/orders/:id/status`.
-  Delivery costs are env-tunable (`DELIVERY_COST_COURIER`, `DELIVERY_COST_POST`).
+  **Terms of sale** (owner, 2026-11-02; `orders/order-terms.ts`, pure and
+  tested): an individual orders from 200 BYN, an organisation — an order with
+  a payer, i.e. by invoice or from a company account — from 50 BYN; courier
+  20 BYN, post 10 BYN, pickup free, and courier/post are free for an
+  organisation from 300 BYN of goods (after the promo discount). `POST /orders`
+  answers 400 `ORDER_MINIMUM` below the minimum. All env-tunable
+  (`ORDER_MIN_INDIVIDUAL`, `ORDER_MIN_COMPANY`, `FREE_DELIVERY_COMPANY_FROM`,
+  `DELIVERY_COST_COURIER`, `DELIVERY_COST_POST`), mirrored to the storefront as
+  `NUXT_PUBLIC_*` and read there through `useOrderTerms()` (cart, checkout,
+  the invoice form, /delivery, /usloviya, /organizaciyam, product and home).
 - **Cart is client-side, prices are not.** The cart lives in `localStorage` and
   stores the price captured when an item was added, but supplier prices are
   re-parsed daily — so a restored cart drifts. `POST /cart/validate` (`cart/`
@@ -474,6 +483,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   carried over (`mergedState()`), and auto-merge never folds away or into a
   product an admin hid or archived — the survivor is the one on sale with the
   most live offers.
+  **One supplier, two articles = two products.** The old slug-keyed parser
+  attached every th-tool.by listing with the same title (Forsage F-…,
+  RockForce RF-…) to one card — 7 471 cards, 23 813 offers on 2026-11-02.
+  `OfferSplitCron` (worker, `offers/offer-split*.ts`) gives each other
+  (supplier, article) its own DRAFT product, queues the URLs first and lets
+  the parse fill and publish them; it keeps running, so a card that collapses
+  again is taken apart within ten minutes. The same rule keeps auto-merge and
+  `/admin/duplicates` off such groups (th-tool.by also reuses one EAN per
+  series). Articles of *different* suppliers prove nothing — each `sku` is
+  that supplier's own number.
   **`Product.costPrice` comes from the cheapest offer**, not from whichever
   parser ran last — in-stock offers outrank a cheaper unavailable one. Parsers
   call `offers.onProductParsed(productId)` *after* saving their SourceProduct.
@@ -936,7 +955,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `backend/prisma/migrations`, starting from a squashed baseline
   `00000000000000_init`. The original pre-baseline migrations are archived in
   `backend/prisma/_migrations_archive_pre_baseline/` and are **not** applied.
-- Prod containers run `prisma migrate deploy` on start (backend Dockerfile CMD).
+- Prod containers run `prisma migrate deploy` on start (backend Dockerfile CMD),
+  but the auto-deploy applies new migrations first, as a separate step: a DB
+  backup, `compose run backend npx prisma migrate deploy`, and on failure
+  `migrate resolve --rolled-back` before the release is abandoned — so a broken
+  migration never replaces the running containers or leaves P3009 behind.
+  After a good release it also refreshes its own copies in `/usr/local/sbin`
+  (auto-deploy, watchdog, backup). The watchdog alerts when the newest backup
+  is older than 26 h or the disk has under 2 GB free.
 - Add schema changes as new migrations and commit them. Never re-introduce
   `prisma db push` for prod.
 

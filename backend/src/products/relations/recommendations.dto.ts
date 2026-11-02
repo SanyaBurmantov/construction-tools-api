@@ -9,19 +9,26 @@ import {
   Min,
 } from 'class-validator';
 
+/**
+ * 50 pages of 12 is 600 cards, more than any shelf holds. The page numbers
+ * are part of the recommendations cache key, and up to 10 000 let anyone mint
+ * 10⁸ keys per product, each a fresh computation (audit 2026-10-30).
+ */
+export const MAX_RECOMMENDATION_PAGE = 50;
+
 export class RecommendationsQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(10000)
+  @Max(MAX_RECOMMENDATION_PAGE)
   accessoriesPage = 1;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(10000)
+  @Max(MAX_RECOMMENDATION_PAGE)
   fitsPage = 1;
 }
 
@@ -38,7 +45,7 @@ export class RecommendationGroupQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(10000)
+  @Max(MAX_RECOMMENDATION_PAGE)
   page = 1;
 }
 

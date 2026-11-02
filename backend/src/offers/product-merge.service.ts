@@ -13,6 +13,12 @@ const MERGE_TX_OPTIONS = { maxWait: 10_000, timeout: 60_000 };
 
 type MergeSide = Pick<
   Product,
+  | 'name'
+  | 'categoryId'
+  | 'seoTitle'
+  | 'seoDescription'
+  | 'variantLine'
+  | 'variantLabel'
   | 'sku'
   | 'barcode'
   | 'model'
@@ -38,13 +44,55 @@ type MergeSide = Pick<
  *   and admin field locks, a pending price review.
  * - A survivor the *system* had parked (DRAFT/HIDDEN) is published when the
  *   duplicate was on sale; an admin's status is never overridden.
+ * - A field locked on the duplicate alone brings its **value** with the lock:
+ *   the lock says «this text is ours», and moving only the lock put that
+ *   label on the survivor's supplier text — publishing the supplier's SEO
+ *   blurb as our own (audit 2026-10-30). The duplicate's `slug` lock stays
+ *   behind with its URL, which becomes a redirect.
  */
+const LOCKED_VALUE_FIELDS = [
+  'name',
+  'sku',
+  'barcode',
+  'model',
+  'brandId',
+  'categoryId',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+] as const;
+/** A carried value of these moves the page's text: lastmod and IndexNow. */
+const PAGE_TEXT = new Set<string>([
+  'name',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+]);
+
 export function mergedState(
   target: MergeSide,
   duplicate: MergeSide,
 ): Prisma.ProductUncheckedUpdateInput {
   const keepsManualPrice =
     target.pricingMode !== 'MANUAL' && duplicate.pricingMode === 'MANUAL';
+  const targetLocks = new Set([
+    ...target.lockedFields,
+    ...target.aiLockedFields,
+  ]);
+  const carried: Record<string, unknown> = {};
+  for (const field of LOCKED_VALUE_FIELDS) {
+    const lockedOnDuplicate =
+      duplicate.lockedFields.includes(field) ||
+      duplicate.aiLockedFields.includes(field);
+    if (lockedOnDuplicate && !targetLocks.has(field)) {
+      carried[field] = duplicate[field];
+    }
+  }
+  const withoutDuplicateSlug = (own: string[], theirs: string[]) => [
+    ...new Set([...own, ...theirs.filter((field) => field !== 'slug')]),
+  ];
   const publish =
     target.statusSource === 'SYSTEM' &&
     target.status !== 'PUBLISHED' &&
@@ -57,12 +105,20 @@ export function mergedState(
     brandId: target.brandId ?? duplicate.brandId,
     descriptionShort: target.descriptionShort ?? duplicate.descriptionShort,
     descriptionFull: target.descriptionFull ?? duplicate.descriptionFull,
-    aiLockedFields: [
-      ...new Set([...target.aiLockedFields, ...duplicate.aiLockedFields]),
-    ],
-    lockedFields: [
-      ...new Set([...target.lockedFields, ...duplicate.lockedFields]),
-    ],
+    variantLine: target.variantLine ?? duplicate.variantLine,
+    variantLabel: target.variantLabel ?? duplicate.variantLabel,
+    ...carried,
+    ...(Object.keys(carried).some((field) => PAGE_TEXT.has(field))
+      ? { contentUpdatedAt: new Date() }
+      : {}),
+    aiLockedFields: withoutDuplicateSlug(
+      target.aiLockedFields,
+      duplicate.aiLockedFields,
+    ),
+    lockedFields: withoutDuplicateSlug(
+      target.lockedFields,
+      duplicate.lockedFields,
+    ),
     priceReviewNeeded: target.priceReviewNeeded || duplicate.priceReviewNeeded,
     ...(keepsManualPrice
       ? {

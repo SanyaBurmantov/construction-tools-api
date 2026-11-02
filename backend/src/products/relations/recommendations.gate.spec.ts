@@ -21,7 +21,7 @@ describe('recommendations under load', () => {
     return { s, release, stats: () => ({ calls, peak }) };
   };
 
-  it('computes at most six at once, queues forty, refuses the rest quickly', async () => {
+  it('computes at most ten at once, queues forty, refuses the rest quickly', async () => {
     const { s, release, stats } = service();
     const answers = Array.from({ length: 60 }, (_, i) =>
       s.get(`slug-${i}`, { accessoriesPage: 1, fitsPage: 1 }).then(
@@ -31,12 +31,12 @@ describe('recommendations under load', () => {
       ),
     );
     await new Promise((resolve) => setImmediate(resolve));
-    expect(stats().peak).toBe(6);
+    expect(stats().peak).toBe(10);
     release();
     const results = await Promise.all(answers);
-    expect(results.filter((r) => r === 'ok')).toHaveLength(46);
-    expect(results.filter((r) => r === '503')).toHaveLength(14);
-    expect(stats().peak).toBeLessThanOrEqual(7);
+    expect(results.filter((r) => r === 'ok')).toHaveLength(50);
+    expect(results.filter((r) => r === '503')).toHaveLength(10);
+    expect(stats().peak).toBeLessThanOrEqual(11);
   });
 
   it('answers a repeat of the same card from the cache', async () => {

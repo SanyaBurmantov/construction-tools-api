@@ -3,6 +3,13 @@ import type { CatalogProduct } from '~/composables/useProductActions'
 import type { ProductDetail, ProductRecommendations } from '~/types/api'
 import { company } from '~/data/company'
 
+// Slugs are `[a-z0-9-]` (prod has no other), and anything else 404s before
+// a fetch: `/product/..%2Fprice-list.xlsx` used to send SSR — unthrottled,
+// from the private network — to any backend GET (audit 2026-10-30).
+definePageMeta({
+  validate: route => /^[a-z0-9-]{1,200}$/.test(String(route.params.slug)),
+})
+
 const route = useRoute()
 const config = useRuntimeConfig()
 const slug = computed(() => String(route.params.slug))
@@ -11,7 +18,7 @@ const { apiBase, absoluteUrl, siteUrl } = useSite()
 // The key follows the slug, so it alone re-runs the fetch on navigation.
 const { data: product, status, error } = await useAsyncData<ProductDetail>(
   () => `product:${slug.value}`,
-  () => $fetch(`${apiBase}/products/${slug.value}`)
+  () => $fetch(`${apiBase}/products/${encodeURIComponent(slug.value)}`)
 )
 
 if (error.value) {
@@ -78,6 +85,7 @@ const KEY_SPEC_COUNT = 5
 const keySpecs = computed(() => product.value?.productSpecs?.slice(0, KEY_SPEC_COUNT) ?? [])
 
 const courierCost = computed(() => Number(config.public.deliveryCourier))
+const { terms } = useOrderTerms()
 const postCost = computed(() => Number(config.public.deliveryPost))
 const { formatPrice } = useFormatPrice()
 
@@ -417,7 +425,8 @@ useHead(() => {
                 <dd>
                   курьер {{ formatPrice(courierCost, 'BYN') }} ·
                   почта {{ formatPrice(postCost, 'BYN') }} ·
-                  самовывоз бесплатно
+                  самовывоз бесплатно · организациям бесплатно от
+                  {{ formatPrice(terms.freeDeliveryCompanyFrom, 'BYN') }}
                 </dd>
               </div>
               <div>

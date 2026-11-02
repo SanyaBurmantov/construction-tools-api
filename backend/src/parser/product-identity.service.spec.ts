@@ -61,7 +61,13 @@ function createService(
       ),
     },
     // Array transactions: every operation was already started by the caller.
-    $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
+    // Callback transactions run against the same mocks.
+    $transaction: jest.fn(
+      (ops: Promise<unknown>[] | ((tx: unknown) => Promise<unknown>)) =>
+        typeof ops === 'function' ? ops(prisma) : Promise.all(ops),
+    ),
+    // The row lock taken before the field locks are read.
+    $executeRaw: jest.fn(() => Promise.resolve(1)),
     product: {
       findUnique: jest.fn(({ where }: { where: { id: string } }) =>
         Promise.resolve({
@@ -154,6 +160,30 @@ describe('ProductIdentityService.save', () => {
       name: 'Молоток',
       contentUpdatedAt: expect.any(Date),
     });
+  });
+
+  // An AI task locking a field between the parser's read and its write used
+  // to lose to the supplier's text: the locks are read under a row lock now.
+  it('reads the field locks only after locking the row', async () => {
+    const { service, prisma } = createService({
+      offers: { 's1|https://x/1': 'product-7' },
+    });
+
+    await service.save({
+      sourceId: 's1',
+      url: 'https://x/1',
+      baseSlug: 'molotok',
+      data: {
+        update: { name: 'Молоток' },
+        create: { name: 'Молоток', slug: 'x', priceCurrency: 'BYN' },
+      } as never,
+    });
+
+    const rowLock = (prisma.$executeRaw as jest.Mock).mock
+      .invocationCallOrder[0];
+    const lockRead = (prisma.product.findUnique as jest.Mock).mock
+      .invocationCallOrder[0];
+    expect(rowLock).toBeLessThan(lockRead);
   });
 
   it('creates a new product when the offer is unknown', async () => {

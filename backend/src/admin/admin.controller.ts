@@ -10,6 +10,7 @@ import {
   Post,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
@@ -123,6 +124,11 @@ export class AdminController {
   @Get('products/sources')
   getProductSources(@Query() query: AdminProductSourcesDto) {
     return this.offersService.adminSourcesFor(query.ids);
+  }
+
+  @Get('products/:id')
+  getProduct(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.getProduct(id);
   }
 
   @Post('products')

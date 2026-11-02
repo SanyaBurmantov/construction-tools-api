@@ -45,6 +45,8 @@ function buildService(
   products: ProductRow[],
   promoCode?: PromoCode,
   account?: PayerAccount,
+  /** Orders to the customer's address in the last 24 h, this one included. */
+  recentOrdersToAddress = 1,
 ) {
   const createMock = jest.fn((args: { data: unknown }) => {
     const data = args.data as { items?: { create?: unknown[] } };
@@ -68,6 +70,7 @@ function buildService(
     },
     order: {
       create: createMock,
+      count: jest.fn(() => Promise.resolve(recentOrdersToAddress)),
     },
     promoCode: {
       findUnique: jest.fn(() => Promise.resolve(promoCode ?? null)),
@@ -115,6 +118,19 @@ const baseCustomer = {
   customerPhone: '+375290000000',
   paymentMethod: 'CASH' as const,
 };
+
+// The order minimums have their own tests below; everything else here is
+// about other rules and orders a 50-rouble drill.
+const savedEnv = { ...process.env };
+beforeEach(() => {
+  process.env.ORDER_MIN_INDIVIDUAL = '0';
+  process.env.ORDER_MIN_COMPANY = '0';
+  delete process.env.DELIVERY_COST_COURIER;
+  delete process.env.DELIVERY_COST_POST;
+});
+afterAll(() => {
+  process.env = savedEnv;
+});
 
 describe('OrdersService.createOrder', () => {
   it('re-prices items from the DB and sums totals with pickup (no delivery cost)', async () => {
@@ -187,8 +203,31 @@ describe('OrdersService.createOrder', () => {
       deliveryCost: number;
       total: number;
     };
-    expect(data.deliveryCost).toBe(15);
-    expect(data.total).toBe(65);
+    expect(data.deliveryCost).toBe(20);
+    expect(data.total).toBe(70);
+  });
+
+  it('refuses an individual’s order under 200 BYN, before anything is written', async () => {
+    delete process.env.ORDER_MIN_INDIVIDUAL;
+    const { service, createMock } = buildService([
+      {
+        id: 'p1',
+        name: 'Дрель',
+        slug: 'drel',
+        status: 'PUBLISHED',
+        priceValue: 199,
+        priceCurrency: 'BYN',
+        images: [],
+      },
+    ]);
+    await expect(
+      service.createOrder({
+        ...baseCustomer,
+        deliveryMethod: 'PICKUP',
+        items: [{ productId: 'p1', quantity: 1 }],
+      }),
+    ).rejects.toThrow(/Минимальная сумма заказа — 200 BYN/);
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it('collapses duplicate productIds into one summed line', async () => {
@@ -741,6 +780,45 @@ describe('OrdersService.createOrder — payer', () => {
     expect(data.payerTaxId).toBe('391807521');
   });
 
+  it('takes an organisation’s invoice order from 50 BYN and delivers free from 300', async () => {
+    delete process.env.ORDER_MIN_INDIVIDUAL;
+    delete process.env.ORDER_MIN_COMPANY;
+    const invoice = {
+      ...baseCustomer,
+      paymentMethod: 'INVOICE' as const,
+      payerName: 'ООО «Ромашка»',
+      payerTaxId: '391807521',
+      deliveryMethod: 'COURIER' as const,
+      deliveryAddress: 'Витебск',
+    };
+    const small = buildService([{ ...drill, priceValue: 40 }]);
+    await expect(
+      small.service.createOrder({
+        ...invoice,
+        items: [{ productId: 'p1', quantity: 1 }],
+      }),
+    ).rejects.toThrow(/для организаций — 50 BYN/);
+
+    const paid = buildService([drill]);
+    await paid.service.createOrder({
+      ...invoice,
+      items: [{ productId: 'p1', quantity: 1 }],
+    });
+    expect(paid.createMock.mock.calls[0][0].data).toMatchObject({
+      deliveryCost: 20,
+    });
+
+    const free = buildService([drill]);
+    await free.service.createOrder({
+      ...invoice,
+      items: [{ productId: 'p1', quantity: 3 }],
+    });
+    expect(free.createMock.mock.calls[0][0].data).toMatchObject({
+      deliveryCost: 0,
+      total: 300,
+    });
+  });
+
   it('refuses a guest invoice without an organisation', async () => {
     const { service, createMock } = buildService([drill]);
     await expect(
@@ -767,5 +845,26 @@ describe('OrdersService.createOrder — payer', () => {
       expect.objectContaining({ to: 'buyer@example.by' }),
       expect.any(String),
     );
+  });
+
+  // Guest orders take any address: past a handful a day, someone is using
+  // our mailbox against that address.
+  it('stops mailing an address that got too many orders today', async () => {
+    const { service, customerMailMock, mailMock } = buildService(
+      [drill],
+      undefined,
+      undefined,
+      6,
+    );
+    await service.createOrder({
+      ...baseCustomer,
+      customerEmail: 'victim@example.by',
+      deliveryMethod: 'PICKUP',
+      items: [{ productId: 'p1', quantity: 1 }],
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(customerMailMock).not.toHaveBeenCalled();
+    // The shop still hears about the order.
+    expect(mailMock).toHaveBeenCalled();
   });
 });

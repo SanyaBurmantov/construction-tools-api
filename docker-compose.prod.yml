@@ -90,8 +90,13 @@ x-backend-environment: &backend-environment
   TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
   TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-товары для дома|товары для уборки|посуда|текстиль|игрушк|канцеляр|зоотовар|космет|бытовая химия|продукты питания}
   DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
-  DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-15}
+  # Terms of sale (backend/src/orders/order-terms.ts), mirrored to the
+  # storefront below.
+  DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-20}
   DELIVERY_COST_POST: ${DELIVERY_COST_POST:-10}
+  ORDER_MIN_INDIVIDUAL: ${ORDER_MIN_INDIVIDUAL:-200}
+  ORDER_MIN_COMPANY: ${ORDER_MIN_COMPANY:-50}
+  FREE_DELIVERY_COMPANY_FROM: ${FREE_DELIVERY_COMPANY_FROM:-300}
   THROTTLE_TTL: ${THROTTLE_TTL:-60000}
   THROTTLE_LIMIT: ${THROTTLE_LIMIT:-120}
   BODY_LIMIT: ${BODY_LIMIT:-1mb}
@@ -246,8 +251,11 @@ services:
       # Same values the API charges (DELIVERY_COST_* above): the build has no
       # access to them, so without these the storefront kept showing 15/10
       # whatever .env.prod said, and the order total differed from the screen.
-      NUXT_PUBLIC_DELIVERY_COURIER: ${DELIVERY_COST_COURIER:-15}
+      NUXT_PUBLIC_DELIVERY_COURIER: ${DELIVERY_COST_COURIER:-20}
       NUXT_PUBLIC_DELIVERY_POST: ${DELIVERY_COST_POST:-10}
+      NUXT_PUBLIC_MIN_ORDER_INDIVIDUAL: ${ORDER_MIN_INDIVIDUAL:-200}
+      NUXT_PUBLIC_MIN_ORDER_COMPANY: ${ORDER_MIN_COMPANY:-50}
+      NUXT_PUBLIC_FREE_DELIVERY_COMPANY_FROM: ${FREE_DELIVERY_COMPANY_FROM:-300}
       API_BASE_SERVER: http://backend:8000
       NUXT_API_BASE_SERVER: http://backend:8000
       NUXT_PUBLIC_API_BASE: /api
@@ -273,7 +281,11 @@ services:
     environment:
       DOMAIN: ${DOMAIN:-localhost}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The directory, not the file: a single-file bind mount pins the inode,
+      # and `git checkout` replaces the file with a new one — Caddy ran the
+      # 12.10 Caddyfile (no CSP, no HSTS) for weeks after it changed. The
+      # auto-deploy reloads Caddy after every release.
+      - ./deploy/caddy:/etc/caddy:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

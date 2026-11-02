@@ -358,6 +358,20 @@ export class AdminService {
     );
   }
 
+  /** One product as the list shows it, read fresh when the editor opens. */
+  async getProduct(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: {
+        brand: true,
+        category: true,
+        sourceProducts: { include: { source: true } },
+      },
+    });
+    if (!product) throw new NotFoundException('Товар не найден');
+    return product;
+  }
+
   async getProducts(query: AdminProductQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 25;
@@ -498,8 +512,16 @@ export class AdminService {
       data.supplierNameChangedAt = null;
     }
 
+    // A value equal to the stored one is not a change: the price form used to
+    // send everything, so «sent» re-priced products nobody had touched.
     const priceTouched =
-      dto.priceValue !== undefined || dto.oldPrice !== undefined;
+      (dto.priceValue !== undefined &&
+        differs(dto.priceValue, current.priceValue)) ||
+      (dto.oldPrice !== undefined && differs(dto.oldPrice, current.oldPrice));
+    const modeChanged =
+      dto.pricingMode !== undefined && dto.pricingMode !== current.pricingMode;
+    const costChanged =
+      dto.costPrice !== undefined && differs(dto.costPrice, current.costPrice);
     const mode = dto.pricingMode ?? (priceTouched ? 'MANUAL' : undefined);
     if (mode) data.pricingMode = mode;
     if (mode === 'AUTO') {
@@ -539,7 +561,14 @@ export class AdminService {
       ]);
     }
 
-    if (mode === 'AUTO' && updated.costPrice != null) {
+    // Re-priced only when what the price is derived from changed. Every save
+    // used to run the engine — over a cost the form had loaded minutes
+    // earlier, clearing a pending spike review on the way (audit 2026-10-30).
+    if (
+      mode === 'AUTO' &&
+      (modeChanged || costChanged) &&
+      updated.costPrice != null
+    ) {
       await this.pricing.applyCost(id, updated.costPrice, {
         preserveOldPrice: true,
       });
@@ -1241,7 +1270,11 @@ export class AdminService {
     const allowed = host.toLowerCase().replace(/^www\./, '');
     if (
       !/^https?:$/.test(parsed.protocol) ||
-      (hostname !== allowed && !hostname.endsWith(`.${allowed}`))
+      (hostname !== allowed && !hostname.endsWith(`.${allowed}`)) ||
+      // The supplier's site, not some other service on its address.
+      parsed.port !== '' ||
+      parsed.username !== '' ||
+      parsed.password !== ''
     ) {
       throw new BadRequestException(`URL должен вести на ${allowed}`);
     }
@@ -1254,18 +1287,11 @@ export class AdminService {
     if (!source) throw new NotFoundException('Source not found');
     this.assertSupplierUrl(dto.url, source);
 
-    const isDukon =
-      source.code === 'dukon' ||
-      source.url.includes('dukon.by') ||
-      dto.url.includes('dukon.by');
-    const isThTools =
-      source.code === 'th-tools' ||
-      source.url.includes('th-tool.by') ||
-      dto.url.includes('th-tool.by');
-    const isToolsBy =
-      source.code === 'tools-by' ||
-      source.url.includes('tools.by') ||
-      dto.url.includes('tools.by');
+    // By the source alone: a URL that merely *mentions* another supplier
+    // (`?r=dukon.by`) used to pick that supplier's parser.
+    const isDukon = source.code === 'dukon';
+    const isThTools = source.code === 'th-tools';
+    const isToolsBy = source.code === 'tools-by';
     if (!isThTools && !isDukon && !isToolsBy) {
       throw new BadRequestException('Unsupported source parser');
     }

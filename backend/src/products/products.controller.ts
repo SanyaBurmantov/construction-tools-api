@@ -1,10 +1,21 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { UserRole } from '@prisma/client';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { ProductService } from './products.service';
 import { ApiTags } from '@nestjs/swagger';
 import { ProductFilterDto } from './dto/product-filter-dto';
+import { isInternalAddress } from '../common/guards/internal-aware-throttler.guard';
 
 @ApiTags('Products')
 @Controller('products')
@@ -30,10 +41,18 @@ export class ProductController {
     return this.service.findAllFiltered(filter);
   }
 
-  // Must precede the ':slug' route so '/products/sitemap' isn't treated as a slug.
+  /**
+   * Every published slug, for the frontend's sitemap. Internal only — the
+   * Nuxt server is its one caller, from inside the Docker network — because
+   * it is ~9.5 MB per request, and a few in parallel ran the API out of
+   * memory (audit 2026-10-30). Anyone else gets the 404 an unknown slug gets.
+   * Must precede the ':slug' route so '/products/sitemap' isn't a slug.
+   */
   @Get('sitemap')
-  getSitemap() {
-    return this.service.getSitemapEntries();
+  async getSitemap(@Req() request: Request, @Res() res: Response) {
+    if (!isInternalAddress(request.ip))
+      throw new NotFoundException('Product not found');
+    res.type('application/json').send(await this.service.getSitemapJson());
   }
 
   @Get('suggest')

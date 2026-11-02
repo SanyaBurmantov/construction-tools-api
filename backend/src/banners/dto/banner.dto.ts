@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
 } from 'class-validator';
 
 export class AdminCreateBannerDto {
@@ -36,6 +37,12 @@ export class AdminCreateBannerDto {
   @IsOptional()
   @IsString()
   @Length(0, 1000)
+  // A path on our site or an http(s) address. `javascript:…` rendered into
+  // the home page's link was script on every visitor's screen
+  // (audit 2026-10-30); `//host` would leave the site looking internal.
+  @Matches(/^(?:$|\/(?!\/)|https?:\/\/)/i, {
+    message: 'Ссылка должна начинаться с / или http(s)://',
+  })
   linkUrl?: string;
 
   @ApiProperty({ required: false, description: 'Текст кнопки' })

@@ -8,7 +8,10 @@ const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 const cartValidation = useCartValidation()
 const { ensureAuthenticated } = useCheckoutAuth()
-const { isAuthenticated } = useAuth()
+const { isAuthenticated, user } = useAuth()
+const { terms } = useOrderTerms()
+/** Under the individual minimum only an organisation (paying by invoice) may order. */
+const belowMinimum = computed(() => !cart.isEmpty && cart.totalPrice < terms.minIndividual)
 
 const goingToCheckout = ref(false)
 
@@ -119,7 +122,22 @@ useHead({
 
         <div class="aside">
         <CartOrderSummary title="Итого" total-label="К оплате">
-          <p class="note">Стоимость доставки рассчитывается на следующем шаге.</p>
+          <UiAlert v-if="belowMinimum" tone="warning">
+            <template v-if="user?.customerType === 'COMPANY'">
+              Для организаций минимальная сумма заказа —
+              {{ formatPrice(terms.minCompany, 'BYN') }} по безналичному расчёту.
+            </template>
+            <template v-else>
+              Минимальная сумма заказа — {{ formatPrice(terms.minIndividual, 'BYN') }}.
+              Организации заказывают по безналичному расчёту от
+              {{ formatPrice(terms.minCompany, 'BYN') }}.
+            </template>
+          </UiAlert>
+          <p class="note">
+            Доставка: курьер — {{ formatPrice(terms.courier, 'BYN') }}, почта —
+            {{ formatPrice(terms.post, 'BYN') }}, самовывоз бесплатно; организациям
+            от {{ formatPrice(terms.freeDeliveryCompanyFrom, 'BYN') }} — бесплатно.
+          </p>
 
           <UiButton size="lg" block :loading="goingToCheckout" @click="goToCheckout">
             Оформить заказ

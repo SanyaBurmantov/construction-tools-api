@@ -5,15 +5,22 @@ import { knownUpsellSource, type DeliveryMethod, type Order, type PaymentMethod 
 import type { CompanyRequisitesModel } from '~/utils/requisites'
 
 const cart = useCartStore()
-const config = useRuntimeConfig()
 const { ensureAuthenticated } = useCheckoutAuth()
 const { user, authFetch, errorMessage, updateProfile } = useAuth()
 const { formatPrice } = useFormatPrice()
 const promo = usePromoCode()
 const cartValidation = useCartValidation()
 
-// Costs come from runtimeConfig so they track the backend's DELIVERY_COST_*
-// instead of drifting from it.
+// The terms of sale (useOrderTerms): the same env values the API charges by.
+const { terms, minimumFor, deliveryFor } = useOrderTerms()
+/** An organisation buys: paying by invoice, or a company account. */
+const isCompany = computed(() => byInvoice.value || user.value?.customerType === 'COMPANY')
+const goodsTotal = computed(() => Math.max(0, cart.totalPrice - promo.discount.value))
+const freeForCompanyHint = computed(() =>
+  isCompany.value && goodsTotal.value >= terms.freeDeliveryCompanyFrom
+    ? ` · бесплатно для организаций от ${terms.freeDeliveryCompanyFrom} BYN`
+    : '',
+)
 const deliveryOptions = computed(() => [
   {
     value: 'PICKUP' as const,
@@ -24,16 +31,19 @@ const deliveryOptions = computed(() => [
   {
     value: 'COURIER' as const,
     label: DELIVERY_LABEL.COURIER,
-    cost: Number(config.public.deliveryCourier),
-    hint: 'По адресу, в течение 1–2 дней',
+    cost: deliveryFor('COURIER', isCompany.value, goodsTotal.value),
+    hint: `По адресу, в течение 1–2 дней${freeForCompanyHint.value}`,
   },
   {
     value: 'POST' as const,
     label: DELIVERY_LABEL.POST,
-    cost: Number(config.public.deliveryPost),
-    hint: 'Белпочта, по всей стране',
+    cost: deliveryFor('POST', isCompany.value, goodsTotal.value),
+    hint: `Белпочта, по всей стране${freeForCompanyHint.value}`,
   },
 ])
+/** Under the minimum the API refuses the order; say so before the button. */
+const orderMinimum = computed(() => minimumFor(isCompany.value))
+const belowMinimum = computed(() => !cart.isEmpty && cart.totalPrice < orderMinimum.value)
 
 const paymentOptions = [
   { value: 'CASH' as const, label: PAYMENT_LABEL.CASH, hint: 'При получении' },
@@ -180,6 +190,7 @@ const canSubmit = computed(
     !cart.isEmpty
     && !submitting.value
     && !hasBlockingIssues.value
+    && !belowMinimum.value
     && Object.keys(errors.value).length === 0
     && personalDataConsent.value
 )
@@ -426,6 +437,16 @@ useHead({
           <UiAlert v-if="submitError" tone="danger">{{ submitError }}</UiAlert>
           <UiAlert v-else-if="hasBlockingIssues" tone="danger">
             Уберите недоступные товары, чтобы продолжить.
+          </UiAlert>
+          <UiAlert v-else-if="belowMinimum" tone="warning">
+            <template v-if="isCompany">
+              Минимальная сумма заказа для организаций — {{ formatPrice(orderMinimum, 'BYN') }}.
+            </template>
+            <template v-else>
+              Минимальная сумма заказа — {{ formatPrice(orderMinimum, 'BYN') }}.
+              Организации заказывают по безналичному расчёту от
+              {{ formatPrice(terms.minCompany, 'BYN') }} — выберите оплату по счёту.
+            </template>
           </UiAlert>
           <UiAlert
             v-else-if="submitAttempted && Object.keys(errors).length"

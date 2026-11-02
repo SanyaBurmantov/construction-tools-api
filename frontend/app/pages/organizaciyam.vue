@@ -15,6 +15,8 @@ usePageSeo({ title: 'Для организаций', description, path: '/organi
 
 const { apiBase } = useSite()
 const { priceListUrl } = useB2b()
+const { terms } = useOrderTerms()
+const { formatPrice } = useFormatPrice()
 
 // Requisites come from the API (edited in /admin/settings), so the page and
 // the invoices never disagree. A failure only hides the bank details.
@@ -113,6 +115,14 @@ const tools = [
         </UiButton>
       </div>
     </header>
+
+    <section>
+      <h2>Условия для организаций</h2>
+      <ul class="org-terms">
+        <li>Минимальная сумма заказа по безналичному расчёту — {{ formatPrice(terms.minCompany, 'BYN') }}.</li>
+        <li>Доставка курьером или почтой — бесплатно от {{ formatPrice(terms.freeDeliveryCompanyFrom, 'BYN') }}.</li>
+      </ul>
+    </section>
 
     <section>
       <h2>Как купить по безналичному расчёту</h2>

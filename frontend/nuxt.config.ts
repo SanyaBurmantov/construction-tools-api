@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
  * Яндекс.Метрика. Только в production-сборке: `npm run dev` иначе писал бы
  * localhost-визиты в боевой счётчик. Счётчик сам отслеживает переходы через
  * History API, так что SPA-навигация считается без ручных `ym('hit')`.
- * Хосты, которые он грузит и куда шлёт данные, открыты в CSP (deploy/Caddyfile).
+ * Хосты, которые он грузит и куда шлёт данные, открыты в CSP (deploy/caddy/Caddyfile).
  *
  * В админке счётчика нет: там были почти все «прямые заходы» — свои же
  * визиты и ссылки из Telegram-уведомлений. Сниппет не грузится на `/admin*`,
@@ -64,6 +64,16 @@ export default defineNuxtConfig({
      */
     ipx: {
       http: { maxAge: 604800, ignoreCacheControl: true },
+      /**
+       * Modifiers are user input: IPX's default cap is 8192 px, and one
+       * `enlarge&s_8192x8192` request OOM-killed the container. 1200 is the
+       * og:image width, the largest we generate. The modifier allow-list and
+       * the concurrency cap are in server/middleware/ipx-guard.ts.
+       */
+      maxOutputDimension: 1200,
+      // Supplier photos are a few megapixels; sharp's default lets a 268 MP
+      // source through, ~1 GB decoded.
+      sharpOptions: { limitInputPixels: 40_000_000 },
     },
   },
   css: ['@/assets/scss/main.scss'],
@@ -214,8 +224,13 @@ export default defineNuxtConfig({
       // Must mirror the backend's DELIVERY_COST_* — the API is the authority
       // and recomputes them on every order; these only drive what we promise
       // on the storefront, so a mismatch would show the customer a wrong total.
-      deliveryCourier: Number(process.env.DELIVERY_COST_COURIER ?? 15),
+      deliveryCourier: Number(process.env.DELIVERY_COST_COURIER ?? 20),
       deliveryPost: Number(process.env.DELIVERY_COST_POST ?? 10),
+      // Terms of sale — the API enforces them (orders/order-terms.ts); these
+      // only say them on the storefront.
+      minOrderIndividual: Number(process.env.ORDER_MIN_INDIVIDUAL ?? 200),
+      minOrderCompany: Number(process.env.ORDER_MIN_COMPANY ?? 50),
+      freeDeliveryCompanyFrom: Number(process.env.FREE_DELIVERY_COMPANY_FROM ?? 300),
     },
   }
 })

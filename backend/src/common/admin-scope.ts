@@ -17,8 +17,19 @@ export function isAdminScope(request: AuthenticatedRequest): boolean {
   return (
     request.adminToken === true ||
     request.authUser?.role === UserRole.ADMIN ||
-    request.path?.startsWith('/admin') === true
+    isAdminPath(request)
   );
+}
+
+/**
+ * Under `/admin`, in any letter case: Express routes `/ADMIN/users` to the
+ * same controller, and a case-sensitive prefix let such a request pass the
+ * audit trail and the error log unrecorded (audit 2026-10-30).
+ */
+export function isAdminPath(
+  request: Pick<AuthenticatedRequest, 'path'>,
+): boolean {
+  return /^\/admin(?:\/|$)/i.test(request.path ?? '');
 }
 
 /** Who to name in a log line: an account login, the service header, or nobody. */
