@@ -936,7 +936,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `backend/prisma/migrations`, starting from a squashed baseline
   `00000000000000_init`. The original pre-baseline migrations are archived in
   `backend/prisma/_migrations_archive_pre_baseline/` and are **not** applied.
-- Prod containers run `prisma migrate deploy` on start (backend Dockerfile CMD).
+- Prod containers run `prisma migrate deploy` on start (backend Dockerfile CMD),
+  but the auto-deploy applies new migrations first, as a separate step: a DB
+  backup, `compose run backend npx prisma migrate deploy`, and on failure
+  `migrate resolve --rolled-back` before the release is abandoned — so a broken
+  migration never replaces the running containers or leaves P3009 behind.
+  After a good release it also refreshes its own copies in `/usr/local/sbin`
+  (auto-deploy, watchdog, backup). The watchdog alerts when the newest backup
+  is older than 26 h or the disk has under 2 GB free.
 - Add schema changes as new migrations and commit them. Never re-introduce
   `prisma db push` for prod.
 

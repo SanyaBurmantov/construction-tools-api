@@ -29,9 +29,46 @@ compose=(docker compose --parallel 1 --env-file "$ENV_FILE" -f docker-compose.pr
 # health curl fail, so each release was marked failed and rolled back.
 domain=$(sed -n 's/^DOMAIN=//p' "$ENV_FILE" | head -1 | tr -d '\r' | sed -e 's/^["'\'']//' -e 's/["'\'']$//')
 
+# Migrations run as their own step, before any container is replaced, and
+# after a fresh backup (audit 2026-10-30). They used to run in the backend's
+# CMD: a failing one crash-looped the new API while the old one was already
+# gone, and Prisma recorded it as failed — so the rollback's own
+# `migrate deploy` stopped at P3009 and the old release could not start
+# either. Now a failed migration is marked rolled back and the deploy fails
+# while the running release is still untouched.
+pending_migrations() {
+  [[ "${1:-}" == "$2" ]] && return 1
+  # New migration directories between the running release and the target;
+  # when git cannot tell (an object gone from the shallow clone), assume some.
+  local added
+  added=$(git diff --name-only --diff-filter=A "$1" "$2" -- backend/prisma/migrations 2>/dev/null) || return 0
+  [[ -n "$added" ]]
+}
+
+migrate() {
+  /opt/construction-tools/app/deploy/backup-db.sh || {
+    echo "Backup before migration failed; not migrating" >&2
+    return 1
+  }
+  if "${compose[@]}" run --rm --no-deps -T backend npx prisma migrate deploy; then
+    return 0
+  fi
+  echo "Migration failed; marking it rolled back so the previous release can start" >&2
+  local failed
+  failed=$("${compose[@]}" exec -T db sh -c \
+    'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select migration_name from _prisma_migrations where finished_at is null and rolled_back_at is null"' || true)
+  for name in $failed; do
+    "${compose[@]}" run --rm --no-deps -T backend npx prisma migrate resolve --rolled-back "$name" || true
+  done
+  return 1
+}
+
 deploy() {
   "${compose[@]}" config --quiet || return 1
   "${compose[@]}" build backend frontend || return 1
+  if [[ "${1:-}" == migrate ]] && pending_migrations "$previous" "$target"; then
+    migrate || return 1
+  fi
   "${compose[@]}" up -d --no-build || return 1
   # A changed Caddyfile alone does not recreate the container; an invalid one
   # fails here, before the health checks, and the release is rolled back.
@@ -48,7 +85,7 @@ deploy() {
   return 1
 }
 
-if ! deploy; then
+if ! deploy migrate; then
   echo "Deployment $target failed; restoring $previous" >&2
   "${compose[@]}" ps >&2 || true
   echo "$target" > "$FAILED_FILE"
@@ -60,5 +97,19 @@ fi
 echo "$target" > "$STATE_FILE"
 rm -f "$FAILED_FILE"
 echo "Deployed $target successfully"
+
+# The systemd units run copies in /usr/local/sbin, installed by hand once — so
+# a change to the watchdog or the backup never reached the server (the backup
+# there was a month older than the repository's). Refreshed from the release
+# that just passed its health checks; this script's own new copy takes effect
+# from the next run.
+for pair in auto-deploy.sh:construction-tools-auto-deploy \
+            watchdog.sh:construction-tools-watchdog \
+            backup-db.sh:construction-tools-backup; do
+  src="$APP_DIR/deploy/${pair%%:*}" dst="/usr/local/sbin/${pair##*:}"
+  if [[ -f "$src" ]] && ! cmp -s "$src" "$dst"; then
+    install -m 0755 "$src" "$dst.new" && mv -f "$dst.new" "$dst" && echo "Updated $dst"
+  fi
+done
 docker image prune -f >/dev/null
 docker builder prune -af --keep-storage 1GB >/dev/null || true
