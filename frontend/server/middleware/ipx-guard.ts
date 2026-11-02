@@ -1,3 +1,4 @@
+import type { ServerResponse } from 'node:http'
 import { createError, getRequestURL, setResponseHeader } from 'h3'
 
 /**
@@ -20,10 +21,25 @@ import { createError, getRequestURL, setResponseHeader } from 'h3'
  *    is 503 + Retry-After instead of a container killed for everyone. A slot
  *    is released on the response's `close`, which fires for a finished *and*
  *    an aborted request, so a client that hangs up cannot leak one.
+ * 3. **A source that does not answer is skipped, not waited for.** IPX
+ *    fetches the original with no timeout of its own; when th-tool.by stopped
+ *    answering the server (2026-11-01) every one of its photos held a slot
+ *    for the ~10 s TCP connect timeout, three of them filled the gate, and
+ *    *every* photo — tools.by's too — got 503 until the queue drained
+ *    (02.11). A slot is now held at most `SLOT_HOLD_MS`, and a source host
+ *    whose fetch failed slowly is answered 502 at once for `HOST_DOWN_MS`:
+ *    the browser falls back to the supplier's own URL (useResilientImage),
+ *    which the visitor can usually reach even when we cannot.
+ *
+ * Errors are sent `no-store`: the `/_ipx/**` route rule gives every answer a
+ * week of `max-age`, and a cached 503 would keep a photo broken for a week.
  */
 const MAX_DIMENSION = 1200
 const MAX_ACTIVE = 3
 const MAX_WAITING = 40
+const SLOT_HOLD_MS = 8_000
+const SLOW_FAILURE_MS = 5_000
+const HOST_DOWN_MS = 10 * 60_000
 
 type ModifierRule = (value: string) => boolean // eslint-disable-line no-unused-vars
 
@@ -63,8 +79,17 @@ export function ipxModifiersAllowed(segment: string): boolean {
 }
 const MODIFIER_RULES_COUNT = Object.keys(MODIFIER_RULES).length
 
+/** Source host of `/_ipx/<modifiers>/<source>`, or '' for a local file. */
+export function ipxSourceHost(path: string): string {
+  const rest = path.slice('/_ipx/'.length)
+  const source = rest.slice(rest.indexOf('/') + 1)
+  return /^https?:\/\/?([^/?#]+)/i.exec(source)?.[1]?.toLowerCase() ?? ''
+}
+
 let active = 0
 const waiting: Array<() => void> = []
+/** host → time until which its photos are not fetched. */
+const downHosts = new Map<string, number>()
 
 function release(): void {
   const next = waiting.shift()
@@ -72,9 +97,38 @@ function release(): void {
   else active--
 }
 
+function hostIsDown(host: string): boolean {
+  const until = downHosts.get(host)
+  if (until === undefined) return false
+  if (until > Date.now()) return true
+  downHosts.delete(host)
+  return false
+}
+
+/** An error answer must not inherit the route rule's week of caching. */
+function noStoreOnError(res: ServerResponse): void {
+  const mark = () => {
+    if (res.statusCode >= 400 && !res.headersSent) res.setHeader('cache-control', 'no-store')
+  }
+  const writeHead = res.writeHead
+  res.writeHead = function (this: ServerResponse, ...args: Parameters<ServerResponse['writeHead']>) {
+    res.statusCode = args[0]
+    mark()
+    return writeHead.apply(this, args)
+  } as ServerResponse['writeHead']
+  const end = res.end
+  res.end = function (this: ServerResponse, ...args: Parameters<ServerResponse['end']>) {
+    mark()
+    return end.apply(this, args)
+  } as ServerResponse['end']
+}
+
 export default defineEventHandler(async (event) => {
   const path = getRequestURL(event).pathname
   if (!path.startsWith('/_ipx/')) return
+
+  const res = event.node.res
+  noStoreOnError(res)
 
   let segment = path.slice('/_ipx/'.length).split('/', 1)[0] ?? ''
   try {
@@ -84,6 +138,11 @@ export default defineEventHandler(async (event) => {
   }
   if (!ipxModifiersAllowed(segment)) {
     throw createError({ statusCode: 400, statusMessage: 'Unsupported image modifiers' })
+  }
+
+  const host = ipxSourceHost(path)
+  if (host && hostIsDown(host)) {
+    throw createError({ statusCode: 502, statusMessage: 'Image source unavailable' })
   }
 
   if (active >= MAX_ACTIVE) {
@@ -97,5 +156,32 @@ export default defineEventHandler(async (event) => {
   } else {
     active++
   }
-  event.node.res.once('close', release)
+
+  // The host may have been marked down while this request was in line.
+  if (host && hostIsDown(host)) {
+    release()
+    throw createError({ statusCode: 502, statusMessage: 'Image source unavailable' })
+  }
+
+  const startedAt = Date.now()
+  let held = true
+  const markDown = () => {
+    if (host) downHosts.set(host, Date.now() + HOST_DOWN_MS)
+  }
+  const free = () => {
+    if (!held) return
+    held = false
+    clearTimeout(timer)
+    release()
+  }
+  // A fetch still hanging after this long is a source that is not answering:
+  // give the slot to the next photo and stop sending this host's photos here.
+  const timer = setTimeout(() => {
+    markDown()
+    free()
+  }, SLOT_HOLD_MS)
+  res.once('close', () => {
+    if (res.statusCode >= 500 && Date.now() - startedAt >= SLOW_FAILURE_MS) markDown()
+    free()
+  })
 })

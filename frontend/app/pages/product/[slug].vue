@@ -285,7 +285,9 @@ useHead(() => {
       <UiBreadcrumbs :items="breadcrumbs" />
 
       <div class="layout">
-        <!-- Gallery: stays in view while the summary column scrolls. -->
+        <!-- Gallery: stays in view while the summary column scrolls (the
+             sticky part is .product-gallery inside; this column only gives
+             it the row's height to travel in). -->
         <div class="gallery-col">
           <ProductGallery :images="product.images ?? []" :name="product.name">
             <UiBadge v-if="hasDiscount" tone="sale">−{{ discountPercent }}%</UiBadge>
@@ -521,6 +523,7 @@ useHead(() => {
 /* ---- Summary ---- */
 .summary {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: var(--space-5);
 }
@@ -588,8 +591,11 @@ useHead(() => {
 }
 
 .gallery-col {
-  position: sticky;
-  top: var(--space-6);
+  /* Stretched to the row so the sticky gallery inside has room to travel.
+     It used to be sticky itself at 24 px — under the 69 px header, inside
+     another sticky box — so the photo slid under the header and parted from
+     the summary while it scrolled. */
+  align-self: stretch;
   min-width: 0;
 }
 
@@ -849,12 +855,17 @@ useHead(() => {
 
 /* ---- Responsive ---- */
 @media (max-width: 1024px) {
+  /* `minmax(0, …)`: a bare `1fr` cannot shrink below its widest item, and one
+     wide photo or unbroken code then pushed the whole page past the screen. */
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .gallery-col {
-    position: static;
+    align-self: start;
+    width: 100%;
+    max-width: 640px;
+    margin-inline: auto;
   }
 
   .loading {
