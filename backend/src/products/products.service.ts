@@ -36,6 +36,8 @@ const SEARCH_CACHE_TTL_MS = 60_000;
 const SEARCH_CACHE_MAX_ENTRIES = 100;
 /** Only modest lists are cached — a bounded heap matters more than a hit. */
 const SEARCH_CACHE_MAX_IDS = 5_000;
+/** The frontend refreshes its sitemap snapshot hourly; crawlers never come here. */
+const SITEMAP_CACHE_MS = 10 * 60_000;
 
 /** How many characteristics a category page offers as filters. */
 const SPEC_FACET_LIMIT = 40;
@@ -131,7 +133,7 @@ type ListProduct = Prisma.ProductGetPayload<{
  * product card. Counting `sourceProducts` instead of returning them was only
  * half the guarantee; this is the other half.
  */
-const ADMIN_ONLY_PRODUCT_FIELDS = [
+export const ADMIN_ONLY_PRODUCT_FIELDS = [
   'costPrice',
   'pricingMode',
   'appliedRuleId',
@@ -144,9 +146,48 @@ const ADMIN_ONLY_PRODUCT_FIELDS = [
   'aiLockedFields',
   'lockedFields',
   'statusSource',
+  // The supplier's rename of a product whose name we locked — a work item for
+  // the data-quality panel, and the supplier's own wording (audit 2026-10-30).
+  'supplierNameChange',
+  'supplierNameChangedAt',
 ] as const;
 
 type AdminOnlyProductField = (typeof ADMIN_ONLY_PRODUCT_FIELDS)[number];
+
+/**
+ * Every other `Product` column, which the storefront may see. Together with
+ * `ADMIN_ONLY_PRODUCT_FIELDS` it must name every scalar of the model — a spec
+ * checks that against Prisma — so a new column is a decision, not a default:
+ * `supplierNameChange` reached the public JSON because nobody had to make one.
+ */
+export const PUBLIC_PRODUCT_FIELDS = [
+  'id',
+  'slug',
+  'name',
+  'brandId',
+  'categoryId',
+  'sku',
+  'barcode',
+  'listingRank',
+  'model',
+  'priceValue',
+  'priceCurrency',
+  'oldPrice',
+  'stockStatus',
+  'stockQuantity',
+  'status',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+  'createdAt',
+  'updatedAt',
+  'ratingAvg',
+  'ratingCount',
+  'contentUpdatedAt',
+  'variantLine',
+  'variantLabel',
+] as const;
 
 /**
  * SEO fields the storefront may use. What a parser stored there is the
@@ -475,6 +516,28 @@ export class ProductService {
       slug: row.slug,
       lastmod: row.contentUpdatedAt,
     }));
+  }
+
+  private sitemapJson?: { expires: number; body: Promise<string> };
+
+  /**
+   * The sitemap list as ready JSON (~9.5 MB for 74k products), built once per
+   * `SITEMAP_CACHE_MS` and shared by concurrent callers. Two or three parallel
+   * builds — the rows, the mapped objects and the serialised string each —
+   * ran the API out of memory (audit 2026-10-30); the frontend asks hourly.
+   */
+  getSitemapJson(): Promise<string> {
+    const now = Date.now();
+    if (this.sitemapJson && this.sitemapJson.expires > now)
+      return this.sitemapJson.body;
+    const body = this.getSitemapEntries().then((rows) => JSON.stringify(rows));
+    const entry = { expires: now + SITEMAP_CACHE_MS, body };
+    this.sitemapJson = entry;
+    // A failure is not cached.
+    body.catch(() => {
+      if (this.sitemapJson === entry) this.sitemapJson = undefined;
+    });
+    return body;
   }
 
   async findAllFiltered(filter: ProductFilterDto) {

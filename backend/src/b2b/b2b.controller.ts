@@ -127,16 +127,23 @@ export class B2bController {
     @Query() query: PriceListQueryDto,
     @Res() res: Response,
   ) {
-    // Resolved first, so an unknown category is a clean 404, not a broken
-    // half-written file.
-    const prepared = await this.priceList.prepare(query);
-    res.set({
-      'Content-Type':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${prepared.filename}"`,
-      'Cache-Control': 'no-store',
+    await this.priceList.exclusive(async () => {
+      // Resolved first, so an unknown category is a clean 404, not a broken
+      // half-written file.
+      const prepared = await this.priceList.prepare(query);
+      res.set({
+        'Content-Type':
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${prepared.filename}"`,
+        'Cache-Control': 'no-store',
+      });
+      // A client that hangs up mid-file must not hold the only slot: the
+      // response's `close` (fired on finish and on abort) ends the turn.
+      await Promise.race([
+        this.priceList.write(prepared, res),
+        new Promise((resolve) => res.once('close', resolve)),
+      ]);
     });
-    await this.priceList.write(prepared, res);
   }
 
   /* ---- The account's purchase lists ----------------------------------- */

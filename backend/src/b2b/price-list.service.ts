@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import type { Writable } from 'node:stream';
@@ -18,9 +22,38 @@ const STOCK_LABEL: Record<string, string> = {
  * 512 MB heap as one workbook. Rows are read in id-cursor chunks and
  * committed as they go. Public data only: our price, never a supplier.
  */
+const PRICE_LIST_MAX_WAITING = 3;
+
 @Injectable()
 export class PriceListService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * One price list at a time, a few more waiting, the rest 503: the whole
+   * catalogue is a minute of streaming, and the per-IP @Throttle does not
+   * bound five clients asking at once (audit 2026-10-30).
+   */
+  private running = false;
+  private readonly waiting: Array<() => void> = [];
+
+  async exclusive<T>(work: () => Promise<T>): Promise<T> {
+    if (this.running) {
+      if (this.waiting.length >= PRICE_LIST_MAX_WAITING)
+        throw new ServiceUnavailableException(
+          'Прайс-лист сейчас формируется для другого покупателя, повторите через минуту',
+        );
+      // `finally` hands the slot over without clearing `running`.
+      await new Promise<void>((resolve) => this.waiting.push(resolve));
+    }
+    this.running = true;
+    try {
+      return await work();
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.running = false;
+    }
+  }
 
   /** Subtree ids of a category (cycle-safe: bounded depth). */
   private async categoryScope(slug: string) {
