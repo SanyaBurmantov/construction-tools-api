@@ -381,7 +381,11 @@ const isMe = (row: AdminUser) => row.id === me.value?.id
           </UiField>
         </div>
 
-        <UiField label="E-mail" for="u-email">
+        <UiField
+          label="E-mail"
+          for="u-email"
+          :hint="form.role === 'ADMIN' ? 'На этот адрес приходят письма о новых заказах и заявках (всем активным администраторам)' : undefined"
+        >
           <UiInput id="u-email" v-model="form.email" type="email" />
         </UiField>
 
