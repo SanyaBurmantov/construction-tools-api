@@ -46,6 +46,7 @@ const nav = computed(() => [
   { label: 'Промокоды', to: '/admin/promo-codes', icon: 'ticket' },
   { label: 'Пользователи', to: '/admin/users', icon: 'user' },
   { label: 'Реквизиты', to: '/admin/settings', icon: 'book' },
+  { label: 'Поиск', to: '/admin/search', icon: 'search' },
   { label: 'Скорость', to: '/admin/performance', icon: 'gauge' },
   { label: 'Журнал', to: '/admin/audit', icon: 'log' },
   {
@@ -75,6 +76,7 @@ const ICONS: Record<string, string> = {
   image: 'M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4',
   layout: 'M4 4h16v4H4zM4 11h7v9H4zM14 11h6v9h-6z',
   gauge: 'M4 16a8 8 0 1 1 16 0M12 16l4-5M12 16h.01',
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zm7.5 14.5L16 16',
   book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5zM8 7h7M8 11h7',
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8a7 7 0 0 1 14 0',
   log: 'M5 4h14v16H5zM8 8h8M8 12h8M8 16h5',

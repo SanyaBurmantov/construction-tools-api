@@ -9,6 +9,7 @@ import { ProductsModule } from './products/products.module';
 import { CategoriesModule } from './categories/categories.module';
 import { StorefrontModule } from './storefront/storefront.module';
 import { PerfModule } from './perf/perf.module';
+import { SearchLogModule } from './search-log/search-log.module';
 import { BrandsModule } from './brands/brands.module';
 import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
@@ -62,6 +63,7 @@ import { runsBackgroundJobs } from './common/utils/process-role';
     CategoriesModule,
     StorefrontModule,
     PerfModule,
+    SearchLogModule,
     BrandsModule,
     SourcesModule,
     ParserModule,

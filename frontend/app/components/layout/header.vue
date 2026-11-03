@@ -104,6 +104,14 @@ function closeSuggest() {
   suggestOpen.value = false
 }
 
+const searchLog = useSearchLog()
+
+/** A product picked from the dropdown: a click in the search journal. */
+function onSuggestPick(productId: string, index: number) {
+  searchLog.logClick(suggestQuery.value || search.value, productId, index + 1, 'suggest')
+  closeSuggest()
+}
+
 function submitSearch() {
   const query = search.value.trim()
   closeSuggest()
@@ -385,7 +393,7 @@ onBeforeUnmount(() => {
                   :to="`/product/${item.slug}`"
                   class="suggest-product"
                   :style="{ '--stagger': index }"
-                  @click="closeSuggest"
+                  @click="onSuggestPick(item.id, index)"
                 >
                   <img v-if="item.image" :src="mediaSrc(item.image, 40, 2)" :alt="item.name" loading="lazy">
                   <span v-else class="suggest-thumb" aria-hidden="true" />
