@@ -540,6 +540,28 @@ export class ProductService {
     return body;
   }
 
+  /**
+   * Catalogue cards for a hand-picked list, in the list's order. Only what
+   * is on sale makes it — published with a price — so a pick an admin made
+   * last month cannot show a hidden or archived product.
+   */
+  async cardsByIds(ids: string[]) {
+    if (!ids.length) return [];
+    const products = await this.prisma.product.findMany({
+      where: {
+        id: { in: ids },
+        status: 'PUBLISHED',
+        priceValue: { not: null },
+      },
+      include: LIST_INCLUDE,
+    });
+    const byId = new Map(products.map((product) => [product.id, product]));
+    return ids
+      .map((id) => byId.get(id))
+      .filter((product): product is ListProduct => product !== undefined)
+      .map((product) => toListCard(product));
+  }
+
   async findAllFiltered(filter: ProductFilterDto) {
     const page = filter.page ?? 1;
     const limit = Math.min(filter.limit ?? 20, 100);
@@ -757,22 +779,7 @@ export class ProductService {
       this.cachedSummary(facetsCacheKey(filter), computeSummary),
     ]);
 
-    const data = products.map((product) => {
-      const { _count, ...rest } = product;
-      return {
-        ...toPublicProduct(rest),
-        images: withoutPlaceholderImages(product.images),
-        // The card shows the first three — see `publicSpecs`.
-        productSpecs: publicSpecs(
-          product.productSpecs.map((productSpec) => ({
-            name: productSpec.specification.name,
-            value: productSpec.value,
-          })),
-        ),
-        /** Drives the "от X · N предложений" treatment on the card. */
-        offerCount: _count?.sourceProducts ?? 0,
-      };
-    });
+    const data = products.map((product) => toListCard(product));
 
     return {
       data,
@@ -1244,4 +1251,22 @@ function compareFacetValues(a: string, b: string): number {
   const right = Number(b);
   if (Number.isFinite(left) && Number.isFinite(right)) return left - right;
   return a.localeCompare(b, 'ru');
+}
+
+/** One catalogue card as `GET /products` lists it. */
+function toListCard(product: ListProduct) {
+  const { _count, ...rest } = product;
+  return {
+    ...toPublicProduct(rest),
+    images: withoutPlaceholderImages(product.images),
+    // The card shows the first three — see `publicSpecs`.
+    productSpecs: publicSpecs(
+      product.productSpecs.map((productSpec) => ({
+        name: productSpec.specification.name,
+        value: productSpec.value,
+      })),
+    ),
+    /** Drives the "от X · N предложений" treatment on the card. */
+    offerCount: _count?.sourceProducts ?? 0,
+  };
 }

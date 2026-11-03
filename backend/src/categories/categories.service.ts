@@ -48,6 +48,35 @@ export class CategoriesService {
     );
   }
 
+  /**
+   * The categories of `ids` that a storefront listing may show right now —
+   * visible, with published products, under no switched-off ancestor and not
+   * the parsers' fallback — with their counts. A curated list (the header
+   * strip) runs through this, so an admin's pick can never put a link to an
+   * empty grid on every page.
+   */
+  async listableByIds(ids: string[]): Promise<Map<string, CategoryTreeNode>> {
+    const { nodes } = await this.buildCountedTree();
+    const out = new Map<string, CategoryTreeNode>();
+    for (const id of ids) {
+      const node = nodes.get(id);
+      if (!node || node.productCount <= 0) continue;
+      let listable = true;
+      for (
+        let at: CategoryTreeNode | undefined = node;
+        at;
+        at = at.parentId ? nodes.get(at.parentId) : undefined
+      ) {
+        if (!at.isVisible || at.slug === FALLBACK_CATEGORY_SLUG) {
+          listable = false;
+          break;
+        }
+      }
+      if (listable) out.set(id, { ...node, children: [] });
+    }
+    return out;
+  }
+
   /** Category landing page payload: breadcrumb ancestors + children with counts. */
   async getBySlug(slug: string): Promise<CategoryPage> {
     const direct = await this.prisma.category.findUnique({

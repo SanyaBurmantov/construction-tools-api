@@ -45,11 +45,13 @@ function useRail(key: string, params: Record<string, string | number | boolean>)
 /** How many brand tiles the home page shows. */
 const HOME_BRAND_COUNT = 14
 
-// Six independent requests: started together, the render waits for the
+// Eight independent requests: started together, the render waits for the
 // slowest one instead of their sum.
 const [
   { data: sales },
   { data: popular },
+  { data: curatedPopular },
+  { data: curatedStrip },
   { data: newest },
   { data: banners },
   { data: tree },
@@ -57,6 +59,14 @@ const [
 ] = await Promise.all([
   useRail('home-sales', { onSale: true, sortBy: 'createdAt', sortOrder: 'desc' }),
   useRail('home-popular', { inStock: true, sortBy: 'rating', sortOrder: 'desc' }),
+  // «Выбирают покупатели» as an admin picked it in /admin/storefront; empty =
+  // not curated, and the rated rail above stands in.
+  useAsyncData(
+    'home-popular-curated',
+    () => soft($fetch<{ data: ProductsResponse['data'] }>(`${apiBase}/storefront/popular-products`), { data: [] }),
+    { default: () => ({ data: [] }), transform: answer => ({ data: answer.data.map(toCardProduct) }) }
+  ),
+  useHeaderCategories(),
   useRail('home-newest', { sortBy: 'createdAt', sortOrder: 'desc' }),
   useAsyncData<{ data: Banner[] }>(
     'home-banners',
@@ -102,7 +112,14 @@ const HOME_CATEGORY_COUNT = 8
 const topCategories = computed(() => featuredCategories(tree.value, HOME_CATEGORY_COUNT))
 
 const popularProducts = computed(() =>
-  popular.value.data.filter((product) => product.ratingCount)
+  curatedPopular.value.data.length
+    ? curatedPopular.value.data
+    : popular.value.data.filter((product) => product.ratingCount)
+)
+
+/** «Популярное:» under the search: the header strip's first picks, else the biggest roots. */
+const heroLinks = computed(() =>
+  (curatedStrip.value?.length ? curatedStrip.value : topCategories.value).slice(0, 4)
 )
 
 const recentlyViewed = useRecentlyViewed()
@@ -199,7 +216,7 @@ useHead({
         <div class="hero-links">
           <span>Популярное:</span>
           <NuxtLink
-            v-for="category in topCategories.slice(0, 4)"
+            v-for="category in heroLinks"
             :key="category.id"
             :to="`/catalog/${category.slug}`"
           >
