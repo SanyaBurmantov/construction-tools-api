@@ -677,6 +677,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   request → toast → reload, `<UiConfirm>` for confirmations, `<UiTable>` for
   tables. `/admin/stats` is shared by the sidebar and the dashboard through
   `useAdminStats()`.
+  **An open admin tab hears about new leads and orders** without a reload:
+  `layouts/admin.vue` short-polls `GET /admin/inbox` every 15 s
+  (`useAdminInbox.ts` — four small counts plus the newest lead/order; never
+  `/admin/stats`, the heaviest query in the app) only while the tab is
+  visible, and immediately when it is shown again. A newer number toasts
+  «Новая заявка №…» / «Новый заказ №…», updates the sidebar badges, puts
+  «(N)» in the tab title, and bumps `leadsVersion`/`ordersVersion`, on which
+  `/admin/leads` and `/admin/orders` reload in the background
+  (`useAdminList().refresh()`, no skeleton) — new leads glow for 20 s.
   Admin pages just set `definePageMeta({ layout: 'admin' })` and can assume the
   session is valid; do **not** re-add per-page token forms. `useAdminApi()`
   rides on the session cookie (same-origin, plus `X-Requested-With`) and
