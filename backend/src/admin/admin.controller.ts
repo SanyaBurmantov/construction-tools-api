@@ -105,6 +105,16 @@ export class AdminController {
     return this.adminService.getStats();
   }
 
+  /**
+   * What an open admin tab polls (every ~15 s): new orders and leads and the
+   * newest of each. Four small queries — `/stats` is the heaviest request in
+   * the admin and must not be polled.
+   */
+  @Get('inbox')
+  getInbox() {
+    return this.adminService.getInbox();
+  }
+
   @Get('data-quality')
   getDataQuality() {
     return this.dataQualityService.getReport();

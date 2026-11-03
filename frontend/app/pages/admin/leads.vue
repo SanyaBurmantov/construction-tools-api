@@ -43,7 +43,7 @@ const search = ref('')
 const newCount = ref(0)
 const expanded = ref('')
 
-const { rows: leads, pagination, loading, error: loadError, load, setPage } = useAdminList<Lead, ListResponse>(
+const { rows: leads, pagination, loading, error: loadError, load, refresh, setPage } = useAdminList<Lead, ListResponse>(
   '/leads',
   {
     params: () => ({ status: tab.value, kind: kind.value, search: search.value }),
@@ -54,6 +54,27 @@ const { rows: leads, pagination, loading, error: loadError, load, setPage } = us
     },
   }
 )
+
+/**
+ * New leads arrive while the page stays open: the layout polls
+ * `/admin/inbox` and bumps `leadsVersion`; the list reloads in the background
+ * and the rows that were not there before glow for a while.
+ */
+const { leadsVersion } = useAdminInbox()
+const freshIds = ref(new Set<string>())
+const FRESH_MS = 20_000
+watch(leadsVersion, async () => {
+  const before = new Set(leads.value.map(lead => lead.id))
+  await refresh()
+  const arrived = leads.value.filter(lead => !before.has(lead.id)).map(lead => lead.id)
+  if (!arrived.length) return
+  freshIds.value = new Set([...freshIds.value, ...arrived])
+  setTimeout(() => {
+    const next = new Set(freshIds.value)
+    arrived.forEach(id => next.delete(id))
+    freshIds.value = next
+  }, FRESH_MS)
+})
 
 const setStatus = (lead: Lead, status: LeadStatus) =>
   run(() => adminFetch(`/leads/${lead.id}`, { method: 'PATCH', body: { status } }), {
@@ -116,7 +137,7 @@ const kindOptions = [
     />
 
     <ul v-else class="list">
-      <li v-for="lead in leads" :key="lead.id" class="lead">
+      <li v-for="lead in leads" :key="lead.id" class="lead" :class="{ 'is-fresh': freshIds.has(lead.id) }">
         <div class="lead-main">
           <div class="lead-head">
             <strong>№{{ lead.number }}</strong>
@@ -194,6 +215,26 @@ const kindOptions = [
 </template>
 
 <style scoped>
+/* A lead that arrived while the page was open (see leadsVersion). */
+.lead.is-fresh {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+  animation: lead-arrive 600ms var(--ease-out);
+}
+
+@keyframes lead-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lead.is-fresh {
+    animation: none;
+  }
+}
+
 .search {
   width: min(280px, 100%);
 }

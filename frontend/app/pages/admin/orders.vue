@@ -42,6 +42,7 @@ const {
   loading,
   error: loadError,
   load,
+  refresh,
   setPage,
 } = useAdminList<AdminOrder>('/orders', {
   params: () => ({ status: tab.value, search: search.value }),
@@ -50,6 +51,11 @@ const {
   // The deep link below has to wait for the list, so this page starts it.
   immediate: false,
 })
+
+// A new order while the list is open: reload it in the background (the
+// layout's inbox polling bumps ordersVersion and shows the toast).
+const { ordersVersion } = useAdminInbox()
+watch(ordersVersion, () => void refresh())
 
 /* ---- Detail ------------------------------------------------------------ */
 const detail = ref<AdminOrder | null>(null)

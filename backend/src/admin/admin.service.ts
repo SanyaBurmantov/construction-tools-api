@@ -110,6 +110,37 @@ export class AdminService {
     private readonly indexNow: IndexNowService,
   ) {}
 
+  /** See AdminController.getInbox(). */
+  async getInbox() {
+    const [newOrders, newLeads, lastOrder, lastLead] = await Promise.all([
+      this.prisma.order.count({ where: { status: 'NEW' } }),
+      this.prisma.lead.count({ where: { status: 'NEW' } }),
+      this.prisma.order.findFirst({
+        orderBy: { number: 'desc' },
+        select: {
+          id: true,
+          number: true,
+          customerName: true,
+          payerName: true,
+          total: true,
+          currency: true,
+        },
+      }),
+      this.prisma.lead.findFirst({
+        orderBy: { number: 'desc' },
+        select: {
+          id: true,
+          number: true,
+          kind: true,
+          companyName: true,
+          contactName: true,
+          phone: true,
+        },
+      }),
+    ]);
+    return { newOrders, newLeads, lastOrder, lastLead };
+  }
+
   async getStats() {
     // Revenue counts only orders that weren't cancelled.
     const revenueWhere = { status: { not: OrderStatus.CANCELLED } } as const;
