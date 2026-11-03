@@ -200,3 +200,59 @@ describe('ImageMirrorService.tick', () => {
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 });
+
+describe('ImageMirrorService candidate walk', () => {
+  const env = { ...process.env };
+  beforeEach(() => {
+    process.env.S3_ENDPOINT = 'https://s3.test';
+    process.env.S3_ACCESS_KEY = 'k';
+    process.env.S3_SECRET_KEY = 's';
+    process.env.S3_MEDIA_BUCKET = 'gost-by-media';
+  });
+  afterEach(() => {
+    process.env = { ...env };
+    jest.restoreAllMocks();
+  });
+
+  it('continues from where the last tick stopped, starts over at the end, rests after an empty pass', async () => {
+    fakeS3(new Map());
+    const cursors: unknown[] = [];
+    const pages: Array<Array<{ url: string; mirrored: boolean }>> = [
+      Array.from({ length: 40 }, (_, i) => ({
+        url: `https://a.by/${String(i).padStart(2, '0')}.jpg`,
+        mirrored: true,
+      })),
+      [{ url: 'https://a.by/99.jpg', mirrored: true }],
+      [],
+    ];
+    const prisma = {
+      $queryRaw: jest.fn(
+        (strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (strings.join('?').includes('sum(bytes)')) {
+            return Promise.resolve([{ bytes: 0n }]);
+          }
+          cursors.push(values[0]);
+          return Promise.resolve(pages.shift() ?? []);
+        },
+      ),
+      imageMirror: {
+        findUnique: jest.fn().mockResolvedValue({ key: 'v/aa/x/320.webp' }),
+        upsert: jest.fn().mockResolvedValue(undefined),
+      },
+      productImage: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const mirror = new ImageMirrorService(
+      prisma as never,
+      {
+        notifyParserProblem: jest.fn(),
+      } as never,
+    );
+
+    await mirror.tick(); // full page → cursor at its last URL
+    await mirror.tick(); // short page → end of the table, back to the start
+    await mirror.tick(); // nothing from the start → rest
+    await mirror.tick(); // resting: no query at all
+
+    expect(cursors).toEqual(['', 'https://a.by/39.jpg', '']);
+  });
+});

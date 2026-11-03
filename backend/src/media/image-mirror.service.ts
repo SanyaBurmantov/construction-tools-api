@@ -33,6 +33,8 @@ const CONCURRENCY = 4;
 /** A supplier host that did not answer is left alone this long. */
 const HOST_DOWN_MS = 30 * 60_000;
 const ALERT_EVERY_MS = 6 * 3600_000;
+/** A full pass found nothing to copy: look again after this long. */
+const IDLE_AFTER_EMPTY_PASS_MS = 10 * 60_000;
 const USER_AGENT =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
@@ -41,9 +43,8 @@ type Outcome = 'stored' | 'relinked' | 'failed' | 'host-down' | 's3-error';
 /**
  * Copies supplier photos into our S3 bucket and points `ProductImage.url` at
  * the copy (`sourceUrl` keeps the supplier's). Runs in the worker, on its own,
- * with no button: new photos from a parse are picked up within a tick, the
- * existing catalogue is worked through in the background — published
- * products first.
+ * with no button: the catalogue is walked in supplier-URL order, new photos
+ * from a parse are reached within one pass.
  *
  * - The parsers keep writing supplier URLs; ProductIdentityService.save()
  *   swaps in a stored copy, so the daily re-parse does not undo the work.
@@ -73,6 +74,9 @@ export class ImageMirrorService implements OnModuleInit {
   private readonly downHosts = new Map<string, number>();
   private lastAlertAt = 0;
   private quotaWarned = false;
+  /** Where the candidate walk stopped (`sourceUrl` order); '' = from the start. */
+  private cursor = '';
+  private idleUntil = 0;
   /** sharp runs one photo at a time: decoding is the memory peak. */
   private renderChain: Promise<unknown> = Promise.resolve();
 
@@ -154,13 +158,24 @@ export class ImageMirrorService implements OnModuleInit {
   }
 
   /**
-   * Supplier URLs still shown from the supplier: never tried, failed and due
-   * again, or stored while some row was written before the copy existed.
+   * The next supplier URLs still shown from the supplier: never tried, failed
+   * and due again, or stored while some row was written before the copy
+   * existed.
+   *
+   * Walked in `sourceUrl` order from a cursor, over the existing
+   * `ProductImage_sourceUrl_idx`: each tick reads only up to the 40th
+   * candidate (~30 ms). The first version grouped and sorted all ~244k image
+   * rows every 20 s to put published products first — 3.3 s of database time
+   * per tick, the second-heaviest statement on the server (2026-11-03). A
+   * pass that ends starts over from the beginning (failures that came due
+   * are picked up then); a whole pass with nothing to do rests for
+   * IDLE_AFTER_EMPTY_PASS_MS instead of re-reading the table.
    */
   private async candidates(): Promise<
     Array<{ url: string; mirrored: boolean }>
   > {
     const now = Date.now();
+    if (now < this.idleUntil) return [];
     for (const [host, until] of this.downHosts) {
       if (until <= now) this.downHosts.delete(host);
     }
@@ -175,12 +190,14 @@ export class ImageMirrorService implements OnModuleInit {
       ? Prisma.sql`AND lower(split_part(i."sourceUrl", '/', 3)) <> ALL(${downHosts})`
       : Prisma.empty;
 
-    return this.prisma.$queryRaw<Array<{ url: string; mirrored: boolean }>>`
+    const rows = await this.prisma.$queryRaw<
+      Array<{ url: string; mirrored: boolean }>
+    >`
       SELECT i."sourceUrl" AS url, bool_or(m.status = 'STORED') AS mirrored
       FROM "ProductImage" i
-      JOIN "Product" p ON p.id = i."productId"
       LEFT JOIN "ImageMirror" m ON m."sourceUrl" = i."sourceUrl"
-      WHERE i."url" = i."sourceUrl"
+      WHERE i."sourceUrl" > ${this.cursor}
+        AND i."url" = i."sourceUrl"
         AND i."sourceUrl" ~* '^https?://[^/]+/'
         AND ${notPlaceholder}
         ${notDown}
@@ -192,8 +209,19 @@ export class ImageMirrorService implements OnModuleInit {
                ELSE interval '3 days' END
         )
       GROUP BY i."sourceUrl"
-      ORDER BY min(CASE p.status WHEN 'PUBLISHED' THEN 0 ELSE 1 END), min(i."order")
+      ORDER BY i."sourceUrl"
       LIMIT ${BATCH}`;
+
+    if (rows.length) {
+      this.cursor = rows[rows.length - 1].url;
+      // A short page is the end of the table: the next tick starts over.
+      if (rows.length < BATCH) this.cursor = '';
+    } else if (this.cursor) {
+      this.cursor = '';
+    } else {
+      this.idleUntil = now + IDLE_AFTER_EMPTY_PASS_MS;
+    }
+    return rows;
   }
 
   private publicUrl(key: string): string {

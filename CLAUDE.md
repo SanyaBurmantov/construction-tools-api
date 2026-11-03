@@ -750,7 +750,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (5 s; 8 s for the uncached `/api/products` it now also checks).
   Measured 2026-11-03 before any tuning: cached pages ~50 ms (≈30 rps at 20
   parallel cold-TLS clients on a busy box), an uncached catalogue filter
-  1–8 s — the facet counts are the bottleneck.
+  1–8 s. pg_stat_statements named the causes the same day: Prisma's
+  `_count: { sourceProducts }` in the list include grouped every
+  SourceProduct row per listing (7.9 s for «Крепеж»; now `offerCounts()` for
+  the page's ids, 2 ms), and the `(status, listingRank, name)` index could not
+  serve `listingRank DESC, name ASC` (now `listingRank DESC` in the index).
+  **Don't put `_count` of a big relation into a list query's include.**
 - **Error log** (`errors/`, `ErrorLog`, `/admin/errors`). The audit says who
   changed what; this says what *broke*. `HttpExceptionFilter` is now registered
   through `APP_FILTER` in `AppModule` (not `useGlobalFilters` in `main.ts`) so
@@ -1151,8 +1156,10 @@ four sizes together ~60 KB, a catalogue card's file ~6 KB — the whole
 catalogue is ~15 GB. Bytes are sniffed (a 200 HTML page
 is not a photo), placeholders are never copied (so the placeholder checks on
 `url` keep working), a failed photo retries after 30/60 min then every 3
-days, a host that does not answer is skipped for 30 min, published products
-go first, and `S3_MEDIA_MAX_GB` (30 of the 50 GB plan) stops it. The worker
+days, a host that does not answer is skipped for 30 min, candidates are walked
+in `sourceUrl` order from an in-memory cursor over `ProductImage_sourceUrl_idx`
+(~30 ms a tick; the first version grouped all ~244k image rows every 20 s —
+3.3 s each), a pass with nothing to do rests 10 min, and `S3_MEDIA_MAX_GB` (30 of the 50 GB plan) stops it. The worker
 creates the bucket and sets its policy itself: **objects are public-read by
 exact key, listing is closed** (owner's choice, 2026-11-02) — IPX fetches
 them like any other source (`image.domains` has the S3 host). The backups

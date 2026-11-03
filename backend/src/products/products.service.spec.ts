@@ -42,6 +42,10 @@ function buildService() {
     }),
   );
   const queryRaw = jest.fn(() => Promise.resolve([]));
+  const sourceProductGroupBy = jest.fn(
+    (): Promise<Array<{ productId: string; _count: { _all: number } }>> =>
+      Promise.resolve([]),
+  );
   const categoryRedirectFindUnique = jest.fn(
     ({ where }: { where: { slug: string } }) =>
       Promise.resolve(redirects[where.slug] ?? null),
@@ -73,6 +77,10 @@ function buildService() {
     productSpecification: {
       groupBy: jest.fn(() => Promise.resolve([])),
     },
+    // Offer counts for the page's cards (`offerCounts`).
+    sourceProduct: {
+      groupBy: sourceProductGroupBy,
+    },
     $queryRaw: queryRaw,
     $executeRaw: jest.fn(() => Promise.resolve(1)),
   } as Record<string, unknown>;
@@ -87,6 +95,7 @@ function buildService() {
     productGroupBy,
     productAggregate,
     queryRaw,
+    sourceProductGroupBy,
   };
 }
 
@@ -727,7 +736,10 @@ describe('public product payload', () => {
   // supplier. Counting `sourceProducts` instead of returning them was only
   // half the guarantee.
   it('strips the admin-only pricing columns from the list payload', async () => {
-    const { service, productFindMany } = buildService();
+    const { service, productFindMany, sourceProductGroupBy } = buildService();
+    sourceProductGroupBy.mockResolvedValueOnce([
+      { productId: 'p1', _count: { _all: 2 } },
+    ]);
     productFindMany.mockResolvedValueOnce([
       {
         id: 'p1',
@@ -747,7 +759,6 @@ describe('public product payload', () => {
           { url: 'https://th-tool.by/shop/products/real.970.webp' },
         ],
         productSpecs: [],
-        _count: { sourceProducts: 2 },
       },
     ]);
 
@@ -768,6 +779,14 @@ describe('public product payload', () => {
     // What the storefront does need stays.
     expect(product.priceValue).toBe(120);
     expect(product.offerCount).toBe(2);
+    // …counted for this page only: `_count` in the include made Prisma group
+    // every SourceProduct row on each listing (7.9 s on prod).
+    const listCall = productFindMany.mock.calls.find(
+      ([args]) => (args as { include?: object }).include,
+    );
+    expect((listCall?.[0] as { include: object }).include).not.toHaveProperty(
+      '_count',
+    );
     // …and the supplier's "нет фото" asset is not passed off as the photo.
     expect(product.images).toEqual([
       { url: 'https://th-tool.by/shop/products/real.970.webp' },

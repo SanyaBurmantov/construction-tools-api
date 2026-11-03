@@ -114,9 +114,10 @@ const LIST_INCLUDE = {
   productSpecs: {
     include: { specification: true },
   },
-  // Count only — the storefront shows "цена от X, N предложений"; supplier
-  // links and our costs stay on the admin side.
-  _count: { select: { sourceProducts: true } },
+  // No `_count: { sourceProducts }` here on purpose: Prisma turns it into a
+  // LEFT JOIN on `SELECT productId, count(*) FROM SourceProduct GROUP BY
+  // productId` — all ~120k offers grouped on every listing (7.9 s for
+  // «Крепеж», 2026-11-03). The page's own counts come from `offerCounts()`.
 } satisfies Prisma.ProductInclude;
 
 type ListProduct = Prisma.ProductGetPayload<{
@@ -555,11 +556,12 @@ export class ProductService {
       },
       include: LIST_INCLUDE,
     });
+    const offers = await this.offerCounts(products.map((p) => p.id));
     const byId = new Map(products.map((product) => [product.id, product]));
     return ids
       .map((id) => byId.get(id))
       .filter((product): product is ListProduct => product !== undefined)
-      .map((product) => toListCard(product));
+      .map((product) => toListCard(product, offers.get(product.id) ?? 0));
   }
 
   async findAllFiltered(filter: ProductFilterDto) {
@@ -779,7 +781,10 @@ export class ProductService {
       this.cachedSummary(facetsCacheKey(filter), computeSummary),
     ]);
 
-    const data = products.map((product) => toListCard(product));
+    const offers = await this.offerCounts(products.map((p) => p.id));
+    const data = products.map((product) =>
+      toListCard(product, offers.get(product.id) ?? 0),
+    );
 
     return {
       data,
@@ -791,6 +796,24 @@ export class ProductService {
       },
       facets,
     };
+  }
+
+  /**
+   * Supplier offers per product for one page of cards — the
+   * «от X · N предложений» line. One indexed GROUP BY over ≤ 100 ids.
+   */
+  private async offerCounts(ids: string[]): Promise<Map<string, number>> {
+    if (!ids.length) return new Map();
+    const rows = await this.prisma.sourceProduct.groupBy({
+      by: ['productId'],
+      where: { productId: { in: ids } },
+      _count: { _all: true },
+    });
+    return new Map(
+      rows
+        .filter((row) => row.productId)
+        .map((row) => [row.productId as string, row._count._all]),
+    );
   }
 
   /**
@@ -1254,10 +1277,9 @@ function compareFacetValues(a: string, b: string): number {
 }
 
 /** One catalogue card as `GET /products` lists it. */
-function toListCard(product: ListProduct) {
-  const { _count, ...rest } = product;
+function toListCard(product: ListProduct, offerCount: number) {
   return {
-    ...toPublicProduct(rest),
+    ...toPublicProduct(product),
     images: withoutPlaceholderImages(product.images),
     // The card shows the first three — see `publicSpecs`.
     productSpecs: publicSpecs(
@@ -1267,6 +1289,6 @@ function toListCard(product: ListProduct) {
       })),
     ),
     /** Drives the "от X · N предложений" treatment on the card. */
-    offerCount: _count?.sourceProducts ?? 0,
+    offerCount,
   };
 }

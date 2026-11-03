@@ -240,7 +240,10 @@ model Product {
   @@index([status, priceValue])
   @@index([status, createdAt])
   @@index([status, name])
-  @@index([status, listingRank, name])
+  /// The catalogue's default order is `listingRank DESC, name ASC`; an index
+  /// in one direction for both columns cannot serve that mixed order, and the
+  /// whole catalogue was re-sorted on every listing (3.1 s, 2026-11-03).
+  @@index([status, listingRank(sort: Desc), name])
   @@index([status, ratingAvg])
   @@index([status, updatedAt])
   @@index([categoryId])
