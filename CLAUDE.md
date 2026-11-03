@@ -465,6 +465,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   still signs in and orders — a letter in spam must not cost a sale; the
   account page nags and offers a resend (`POST /auth/verify-email/resend`,
   3/h).
+  **Every letter has the storefront's look** (`notifications/mail-layout.ts`:
+  `mailLayout` + `mailButton(s)`/`mailSection`/`mailRows`/`mailItems`/
+  `mailTotals`/`mailNote`): tokens.scss colours flattened to hex, Manrope
+  where the client loads web fonts, logo, white card, the seller's
+  requisites (`SellerService`) in the footer; nested tables and inline styles
+  only, because Gmail and Outlook drop most of `<style>`. Prices are the
+  storefront's `ru-BY` format («1 234,50 Br»); order lines link to the
+  product and show our stored photo at its 160 px size. A new letter is built
+  from these helpers and keeps its plain-text part.
 - **One product, many supplier offers** (`offers/`). `Product` is the canonical
   card; `SourceProduct` rows hanging off it are competing supplier offers.
   Matching (`product-matching.ts`, pure and unit-tested) ranks signals

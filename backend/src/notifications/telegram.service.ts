@@ -117,6 +117,9 @@ export type OrderNotification = {
     quantity: number;
     unitPrice: number;
     lineTotal: number;
+    /** OrderItem snapshots — the letters link and picture the lines. */
+    productSlug?: string | null;
+    productImage?: string | null;
   }>;
 };
 

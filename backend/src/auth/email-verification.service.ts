@@ -3,6 +3,11 @@ import { randomBytes } from 'node:crypto';
 import { hashOpaqueToken } from './token-hash';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService, escapeHtml } from '../notifications/mail.service';
+import {
+  mailButton,
+  mailLayout,
+  mailSmall,
+} from '../notifications/mail-layout';
 
 const DEFAULT_TTL_HOURS = 48;
 
@@ -15,6 +20,8 @@ export function buildVerificationMail(input: {
   siteName: string;
   name?: string | null;
   ttlHours: number;
+  /** Site origin for the logo, fonts and footer links. */
+  siteUrl?: string;
 }) {
   // The name is user-supplied: capped so the letter cannot carry a paragraph
   // of someone's spam to an address they typed in.
@@ -29,13 +36,21 @@ export function buildVerificationMail(input: {
     `Ссылка действует ${input.ttlHours} ч. Если вы не регистрировались — просто проигнорируйте это письмо.`,
   ].join('\n');
   const link = escapeHtml(input.link);
-  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222">
-<p>${escapeHtml(greeting)}</p>
-<p>Вы зарегистрировались на сайте ${escapeHtml(input.siteName)}. Чтобы подтвердить e-mail, нажмите кнопку:</p>
-<p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#e8590c;color:#fff;text-decoration:none;border-radius:6px">Подтвердить e-mail</a></p>
-<p style="color:#666">Или скопируйте ссылку в браузер:<br>${link}</p>
-<p style="color:#666">Ссылка действует ${input.ttlHours} ч. Если вы не регистрировались — просто проигнорируйте это письмо.</p>
-</div>`;
+  const html = mailLayout({
+    brand: { siteUrl: input.siteUrl },
+    preheader: `Подтвердите адрес, чтобы получать письма о заказах. Ссылка действует ${input.ttlHours} ч.`,
+    title: 'Подтвердите e-mail',
+    intro: `<p style="margin:0 0 8px">${escapeHtml(greeting)}</p><p style="margin:0">Вы зарегистрировались на&nbsp;${escapeHtml(input.siteName)}. Подтвердите адрес — на него придут письма о&nbsp;заказах и&nbsp;счета на&nbsp;оплату.</p>`,
+    body: [
+      mailButton(input.link, 'Подтвердить e-mail'),
+      mailSmall(
+        `Кнопка не работает? Скопируйте ссылку в браузер:<br><a href="${link}" style="color:#1d4ed8;word-break:break-all">${link}</a>`,
+      ),
+      mailSmall(
+        `Ссылка действует ${input.ttlHours}&nbsp;ч. Если вы не регистрировались — просто проигнорируйте это письмо.`,
+      ),
+    ].join('\n'),
+  });
   return {
     subject: `Подтверждение регистрации на ${input.siteName}`,
     text,
@@ -103,6 +118,7 @@ export class EmailVerificationService {
       const letter = buildVerificationMail({
         link: `${origin}/verify-email?token=${token}`,
         siteName: new URL(origin).host,
+        siteUrl: origin,
         name: user.name,
         ttlHours,
       });

@@ -1,5 +1,12 @@
 import type { MailMessage } from '../notifications/mail.service';
-import { escapeHtml } from '../notifications/mail.service';
+import {
+  mailButton,
+  mailLayout,
+  mailRows,
+  mailSection,
+  money,
+  type MailRow,
+} from '../notifications/mail-layout';
 
 /** What a manager needs to call a lead back — shared by Telegram and mail. */
 export type LeadNotice = {
@@ -36,7 +43,7 @@ export function leadRows(lead: LeadNotice): Array<[string, string]> {
   if (lead.productName) rows.push(['Товар', lead.productName]);
   if (lead.message) rows.push(['Сообщение', lead.message]);
   if (lead.total != null)
-    rows.push(['Сумма', `${lead.total.toFixed(2)} ${lead.currency ?? 'BYN'}`]);
+    rows.push(['Сумма', money(lead.total, lead.currency ?? 'BYN')]);
   if (lead.trafficSource) rows.push(['Источник', lead.trafficSource]);
   return rows;
 }
@@ -86,20 +93,48 @@ export function buildLeadMail(
     ...(items.length ? ['', ...items] : []),
     ...(origin ? ['', `${origin}/admin/leads`] : []),
   ].join('\n');
-  const cell = 'padding:4px 8px;border-bottom:1px solid #eee;';
-  const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#222">
-<h2 style="margin:0 0 12px">${escapeHtml(title)}</h2>
-<table style="border-collapse:collapse;margin-bottom:16px">${rows
-    .map(
-      ([k, v]) =>
-        `<tr><td style="${cell}color:#666">${escapeHtml(k)}</td><td style="${cell}">${escapeHtml(v)}</td></tr>`,
-    )
-    .join('')}</table>${
-    items.length
-      ? `<ul>${items.map((line) => `<li>${escapeHtml(line.slice(2))}</li>`).join('')}</ul>`
-      : ''
-  }${origin ? `<p><a href="${escapeHtml(origin)}/admin/leads">Заявки в админке</a></p>` : ''}
-</div>`;
+  // Phone and e-mail are links: the manager calls back from the letter.
+  const linked: MailRow[] = rows.map(([k, v]) =>
+    k === 'Телефон'
+      ? [k, v, `tel:${v.replace(/[^\d+]/g, '')}`]
+      : k === 'E-mail'
+        ? [k, v, `mailto:${v}`]
+        : k === 'Товар' && origin && lead.productSlug
+          ? [k, v, `${origin}/product/${lead.productSlug}`]
+          : [k, v],
+  );
+  const itemsHtml = items.length
+    ? mailRows(
+        items.map((line): MailRow => {
+          const text = line.replace(/^• /, '');
+          const at = text.lastIndexOf(' — ');
+          return at > 0 ? [text.slice(0, at), text.slice(at + 3)] : [text, ''];
+        }),
+      )
+    : '';
+  const html = mailLayout({
+    brand: { siteUrl: origin },
+    preheader: [lead.companyName, lead.contactName, lead.phone]
+      .filter(Boolean)
+      .join(', '),
+    badge: {
+      text: lead.kind === 'QUOTE' ? 'Коммерческое предложение' : 'Вопрос',
+      tone: 'brand',
+    },
+    title: `Заявка №${lead.number}`,
+    intro:
+      lead.kind === 'QUOTE'
+        ? 'Посетитель скачал коммерческое предложение — хороший момент позвонить.'
+        : 'Посетитель просит уточнить наличие или подобрать аналог.',
+    body: [
+      origin ? mailButton(`${origin}/admin/leads`, 'Заявки в админке') : '',
+      mailSection('Контакт', mailRows(linked)),
+      itemsHtml ? mailSection('Позиции', itemsHtml) : '',
+    ].join('\n'),
+    footerNote: lead.email
+      ? '«Ответить» в почте напишет посетителю.'
+      : undefined,
+  });
   const who = lead.companyName || lead.contactName || lead.phone || '';
   return {
     subject: `${title}${who ? ` — ${who}` : ''}`,
