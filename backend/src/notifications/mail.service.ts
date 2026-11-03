@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { createTransport, type Transporter } from 'nodemailer';
 import { TelegramService } from './telegram.service';
 import { servesHttp } from '../common/utils/process-role';
+import { PrismaService } from '../prisma/prisma.service';
 
 /** A slow mail server must not hold a request or a cron for long. */
 const SMTP_TIMEOUT_MS = 15000;
@@ -49,7 +50,10 @@ export class MailService implements OnModuleInit {
   private lastAlertAt = 0;
 
   // Optional so the pure helpers and the tests can build it bare.
-  constructor(@Optional() private readonly telegram?: TelegramService) {}
+  constructor(
+    @Optional() private readonly telegram?: TelegramService,
+    @Optional() private readonly prisma?: PrismaService,
+  ) {}
 
   private get host() {
     return process.env.SMTP_HOST?.trim() || '';
@@ -72,9 +76,32 @@ export class MailService implements OnModuleInit {
     return process.env.MAIL_FROM?.trim() || this.user;
   }
 
-  /** Where order letters go (`MAIL_ADMIN_TO`, comma-separated). */
+  /** The fallback mailbox for shop letters (`MAIL_ADMIN_TO`, comma-separated). */
   get adminRecipients(): string[] {
     return parseAddressList(process.env.MAIL_ADMIN_TO);
+  }
+
+  /**
+   * Who gets the shop's letters (new orders, leads): every **active ADMIN
+   * account** with an address — its e-mail, or a login that is one. Read on
+   * each letter, so adding, disabling or demoting an admin in /admin/users
+   * changes the list at once. `MAIL_ADMIN_TO` is used only when no admin has
+   * an address, so a shop letter is never lost.
+   */
+  async adminAddresses(): Promise<string[]> {
+    const fromAccounts = this.prisma
+      ? await this.prisma.user
+          .findMany({
+            where: { role: 'ADMIN', isActive: true },
+            select: { email: true, login: true },
+          })
+          .then((admins) => adminMailboxes(admins))
+          .catch((error) => {
+            this.logger.error(`Admin addresses: ${String(error)}`);
+            return [];
+          })
+      : [];
+    return fromAccounts.length ? fromAccounts : this.adminRecipients;
   }
 
   onModuleInit() {
@@ -143,14 +170,22 @@ export class MailService implements OnModuleInit {
       .catch(() => undefined);
   }
 
-  /** A letter to the shop itself (`MAIL_ADMIN_TO`); false when none is set. */
+  /**
+   * A shop letter to every administrator (see `adminAddresses`), one letter
+   * each — admins do not see each other's addresses, and one bad mailbox does
+   * not bounce the rest. True when at least one was accepted.
+   */
   async sendToAdmins(
     message: Omit<MailMessage, 'to'>,
     context?: string,
   ): Promise<boolean> {
-    const to = this.adminRecipients;
-    if (!this.enabled || !to.length) return false;
-    return this.send({ ...message, to }, context);
+    if (!this.enabled) return false;
+    const recipients = await this.adminAddresses();
+    let sent = false;
+    for (const to of recipients) {
+      if (await this.send({ ...message, to }, context)) sent = true;
+    }
+    return sent;
   }
 
   /** Resolves true when the server accepted the letter. Never throws. */
@@ -167,4 +202,18 @@ export class MailService implements OnModuleInit {
       return false;
     }
   }
+}
+
+const MAILBOX = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
+
+/** Admin accounts → their mailboxes, lower-cased, without repeats. Pure. */
+export function adminMailboxes(
+  admins: Array<{ email: string | null; login: string }>,
+): string[] {
+  const out: string[] = [];
+  for (const admin of admins) {
+    const address = (admin.email?.trim() || admin.login.trim()).toLowerCase();
+    if (MAILBOX.test(address) && !out.includes(address)) out.push(address);
+  }
+  return out;
 }

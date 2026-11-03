@@ -469,7 +469,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   topic (`notifyMailProblem`, at most hourly) — a wrong `SMTP_PASSWORD` once
   went unnoticed. `POST /orders` also mails the customer a confirmation
   (`buildCustomerOrderMail`) when an e-mail was given.
-  `POST /orders` also mails `MAIL_ADMIN_TO` (`notifications/order-mail.ts`,
+  **Shop letters (new order, lead) go to every active ADMIN account** —
+  its e-mail, or a login that is one (`MailService.adminAddresses()`, read
+  per letter, one letter per admin); `MAIL_ADMIN_TO` is only the fallback
+  when no admin has an address.
+  `POST /orders` also mails the admins (`notifications/order-mail.ts`,
   Reply-To = the customer), composed inside the promise so even a builder
   throw is caught. **Registration needs an e-mail** (the field, or a login
   that is one) and sends a confirmation link
@@ -677,6 +681,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   request → toast → reload, `<UiConfirm>` for confirmations, `<UiTable>` for
   tables. `/admin/stats` is shared by the sidebar and the dashboard through
   `useAdminStats()`.
+  **An open admin tab hears about new leads and orders** without a reload:
+  `layouts/admin.vue` short-polls `GET /admin/inbox` every 15 s
+  (`useAdminInbox.ts` — four small counts plus the newest lead/order; never
+  `/admin/stats`, the heaviest query in the app) only while the tab is
+  visible, and immediately when it is shown again. A newer number toasts
+  «Новая заявка №…» / «Новый заказ №…», updates the sidebar badges, puts
+  «(N)» in the tab title, and bumps `leadsVersion`/`ordersVersion`, on which
+  `/admin/leads` and `/admin/orders` reload in the background
+  (`useAdminList().refresh()`, no skeleton) — new leads glow for 20 s.
   Admin pages just set `definePageMeta({ layout: 'admin' })` and can assume the
   session is valid; do **not** re-add per-page token forms. `useAdminApi()`
   rides on the session cookie (same-origin, plus `X-Requested-With`) and

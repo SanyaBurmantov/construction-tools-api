@@ -1,4 +1,4 @@
-import { MailService, parseAddressList } from './mail.service';
+import { adminMailboxes, MailService, parseAddressList } from './mail.service';
 import { buildCustomerOrderMail, buildOrderMail } from './order-mail';
 import type { OrderNotification } from './telegram.service';
 
@@ -47,6 +47,60 @@ describe('MailService', () => {
     await expect(
       new MailService().sendToAdmins({ subject: 's', text: 't' }),
     ).resolves.toBe(false);
+  });
+
+  it('mails every active admin account, one letter each', async () => {
+    process.env.SMTP_HOST = 'mailbe03.hoster.by';
+    process.env.SMTP_USER = 'support@gost.by';
+    process.env.SMTP_PASSWORD = 'x';
+    process.env.MAIL_ADMIN_TO = 'admin@gost.by';
+    const prisma = {
+      user: {
+        findMany: jest.fn().mockResolvedValue([
+          { email: 'Owner@Example.com', login: 'owner' },
+          { email: null, login: 'manager@example.by' },
+          { email: null, login: 'admin' },
+        ]),
+      },
+    };
+    const service = new MailService(undefined, prisma as never);
+    const sent: unknown[] = [];
+    jest.spyOn(service, 'send').mockImplementation((message) => {
+      sent.push(message.to);
+      return Promise.resolve(true);
+    });
+
+    await expect(
+      service.sendToAdmins({ subject: 's', text: 't' }),
+    ).resolves.toBe(true);
+    expect(prisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { role: 'ADMIN', isActive: true } }),
+    );
+    expect(sent).toEqual(['owner@example.com', 'manager@example.by']);
+  });
+
+  it('falls back to MAIL_ADMIN_TO when no admin has an address', async () => {
+    process.env.MAIL_ADMIN_TO = 'admin@gost.by, manager@gost.by';
+    const prisma = {
+      user: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ email: null, login: 'admin' }]),
+      },
+    };
+    await expect(
+      new MailService(undefined, prisma as never).adminAddresses(),
+    ).resolves.toEqual(['admin@gost.by', 'manager@gost.by']);
+  });
+
+  it('turns admin accounts into mailboxes without repeats', () => {
+    expect(
+      adminMailboxes([
+        { email: ' A@b.by ', login: 'x' },
+        { email: null, login: 'a@b.by' },
+        { email: '', login: 'not-an-address' },
+      ]),
+    ).toEqual(['a@b.by']);
   });
 
   it('splits the admin recipient list', () => {
