@@ -187,7 +187,7 @@ useHead({
                 <NuxtLink :to="`/product/${product.slug}`" class="thumb">
                   <img
                     v-if="product.images?.length"
-                    :src="product.images[0]!.url"
+                    :src="mediaSrc(product.images[0]!.url, 160, 2)"
                     :alt="product.name"
                     loading="lazy"
                   >

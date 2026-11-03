@@ -105,7 +105,7 @@ useHead({
         <ul class="items">
           <li v-for="item in order.items" :key="item.id">
             <NuxtLink :to="`/product/${item.productSlug}`" class="thumb">
-              <img v-if="item.productImage" :src="item.productImage" :alt="item.productName" loading="lazy" decoding="async">
+              <img v-if="item.productImage" :src="mediaSrc(item.productImage, 64, 2)" :alt="item.productName" loading="lazy" decoding="async">
               <span v-else class="thumb-empty">нет фото</span>
             </NuxtLink>
             <div class="item-main">

@@ -349,6 +349,7 @@ export class ToolsByParserService extends SupplierQueueParser {
     const seoDescription = parsed.description || parsed.name;
     const images = parsed.images.map((image, order) => ({
       url: image,
+      sourceUrl: image,
       alt: parsed.name,
       order,
     }));

@@ -91,7 +91,7 @@ useHead({
           <ul class="item-list">
             <li v-for="item in cart.items" :key="item.productId" class="item">
               <NuxtLink :to="`/product/${item.slug}`" class="item-image">
-                <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+                <img v-if="item.image" :src="mediaSrc(item.image, 120, 2)" :alt="item.name" loading="lazy">
                 <span v-else class="image-empty" aria-hidden="true" />
               </NuxtLink>
 

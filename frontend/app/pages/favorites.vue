@@ -68,7 +68,7 @@ useHead({
     <ul v-else class="product-grid">
       <li v-for="item in wishlist.items" :key="item.productId" class="fav-card">
         <NuxtLink :to="`/product/${item.slug}`" class="image">
-          <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+          <img v-if="item.image" :src="mediaSrc(item.image, 240, 2)" :alt="item.name" loading="lazy">
           <span v-else class="placeholder" aria-hidden="true" />
         </NuxtLink>
 

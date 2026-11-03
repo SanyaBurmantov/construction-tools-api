@@ -116,11 +116,12 @@ cat /opt/construction-tools/deployed.sha
 
 Daily compressed PostgreSQL backups are made by
 `construction-tools-backup.timer` into `/opt/construction-tools/backups`. They
-are retained for three days. Restore a backup into an empty database with
+are kept three days while S3 is not confirmed; after a verified upload only
+the newest stays on disk (the older ones are in S3). Restore a backup into an empty database with
 `gunzip -c <backup>.sql.gz | docker compose --env-file .env.prod -f
 docker-compose.prod.yml exec -T db psql -U postgres -d construction_tools`.
-Each dump is also uploaded off-site to S3 (hoster.by MinIO,
-`S3_BACKUP_*` in `.env.prod`): `daily/` kept 14 days, and the first dump of
+Each dump is also uploaded off-site to S3 (hoster.by MinIO, `S3_ENDPOINT`,
+`S3_ACCESS_KEY`, `S3_SECRET_KEY` and `S3_BACKUP_BUCKET` in `.env.prod`): `daily/` kept 14 days, and the first dump of
 each month copied to `monthly/` and kept 180 days — the script creates the
 bucket and (re)applies that expiry rule on every run. An upload failure leaves
 the local backup and the run successful (a pre-migration backup must not block
@@ -135,6 +136,16 @@ curl --aws-sigv4 "aws:amz:us-east-1:s3" --user "$S3_BACKUP_ACCESS_KEY:$S3_BACKUP
 ```
 
 then restore `backup.sql.gz` as above.
+
+Next to every dump goes `daily/config-<time>.tar.gz`: `.env.prod` and Caddy's
+`/data` volume (as `_data/`, the TLS certificates). On a new server: put
+`.env.prod` into `/opt/construction-tools/app`, start the stack once so the
+`caddy_data` volume exists, stop Caddy, copy `_data/*` into that volume's
+mount point (`docker volume inspect app_caddy_data`) and start it again.
+
+Product photos are in the public-read bucket `S3_MEDIA_BUCKET`
+(`gost-by-media`); the worker fills it by itself and nothing about it needs
+restoring — `ImageMirror` in the database maps supplier URLs to objects.
 
 ## Host watchdog (502s, OOM restarts)
 

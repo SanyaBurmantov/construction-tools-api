@@ -331,7 +331,7 @@ useHead({
             :to="`/product/${item.slug}`"
             class="viewed-card"
           >
-            <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+            <img v-if="item.image" :src="mediaSrc(item.image, 120, 2)" :alt="item.name" loading="lazy">
             <span v-else class="viewed-empty" aria-hidden="true" />
             <span class="viewed-name">{{ item.name }}</span>
             <strong>{{ formatPrice(item.price, item.currency) }}</strong>

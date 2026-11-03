@@ -1,7 +1,10 @@
 <script setup lang="ts">
 /**
- * A catalogue photo in a square box: IPX first, then the supplier's own URL,
- * then the placeholder (see useResilientImage). The card and the list row
+ * A catalogue photo in a square box. A photo already copied to our S3 is a
+ * set of ready WebP sizes (utils/media-variants.ts): it is served as a plain
+ * <img srcset> straight from the bucket — no IPX, no supplier. Anything else:
+ * IPX first, then the supplier's own URL, then the placeholder (see
+ * useResilientImage). The card and the list row
  * used to carry identical copies of this chain.
  *
  * width/height give the <img> an intrinsic size (no layout shift before CSS);
@@ -25,11 +28,44 @@ const props = withDefaults(
 const boxHeight = computed(() => props.height ?? props.width)
 
 const { stage, imageElement, onLoad, onError } = useResilientImage(() => props.src)
+
+const stored = computed(() => isStoredVariant(props.src))
+const storedSrc = computed(() => (stored.value ? mediaSrc(props.src!, props.width) : null))
+const storedSrcset = computed(() => (stored.value ? mediaSrcset(props.src!, props.width) : undefined))
+
+// NuxtImg's `preload` for the LCP photo, done by hand for the stored sizes.
+useHead(() => (props.priority && storedSrc.value
+  ? {
+      link: [{
+        key: `thumb-preload-${storedSrc.value}`,
+        rel: 'preload',
+        as: 'image',
+        href: storedSrc.value,
+        imagesrcset: storedSrcset.value,
+        fetchpriority: 'high',
+      }],
+    }
+  : {}))
 </script>
 
 <template>
+  <img
+    v-if="src && stored && stage === 'ipx'"
+    ref="imageElement"
+    class="thumb"
+    :src="storedSrc!"
+    :srcset="storedSrcset"
+    :alt="alt"
+    :width="width"
+    :height="boxHeight"
+    :loading="priority ? 'eager' : 'lazy'"
+    :fetchpriority="priority ? 'high' : 'auto'"
+    decoding="async"
+    @load="onLoad"
+    @error="onError"
+  >
   <NuxtImg
-    v-if="src && stage === 'ipx'"
+    v-else-if="src && stage === 'ipx'"
     ref="imageElement"
     class="thumb"
     :src="src"

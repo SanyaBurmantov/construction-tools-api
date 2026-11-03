@@ -47,10 +47,12 @@ export default defineNuxtConfig({
    * `domains` is the allowlist IPX needs to fetch a remote original; without an
    * entry here the module refuses the URL and the image does not render.
    * Keep it in step with the hosts the parsers store: th-tool.by,
-   * content.tools.by (tools.by's media host) and dukon.by.
+   * content.tools.by (tools.by's media host) and dukon.by — and our own S3
+   * (hoster.by), where the worker copies those photos and `ProductImage.url`
+   * then points (backend media/image-mirror.service.ts).
    */
   image: {
-    domains: ['th-tool.by', 'content.tools.by', 'dukon.by'],
+    domains: ['th-tool.by', 'content.tools.by', 'dukon.by', 'storage-1339.s3hoster.by'],
     // The catalogue grid tops out at ~300px per card and the gallery at 480px;
     // these are the only widths worth generating.
     screens: { card: 300, cardx2: 600, gallery: 480, galleryx2: 960 },

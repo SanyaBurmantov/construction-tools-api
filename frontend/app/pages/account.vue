@@ -696,7 +696,7 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
                   <NuxtLink :to="`/product/${item.productSlug}`" class="order-item-link">
                     <img
                       v-if="item.productImage"
-                      :src="item.productImage"
+                      :src="mediaSrc(item.productImage, 48, 2)"
                       :alt="item.productName"
                       loading="lazy"
                     >
