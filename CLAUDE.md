@@ -730,6 +730,27 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   it is evidence of what changed, not a replayable payload. A failed audit
   write is logged and swallowed — it must never turn a successful admin action
   into an error. `ADMIN_LOG_TTL_DAYS` (180) bounds the table.
+- **Speed is measured, not guessed** (`perf/`, `/admin/performance`
+  «Скорость»). Three sources: (1) every API request is timed from arrival to
+  `finish` by `RequestTimingMiddleware` and aggregated per **route template**
+  (`/products/:slug`, so one product is not a row) in the API process's
+  memory — count, avg, p50/p95 over a 300-sample ring, max, 5xx, plus the
+  last 100 requests over 1 s (`request-stats.ts`, bounded; a deploy resets
+  it); (2) **pg_stat_statements** — loaded by the db service's `command`
+  in `docker-compose.prod.yml` (with the Postgres sizing for this box:
+  256 MB buffers, 1 GB effective cache, SSD costs, `log_min_duration_statement`
+  1 s to the container log) and created by a migration — ranked by total
+  time, mean time or calls, with a reset button for before/after an
+  optimisation; (3) database vital signs: cache hit ratio, connections,
+  statements running > 1 s right now, tables read by full scans, dead rows.
+  `PerfService` checks every minute in the API: ≥ `PERF_ALERT_SLOW_COUNT`
+  (20) requests over 1 s within 5 min → «🐢 Сайт отвечает медленно» in the
+  Telegram alerts topic, at most hourly. The external uptime check
+  (`deploy/uptime-check.sh`) fails a 200 that is slower than `MAX_SECONDS`
+  (5 s; 8 s for the uncached `/api/products` it now also checks).
+  Measured 2026-11-03 before any tuning: cached pages ~50 ms (≈30 rps at 20
+  parallel cold-TLS clients on a busy box), an uncached catalogue filter
+  1–8 s — the facet counts are the bottleneck.
 - **Error log** (`errors/`, `ErrorLog`, `/admin/errors`). The audit says who
   changed what; this says what *broke*. `HttpExceptionFilter` is now registered
   through `APP_FILTER` in `AppModule` (not `useGlobalFilters` in `main.ts`) so

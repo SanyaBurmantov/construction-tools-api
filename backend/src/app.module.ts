@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { CategoriesModule } from './categories/categories.module';
 import { StorefrontModule } from './storefront/storefront.module';
+import { PerfModule } from './perf/perf.module';
 import { BrandsModule } from './brands/brands.module';
 import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
@@ -60,6 +61,7 @@ import { runsBackgroundJobs } from './common/utils/process-role';
     ProductsModule,
     CategoriesModule,
     StorefrontModule,
+    PerfModule,
     BrandsModule,
     SourcesModule,
     ParserModule,

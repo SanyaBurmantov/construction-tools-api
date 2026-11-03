@@ -8,7 +8,7 @@ generator client {
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
-  extensions = [pg_trgm]
+  extensions = [pg_trgm, pg_stat_statements]
 }
 
 model Category {
