@@ -1307,3 +1307,31 @@ model IndexNowUrl {
 
   @@index([createdAt])
 }
+
+enum SearchEventKind {
+  SEARCH
+  CLICK
+}
+
+/// What visitors search for and what they pick (search-log/). Sent by the
+/// browser — crawlers that run no script stay out, and a page served from
+/// the cache still counts. No account and no IP: only a salted hash, to drop
+/// a repeat of the same search from the same visitor.
+model SearchEvent {
+  id        String          @id @default(uuid())
+  kind      SearchEventKind
+  /// Normalised: lower case, ё→е, single spaces, ≤ 120 characters.
+  term      String
+  /// SEARCH: how many products matched.
+  results   Int?
+  /// CLICK: the product picked and its place in the list (1-based).
+  productId String?
+  position  Int?
+  /// `catalog` (the results page) or `suggest` (the header dropdown).
+  source    String
+  ipHash    String?
+  createdAt DateTime        @default(now())
+
+  @@index([createdAt])
+  @@index([term, createdAt])
+}

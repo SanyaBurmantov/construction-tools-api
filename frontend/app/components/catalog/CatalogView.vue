@@ -625,6 +625,32 @@ const showAbout = computed(() =>
   page.value === 1
   && (descriptionAll.value.length > 1 || descriptionIntro.value.length > INTRO_CHARS)
 )
+
+/* ---- Search journal (useSearchLog, /admin/search) ---- */
+// A search the visitor actually saw: its first page, once the results are
+// in. Filters on top of a search re-report it; the server counts a repeat
+// from the same visitor within ten minutes once.
+const searchLog = useSearchLog()
+let lastLogged = ''
+watch(
+  () => [search.value, page.value, pending.value, products.value?.pagination.total] as const,
+  ([term, currentPage, loading, total]) => {
+    if (!term || currentPage !== 1 || loading || total === undefined) return
+    const key = `${term}|${total}|${route.fullPath}`
+    if (key === lastLogged) return
+    lastLogged = key
+    searchLog.logSearch(term, total, 'catalog')
+  },
+  { immediate: true }
+)
+
+/** A click on a product link in the results of a search (not the cart button). */
+function onResultClick(event: MouseEvent, productId: string, index: number) {
+  if (!search.value) return
+  if (!(event.target as HTMLElement | null)?.closest('a')) return
+  const position = (page.value - 1) * PAGE_SIZE + index + 1
+  searchLog.logClick(search.value, productId, position, 'catalog')
+}
 </script>
 
 <template>
@@ -795,13 +821,15 @@ const showAbout = computed(() =>
               :key="product.id"
               :product="product"
               :priority="index < LCP_CARD_COUNT"
+              @click.capture="onResultClick($event, product.id, index)"
             />
           </div>
           <div v-else class="list" :class="{ 'is-animated': resultsAnimated }">
             <ProductCatalogRow
-              v-for="product in products.data"
+              v-for="(product, index) in products.data"
               :key="product.id"
               :product="product"
+              @click.capture="onResultClick($event, product.id, index)"
             />
           </div>
         </template>

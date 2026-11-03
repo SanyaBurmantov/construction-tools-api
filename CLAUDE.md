@@ -756,6 +756,19 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   the page's ids, 2 ms), and the `(status, listingRank, name)` index could not
   serve `listingRank DESC, name ASC` (now `listingRank DESC` in the index).
   **Don't put `_count` of a big relation into a list query's include.**
+- **Search journal** (`search-log/`, `SearchEvent`, `/admin/search` «Поиск»).
+  The browser reports each search it showed (`POST /search/events`,
+  `useSearchLog()`: the catalogue's first page with its result count) and each
+  product picked from results (catalogue card/row link or header dropdown,
+  with its position). Sent from the client on purpose — script-less crawlers
+  stay out, and a page served from Nitro's cache still counts. Terms are
+  normalised (lower case, ё→е, spaces, ≤120); no account, the IP only as the
+  reviews' salted hash, used to count the same search from the same visitor
+  within 10 min once. The report: totals, «ничего не найдено» (what the
+  catalogue is missing), frequent searches with click rate, latest events.
+  `SEARCH_LOG_TTL_DAYS` (365), purged nightly by the worker. It is the input
+  for the next search work (Russian morphology, synonyms; vectors only if the
+  zero-result list turns out to be «смысловые» queries).
 - **Error log** (`errors/`, `ErrorLog`, `/admin/errors`). The audit says who
   changed what; this says what *broke*. `HttpExceptionFilter` is now registered
   through `APP_FILTER` in `AppModule` (not `useGlobalFilters` in `main.ts`) so
