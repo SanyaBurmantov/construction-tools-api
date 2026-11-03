@@ -349,6 +349,21 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/catalog` + `/catalog/<category-slug>` pages share
   `components/catalog/CatalogView.vue`; filters live in query params
   (`brands`, `source`, `priceMin/Max`, `inStock`, `onSale`, `sort`, `page`).
+- **Hand-picked storefront blocks** (`storefront/`, `/admin/storefront`
+  «Витрина»). Two lists in `SiteSetting` (`storefront.headerCategories`,
+  `storefront.popularProducts`, JSON): the strip under the header on every
+  page — categories of **any level**, own order, optional shorter label and
+  «выделить» (accent colour, `.nav-link.is-accent`); its first four are also
+  «Популярное:» under the home search — and the home page's «Выбирают
+  покупатели» row. Public `GET /storefront/header-categories` and
+  `/storefront/popular-products` answer only what may be shown right now
+  (`CategoriesService.listableByIds()`: visible, non-empty, no hidden
+  ancestor; `ProductService.cardsByIds()`: published with a price), so a pick
+  can never put a dead link on every page. **Empty = automatic**: the strip
+  falls back to the first 7 roots, the row to the best-rated products —
+  exactly what the site did before. The header strip is one small SSR fetch
+  (`useHeaderCategories()`, shared key with the home page), cached 30 s in
+  the API.
 - **A listed category always has something in it.** Nothing in the storefront
   may render a category whose count is 0 — it is a link to the "ничего не
   найдено" screen, not a choice. Two layers enforce it: `pruneUnlistable()`

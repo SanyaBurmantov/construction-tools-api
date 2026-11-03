@@ -3,6 +3,7 @@ import { useCartStore } from '~/stores/cart'
 import { useWishlistStore } from '~/stores/wishlist'
 import { useCompareStore } from '~/stores/compare'
 import { company } from '~/data/company'
+import type { HeaderCategoryLink } from '~/composables/useStorefrontPicks'
 
 type SuggestProduct = {
   id: string
@@ -33,13 +34,31 @@ const compare = useCompareStore()
 const { user, isAdmin, isAuthenticated } = useAuth()
 const { formatPrice } = useFormatPrice()
 
-const { data: tree } = await useCategoryTree()
+// Two small SSR fetches, started together.
+const [{ data: tree }, { data: curatedStrip }] = await Promise.all([
+  useCategoryTree(),
+  useHeaderCategories(),
+])
 // The menu's subcategories are not in the SSR payload (see useCategoryTree):
 // they load once the page is idle, or sooner on any sign of intent.
 const { tree: menuTree, load: loadMenu } = useCategoryMenu()
 onNuxtReady(loadMenu)
 
 const topCategories = computed(() => (tree.value || []).slice(0, NAV_CATEGORY_LIMIT))
+
+/**
+ * The strip under the header: the admin's list from `/admin/storefront` when
+ * there is one (any level, own order, some highlighted), otherwise the first
+ * root categories as before.
+ */
+const stripCategories = computed<HeaderCategoryLink[]>(() =>
+  curatedStrip.value?.length
+    ? curatedStrip.value
+    : topCategories.value.map(({ id, name, slug }) => ({ id, name, slug, highlight: false }))
+)
+const stripHasMore = computed(() =>
+  Boolean(curatedStrip.value?.length) || (tree.value || []).length > topCategories.value.length
+)
 
 const navLinks = [
   { label: 'Каталог', to: '/catalog' },
@@ -465,14 +484,15 @@ onBeforeUnmount(() => {
     <nav class="navbar" aria-label="Основная навигация">
       <UiScroller class="container navbar-inner" label="Категории каталога">
         <NuxtLink
-          v-for="category in topCategories"
+          v-for="category in stripCategories"
           :key="category.id"
           :to="`/catalog/${category.slug}`"
           class="nav-link"
+          :class="{ 'is-accent': category.highlight }"
         >
           {{ category.name }}
         </NuxtLink>
-        <NuxtLink v-if="tree.length > topCategories.length" to="/catalog" class="nav-link is-more">
+        <NuxtLink v-if="stripHasMore" to="/catalog" class="nav-link is-more">
           Все категории
         </NuxtLink>
         <NuxtLink to="/sales" class="nav-link is-sale">Акции</NuxtLink>
@@ -1048,6 +1068,12 @@ onBeforeUnmount(() => {
 
 .nav-link.is-more {
   color: var(--text-link);
+}
+
+/* A category the admin chose to highlight in /admin/storefront. */
+.nav-link.is-accent {
+  color: var(--brand);
+  font-weight: 700;
 }
 
 /* ---- Mega menu ---- */

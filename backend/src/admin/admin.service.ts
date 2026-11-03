@@ -401,6 +401,8 @@ export class AdminService {
           brand: true,
           category: true,
           sourceProducts: { include: { source: true } },
+          // First photo only: the storefront screen's product picker shows it.
+          images: { orderBy: { order: 'asc' }, take: 1 },
         },
       }),
       this.prisma.product.count({ where }),

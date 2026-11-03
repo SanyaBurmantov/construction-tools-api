@@ -20,5 +20,6 @@ import { RecommendationsService } from './relations/recommendations.service';
     RecommendationsController,
     CartRecommendationsController,
   ],
+  exports: [ProductService],
 })
 export class ProductsModule {}
