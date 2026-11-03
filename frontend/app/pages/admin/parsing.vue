@@ -3,6 +3,7 @@ import type {
   BulkRetryResponse,
   CategoryRow,
   DataQualityReport,
+  MediaMirrorStats,
   ParserError,
   ParserHealth,
   ParserJob,
@@ -457,6 +458,23 @@ async function loadDataQuality() {
   }
 }
 
+/* ------------------------------------------------------ media mirror */
+
+const mediaStats = ref<MediaMirrorStats | null>(null)
+const mediaStatsLoading = ref(false)
+
+async function loadMediaStats() {
+  if (!hasSession.value) return
+  mediaStatsLoading.value = true
+  try {
+    mediaStats.value = await adminFetch<MediaMirrorStats>('/media/stats')
+  } catch (error) {
+    toast.error(errorMessage(error, 'Не удалось загрузить статистику фото'))
+  } finally {
+    mediaStatsLoading.value = false
+  }
+}
+
 onMounted(async () => {
   // Control first: it is what lists the sources — which ones have a category
   // crawler, and which queues exist at all.
@@ -464,6 +482,7 @@ onMounted(async () => {
   void loadCategories()
   void loadOverview()
   void loadDataQuality()
+  void loadMediaStats()
 })
 
 useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', content: 'noindex,nofollow' }] })
@@ -531,6 +550,12 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
       :report="dataQuality"
       :loading="dataQualityLoading"
       @reload="loadDataQuality"
+    />
+
+    <AdminParsingMediaMirror
+      :stats="mediaStats"
+      :loading="mediaStatsLoading"
+      @reload="loadMediaStats"
     />
 
     <AdminParsingImportProduct

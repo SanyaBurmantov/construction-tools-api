@@ -30,3 +30,15 @@
 .admin-muted {
   color: var(--text-muted);
 }
+
+/* An image-link field with «Загрузить» beside it (components/admin/imageUpload.vue). */
+.admin-input-upload {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+
+  > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+}

@@ -292,8 +292,11 @@ function hiddenReason(banner: AdminBanner) {
           <UiInput id="b-sub" v-model="form.subtitle" placeholder="До конца месяца" />
         </UiField>
 
-        <UiField label="Изображение, ссылка" required hint="1200×400" for="b-img">
-          <UiInput id="b-img" v-model="form.imageUrl" placeholder="https://…/banner.jpg" />
+        <UiField label="Изображение" required hint="Ссылка или файл, от 1200×400; загруженный файл ужимается до 1920 px в WebP" for="b-img">
+          <div class="admin-input-upload">
+            <UiInput id="b-img" v-model="form.imageUrl" placeholder="https://…/banner.jpg" />
+            <AdminImageUpload kind="banner" @uploaded="form.imageUrl = $event" />
+          </div>
         </UiField>
 
         <div v-if="form.imageUrl" class="form-preview">
@@ -301,7 +304,10 @@ function hiddenReason(banner: AdminBanner) {
         </div>
 
         <UiField label="Изображение для мобильных" hint="Необязательно, 800×600" for="b-mob">
-          <UiInput id="b-mob" v-model="form.mobileUrl" placeholder="https://…/banner-mobile.jpg" />
+          <div class="admin-input-upload">
+            <UiInput id="b-mob" v-model="form.mobileUrl" placeholder="https://…/banner-mobile.jpg" />
+            <AdminImageUpload kind="banner" @uploaded="form.mobileUrl = $event" />
+          </div>
         </UiField>
 
         <div class="admin-form-row">

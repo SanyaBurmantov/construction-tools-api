@@ -112,6 +112,7 @@ export class ThToolsParserService extends SupplierQueueParser {
     const seoDescription = parsed.description || parsed.name;
     const imageRows = parsed.images.map((image, order) => ({
       url: image,
+      sourceUrl: image,
       alt: parsed.name,
       order,
     }));

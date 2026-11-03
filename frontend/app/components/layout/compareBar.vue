@@ -22,7 +22,7 @@ const visible = computed(() => compare.count > 0 && route.path !== '/compare')
             class="thumb"
             :title="item.name"
           >
-            <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+            <img v-if="item.image" :src="mediaSrc(item.image, 48, 2)" :alt="item.name" loading="lazy">
             <span v-else class="thumb-empty" aria-hidden="true" />
             <button
               type="button"

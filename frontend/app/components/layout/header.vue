@@ -368,7 +368,7 @@ onBeforeUnmount(() => {
                   :style="{ '--stagger': index }"
                   @click="closeSuggest"
                 >
-                  <img v-if="item.image" :src="item.image" :alt="item.name" loading="lazy">
+                  <img v-if="item.image" :src="mediaSrc(item.image, 40, 2)" :alt="item.name" loading="lazy">
                   <span v-else class="suggest-thumb" aria-hidden="true" />
                   <span class="suggest-body">
                     <span class="suggest-name">{{ item.name }}</span>

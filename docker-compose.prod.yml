@@ -57,6 +57,17 @@ x-backend-environment: &backend-environment
   # IndexNow: изменённые страницы сразу сообщаются Яндексу. Пусто = выключено.
   # Тот же ключ уходит фронту как NUXT_INDEXNOW_KEY (файл /<ключ>.txt).
   INDEXNOW_KEY: ${INDEXNOW_KEY:-}
+  # S3 (hoster.by MinIO): the worker copies product photos into
+  # S3_MEDIA_BUCKET and the storefront serves them from there
+  # (media/image-mirror.service.ts). deploy/backup-db.sh reads the same keys.
+  # Any of endpoint/keys/bucket empty = photos stay on supplier hosts.
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET:-}
+  S3_MEDIA_PUBLIC_BASE: ${S3_MEDIA_PUBLIC_BASE:-}
+  S3_MEDIA_MAX_GB: ${S3_MEDIA_MAX_GB:-30}
   AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
   # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
   REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}

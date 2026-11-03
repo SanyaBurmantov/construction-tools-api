@@ -10,6 +10,11 @@ import { cleanProductTexts } from './supplier-text';
 import { normalizeBrandName } from './brand-name';
 import { supplierIdentityChanged } from './name-drift';
 import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
+import {
+  imageSourcesOf,
+  mediaConfigFromEnv,
+  withImageSources,
+} from '../media/image-mirror';
 
 /**
  * Fields every offer of a merged product may write, not only the owner's:
@@ -109,7 +114,9 @@ export class ProductIdentityService {
     // product text, whichever parser forgot to clean it.
     params = {
       ...params,
-      data: this.withoutForbiddenFields(this.withCleanTexts(params.data)),
+      data: await this.withStoredImages(
+        this.withoutForbiddenFields(this.withCleanTexts(params.data)),
+      ),
     };
     const existingId = await this.findByOffer(params.sourceId, params.url);
 
@@ -271,6 +278,44 @@ export class ProductIdentityService {
         statusSource: 'SYSTEM',
       },
     };
+  }
+
+  /**
+   * Parsers write the supplier's photo URLs; a photo already copied to our S3
+   * (media/image-mirror.service.ts) is written as our copy, with the supplier
+   * URL kept in `sourceUrl`. Without this the daily re-parse recreated every
+   * image row with the supplier's URL and the copy served for a day at most.
+   */
+  private async withStoredImages(
+    data: ProductWriteData,
+  ): Promise<ProductWriteData> {
+    const sources = [
+      ...imageSourcesOf(data.update.images),
+      ...imageSourcesOf(data.create.images),
+    ];
+    const media = mediaConfigFromEnv();
+    const stored = new Map<string, string>();
+    if (media && sources.length > 0) {
+      const rows = await this.prisma.imageMirror.findMany({
+        where: { sourceUrl: { in: [...new Set(sources)] }, status: 'STORED' },
+        select: { sourceUrl: true, key: true },
+      });
+      for (const row of rows) {
+        if (row.key)
+          stored.set(row.sourceUrl, `${media.publicBase}/${row.key}`);
+      }
+    }
+    const lookup = (url: string) => stored.get(url);
+    return {
+      update: {
+        ...data.update,
+        images: withImageSources(data.update.images, lookup),
+      },
+      create: {
+        ...data.create,
+        images: withImageSources(data.create.images, lookup),
+      },
+    } as ProductWriteData;
   }
 
   private withCleanTexts(data: ProductWriteData): ProductWriteData {

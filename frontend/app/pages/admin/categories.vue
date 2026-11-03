@@ -684,10 +684,13 @@ const mergeOptions = computed(() =>
 
         <UiField
           label="Картинка категории"
-          hint="Ссылка на изображение. Без неё плитка берёт фото самого дорогого товара категории, а если фото нет ни у кого — букву названия"
+          hint="Ссылка или файл (уйдёт в наше хранилище). Без картинки плитка берёт фото самого дорогого товара категории, а если фото нет ни у кого — букву названия"
           for="c-image"
         >
-          <UiInput id="c-image" v-model="form.image" placeholder="https://…" />
+          <div class="admin-input-upload">
+            <UiInput id="c-image" v-model="form.image" placeholder="https://…" />
+            <AdminImageUpload @uploaded="form.image = $event" />
+          </div>
         </UiField>
 
         <div v-if="form.image" class="form-preview">
@@ -750,16 +753,19 @@ const mergeOptions = computed(() =>
         </div>
 
         <UiField
-          label="Ссылка на картинку"
-          hint="https://… или путь на нашем сайте. Пусто — фото самого дорогого товара категории"
+          label="Картинка"
+          hint="Ссылка https://…, путь на нашем сайте или файл. Пусто — фото самого дорогого товара категории"
           for="c-thumb"
         >
-          <UiInput
-            id="c-thumb"
-            v-model="imageDraft"
-            placeholder="https://…/category.jpg"
-            @keyup.enter="saveImage(imageDraft.trim() || null)"
-          />
+          <div class="admin-input-upload">
+            <UiInput
+              id="c-thumb"
+              v-model="imageDraft"
+              placeholder="https://…/category.jpg"
+              @keyup.enter="saveImage(imageDraft.trim() || null)"
+            />
+            <AdminImageUpload @uploaded="imageDraft = $event" />
+          </div>
         </UiField>
       </div>
 

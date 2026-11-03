@@ -325,15 +325,43 @@ model ProductSpecification {
   @@index([specificationId, valueNorm])
 }
 
+/// `url` is what the storefront shows: our copy in S3 once ImageMirrorService
+/// has stored it, the supplier's URL until then. `sourceUrl` is always the
+/// supplier's — what parsers compare and filter on, and the key into ImageMirror.
 model ProductImage {
   id        String  @id @default(uuid())
   url       String
+  sourceUrl String
   alt       String?
   order     Int
   product   Product @relation(fields: [productId], references: [id])
   productId String
 
   @@index([productId])
+  @@index([sourceUrl])
+}
+
+enum ImageMirrorStatus {
+  STORED
+  FAILED
+}
+
+/// One supplier photo copied to S3 (media/image-mirror.service.ts). Keyed by
+/// the supplier URL, not by ProductImage: parsers recreate a product's image
+/// rows on every parse, and the copy must outlive them.
+model ImageMirror {
+  sourceUrl   String            @id
+  status      ImageMirrorStatus
+  /// Object key in S3_MEDIA_BUCKET (STORED).
+  key         String?
+  bytes       Int?
+  contentType String?
+  attempts    Int               @default(0)
+  error       String?
+  lastTriedAt DateTime          @default(now())
+  storedAt    DateTime?
+
+  @@index([status, lastTriedAt])
 }
 
 model Source {
@@ -780,8 +808,8 @@ model ProductRedirect {
 }
 
 /// Promo banner for the home page slider.
-/// Images are referenced by URL — there is no upload endpoint, so the admin
-/// pastes a link (supplier CDN, own hosting, or an existing product image).
+/// Images are referenced by URL: a pasted link, or a file the admin uploaded
+/// into our S3 (POST /admin/media/upload?kind=banner).
 model Banner {
   id         String    @id @default(uuid())
   title      String

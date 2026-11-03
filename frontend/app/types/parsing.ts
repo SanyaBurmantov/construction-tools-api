@@ -182,3 +182,16 @@ export type CategoryRow = {
   lastError: string | null
   visitedAt: string | null
 }
+
+/** `GET /admin/media/stats`: product photos copied to our S3. */
+export interface MediaMirrorStats {
+  enabled: boolean
+  bucket: string | null
+  images: number
+  servedFromOurStorage: number
+  storedPhotos: number
+  storedBytes: number
+  maxBytes: number | null
+  failedPhotos: number
+  failedByHost: Array<{ host: string, count: number }>
+}

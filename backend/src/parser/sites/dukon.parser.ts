@@ -347,7 +347,10 @@ export class DukonParserService extends SupplierQueueParser {
     };
   }
 
-  /** Old builds stored theme assets and certificates as product photos. */
+  /**
+   * Old builds stored theme assets and certificates as product photos.
+   * Matched on `sourceUrl`: `url` may already point at our S3 copy.
+   */
   protected beforeBatch() {
     return this.cleanupStoredProductImages();
   }
@@ -357,11 +360,11 @@ export class DukonParserService extends SupplierQueueParser {
       where: {
         product: { sourceProducts: { some: { source: { code: 'dukon' } } } },
         OR: [
-          { url: { contains: '/local/templates/' } },
-          { url: { contains: '/include/' } },
-          { url: { contains: '/resize_cache/' } },
-          { url: { contains: 'sertifikat', mode: 'insensitive' } },
-          { url: { contains: 'certificate', mode: 'insensitive' } },
+          { sourceUrl: { contains: '/local/templates/' } },
+          { sourceUrl: { contains: '/include/' } },
+          { sourceUrl: { contains: '/resize_cache/' } },
+          { sourceUrl: { contains: 'sertifikat', mode: 'insensitive' } },
+          { sourceUrl: { contains: 'certificate', mode: 'insensitive' } },
         ],
       },
     });
@@ -430,7 +433,10 @@ export class DukonParserService extends SupplierQueueParser {
     const brandId = brandName
       ? await this.identity.upsertBrand(brandName)
       : undefined;
-    const images = parseImages($, name, jsonLd?.images);
+    const images = parseImages($, name, jsonLd?.images).map((image) => ({
+      ...image,
+      sourceUrl: image.url,
+    }));
     // Keep existing images if a (possibly flaky) re-parse returned none, so a
     // partial fetch never wipes a product's gallery.
     const imagesUpdate =

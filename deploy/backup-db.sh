@@ -30,8 +30,17 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T db \
 gzip -t "$tmp"
 mv "$tmp" "$file"
 chmod 600 "$file"
+# Three days of local dumps while S3 is not confirmed; once this dump is
+# off-site only it stays (see prune_local below) — six 400 MB dumps were
+# 2.3 GB of a 20 GB disk with 2.7 GB free.
 find "$backup_dir" -maxdepth 1 -name 'database-*.sql.gz' -mtime +3 -delete
 echo "Database backup saved: $file"
+
+# The newest dump stays on disk (a restore after a bad migration should not
+# wait for a 400 MB download); every older one has a verified copy in S3.
+prune_local() {
+  find "$backup_dir" -maxdepth 1 -name 'database-*.sql.gz' ! -name "$name" -delete
+}
 
 # --- off-site copy (S3) -------------------------------------------------------
 # The local copies sit on the disk of the database they back up: a lost disk
@@ -45,11 +54,21 @@ echo "Database backup saved: $file"
 # auto-deploy runs this before a migration — an S3 outage must not block a
 # release. A successful upload stamps $state_dir/backup-s3.ok instead, and
 # watchdog.sh alerts when that stamp is older than 26 h.
-s3_endpoint=$(env_value S3_BACKUP_ENDPOINT)
+# One key pair for the app's photos and the backups (S3_*); the older
+# S3_BACKUP_* names still win when set.
+first_value() {
+  local k v
+  for k in "$@"; do
+    v=$(env_value "$k")
+    if [[ -n "$v" ]]; then echo "$v"; return 0; fi
+  done
+  return 0 # none set: empty, not a failure (set -e)
+}
+s3_endpoint=$(first_value S3_BACKUP_ENDPOINT S3_ENDPOINT)
 s3_bucket=$(env_value S3_BACKUP_BUCKET)
-s3_key=$(env_value S3_BACKUP_ACCESS_KEY)
-s3_secret=$(env_value S3_BACKUP_SECRET_KEY)
-s3_region=$(env_value S3_BACKUP_REGION)
+s3_key=$(first_value S3_BACKUP_ACCESS_KEY S3_ACCESS_KEY)
+s3_secret=$(first_value S3_BACKUP_SECRET_KEY S3_SECRET_KEY)
+s3_region=$(first_value S3_BACKUP_REGION S3_REGION)
 s3_region=${s3_region:-us-east-1}
 daily_days=$(env_value S3_BACKUP_DAILY_DAYS)
 monthly_days=$(env_value S3_BACKUP_MONTHLY_DAYS)
@@ -57,7 +76,7 @@ daily_days=${daily_days:-14}
 monthly_days=${monthly_days:-180}
 
 if [[ -z "$s3_endpoint" || -z "$s3_bucket" || -z "$s3_key" || -z "$s3_secret" ]]; then
-  echo "S3_BACKUP_* not set; off-site copy skipped"
+  echo "S3 endpoint/keys or S3_BACKUP_BUCKET not set; off-site copy skipped"
   exit 0
 fi
 s3_endpoint=${s3_endpoint%/}
@@ -111,8 +130,33 @@ upload() {
   fi
 }
 
+# The dump alone does not bring the site back on a new server: .env.prod holds
+# every key and password, and Caddy's volume the TLS certificates (re-issuing
+# them all at once can hit Let's Encrypt's rate limit). A few KB, kept as long
+# as the daily dumps. Its failure is logged but does not void the stamp —
+# the stamp is about the database.
+upload_config() {
+  local caddy_data archive cname
+  cname="config-${name#database-}"
+  cname="${cname%.sql.gz}.tar.gz"
+  archive="$backup_dir/$cname"
+  caddy_data=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}' \
+    construction-tools-caddy 2>/dev/null || true)
+  tar -czf "$archive" -C "$app_dir" .env.prod \
+    ${caddy_data:+-C "$(dirname "$caddy_data")" "$(basename "$caddy_data")"} || return 1
+  chmod 600 "$archive"
+  s3 -o /dev/null -H 'Content-Type: application/gzip' -T "$archive" "$base/daily/$cname" || {
+    rm -f "$archive"
+    return 1
+  }
+  rm -f "$archive"
+  echo "Config backup uploaded: $base/daily/$cname"
+}
+
 if upload; then
   touch "$state_dir/backup-s3.ok"
+  prune_local
+  upload_config || echo "S3: config backup (.env.prod, certificates) failed" >&2
 else
   echo "S3 upload failed; the local backup is kept" >&2
 fi
