@@ -125,6 +125,39 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_DB: ${DB_NAME:-construction_tools}
+    # Sized for this box (2.9 GB RAM, 2 vCPU, SSD) instead of the image's
+    # defaults, which assumed 128 MB of buffers and told the planner it had
+    # 4 GB of cache. pg_stat_statements records every query's time — read in
+    # /admin/performance («Скорость»); statements over 1 s go to the container
+    # log as well. Changing this list restarts Postgres on the next deploy
+    # (a few seconds; cached pages keep being served).
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.max=5000
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - track_io_timing=on
+      - -c
+      - log_min_duration_statement=${DB_LOG_SLOW_MS:-1000}
+      - -c
+      - shared_buffers=${DB_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${DB_EFFECTIVE_CACHE_SIZE:-1GB}
+      - -c
+      - work_mem=${DB_WORK_MEM:-8MB}
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=100
+    # Parallel query workers share memory through /dev/shm; Docker's 64 MB
+    # default fails them with «could not resize shared memory segment».
+    shm_size: 256mb
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

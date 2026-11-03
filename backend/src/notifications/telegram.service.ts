@@ -278,6 +278,20 @@ export class TelegramService implements OnModuleInit {
   }
 
   /**
+   * The API answers slowly (perf/perf-alert.service.ts): too many requests
+   * over the threshold in the last minutes. Throttled by the caller.
+   */
+  async notifySlowSite(summary: string[]): Promise<boolean> {
+    const lines = [
+      '🐢 <b>Сайт отвечает медленно</b>',
+      ...summary.map((line) => this.escape(line)),
+    ];
+    const origin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
+    if (origin) lines.push(`${origin}/admin/performance`);
+    return this.send(lines.join('\n'), 'slow site', 'alerts');
+  }
+
+  /**
    * Outgoing mail is broken (wrong password, blocked port). Order letters and
    * registration confirmations silently stop otherwise. Throttled by
    * MailService.

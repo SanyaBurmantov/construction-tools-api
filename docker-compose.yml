@@ -6,6 +6,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: construction_tools
+    # Same as prod: /admin/performance reads pg_stat_statements.
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "track_io_timing=on"]
     ports:
       - "2222:5432"
     volumes:

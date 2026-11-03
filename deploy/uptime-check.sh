@@ -20,9 +20,11 @@ PAUSE="${PAUSE:-10}"
 
 failures=()
 
-# check <name> <url> <expected text or empty>
+# check <name> <url> <expected text or empty> [max seconds]
+# A 200 slower than the limit is a failed try too: «работает, но 15 секунд»
+# is an outage for a visitor (default MAX_SECONDS, 5 s).
 check() {
-  local name="$1" url="$2" expect="$3" code body tries=0
+  local name="$1" url="$2" expect="$3" limit="${4:-${MAX_SECONDS:-5}}" code body tries=0 out seconds slow=""
   local tmp
   tmp="$(mktemp)"
   while (( tries < ATTEMPTS )); do
@@ -30,16 +32,26 @@ check() {
     # Bounded so the whole run (3 checks × 3 tries + pauses, the certificate)
     # ends well inside the job's timeout: when the box is down every try
     # hangs to the limit, and a job GitHub kills never reaches its Alert step.
-    code="$(curl -sS -L --connect-timeout 5 --max-time 20 -A 'gost-uptime-check' -o "$tmp" -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
+    out="$(curl -sS -L --connect-timeout 5 --max-time 20 -A 'gost-uptime-check' -o "$tmp" -w '%{http_code} %{time_total}' "$url" 2>/dev/null || echo '000 0')"
+    code="${out%% *}"
+    seconds="${out##* }"
     if [[ "$code" == "200" ]] && { [[ -z "$expect" ]] || grep -qi -- "$expect" "$tmp"; }; then
-      echo "OK   $name ($url)"
-      rm -f "$tmp"
-      return 0
+      if awk -v t="$seconds" -v max="$limit" 'BEGIN { exit !(t <= max) }'; then
+        echo "OK   $name ($url) ${seconds}s"
+        rm -f "$tmp"
+        return 0
+      fi
+      slow="$seconds"
     fi
     (( tries < ATTEMPTS )) && sleep "$PAUSE"
   done
   body="$(head -c 200 "$tmp" | tr -d '\r\n' || true)"
   rm -f "$tmp"
+  if [[ -n "$slow" && "$code" == "200" ]]; then
+    failures+=("$name: медленно — ${slow} с (порог ${limit} с)")
+    echo "FAIL $name ($url): slow, ${slow}s > ${limit}s"
+    return
+  fi
   if [[ "$code" == "200" ]]; then
     failures+=("$name: ответ без «$expect» — открывается чужая страница?")
   else
@@ -55,6 +67,9 @@ check "Главная" "$SITE_URL/" "gost.by"
 check "Каталог" "$SITE_URL/catalog" "gost.by"
 # The API's readiness probe: process up and the database answering.
 check "API" "$SITE_URL/api/health/ready" ""
+# The catalogue as a browser fetches it on every filter change — not cached
+# by the page cache, so it measures the database. Slower limit on purpose.
+check "Список товаров" "$SITE_URL/api/products?limit=24" '"data"' "${MAX_SECONDS_API:-8}"
 
 # Caddy's security headers: a Caddy left on a stale Caddyfile served the site
 # without them for weeks and nothing noticed.
