@@ -158,8 +158,15 @@ watch(() => route.path, () => {
   if (authorized.value) void loadBadges()
 })
 
+// New leads and orders arrive while the panel stays open (useAdminInbox).
+startAdminInboxPolling(() => authorized.value)
+const { inbox } = useAdminInbox()
+/** «(3) …» in the tab title: what waits for an answer, seen from another tab. */
+const waiting = computed(() => (inbox.value ? inbox.value.newLeads + inbox.value.newOrders : 0))
+
 useHead({
   title: 'Админка | Gost.by',
+  titleTemplate: computed(() => (waiting.value ? `(${waiting.value}) %s` : '%s')),
   meta: [{ name: 'robots', content: 'noindex,nofollow' }],
 })
 </script>

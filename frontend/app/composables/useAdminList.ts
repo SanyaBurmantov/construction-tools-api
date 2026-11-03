@@ -36,10 +36,16 @@ export function useAdminList<T, R extends Paginated<T> = Paginated<T>>(
   const error = ref('')
   let sequence = 0
 
-  async function load() {
+  /**
+   * `quiet`: a background refresh (new leads arriving) — no skeleton, and a
+   * failure keeps the rows on screen instead of replacing them with an error.
+   */
+  async function load(mode: { quiet?: boolean } = {}) {
     const ticket = ++sequence
-    loading.value = true
-    error.value = ''
+    if (!mode.quiet) {
+      loading.value = true
+      error.value = ''
+    }
     try {
       const response = await adminFetch<R>(path, {
         params: compactParams({ ...options.params?.(), page: page.value, limit }),
@@ -49,7 +55,7 @@ export function useAdminList<T, R extends Paginated<T> = Paginated<T>>(
       pagination.value = response.pagination
       options.onResponse?.(response)
     } catch (caught) {
-      if (ticket !== sequence) return
+      if (ticket !== sequence || mode.quiet) return
       error.value = errorMessage(caught, options.errorText ?? 'Не удалось загрузить список')
     } finally {
       if (ticket === sequence) loading.value = false
@@ -76,9 +82,12 @@ export function useAdminList<T, R extends Paginated<T> = Paginated<T>>(
     if (timer) clearTimeout(timer)
   })
 
-  if (options.immediate !== false) onMounted(load)
+  if (options.immediate !== false) onMounted(() => load())
 
-  return { rows, pagination, page, loading, error, load, setPage }
+  /** Reloads the current page in the background (see `load`). */
+  const refresh = () => load({ quiet: true })
+
+  return { rows, pagination, page, loading, error, load, refresh, setPage }
 }
 
 /** Query params without the blanks: `''`, `null` and `undefined` are dropped, strings trimmed. */
