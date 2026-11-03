@@ -60,9 +60,9 @@ describe('MailService', () => {
 describe('buildOrderMail', () => {
   it('carries the order facts and an admin link, replying to the customer', () => {
     const mail = buildOrderMail(order, 'https://gost.by');
-    expect(mail.subject).toBe('Новый заказ №42 — 115.00 BYN');
-    expect(mail.text).toContain('Дрель — 2 × 50.00 BYN = 100.00 BYN');
-    expect(mail.text).toContain('Итого: 115.00 BYN');
+    expect(mail.subject).toBe('Новый заказ №42 — 115,00 Br');
+    expect(mail.text).toContain('Дрель — 2 × 50,00 Br = 100,00 Br');
+    expect(mail.text).toContain('Итого: 115,00 Br');
     expect(mail.text).toContain(
       'https://gost.by/admin/orders?order=order-uuid',
     );
@@ -90,7 +90,7 @@ const companyOrder: OrderNotification = {
 describe('company orders in letters', () => {
   it('puts the payer first in the shop letter and in its subject', () => {
     const mail = buildOrderMail(companyOrder);
-    expect(mail.subject).toBe('Новый заказ №42 — ООО «Ромашка» — 115.00 BYN');
+    expect(mail.subject).toBe('Новый заказ №42 — ООО «Ромашка» — 115,00 Br');
     expect(mail.text).toContain('Организация: ООО «Ромашка»');
     expect(mail.text).toContain('УНП: 391807521');
     expect(mail.text).toContain('Банк: Беларусбанк, БИК AKBBBY2X');
@@ -100,7 +100,7 @@ describe('company orders in letters', () => {
 
   it('confirms the order to the customer, promising an invoice', () => {
     const mail = buildCustomerOrderMail(companyOrder, 'https://gost.by');
-    expect(mail.subject).toBe('Заказ №42 принят — 115.00 BYN');
+    expect(mail.subject).toBe('Заказ №42 принят — 115,00 Br');
     expect(mail.text).toContain('пришлёт счёт на оплату');
     expect(mail.text).toContain('УНП: 391807521');
     expect(mail.text).toContain('https://gost.by/account?tab=orders');

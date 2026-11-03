@@ -330,10 +330,17 @@ export class OrdersService {
             (await this.seller?.invoiceReady())
               ? `${publicOrigin}/api/orders/${order.id}/invoice.pdf`
               : undefined;
+          // The footer carries the seller's requisites as set in the admin.
+          const seller = await this.seller?.get().catch(() => undefined);
           return this.mail.send(
             {
               to,
-              ...buildCustomerOrderMail(order, publicOrigin, invoiceUrl),
+              ...buildCustomerOrderMail(
+                order,
+                publicOrigin,
+                invoiceUrl,
+                seller,
+              ),
             },
             `order #${order.number} to customer`,
           );

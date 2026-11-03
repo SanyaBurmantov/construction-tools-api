@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
+import { VARIANT_CAPS } from './variant-url';
+
+export { VARIANT_CAPS, capOfVariant, variantUrlFor } from './variant-url';
 
 /**
  * Product photos are stored in S3 already resized, so the storefront serves
@@ -16,7 +19,6 @@ import sharp from 'sharp';
  * cap, so the storefront knows which sizes exist from the URL alone
  * (`frontend/app/utils/media-variants.ts` mirrors this file).
  */
-export const VARIANT_CAPS = [160, 320, 640, 1200] as const;
 
 const QUALITY = 80;
 
@@ -78,12 +80,4 @@ export async function renderVariants(original: Buffer): Promise<Variant[]> {
     variants.push({ cap, body });
   }
   return variants;
-}
-
-/** Cap of a stored variant key or URL (`…/640.webp`), or null for anything else. */
-export function capOfVariant(keyOrUrl: string): number | null {
-  const match = /\/v\/[0-9a-f]{2}\/[0-9a-f]{40}\/(\d+)\.webp$/.exec(
-    `/${keyOrUrl.replace(/^\/+/, '')}`,
-  );
-  return match ? Number(match[1]) : null;
 }
