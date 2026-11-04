@@ -292,7 +292,7 @@ onBeforeUnmount(() => {
   <header class="site-header" :class="{ 'is-compact': compact }">
     <div class="topbar">
       <div class="container topbar-inner">
-        <span class="topbar-note">Каталог инструмента от поставщиков — обновляется ежедневно</span>
+        <span class="topbar-note">Каталог инструмента от первого импортера в РБ — обновляется ежедневно</span>
         <div class="topbar-links">
           <a :href="company.phoneHref" class="phone">{{ company.phone }}</a>
           <NuxtLink to="/delivery">Доставка и оплата</NuxtLink>

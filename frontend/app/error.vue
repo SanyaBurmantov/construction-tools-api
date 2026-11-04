@@ -55,7 +55,7 @@ const retry = () => reloadNuxtApp({ persistState: false })
       <span class="eyebrow">Ошибка 404</span>
       <h1>Страница не найдена</h1>
       <p>Возможно, товар снят с продажи, раздел переехал или в ссылке опечатка.
-        Найдите нужное через каталог или поиск — в каталоге больше 50 000 позиций.</p>
+        Найдите нужное через каталог или поиск — в каталоге больше 95 000 позиций.</p>
       <div class="error-actions">
         <UiButton size="lg" @click="clearError({ redirect: '/catalog' })">Перейти в каталог</UiButton>
         <UiButton size="lg" variant="secondary" @click="handleError">На главную</UiButton>
