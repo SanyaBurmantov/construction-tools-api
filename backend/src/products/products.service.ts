@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
 import { SpecSelection, parseSpecFilter } from './spec-filter';
 import { searchVariants } from '../common/utils/transliterate';
+import { buildFtsQuery, FTS_DOCUMENT_SQL, ftsDocumentSql } from './search-fts';
 import { isIdentitySpec, publicSpecs } from '../parser/spec-filterable';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 
@@ -25,10 +26,13 @@ const SEARCH_MATCH_LIMIT = 20_000;
  * the page or the sort, and computing them is most of a listing's cost: a
  * count plus a groupBy per dimension (category, brand, price, specs) over the
  * whole filtered catalogue — ~0.5 s on production for every page turn and
- * sort change. The catalogue changes when parsers run, so two minutes stale
- * is invisible; prices on the cards themselves are never cached here.
+ * sort change. The catalogue changes when parsers run — hourly batches — so
+ * a quarter of an hour stale is invisible (it was 2 min, which made the
+ * first visitor of every filter set pay the 0.5 s every two minutes); prices
+ * on the cards themselves are never cached here. The popular sets are kept
+ * warm by FacetsWarmupService before they expire.
  */
-const FACETS_CACHE_TTL_MS = 120_000;
+export const FACETS_CACHE_TTL_MS = 15 * 60_000;
 const FACETS_CACHE_MAX_ENTRIES = 300;
 
 /** Repeated searches (autocomplete, filter changes) reuse the id list. */
@@ -564,7 +568,15 @@ export class ProductService {
       .map((product) => toListCard(product, offers.get(product.id) ?? 0));
   }
 
-  async findAllFiltered(filter: ProductFilterDto) {
+  /**
+   * `refreshSummaryOlderThanMs`: recompute the cached total + facets when they
+   * are older than this — the warm-up passes it so a popular listing is
+   * refreshed before it expires, never by a visitor.
+   */
+  async findAllFiltered(
+    filter: ProductFilterDto,
+    options: { refreshSummaryOlderThanMs?: number } = {},
+  ) {
     const page = filter.page ?? 1;
     const limit = Math.min(filter.limit ?? 20, 100);
     const skip = (page - 1) * limit;
@@ -778,7 +790,11 @@ export class ProductService {
             orderBy,
             include: LIST_INCLUDE,
           }),
-      this.cachedSummary(facetsCacheKey(filter), computeSummary),
+      this.cachedSummary(
+        facetsCacheKey(filter),
+        computeSummary,
+        options.refreshSummaryOlderThanMs,
+      ),
     ]);
 
     const offers = await this.offerCounts(products.map((p) => p.id));
@@ -907,10 +923,14 @@ export class ProductService {
    * same filter set within FACETS_CACHE_TTL_MS — concurrent ones included, so
    * a crawler paging through a category computes them once, not per page.
    */
-  private cachedSummary<T>(key: string, compute: () => Promise<T>): Promise<T> {
+  private cachedSummary<T>(
+    key: string,
+    compute: () => Promise<T>,
+    maxAgeMs = FACETS_CACHE_TTL_MS,
+  ): Promise<T> {
     const now = Date.now();
     const hit = this.summaryCache.get(key);
-    if (hit && now - hit.at < FACETS_CACHE_TTL_MS) {
+    if (hit && now - hit.at < Math.min(maxAgeMs, FACETS_CACHE_TTL_MS)) {
       this.summaryCache.delete(key);
       this.summaryCache.set(key, hit);
       return hit.value as Promise<T>;
@@ -983,6 +1003,21 @@ export class ProductService {
     const barcode = barcodeTerm(term);
 
     const branches: Prisma.Sql[] = [];
+    // Russian full text (search-fts.ts): every word in some form, any order.
+    // The branch uses the GIN expression index, so its document must be the
+    // unqualified FTS_DOCUMENT_SQL; ranking reads the same document off `p`.
+    const ftsQueries = [
+      ...new Set(
+        variants
+          .map((variant) => buildFtsQuery(variant))
+          .filter((q): q is string => q !== null),
+      ),
+    ];
+    for (const tsquery of ftsQueries) {
+      branches.push(
+        Prisma.sql`SELECT "id" FROM "Product" WHERE ${Prisma.raw(FTS_DOCUMENT_SQL)} @@ to_tsquery('russian', ${tsquery})`,
+      );
+    }
     for (const variant of variants) {
       const like = `%${escapeLike(variant)}%`;
       branches.push(
@@ -1028,6 +1063,18 @@ export class ProductService {
     });
     if (barcodeHit) {
       rankClauses.push(Prisma.sql`CASE WHEN ${barcodeHit} THEN 100 ELSE 0 END`);
+    }
+    // A full-text match sits between a name substring (65) and a model hit
+    // (60) when the words are only somewhere in the name, and above the
+    // substring when they are the product's kind — its first two words,
+    // weighted A (ts_rank ≈ 0.6+ there, ≈ 0.06 elsewhere).
+    for (const tsquery of ftsQueries) {
+      const doc = Prisma.raw(ftsDocumentSql('p'));
+      rankClauses.push(
+        Prisma.sql`CASE WHEN ${doc} @@ to_tsquery('russian', ${tsquery})
+          THEN 55 + LEAST(20, (ts_rank(${doc}, to_tsquery('russian', ${tsquery})) * 20)::int)
+          ELSE 0 END`,
+      );
     }
 
     const rows = await this.withTrigramThreshold<{ id: string }>(

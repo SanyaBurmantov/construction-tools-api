@@ -776,6 +776,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   the page's ids, 2 ms), and the `(status, listingRank, name)` index could not
   serve `listingRank DESC, name ASC` (now `listingRank DESC` in the index).
   **Don't put `_count` of a big relation into a list query's include.**
+  A listing's total + facets (~0.5 s, most of its cost) are cached in the
+  API's memory for **15 min** per filter set (`FACETS_CACHE_TTL_MS`; it was
+  2 min), and `FacetsWarmupService` — in the API process, where that cache
+  lives — refreshes the whole catalogue and up to 40 category pages (header
+  strip, featured, roots) every 10 min, one at a time, before they expire.
   The route table also counts **DB operations per request**
   (`perf/query-context.ts`: an AsyncLocalStorage store opened by the timing
   middleware, counted by a `$use` in `PrismaService`) — a route averaging
@@ -794,8 +799,21 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   within 10 min once. The report: totals, «ничего не найдено» (what the
   catalogue is missing), frequent searches with click rate, latest events.
   `SEARCH_LOG_TTL_DAYS` (365), purged nightly by the worker. It is the input
-  for the next search work (Russian morphology, synonyms; vectors only if the
-  zero-result list turns out to be «смысловые» queries).
+  for the next search work (vectors only if the zero-result list turns out to
+  be «смысловые» queries).
+- **Search understands Russian word forms** (`products/search-fts.ts`, 04.11).
+  `rankedMatchIds` has a full-text `UNION` branch beside the trigram ones:
+  every word of the term must match in some form (`russian` Snowball
+  config, prefix per word, AND), so «компрессоры» (0 → 678), «пилы
+  циркулярные» (0 → 73), «ключи гаечные» (1 → 455) find products. The
+  document is an **expression** (name + sku + model, first two words of
+  the name weighted A — the product's kind ranks first), indexed by
+  `Product_search_fts_idx`; the planner uses it only while
+  `FTS_DOCUMENT_SQL` is byte-identical to the migration (tested) — change
+  it only together with a new index. `SEARCH_SYNONYMS` holds trade words
+  and fleeting-vowel stems (болгарка/УШМ, диск/круг, уровень/уровни); add
+  a group when /admin/search shows people missing one. Only letters and
+  digits reach `to_tsquery`, so a term is never a syntax error.
 - **Error log** (`errors/`, `ErrorLog`, `/admin/errors`). The audit says who
   changed what; this says what *broke*. `HttpExceptionFilter` is now registered
   through `APP_FILTER` in `AppModule` (not `useGlobalFilters` in `main.ts`) so
