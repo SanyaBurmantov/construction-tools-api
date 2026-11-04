@@ -1031,6 +1031,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `backend/prisma/migrations`, starting from a squashed baseline
   `00000000000000_init`. The original pre-baseline migrations are archived in
   `backend/prisma/_migrations_archive_pre_baseline/` and are **not** applied.
+- **Images are built by GitHub Actions, not on the server** (`ci.yml` jobs
+  `image` + `images-prod`, pushed to `ghcr.io/sanyaburmantov/construction-tools-{backend,frontend}:<sha>`
+  for the prod branch, after lint/tests pass). `auto-deploy.sh` waits for the
+  commit's `images-prod` check via the GitHub API, pulls, and rolls back to
+  the kept `:rollback` images in seconds; a commit CI rejected is not
+  deployed (one Telegram alert). Building on the box (load 16 on 2 cores,
+  10–15 min of a slow site) is only the fallback after 30 min without a CI
+  answer or a failed pull. Details: the `deploy-prod` skill.
 - Prod containers run `prisma migrate deploy` on start (backend Dockerfile CMD),
   but the auto-deploy applies new migrations first, as a separate step: a DB
   backup, `compose run backend npx prisma migrate deploy`, and on failure

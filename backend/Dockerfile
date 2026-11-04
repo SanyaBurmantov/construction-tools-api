@@ -19,10 +19,12 @@ EXPOSE 8000
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:dev"]
 
 FROM base AS build
+# CI passes false: its backend job has already run the tests on this commit.
+ARG RUN_TESTS=true
 RUN npm ci
 COPY . .
 RUN npx prisma generate
-RUN npm test -- --runInBand --silent
+RUN if [ "$RUN_TESTS" = "true" ]; then npm test -- --runInBand --silent; fi
 RUN npm run build
 
 FROM node:22-bookworm-slim AS production

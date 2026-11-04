@@ -173,6 +173,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
+    # Normally pulled, not built: CI builds the image from the prod commit and
+    # deploy/auto-deploy.sh pulls it from ghcr.io and tags it with this name.
+    # `build:` stays as the fallback when GitHub has no image for a release.
     # Tagged so `worker` runs the very same build without building it twice.
     image: construction-tools-backend:latest
     container_name: construction-tools-api
@@ -216,7 +219,7 @@ services:
       - app-network
 
   worker:
-    # Same image as `backend`, built once by it (auto-deploy builds `backend`).
+    # Same image as `backend` (auto-deploy pulls or builds `backend` only).
     image: construction-tools-backend:latest
     container_name: construction-tools-worker
     # Never pulled: the tag only ever exists as the local `backend` build.
@@ -267,6 +270,8 @@ services:
       target: production
       args:
         NUXT_PUBLIC_API_BASE: /api
+    # Pulled from ghcr.io and tagged by auto-deploy, like `backend`.
+    image: construction-tools-frontend:latest
     container_name: construction-tools-front
     restart: unless-stopped
     logging: *default-logging

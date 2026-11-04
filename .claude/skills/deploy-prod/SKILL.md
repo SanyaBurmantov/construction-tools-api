@@ -28,8 +28,28 @@ Keep `*_CRON_ENABLED=false` on the first deploy; enable parsers after a preview 
 - Frontend serves prebuilt `.output` (built with `NUXT_PUBLIC_API_BASE=/api`).
 - Caddy obtains a cert for `DOMAIN` and proxies `/api/*`→backend, `/*`→frontend.
 
+## How a release reaches the server
+Merge `master` → `prod` and push. Nothing is built on the server any more:
+1. GitHub Actions (`ci.yml`) runs lint/tests, then the `image (backend|frontend)`
+   jobs build the production images and push
+   `ghcr.io/sanyaburmantov/construction-tools-{backend,frontend}:<sha>`; the
+   check `images-prod` turns green when both are there.
+2. `deploy/auto-deploy.sh` (systemd timer, every 2 min) asks the GitHub API for
+   that check: still running → waits (exits, retries next tick); failed or
+   skipped → does not deploy, one Telegram alert (`rejected.sha`; a re-run
+   that goes green still deploys); green → `docker pull` + tag as
+   `construction-tools-*:latest`, backup + migrations, `up -d`, health checks.
+3. Failure → the images that were running (kept as `construction-tools-*:rollback`)
+   are restored in seconds; only if those are missing is the old commit rebuilt.
+Fallbacks: no CI answer for 30 min (`DEPLOY_IMAGE_WAIT_SECONDS`) or a failed
+pull (e.g. the ghcr package is private and the server has no `docker login`)
+→ built on the server as before. Logs: `journalctl -u construction-tools-deploy`.
+State files in `/opt/construction-tools/`: `deployed.sha`, `failed.sha`,
+`pending.sha`, `rejected.sha`.
+
 ## Hardware
-Build happens on the server (`--build`). The Nuxt build is the memory bottleneck.
+`deploy-prod.sh` / a first install still builds on the server (`--build`); the
+Nuxt build is the memory bottleneck there.
 - Comfortable: **2 vCPU / 4 GB / 40 GB SSD** (parsers off).
 - Minimum: 2 vCPU / 2 GB **+ 4 GB swap** (build OOMs otherwise); build services one at a time.
 - With Playwright parsers active: 8 GB.
