@@ -132,6 +132,62 @@ function sizeTokens(name: string): Set<string> {
   );
 }
 
+/** Words that say nothing about what an item is for. */
+const DETAIL_NOISE = new Set([
+  'для',
+  'под',
+  'на',
+  'по',
+  'из',
+  'от',
+  'со',
+  'без',
+  'шт',
+  'уп',
+  'мм',
+  'см',
+  'кг',
+  'мл',
+  'вт',
+  'комплект',
+  'набор',
+  'пр',
+  'тип',
+  'цвет',
+]);
+
+/**
+ * What an item is beyond its kind — its brand, model, purpose («Адаптер для
+ * предфильтра 6101 Jeta Safety» → предф, 6101, jeta, safet). Long words are
+ * cut to five letters, so «барашковые» and «барашковая» meet.
+ */
+function detailTokens(name: string, kindStem: string): Set<string> {
+  return new Set(
+    normalizeName(name)
+      .split(' ')
+      .filter(
+        (word) =>
+          word &&
+          !DETAIL_NOISE.has(word) &&
+          !(kindStem && word.startsWith(kindStem)),
+      )
+      .map((word) => (word.length >= 6 ? word.slice(0, 5) : word)),
+  );
+}
+
+/**
+ * Another category's item of the same kind is like this one only when they
+ * share a detail: «Адаптер для бит» is an adapter, but not like an adapter
+ * for a respirator filter. Inside the product's own category the shelf
+ * already says what it is for.
+ */
+function sharesDetail(left: string, right: string, kindStem: string): boolean {
+  const a = detailTokens(left, kindStem);
+  for (const token of detailTokens(right, kindStem))
+    if (a.has(token)) return true;
+  return false;
+}
+
 function sizeAgreement(left: string, right: string): number | null {
   const a = sizeTokens(left);
   const b = sizeTokens(right);
@@ -174,7 +230,9 @@ export function similarityScore(
     product.id === candidate.id ||
     (!sameCategory && !options.anyCategory) ||
     !kind ||
-    kind !== productKind(candidate)
+    kind !== productKind(candidate) ||
+    (!sameCategory &&
+      !sharesDetail(product.name, candidate.name, kindOf(product).stem))
   )
     return 0;
   const title = nameSimilarity(product.name, candidate.name);

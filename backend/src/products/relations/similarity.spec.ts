@@ -135,4 +135,47 @@ describe('similarity ranking', () => {
     expect(productKindStem(product('a', 'Биты PH2 1/4'))).toBe('бит');
     expect(productKindStem(product('a', '(1/2", 24 мм, L=38 мм)'))).toBe('');
   });
+
+  // Reported 2026-11-04: an adapter for a respirator prefilter showed
+  // adapters for bits and compressometers — the same word, another purpose.
+  it("takes another category's item of the same kind only when they share a detail", () => {
+    const adapter = product(
+      'a',
+      'Адаптер для предфильтра 6101 Jeta Safety (уп/2шт)',
+    );
+    const elsewhere = (id: string, name: string) => ({
+      ...product(id, name),
+      categoryId: 'other',
+    });
+    expect(
+      similarityScore(
+        adapter,
+        elsewhere(
+          'b',
+          'Адаптер для противоаэрозольного фильтра Jeta Safety JETA PRO 6101',
+        ),
+        { anyCategory: true },
+      ),
+    ).toBeGreaterThan(0);
+    expect(
+      similarityScore(adapter, elsewhere('c', 'Адаптер для бит 1/4"'), {
+        anyCategory: true,
+      }),
+    ).toBe(0);
+    expect(
+      similarityScore(
+        adapter,
+        elsewhere('d', 'Адаптер для компрессометра гибкий JTC-4908'),
+        { anyCategory: true },
+      ),
+    ).toBe(0);
+    // Word forms meet: «барашковые» / «барашковая».
+    expect(
+      similarityScore(
+        product('e', 'Гайки барашковые, 150пр. (М3, М4, М5)'),
+        elsewhere('f', 'Гайка М8 барашковая, цинк, DIN 315'),
+        { anyCategory: true },
+      ),
+    ).toBeGreaterThan(0);
+  });
 });
