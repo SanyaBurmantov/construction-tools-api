@@ -31,6 +31,11 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run lint
+      # Expand → contract: a new migration must not break the release before
+      # it, because a failed deploy rolls back to those images on the
+      # already-migrated schema (scripts/check-migrations.mjs).
+      - run: node --test scripts/check-migrations.test.mjs
+      - run: node scripts/check-migrations.mjs
       # `npm run build` uses tsconfig.build.json, which excludes **/*spec.ts.
       # This checks the tests themselves: it is what catches a spec that
       # constructs a service with the wrong arguments and still passes because

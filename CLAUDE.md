@@ -1069,6 +1069,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   S3_SECRET_KEY` (old `S3_BACKUP_*` names still win) and `S3_BACKUP_BUCKET`.
 - Add schema changes as new migrations and commit them. Never re-introduce
   `prisma db push` for prod.
+- **Expand → contract.** A failed release rolls back to the previous images
+  in seconds, on the *already-migrated* schema — so a migration must leave
+  the previous code working: add columns nullable or with a default, drop or
+  rename only in a later release once nothing reads the old one.
+  `scripts/check-migrations.mjs` fails CI on DROP/RENAME/TYPE/SET NOT NULL/
+  required ADD COLUMN in migrations newer than its `BASELINE`; a statement
+  that is really safe is allowed by `-- migration-safety: <why>` in the file.
 
 ## Parsing (the core of this project)
 
