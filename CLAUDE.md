@@ -767,6 +767,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   the page's ids, 2 ms), and the `(status, listingRank, name)` index could not
   serve `listingRank DESC, name ASC` (now `listingRank DESC` in the index).
   **Don't put `_count` of a big relation into a list query's include.**
+  The route table also counts **DB operations per request**
+  (`perf/query-context.ts`: an AsyncLocalStorage store opened by the timing
+  middleware, counted by a `$use` in `PrismaService`) — a route averaging
+  over `N_PLUS_ONE_QUERIES` (15) is flagged «похоже на N+1». And the
+  **SLOs** are written down in `request-stats.ts` (`SLO_TARGETS`: catalogue
+  99% ≤ 1 s, checkout 99% ≤ 2 s, whole API 95% ≤ 1 s, 5xx budgets) and
+  shown met/missed on the same screen.
 - **Search journal** (`search-log/`, `SearchEvent`, `/admin/search` «Поиск»).
   The browser reports each search it showed (`POST /search/events`,
   `useSearchLog()`: the catalogue's first page with its result count) and each

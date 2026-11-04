@@ -8,7 +8,12 @@ import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../notifications/telegram.service';
 import { servesHttp } from '../common/utils/process-role';
-import { RequestStats, routeTemplate, SLOW_REQUEST_MS } from './request-stats';
+import {
+  N_PLUS_ONE_QUERIES,
+  RequestStats,
+  routeTemplate,
+  SLOW_REQUEST_MS,
+} from './request-stats';
 
 /** Alert when this many requests took over SLOW_REQUEST_MS in the window. */
 const ALERT_SLOW_COUNT = Number(process.env.PERF_ALERT_SLOW_COUNT) || 20;
@@ -56,13 +61,14 @@ export class PerfService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  record(req: Request, status: number, ms: number) {
+  record(req: Request, status: number, ms: number, queries = 0) {
     this.stats.record({
       method: req.method,
       route: routeTemplate(req),
       url: req.originalUrl ?? req.url,
       status,
       ms,
+      queries,
     });
   }
 
@@ -72,6 +78,8 @@ export class PerfService implements OnModuleInit, OnModuleDestroy {
       slowThresholdMs: SLOW_REQUEST_MS,
       routes: this.stats.routesTable(),
       slow: this.stats.recentSlow(),
+      slo: this.stats.sloReport(),
+      nPlusOneThreshold: N_PLUS_ONE_QUERIES,
     };
   }
 
