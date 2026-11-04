@@ -39,7 +39,7 @@ export type SitemapSnapshot = {
   /** Sorted by slug, so a product stays in the same chunk between snapshots. */
   products: Array<{ slug: string, lastmod?: string }>
   categories: string[]
-  /** Published «категория + бренд» landings: `<category slug>?brands=<brand id>`. */
+  /** Published «категория + бренд» landings: `<category slug>/<brand slug>`. */
   landings: Array<{ path: string, lastmod?: string }>
   fetchedAt: number
 }
@@ -67,7 +67,7 @@ async function fetchSnapshot(): Promise<SitemapSnapshot> {
     $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`, { timeout: FETCH_TIMEOUT_MS }),
     // Additive: without the landings the sitemap is still complete for what
     // it always listed, so their failure is not an outage.
-    $fetch<Array<{ categorySlug: string, brandId: string, updatedAt?: string }>>(
+    $fetch<Array<{ categorySlug: string, brandSlug: string, updatedAt?: string }>>(
       `${apiBase}/storefront/landings`,
       { timeout: FETCH_TIMEOUT_MS },
     ).catch(() => []),
@@ -84,9 +84,9 @@ async function fetchSnapshot(): Promise<SitemapSnapshot> {
       .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)),
     categories: [...new Set(flattenCategories(categories).filter(Boolean))],
     landings: (Array.isArray(landings) ? landings : [])
-      .filter(landing => landing.categorySlug && /^[0-9a-f-]{36}$/i.test(landing.brandId))
+      .filter(landing => /^[a-z0-9-]+$/.test(landing.categorySlug) && /^[a-z0-9-]+$/.test(landing.brandSlug))
       .map(landing => ({
-        path: `${landing.categorySlug}?brands=${landing.brandId}`,
+        path: `${landing.categorySlug}/${landing.brandSlug}`,
         lastmod: toLastmod(landing.updatedAt),
       })),
     fetchedAt: Date.now(),

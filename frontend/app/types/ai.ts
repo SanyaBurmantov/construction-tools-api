@@ -301,7 +301,7 @@ export type AiLanding = {
   rejected: Record<string, string> | null
   productCount: number
   updatedAt: string
-  brand: { id: string, name: string }
+  brand: { id: string, name: string, slug: string }
   category: { id: string, name: string, slug: string }
 }
 

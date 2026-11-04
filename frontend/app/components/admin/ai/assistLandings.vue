@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * The «категория + бренд» landings the assistant wrote. A published one is
- * the canonical page `/catalog/<категория>?brands=<бренд>` with its own
+ * the canonical page `/catalog/<категория>/<бренд>` with its own
  * heading and text, and is in the sitemap; «Скрыть» turns it back into a
  * plain filtered view; «Переписать» deletes it so the job writes it afresh.
  */
@@ -67,7 +67,7 @@ const rewrite = (row: AiLanding) =>
     after,
   })
 
-const url = (row: AiLanding) => `/catalog/${row.category.slug}?brands=${row.brand.id}`
+const url = (row: AiLanding) => `/catalog/${row.category.slug}/${row.brand.slug}`
 </script>
 
 <template>

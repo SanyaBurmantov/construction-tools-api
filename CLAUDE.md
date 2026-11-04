@@ -1116,15 +1116,29 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
      только совет — значок на странице.
   7. **landings** — `BrandCategoryLanding` для (бренд, категория) с ≥6
      товарами: h1, текст, SEO, проверки `validateAnswer`; прошедшие
-     публикуются сами. Адрес — `/catalog/<категория>?brands=<id>` (ссылка со
-     страницы бренда): с одним этим параметром `CatalogView` берёт
-     `GET /storefront/landing`, свой h1/title/description/текст и **canonical
-     на себя**; sitemap категорий добавляет опубликованные
+     публикуются сами. Адрес — **`/catalog/<категория>/<бренд-slug>`**
+     (`pages/catalog/[category]/[brand].vue` → `CatalogView` с `landing`:
+     бренд из пути всегда выбран, в query не пишется, снять его = уйти в
+     категорию; свой h1/title/description/текст, хлебная крошка бренда и
+     **canonical на себя**). Страница бренда ссылается туда, когда посадочная
+     опубликована (`BrandCategory.landing`), старый `?brands=<id>` с
+     посадочной — 301 на красивый адрес; скрытая посадочная — 302 обратно в
+     фильтр. Sitemap категорий добавляет опубликованные
      (`GET /storefront/landings`, их сбой не роняет sitemap).
   8. **variants** — товары бренда+категории, которых правила не связали
      (`ProductFamily` нет или одиночка) → «Линейка» + подписи; подпись — только
      числа из имени товара. Принятое пишет `variantLine/variantLabel` и
      `contentUpdatedAt` (воркер связей пересобирает семью за тик).
+  **«Отклонённое»** (`/admin/ai?tab=rejected`): что ИИ предложил, а сайт
+  не взял, — слева «сейчас на сайте», справа предложение с причиной и
+  редактор. Тексты: поля задач, отклонённые проверками (`AiTaskItem.rejected`
+  + сырой `response`), «Записать на сайт» пишет как ИИ-правку
+  (`applyRejected`: `aiLockedFields`, `changes` пункта — откат задачи её
+  тоже вернёт), «Оставить как есть» — `AiTaskItem.resolved`. Категории:
+  товары резервной категории, которых помощник не разместил или не был
+  уверен (пока товар там) — выбор из кандидатов ИИ или всего дерева,
+  «Спросить ИИ ещё раз» удаляет предложение. Редактор товара открывается
+  ссылкой `/admin/products?edit=<id>`.
 - **Product page recommendations** (`products/relations/`,
   `GET /products/:slug/recommendations`, details in `feature.md`). «Похожие»
   are computed per request: **the same kind of item only** (`productKind`),

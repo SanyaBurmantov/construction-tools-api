@@ -334,3 +334,95 @@ describe('AiService.revert for a brand', () => {
     expect(enqueue).toHaveBeenCalledWith(['/brand/startul']);
   });
 });
+
+describe('AiService: «Отклонённое»', () => {
+  function rejectedItem(extra: Record<string, unknown> = {}) {
+    const productUpdate = jest.fn(() => Promise.resolve({}));
+    const itemUpdate = jest.fn(() => Promise.resolve({}));
+    const prisma = {
+      aiTaskItem: {
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: 'i1',
+            taskId: 't1',
+            entityId: 'p1',
+            status: AiTaskItemStatus.UNCHANGED,
+            changes: {},
+            rejected: { seoTitle: 'число 12 не из данных товара' },
+            resolved: null,
+            task: { entity: AiEntity.PRODUCT },
+            ...extra,
+          }),
+        ),
+        update: itemUpdate,
+        groupBy: jest.fn(() => Promise.resolve([])),
+      },
+      aiTask: { update: jest.fn(() => Promise.resolve({})) },
+      product: {
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            name: 'Бур',
+            slug: 'bur',
+            seoTitle: 'Старый',
+            aiLockedFields: [],
+            lockedFields: [],
+          }),
+        ),
+        update: productUpdate,
+      },
+      $transaction: jest.fn(),
+    };
+    prisma.$transaction.mockImplementation(((fn: (tx: unknown) => unknown) =>
+      fn(prisma)) as never);
+    const service = new AiService(
+      prisma as never,
+      {} as never,
+      { enqueue: jest.fn(() => Promise.resolve()) } as never,
+      { effective: () => Promise.resolve({}) } as never,
+    );
+    return { service, productUpdate, itemUpdate };
+  }
+
+  it('writes the admin’s text, locks it and marks the field applied', async () => {
+    const { service, productUpdate, itemUpdate } = rejectedItem();
+    await service.applyRejected('i1', 'seoTitle', '  Бур SDS-plus 12 мм  ');
+    expect(productUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          seoTitle: 'Бур SDS-plus 12 мм',
+          aiLockedFields: ['seoTitle'],
+        }),
+      }),
+    );
+    expect(itemUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: AiTaskItemStatus.APPLIED,
+          resolved: { seoTitle: 'applied' },
+          changes: { seoTitle: { old: 'Старый', new: 'Бур SDS-plus 12 мм' } },
+        }),
+      }),
+    );
+  });
+
+  it('dismiss keeps the text and only marks the field', async () => {
+    const { service, productUpdate, itemUpdate } = rejectedItem();
+    await service.dismissRejected('i1', 'seoTitle');
+    expect(productUpdate).not.toHaveBeenCalled();
+    expect(itemUpdate).toHaveBeenCalledWith({
+      where: { id: 'i1' },
+      data: { resolved: { seoTitle: 'dismissed' } },
+    });
+  });
+
+  it('refuses a field that was not refused, or one already dealt with', async () => {
+    await expect(
+      rejectedItem().service.applyRejected('i1', 'descriptionFull', 'x'),
+    ).rejects.toThrow('не отклонялось');
+    await expect(
+      rejectedItem({
+        resolved: { seoTitle: 'dismissed' },
+      }).service.dismissRejected('i1', 'seoTitle'),
+    ).rejects.toThrow('Уже разобрано');
+  });
+});

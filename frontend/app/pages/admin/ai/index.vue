@@ -13,7 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const { status, loadStatus } = useAiStatus()
 
-const TABS = ['products', 'categories', 'brands', 'tasks', 'templates', 'assist'] as const
+const TABS = ['products', 'categories', 'brands', 'tasks', 'rejected', 'templates', 'assist'] as const
 type Tab = typeof TABS[number]
 
 const tab = computed<Tab>({
@@ -30,6 +30,7 @@ const tabs = computed(() => [
   { value: 'categories', label: 'Категории' },
   { value: 'brands', label: 'Бренды' },
   { value: 'tasks', label: 'Задачи', count: status.value?.activeTasks || null },
+  { value: 'rejected', label: 'Отклонённое' },
   { value: 'templates', label: 'Шаблоны и правила' },
   { value: 'assist', label: 'Помощник' },
 ])
@@ -51,6 +52,7 @@ const tabs = computed(() => [
     <AdminAiCategoriesTab v-else-if="tab === 'categories'" @created="tab = 'tasks'" />
     <AdminAiBrandsTab v-else-if="tab === 'brands'" @created="tab = 'tasks'" />
     <AdminAiTasksTab v-else-if="tab === 'tasks'" />
+    <AdminAiRejectedTab v-else-if="tab === 'rejected'" />
     <AdminAiTemplatesTab v-else-if="tab === 'templates'" />
     <AdminAiAssistTab v-else />
   </div>

@@ -113,6 +113,17 @@ export class AiAssistController {
     return this.assist.revert(id, who(req));
   }
 
+  /** «Отклонённое → Категории». */
+  @Get('unplaced')
+  unplaced(@Query('page') page?: string) {
+    return this.assist.listUnplaced(Math.max(1, Number(page) || 1));
+  }
+
+  @Delete('suggestions/:id')
+  retry(@Param('id') id: string) {
+    return this.assist.retry(id);
+  }
+
   @Get('duplicates')
   duplicates() {
     return this.assist.duplicateVerdicts();
@@ -149,13 +160,18 @@ export class AiAssistController {
 export class LandingsController {
   constructor(private readonly assist: AiAssistService) {}
 
+  /** `brand` is a slug (the pretty URL) or an id (the old `?brands=` link). */
   @Get('landing')
   async landing(
     @Query('category') category?: string,
     @Query('brand') brand?: string,
   ) {
     if (!category || !brand) throw new NotFoundException();
-    const landing = await this.assist.publicLanding(category, brand);
+    const byId = /^[0-9a-f-]{36}$/i.test(brand);
+    const landing = await this.assist.publicLanding(
+      category,
+      byId ? { id: brand } : { slug: brand },
+    );
     if (!landing) throw new NotFoundException();
     return landing;
   }

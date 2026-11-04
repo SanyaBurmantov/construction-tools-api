@@ -1243,6 +1243,9 @@ model AiTaskItem {
   /// `{ key: note }` — written, but worth a look (a text near-identical to a
   /// sibling variant's).
   warnings   Json?
+  /// `{ field: 'applied' | 'dismissed' }` — what an admin did with a field
+  /// the checks refused («ИИ-тексты → Отклонённое»).
+  resolved   Json?
   error      String?
   updatedAt  DateTime         @updatedAt
 

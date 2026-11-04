@@ -1,8 +1,19 @@
 <script setup lang="ts">
-import type { CatalogProductsResponse, CategoryPage, FacetItem, SpecFacet } from '~/types/api'
+import type { CatalogProductsResponse, CategoryPage, FacetItem, SpecFacet, CatalogLanding  } from '~/types/api'
 import { toCardProduct } from '~/composables/useProductActions'
 
-const props = defineProps<{ categorySlug?: string }>()
+
+const props = defineProps<{
+  categorySlug?: string
+  /**
+   * A «категория + бренд» landing (`/catalog/<category>/<brand>`): its brand
+   * is part of the address and always selected; its texts and canonical
+   * replace the category's.
+   */
+  landing?: CatalogLanding | null
+}>()
+/** The brand the address itself selects (a landing), not the query. */
+const pathBrandId = computed(() => props.landing?.brand.id ?? '')
 const { priceListUrl } = useB2b()
 const { formatPrice } = useFormatPrice()
 
@@ -60,10 +71,12 @@ const cleanParams = (params: Record<string, string | number | boolean | undefine
 
 // --- filter state derived from the URL (URL is the source of truth) ---
 const search = computed(() => queryValue(route.query.search) || '')
-const selectedBrandIds = computed(() => {
+const queryBrandIds = computed(() => {
   const raw = queryValue(route.query.brands) || queryValue(route.query.brandId) || ''
   return raw.split(',').map(id => id.trim()).filter(Boolean)
 })
+const selectedBrandIds = computed(() =>
+  [...new Set([pathBrandId.value, ...queryBrandIds.value].filter(Boolean))])
 /**
  * The supplier filter, and **only for an admin**. The facet itself is hidden
  * from a customer, but the parameter kept filtering: `/catalog?source=tools-by`
@@ -203,16 +216,15 @@ const catalogDataKey = computed(() => `catalog-products:${route.fullPath.split('
 const resultsAnimated = ref(false)
 
 /**
- * A category filtered by exactly one brand and nothing else — the link the
- * brand page gives — can be a landing page («Перфораторы Makita») with its
- * own heading, text and SEO, written by the AI assistant. Without a
- * published landing it stays a plain filtered view (canonical = category).
+ * The old address of a landing: the category filtered by exactly one brand
+ * and nothing else (`?brands=<id>`, what the brand page used to link). With
+ * a published landing it moves to the pretty `/catalog/<category>/<brand>`;
+ * without one it stays a plain filtered view (canonical = category).
  */
-type Landing = { h1: string, description: string, seoTitle: string, seoDescription: string }
-const landingBrandId = computed(() => {
-  if (!props.categorySlug || selectedBrandIds.value.length !== 1) return ''
+const legacyLandingBrandId = computed(() => {
+  if (props.landing || !props.categorySlug || queryBrandIds.value.length !== 1) return ''
   const other = Object.keys(route.query).filter(key => key !== 'brands')
-  return other.length ? '' : selectedBrandIds.value[0]!
+  return other.length ? '' : queryBrandIds.value[0]!
 })
 
 const [
@@ -220,7 +232,7 @@ const [
   { data: products, pending, error },
   { data: tree },
   { data: brands },
-  { data: landing },
+  { data: legacyLanding },
 ] = await Promise.all([
   useAsyncData<CategoryPage | null>(
     () => `catalog-category:${props.categorySlug || ''}`,
@@ -256,14 +268,14 @@ const [
         .map(brand => ({ id: brand.id, name: brand.name, slug: brand.slug }))
     }
   ),
-  useAsyncData<Landing | null>(
-    () => `catalog-landing:${props.categorySlug || ''}:${landingBrandId.value}`,
-    () => landingBrandId.value
-      ? $fetch<Landing>(`${apiBase}/storefront/landing`, {
-          params: { category: props.categorySlug, brand: landingBrandId.value },
+  useAsyncData<CatalogLanding | null>(
+    () => `catalog-landing:${props.categorySlug || ''}:${legacyLandingBrandId.value}`,
+    () => legacyLandingBrandId.value
+      ? $fetch<CatalogLanding>(`${apiBase}/storefront/landing`, {
+          params: { category: props.categorySlug, brand: legacyLandingBrandId.value },
         }).catch(() => null)
       : Promise.resolve(null),
-    { default: () => null, watch: [landingBrandId] }
+    { default: () => null, watch: [legacyLandingBrandId] }
   ),
 ])
 
@@ -275,6 +287,10 @@ if (categoryUnavailable.value) throw apiUnavailableError()
 
 if (props.categorySlug && !category.value) {
   throw createError({ statusCode: 404, statusMessage: 'Категория не найдена', fatal: true })
+}
+
+if (legacyLanding.value && category.value) {
+  await navigateTo(`/catalog/${category.value.slug}/${legacyLanding.value.brand.slug}`, { redirectCode: 301, replace: true })
 }
 
 if (category.value && props.categorySlug !== category.value.slug) {
@@ -381,10 +397,16 @@ const selectedBrands = computed(() =>
 )
 
 // --- navigation ---
-function currentQuery(overrides: Record<string, string | undefined>) {
+/**
+ * The query of the current filters. On a landing its brand is in the path,
+ * so it is left out — unless the link leaves the landing (another category,
+ * the brand switched off), where it has to travel as a filter.
+ */
+function currentQuery(overrides: Record<string, string | undefined>, withPathBrand = false) {
+  const brandIds = withPathBrand ? selectedBrandIds.value : queryBrandIds.value.filter(id => id !== pathBrandId.value)
   return cleanParams({
     search: search.value || undefined,
-    brands: selectedBrandIds.value.join(',') || undefined,
+    brands: brandIds.join(',') || undefined,
     source: selectedSource.value || undefined,
     priceMin: priceMin.value || undefined,
     priceMax: priceMax.value || undefined,
@@ -404,15 +426,23 @@ function pushQuery(overrides: Record<string, string | undefined>) {
 function categoryTo(slug: string | null) {
   return {
     path: slug ? `/catalog/${slug}` : '/catalog',
-    query: currentQuery({ page: undefined })
+    query: currentQuery({ page: undefined }, true)
   }
 }
+
+/** The plain category this page belongs to — a landing's way out. */
+const categoryPath = computed(() => (props.categorySlug ? `/catalog/${props.categorySlug}` : '/catalog'))
 
 function toggleBrand(id: string) {
   const next = selectedBrandIds.value.includes(id)
     ? selectedBrandIds.value.filter(item => item !== id)
     : [...selectedBrandIds.value, id]
-  pushQuery({ brands: next.join(',') || undefined })
+  if (pathBrandId.value && !next.includes(pathBrandId.value)) {
+    // The landing's own brand switched off: back to the category.
+    router.push({ path: categoryPath.value, query: currentQuery({ page: undefined, brands: next.join(',') || undefined }, true) })
+    return
+  }
+  pushQuery({ brands: next.filter(item => item !== pathBrandId.value).join(',') || undefined })
 }
 
 function toggleSource(code?: string) {
@@ -446,7 +476,7 @@ function setPage(next: number) {
 }
 
 function clearFilters() {
-  router.push({ path: route.path })
+  router.push({ path: props.landing ? categoryPath.value : route.path })
 }
 
 const activeFiltersCount = computed(() =>
@@ -521,6 +551,11 @@ const breadcrumbItems = computed(() => {
   for (const ancestor of category.value.ancestors) {
     items.push({ label: ancestor.name, to: `/catalog/${ancestor.slug}` })
   }
+  if (props.landing) {
+    items.push({ label: category.value.name, to: categoryPath.value })
+    items.push({ label: props.landing.brand.name })
+    return items
+  }
   items.push({ label: category.value.name })
   return items
 })
@@ -575,12 +610,15 @@ watch(() => route.fullPath, () => { filtersOpen.value = false })
  * one). Page 1 stays canonical without the parameter. Filtered or re-sorted
  * views keep pointing at the plain category, as before.
  */
+/** Filters beyond the address: a landing's own brand is not one. */
+const extraFiltersCount = computed(() => activeFiltersCount.value - (pathBrandId.value ? 1 : 0))
 const canonicalPage = computed(() =>
-  page.value > 1 && !activeFiltersCount.value && sort.value === 'default' ? page.value : 1
+  page.value > 1 && !extraFiltersCount.value && sort.value === 'default' ? page.value : 1
 )
 const pageSuffix = computed(() => (page.value > 1 ? ` — страница ${page.value}` : ''))
+const landing = computed(() => props.landing ?? null)
 const pageTitle = computed(() => landing.value
-  ? `${landing.value.seoTitle} | Gost.by`
+  ? `${landing.value.seoTitle}${pageSuffix.value} | Gost.by`
   : (category.value
   ? `${category.value.name} купить в Беларуси — цены`
   : 'Каталог инструмента и крепежа') + `${pageSuffix.value} | Gost.by`)
@@ -591,7 +629,7 @@ const pageTitle = computed(() => landing.value
  * no description, and the template says something a searcher can use.
  */
 const pageDescription = computed(() => {
-  if (landing.value) return landing.value.seoDescription
+  if (landing.value) return landing.value.seoDescription + (page.value > 1 ? ` Страница ${page.value}.` : '')
   const current = category.value
   if (!current) return 'Каталог инструментов, крепежа и расходников с фильтрами по категориям, брендам и цене.'
   const written = current.seoDescription?.trim()
@@ -603,12 +641,12 @@ const pageDescription = computed(() => {
     + `Оплата по счёту для организаций, доставка по Беларуси, самовывоз в Витебске.${pageNote}`
 })
 const listingUrl = computed(() =>
-  absoluteUrl(category.value ? `/catalog/${category.value.slug}` : '/catalog'))
+  absoluteUrl(category.value
+    // A landing is its own page: the brand is part of its address.
+    ? `/catalog/${category.value.slug}${landing.value ? `/${landing.value.brand.slug}` : ''}`
+    : '/catalog'))
 const canonicalUrl = computed(() =>
-  landing.value
-    // A landing is its own page: the brand filter is part of its address.
-    ? `${listingUrl.value}?brands=${landingBrandId.value}`
-    : canonicalPage.value > 1 ? `${listingUrl.value}?page=${canonicalPage.value}` : listingUrl.value
+  canonicalPage.value > 1 ? `${listingUrl.value}?page=${canonicalPage.value}` : listingUrl.value
 )
 
 useSeoMeta({

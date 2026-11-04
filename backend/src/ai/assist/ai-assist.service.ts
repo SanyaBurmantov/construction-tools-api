@@ -1077,13 +1077,19 @@ export class AiAssistService {
     const inputs: LandingInput[] = [];
     const meta = new Map<
       string,
-      { brandId: string; categoryId: string; slug: string; count: number }
+      {
+        brandId: string;
+        categoryId: string;
+        slug: string;
+        brandSlug: string;
+        count: number;
+      }
     >();
     for (const row of rows) {
       const [brand, category, examples] = await Promise.all([
         this.prisma.brand.findUnique({
           where: { id: row.brandId },
-          select: { name: true },
+          select: { name: true, slug: true },
         }),
         this.prisma.category.findUnique({
           where: { id: row.categoryId },
@@ -1112,6 +1118,7 @@ export class AiAssistService {
         brandId: row.brandId,
         categoryId: row.categoryId,
         slug: category.slug,
+        brandSlug: brand.slug,
         count: Number(row.n),
       });
       inputs.push({
@@ -1170,45 +1177,54 @@ export class AiAssistService {
           model: answer.model,
         },
       });
-      if (isPublished) announce.push(landingPath(info.slug, info.brandId));
+      if (isPublished) announce.push(landingPath(info.slug, info.brandSlug));
     }
     await this.indexNow.enqueue(announce);
     return { result: 'done', items: inputs.length };
   }
 
-  /** Public: the published landing for a category slug + brand id, or null. */
-  async publicLanding(categorySlug: string, brandId: string) {
-    const landing = await this.prisma.brandCategoryLanding.findFirst({
-      where: { isPublished: true, brandId, category: { slug: categorySlug } },
+  /**
+   * Public: the published landing for a category slug and a brand — by slug
+   * (the pretty `/catalog/<category>/<brand>`) or by id (the old
+   * `?brands=<id>` link, which the storefront then 301s to the pretty one).
+   */
+  async publicLanding(
+    categorySlug: string,
+    brand: { slug?: string; id?: string },
+  ) {
+    if (!brand.slug && !brand.id) return null;
+    return this.prisma.brandCategoryLanding.findFirst({
+      where: {
+        isPublished: true,
+        category: { slug: categorySlug, isVisible: true },
+        brand: brand.slug ? { slug: brand.slug } : { id: brand.id },
+      },
       select: {
         h1: true,
         description: true,
         seoTitle: true,
         seoDescription: true,
+        brand: { select: { id: true, name: true, slug: true } },
       },
     });
-    return landing;
   }
 
   /** Public: every published landing — the sitemap lists them. */
-  publicLandings() {
-    return this.prisma.brandCategoryLanding
-      .findMany({
-        where: { isPublished: true, category: { isVisible: true } },
-        select: {
-          brandId: true,
-          updatedAt: true,
-          category: { select: { slug: true } },
-        },
-        orderBy: { createdAt: 'asc' },
-      })
-      .then((rows) =>
-        rows.map((row) => ({
-          categorySlug: row.category.slug,
-          brandId: row.brandId,
-          updatedAt: row.updatedAt,
-        })),
-      );
+  async publicLandings() {
+    const rows = await this.prisma.brandCategoryLanding.findMany({
+      where: { isPublished: true, category: { isVisible: true } },
+      select: {
+        updatedAt: true,
+        brand: { select: { slug: true } },
+        category: { select: { slug: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((row) => ({
+      categorySlug: row.category.slug,
+      brandSlug: row.brand.slug,
+      updatedAt: row.updatedAt,
+    }));
   }
 
   async listLandings(page = 1, published?: boolean) {
@@ -1222,7 +1238,7 @@ export class AiAssistService {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          brand: { select: { id: true, name: true } },
+          brand: { select: { id: true, name: true, slug: true } },
           category: { select: { id: true, name: true, slug: true } },
         },
       }),
@@ -1237,7 +1253,10 @@ export class AiAssistService {
   async setLandingPublished(id: string, isPublished: boolean) {
     const landing = await this.prisma.brandCategoryLanding.findUnique({
       where: { id },
-      include: { category: { select: { slug: true } } },
+      include: {
+        category: { select: { slug: true } },
+        brand: { select: { slug: true } },
+      },
     });
     if (!landing) throw new NotFoundException('Страница не найдена');
     await this.prisma.brandCategoryLanding.update({
@@ -1245,7 +1264,7 @@ export class AiAssistService {
       data: { isPublished },
     });
     await this.indexNow.enqueue([
-      landingPath(landing.category.slug, landing.brandId),
+      landingPath(landing.category.slug, landing.brand.slug),
     ]);
     return { ok: true };
   }
@@ -1426,7 +1445,13 @@ export class AiAssistService {
     options: { categoryId?: string } = {},
   ) {
     const row = await this.requireSuggestion(id);
-    if (row.status !== AiSuggestionStatus.PENDING) {
+    // A product the model could not place («Отклонённое») is still placed by
+    // hand from here, whatever the proposal's status.
+    const open =
+      row.status === AiSuggestionStatus.PENDING ||
+      (row.kind === AiSuggestionKind.CATEGORY &&
+        row.status === AiSuggestionStatus.REJECTED);
+    if (!open) {
       throw new ConflictException('Предложение уже рассмотрено');
     }
     const payload = row.payload as Record<string, unknown>;
@@ -1525,6 +1550,87 @@ export class AiAssistService {
     return this.decide(row, AiSuggestionStatus.REJECTED, by);
   }
 
+  /**
+   * «Отклонённое → Категории»: fallback products the model left unplaced or
+   * unsure — those still in the fallback — with what it proposed and the
+   * product's current state, for an admin to place by hand.
+   */
+  async listUnplaced(page = 1) {
+    const limit = 20;
+    const open = Prisma.sql`
+      FROM "AiSuggestion" s
+      JOIN "Product" p ON p.id = s."key" AND p."categoryId" = s."payload"->>'from'
+      WHERE s."kind" = 'CATEGORY' AND s."status" IN ('PENDING', 'REJECTED')`;
+    const [ids, counted] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT s.id ${open} ORDER BY s."createdAt" DESC, s.id
+        LIMIT ${limit} OFFSET ${(Math.max(1, page) - 1) * limit}`,
+      this.prisma.$queryRaw<Array<{ n: bigint }>>`SELECT count(*) AS n ${open}`,
+    ]);
+    const rows = await this.prisma.aiSuggestion.findMany({
+      where: { id: { in: ids.map((row) => row.id) } },
+    });
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: rows.map((row) => row.key) } },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        sku: true,
+        status: true,
+        brand: { select: { name: true } },
+        category: { select: { id: true, name: true } },
+        images: { orderBy: { order: 'asc' }, take: 1, select: { url: true } },
+        productSpecs: {
+          take: 6,
+          select: { value: true, specification: { select: { name: true } } },
+        },
+      },
+    });
+    const byId = new Map(products.map((product) => [product.id, product]));
+    const order = new Map(ids.map((row, index) => [row.id, index]));
+    const data = rows
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+      .map((row) => {
+        const product = byId.get(row.key)!;
+        return {
+          ...row,
+          product: product && {
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            sku: product.sku,
+            status: product.status,
+            brand: product.brand?.name ?? null,
+            category: product.category,
+            image: product.images[0]?.url ?? null,
+            specs: product.productSpecs.map(
+              (spec) => `${spec.specification.name}: ${spec.value}`,
+            ),
+          },
+        };
+      })
+      .filter((row) => row.product);
+    const total = Number(counted[0]?.n ?? 0);
+    return {
+      data,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * «Спросить ИИ ещё раз»: the proposal goes, so the job looks at the product
+   * again (the catalogue may have grown a category for it since).
+   */
+  async retry(id: string) {
+    const row = await this.requireSuggestion(id);
+    if (row.status === AiSuggestionStatus.APPLIED) {
+      throw new ConflictException('Уже применено — сначала откатите');
+    }
+    await this.prisma.aiSuggestion.delete({ where: { id } });
+    return { ok: true };
+  }
+
   /** Undoes an applied proposal where what it wrote is still there. */
   async revert(id: string, by: string | null) {
     const row = await this.requireSuggestion(id);
@@ -1611,9 +1717,9 @@ export class AiAssistService {
   }
 }
 
-/** The storefront path of a landing — the brand page's own link. */
-export function landingPath(categorySlug: string, brandId: string) {
-  return `/catalog/${categorySlug}?brands=${brandId}`;
+/** The storefront path of a landing: `/catalog/<category>/<brand>`. */
+export function landingPath(categorySlug: string, brandSlug: string) {
+  return `/catalog/${categorySlug}/${brandSlug}`;
 }
 
 function safeJson(text: string): unknown {

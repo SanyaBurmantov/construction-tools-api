@@ -36,6 +36,8 @@ const totalProducts = computed(() =>
  */
 function categoryLink(category: BrandCategory) {
   if (!brand.value?.id) return '/catalog'
+  // A written landing («Перфораторы Makita») has its own pretty address.
+  if (category.slug && category.landing && brand.value.slug) return `/catalog/${category.slug}/${brand.value.slug}`
   if (category.slug) return `/catalog/${category.slug}?brands=${brand.value.id}`
   return `/catalog?brands=${brand.value.id}&categoryId=${category.id}`
 }

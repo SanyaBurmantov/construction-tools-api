@@ -116,6 +116,17 @@ export interface BrandCategory {
   name: string
   slug?: string | null
   count: number
+  /** A published «категория + бренд» landing: link to `/catalog/<category>/<brand>`. */
+  landing?: boolean
+}
+
+/** `GET /storefront/landing`: a «категория + бренд» page's own texts. */
+export interface CatalogLanding {
+  h1: string
+  description: string
+  seoTitle: string
+  seoDescription: string
+  brand: { id: string, name: string, slug: string }
 }
 
 export interface BrandCategoriesResponse {

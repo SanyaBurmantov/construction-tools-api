@@ -18,6 +18,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   AI_FIELDS,
   buildMessages,
+  cleanValue,
   formatBlock,
   diffAnswer,
   fieldDefs,
@@ -1017,6 +1018,180 @@ export class AiService {
       await this.indexNow.enqueue([brandPath(String(current.slug))]);
     }
     return { skipped };
+  }
+
+  /* ---- «Отклонённое»: fields the checks refused ------------------------ */
+
+  /**
+   * Items with a refused field nobody has dealt with yet — what the admin's
+   * «Отклонённое» compares (current value ↔ the model's text) and lets them
+   * write by hand or dismiss.
+   */
+  async listRejected(query: { entity?: AiEntity; page?: number }) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = 20;
+    const entity = query.entity ?? null;
+    const open = Prisma.sql`
+      FROM "AiTaskItem" i JOIN "AiTask" t ON t.id = i."taskId"
+      WHERE i."rejected" IS NOT NULL
+        AND (${entity}::text IS NULL OR t."entity"::text = ${entity}::text)
+        AND EXISTS (
+          SELECT 1 FROM jsonb_object_keys(i."rejected") AS k
+          WHERE i."resolved" IS NULL OR NOT jsonb_exists(i."resolved", k))`;
+    const [ids, counted] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT i.id ${open}
+        ORDER BY i."updatedAt" DESC, i.id
+        LIMIT ${limit} OFFSET ${(page - 1) * limit}`,
+      this.prisma.$queryRaw<Array<{ n: bigint }>>`SELECT count(*) AS n ${open}`,
+    ]);
+    const items = await this.prisma.aiTaskItem.findMany({
+      where: { id: { in: ids.map((row) => row.id) } },
+      include: {
+        task: {
+          select: { id: true, name: true, entity: true, promptParts: true },
+        },
+      },
+    });
+    const order = new Map(ids.map((row, index) => [row.id, index]));
+    items.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+
+    const data = [];
+    for (const item of items) {
+      const rejected = (item.rejected ?? {}) as Record<string, string>;
+      const resolved = (item.resolved ?? {}) as Record<string, string>;
+      const keys = Object.keys(rejected).filter(
+        (key) => !resolved[key] && isKnownField(item.task.entity, key),
+      );
+      const current = await this.currentValues(
+        item.task.entity,
+        item.entityId,
+        keys,
+      );
+      const response = (item.response ?? {}) as Record<string, unknown>;
+      const phrases = quotedPhrases(
+        item.task.promptParts as PromptParts | null,
+      );
+      data.push({
+        id: item.id,
+        taskId: item.task.id,
+        taskName: item.task.name,
+        entity: item.task.entity,
+        entityId: item.entityId,
+        entityName: item.entityName,
+        slug: current ? String(current.slug) : null,
+        exists: Boolean(current),
+        updatedAt: item.updatedAt,
+        fields: keys.map((key) => {
+          const def = fieldDefs(item.task.entity, [key])[0];
+          const raw = response[key];
+          return {
+            key,
+            label: def.label,
+            maxLength: def.maxLength,
+            reason: rejected[key],
+            current:
+              current && typeof current[key] === 'string' ? current[key] : null,
+            proposed:
+              cleanValue(def, raw, phrases) ??
+              (typeof raw === 'string' ? raw : ''),
+          };
+        }),
+      });
+    }
+    const total = Number(counted[0]?.n ?? 0);
+    return {
+      data,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * The admin writes a refused field after all — the model's text as it was
+   * or as they edited it. Recorded on the item like an AI change (so the
+   * item's rollback covers it) and locked against the re-parse.
+   */
+  async applyRejected(itemId: string, field: string, value: string) {
+    const item = await this.openRejected(itemId, field);
+    const text = value.replace(/\r\n/g, '\n').trim();
+    const def = fieldDefs(item.task.entity, [field])[0];
+    if (!text) throw new BadRequestException('Пустой текст');
+    if (text.length > def.maxLength) {
+      throw new BadRequestException(`Не длиннее ${def.maxLength} символов`);
+    }
+    const announce: string[] = [];
+    await this.prisma.$transaction(async (tx) => {
+      const current = await this.currentValues(
+        item.task.entity,
+        item.entityId,
+        [field],
+        tx,
+      );
+      if (!current) throw new NotFoundException('Запись удалена');
+      const old = typeof current[field] === 'string' ? current[field] : null;
+      const changes: Record<string, FieldChange> =
+        old === text ? {} : { [field]: { old, new: text } };
+      announce.push(
+        ...(await this.applyChanges(
+          item.task.entity,
+          item.entityId,
+          changes,
+          current,
+          tx,
+        )),
+      );
+      await tx.aiTaskItem.update({
+        where: { id: item.id },
+        data: {
+          changes: {
+            ...((item.changes ?? {}) as Record<string, FieldChange>),
+            ...changes,
+          } as Prisma.InputJsonValue,
+          status:
+            Object.keys(changes).length &&
+            item.status === AiTaskItemStatus.UNCHANGED
+              ? AiTaskItemStatus.APPLIED
+              : item.status,
+          resolved: {
+            ...((item.resolved ?? {}) as Record<string, string>),
+            [field]: 'applied',
+          },
+        },
+      });
+    });
+    await this.recount(item.taskId);
+    await this.indexNow.enqueue(announce);
+    return { ok: true };
+  }
+
+  /** «Оставить как есть»: the current text stays, the refused one leaves the list. */
+  async dismissRejected(itemId: string, field: string) {
+    const item = await this.openRejected(itemId, field);
+    await this.prisma.aiTaskItem.update({
+      where: { id: item.id },
+      data: {
+        resolved: {
+          ...((item.resolved ?? {}) as Record<string, string>),
+          [field]: 'dismissed',
+        },
+      },
+    });
+    return { ok: true };
+  }
+
+  private async openRejected(itemId: string, field: string) {
+    const item = await this.prisma.aiTaskItem.findUnique({
+      where: { id: itemId },
+      include: { task: { select: { entity: true } } },
+    });
+    if (!item) throw new NotFoundException('Запись задачи не найдена');
+    const rejected = (item.rejected ?? {}) as Record<string, string>;
+    const resolved = (item.resolved ?? {}) as Record<string, string>;
+    if (!rejected[field] || !isKnownField(item.task.entity, field)) {
+      throw new BadRequestException('Это поле не отклонялось');
+    }
+    if (resolved[field]) throw new ConflictException('Уже разобрано');
+    return item;
   }
 
   /* ---- Templates and checks («Шаблоны и проверки») -------------------- */

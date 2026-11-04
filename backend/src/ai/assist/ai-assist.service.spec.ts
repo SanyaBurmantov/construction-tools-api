@@ -295,3 +295,25 @@ describe('applying proposals', () => {
     });
   });
 });
+
+describe('placing an unplaced product by hand', () => {
+  it('works from a proposal the job itself rejected, with any category', async () => {
+    const { service, suggestions, prisma } = build();
+    suggestions.push({
+      id: 'x',
+      kind: AiSuggestionKind.CATEGORY,
+      status: AiSuggestionStatus.REJECTED,
+      payload: { productId: 'p1', from: 'fallback', to: null, candidates: [] },
+    });
+    prisma.category.findUnique.mockResolvedValue({ id: 'c-any' });
+    prisma.product.findUnique.mockResolvedValue({
+      categoryId: 'fallback',
+      aiLockedFields: [],
+    });
+    await service.apply('x', 'admin', { categoryId: 'c-any' });
+    expect(prisma.product.update).toHaveBeenCalledWith({
+      where: { id: 'p1' },
+      data: { categoryId: 'c-any', aiLockedFields: ['categoryId'] },
+    });
+  });
+});
