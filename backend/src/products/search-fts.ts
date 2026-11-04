@@ -48,18 +48,60 @@ export const SEARCH_SYNONYMS: string[][] = [
   ['шлифмашин', 'шлифовальн'],
 ];
 
+type SynonymPrefix = { prefix: string; group: string[] };
+
 /** Longest first, so «углошлифовальн» wins over a shorter overlapping prefix. */
-const SYNONYM_PREFIXES = SEARCH_SYNONYMS.flatMap((group) =>
-  group.map((prefix) => ({ prefix, group })),
-).sort((a, b) => b.prefix.length - a.prefix.length);
+function synonymPrefixes(groups: string[][]): SynonymPrefix[] {
+  return groups
+    .flatMap((group) => group.map((prefix) => ({ prefix, group })))
+    .sort((a, b) => b.prefix.length - a.prefix.length);
+}
+
+const SYNONYM_PREFIXES = synonymPrefixes(SEARCH_SYNONYMS);
+
+/**
+ * A synonym group as stored (`SiteSetting search.synonyms`, accepted from the
+ * AI assistant's proposals): lower-case letters and digits, 3–30 each, two
+ * or more. Anything else is dropped — this text ends up in `to_tsquery`.
+ */
+export function cleanSynonymGroups(raw: unknown): string[][] {
+  if (!Array.isArray(raw)) return [];
+  const groups: string[][] = [];
+  for (const group of raw) {
+    if (!Array.isArray(group)) continue;
+    const words = [
+      ...new Set(
+        group
+          .filter((word): word is string => typeof word === 'string')
+          .map((word) => word.toLowerCase().replace(/ё/g, 'е').trim())
+          .filter((word) => /^[\p{L}\p{N}]{3,30}$/u.test(word)),
+      ),
+    ];
+    if (words.length >= 2) groups.push(words);
+  }
+  return groups;
+}
 
 /** Words beyond this are not worth a query term (a pasted description). */
 const MAX_WORDS = 8;
 
-function wordGroup(word: string): string[] {
-  const hit = SYNONYM_PREFIXES.find(({ prefix }) => word.startsWith(prefix));
+function wordGroup(word: string, prefixes: SynonymPrefix[]): string[] {
+  const hit = prefixes.find(({ prefix }) => word.startsWith(prefix));
   if (!hit) return [word];
   return [...new Set([word, ...hit.group])];
+}
+
+/** The code groups plus the accepted ones, memoised per list (it changes rarely). */
+let extraCache: { groups: string[][]; prefixes: SynonymPrefix[] } | null = null;
+function prefixesWith(extra: string[][]): SynonymPrefix[] {
+  if (!extra.length) return SYNONYM_PREFIXES;
+  if (extraCache?.groups !== extra) {
+    extraCache = {
+      groups: extra,
+      prefixes: synonymPrefixes([...SEARCH_SYNONYMS, ...extra]),
+    };
+  }
+  return extraCache.prefixes;
 }
 
 /**
@@ -67,7 +109,12 @@ function wordGroup(word: string): string[] {
  * searchable is left. Only letters and digits reach the query — the operators
  * are ours — so a term can never be a tsquery syntax error.
  */
-export function buildFtsQuery(term: string): string | null {
+export function buildFtsQuery(
+  term: string,
+  /** Accepted groups beyond SEARCH_SYNONYMS (`cleanSynonymGroups`). */
+  extra: string[][] = [],
+): string | null {
+  const prefixes = prefixesWith(extra);
   const words = term
     .toLowerCase()
     .replace(/ё/g, 'е')
@@ -78,7 +125,7 @@ export function buildFtsQuery(term: string): string | null {
   if (!words.length) return null;
   return [...new Set(words)]
     .map((word) => {
-      const options = wordGroup(word).map((option) => `${option}:*`);
+      const options = wordGroup(word, prefixes).map((option) => `${option}:*`);
       return options.length > 1 ? `(${options.join(' | ')})` : options[0];
     })
     .join(' & ');

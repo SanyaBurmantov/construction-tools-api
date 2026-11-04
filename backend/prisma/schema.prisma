@@ -46,19 +46,20 @@ model Category {
 
   products               Product[]
   specifications         Specification[]
-  mappedSourceCategories SourceCategory[]    @relation("MappedSourceCategory")
+  mappedSourceCategories SourceCategory[]       @relation("MappedSourceCategory")
   redirects              CategoryRedirect[]
   pricingRules           PricingRule[]
   pathAliases            CategoryPathAlias[]
+  landings               BrandCategoryLanding[]
 
   @@index([parentId])
   @@index([isVisible, sortOrder])
 }
 
 model Brand {
-  id             String        @id @default(uuid())
+  id             String                 @id @default(uuid())
   name           String
-  slug           String        @unique
+  slug           String                 @unique
   description    String?
   logo           String?
   country        String?
@@ -67,6 +68,7 @@ model Brand {
   products       Product[]
   pricingRules   PricingRule[]
   aliases        BrandAlias[]
+  landings       BrandCategoryLanding[]
 
   /// Search and suggestions match brand names with ILIKE.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin)
@@ -1303,6 +1305,10 @@ model Lead {
   trafficSource      String?
   firstTrafficSource String?
   attribution        Json?
+  /// The AI assistant's draft answer for the manager (`ai/assist`): text and
+  /// the catalogue products it suggests, `{ text, products, model }`.
+  aiDraft            Json?
+  aiDraftAt          DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
@@ -1415,4 +1421,79 @@ model ProductSimilar {
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@index([computedAt])
+}
+
+enum AiSuggestionKind {
+  /// A product in the hidden fallback category → a category of the tree.
+  CATEGORY
+  /// A search term that found nothing → a synonym group.
+  SYNONYM
+  /// Characteristics that are one filter under different names.
+  SPEC_MERGE
+  /// The model's opinion on a group in /admin/duplicates (advice only).
+  DUPLICATE
+  /// Products that are sizes of one line → «Линейка» + «Подпись варианта».
+  VARIANT
+}
+
+enum AiSuggestionStatus {
+  /// Waiting for an admin.
+  PENDING
+  APPLIED
+  REJECTED
+  /// Applied, then rolled back.
+  REVERTED
+  /// Nothing to apply: an opinion shown elsewhere (duplicates).
+  INFO
+}
+
+/// What the AI assistant (`ai/assist`) proposes. One row per thing it is
+/// about (`kind` + `key`), so a job never proposes the same thing twice and
+/// a rejected proposal stays rejected.
+model AiSuggestion {
+  id        String             @id @default(uuid())
+  kind      AiSuggestionKind
+  /// A product id, a search term, a set of spec keys, a group of products…
+  key       String
+  title     String
+  /// What to apply and what to undo it with; the shape is per kind.
+  payload   Json
+  status    AiSuggestionStatus @default(PENDING)
+  /// Applied by the job itself (a confident category), not by an admin.
+  auto      Boolean            @default(false)
+  model     String?
+  createdAt DateTime           @default(now())
+  decidedAt DateTime?
+  decidedBy String?
+
+  @@unique([kind, key])
+  @@index([kind, status, createdAt])
+}
+
+/// A landing page «<category> <brand>» — `/catalog/<category>?brands=<brand id>`,
+/// the link the brand page already gives — with its own heading, text and
+/// SEO, written by the AI assistant. Published ones are canonical and listed
+/// in the sitemap; without a row that URL stays a filtered category view.
+model BrandCategoryLanding {
+  id             String   @id @default(uuid())
+  brand          Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  brandId        String
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId     String
+  h1             String
+  description    String
+  seoTitle       String
+  seoDescription String
+  isPublished    Boolean  @default(true)
+  /// `{ field: reason }` — what the checks refused; the landing then waits unpublished.
+  rejected       Json?
+  /// Published products of the brand in the category when it was written.
+  productCount   Int      @default(0)
+  model          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([brandId, categoryId])
+  @@index([categoryId])
+  @@index([isPublished])
 }

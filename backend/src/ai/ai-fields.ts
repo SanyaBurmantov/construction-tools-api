@@ -212,6 +212,22 @@ export function parseAnswer(
   return byId;
 }
 
+/** The answer's `items` (or bare array) as records, for answers not keyed by our ids. */
+export function answerItems(content: string): Record<string, unknown>[] {
+  const json = extractJson(content);
+  const list: unknown = Array.isArray(json)
+    ? json
+    : json && typeof json === 'object'
+      ? ((json as Record<string, unknown>).items ??
+        (json as Record<string, unknown>).data)
+      : undefined;
+  if (!Array.isArray(list)) throw new Error('В ответе модели нет списка items');
+  return list.filter(
+    (entry): entry is Record<string, unknown> =>
+      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry),
+  );
+}
+
 function extractJson(content: string): unknown {
   const text = content.trim();
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);

@@ -27,6 +27,12 @@ type Lead = {
   total: number | null
   currency: string | null
   trafficSource: string | null
+  /** The AI assistant's draft answer — the manager checks it and sends it. */
+  aiDraft: {
+    text: string
+    products: Array<{ id: string, name: string, slug: string, priceValue: number | null, stockStatus: string | null }>
+    model: string
+  } | null
   createdAt: string
   user: { id: string, login: string } | null
 }
@@ -36,6 +42,26 @@ const { adminFetch } = useAdminApi()
 const { run, busy } = useAdminAction()
 const { formatPrice } = useFormatPrice()
 const { load: loadStats } = useAdminStats()
+const toast = useAppToast()
+const { siteUrl } = useSite()
+
+/** The draft with the product links, ready to paste into a reply. */
+function draftText(lead: Lead) {
+  const draft = lead.aiDraft
+  if (!draft) return ''
+  const links = draft.products.map(product =>
+    `— ${product.name}${product.priceValue != null ? `, ${formatPrice(product.priceValue, 'BYN')}` : ''}: ${siteUrl}/product/${product.slug}`)
+  return [draft.text, ...(links.length ? ['', ...links] : [])].join('\n')
+}
+
+async function copyDraft(lead: Lead) {
+  try {
+    await navigator.clipboard.writeText(draftText(lead))
+    toast.success('Черновик скопирован')
+  } catch {
+    toast.error('Не удалось скопировать — выделите текст вручную')
+  }
+}
 
 const tab = ref<LeadStatus | ''>('NEW')
 const kind = ref<'' | 'QUOTE' | 'QUESTION'>('')
@@ -165,6 +191,20 @@ const kindOptions = [
           </p>
           <p v-if="lead.message" class="message">{{ lead.message }}</p>
 
+          <details v-if="lead.aiDraft" class="draft">
+            <summary>Черновик ответа от ИИ<template v-if="lead.aiDraft.products.length"> · {{ lead.aiDraft.products.length }} тов.</template></summary>
+            <p class="draft-text">{{ lead.aiDraft.text }}</p>
+            <ul v-if="lead.aiDraft.products.length" class="draft-products">
+              <li v-for="product in lead.aiDraft.products" :key="product.id">
+                <NuxtLink :to="`/product/${product.slug}`" target="_blank">{{ product.name }}</NuxtLink>
+                <span v-if="product.priceValue != null"> · {{ formatPrice(product.priceValue, 'BYN') }}</span>
+                <span v-if="product.stockStatus === 'in_stock'" class="in-stock"> · в наличии</span>
+              </li>
+            </ul>
+            <p class="draft-note">Цены и наличие проверьте перед отправкой — ИИ их не пишет.</p>
+            <UiButton size="sm" variant="secondary" @click="copyDraft(lead)">Скопировать с ссылками</UiButton>
+          </details>
+
           <div v-if="lead.items?.length" class="quote">
             <button type="button" class="toggle" @click="expanded = expanded === lead.id ? '' : lead.id">
               {{ lead.items.length }} поз. на {{ formatPrice(lead.total ?? 0, lead.currency || 'BYN') }}
@@ -215,6 +255,41 @@ const kindOptions = [
 </template>
 
 <style scoped>
+.draft {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-size: var(--text-sm);
+  gap: var(--space-2);
+}
+
+.draft summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.draft-text {
+  white-space: pre-wrap;
+}
+
+.draft-products {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.draft-note {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.in-stock {
+  color: var(--success-soft-text);
+}
+
 /* A lead that arrived while the page was open (see leadsVersion). */
 .lead.is-fresh {
   border-color: var(--brand);

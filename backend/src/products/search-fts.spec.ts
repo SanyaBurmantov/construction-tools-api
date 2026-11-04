@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildFtsQuery, FTS_DOCUMENT_SQL, ftsDocumentSql } from './search-fts';
+import {
+  buildFtsQuery,
+  cleanSynonymGroups,
+  FTS_DOCUMENT_SQL,
+  ftsDocumentSql,
+} from './search-fts';
 
 describe('buildFtsQuery', () => {
   it('ANDs every word as a prefix — any form, any order', () => {
@@ -54,5 +59,28 @@ describe('FTS document', () => {
   it('qualifies the columns for a joined query', () => {
     expect(ftsDocumentSql('p')).toContain('p."name"');
     expect(ftsDocumentSql('p')).not.toMatch(/[^.]"sku"/);
+  });
+});
+
+describe('accepted synonym groups', () => {
+  it('extend the code groups', () => {
+    expect(buildFtsQuery('шурик', [['шурик', 'шуруповерт']])).toBe(
+      '(шурик:* | шуруповерт:*)',
+    );
+    // Without them the word stands alone.
+    expect(buildFtsQuery('шурик')).toBe('шурик:*');
+  });
+
+  it('only letters and digits of 3–30 survive, groups of two or more', () => {
+    expect(
+      cleanSynonymGroups([
+        ['Шурик', 'шуруповёрт'],
+        ['ok', 'x'],
+        ['а:*|', 'перфоратор'],
+        'nope',
+        [['nested']],
+      ]),
+    ).toEqual([['шурик', 'шуруповерт']]);
+    expect(cleanSynonymGroups(null)).toEqual([]);
   });
 });

@@ -201,11 +201,26 @@ const catalogDataKey = computed(() => `catalog-products:${route.fullPath.split('
  * largest paint for nothing.
  */
 const resultsAnimated = ref(false)
+
+/**
+ * A category filtered by exactly one brand and nothing else — the link the
+ * brand page gives — can be a landing page («Перфораторы Makita») with its
+ * own heading, text and SEO, written by the AI assistant. Without a
+ * published landing it stays a plain filtered view (canonical = category).
+ */
+type Landing = { h1: string, description: string, seoTitle: string, seoDescription: string }
+const landingBrandId = computed(() => {
+  if (!props.categorySlug || selectedBrandIds.value.length !== 1) return ''
+  const other = Object.keys(route.query).filter(key => key !== 'brands')
+  return other.length ? '' : selectedBrandIds.value[0]!
+})
+
 const [
   { data: category },
   { data: products, pending, error },
   { data: tree },
   { data: brands },
+  { data: landing },
 ] = await Promise.all([
   useAsyncData<CategoryPage | null>(
     () => `catalog-category:${props.categorySlug || ''}`,
@@ -240,6 +255,15 @@ const [
       transform: list => (Array.isArray(list) ? list : [])
         .map(brand => ({ id: brand.id, name: brand.name, slug: brand.slug }))
     }
+  ),
+  useAsyncData<Landing | null>(
+    () => `catalog-landing:${props.categorySlug || ''}:${landingBrandId.value}`,
+    () => landingBrandId.value
+      ? $fetch<Landing>(`${apiBase}/storefront/landing`, {
+          params: { category: props.categorySlug, brand: landingBrandId.value },
+        }).catch(() => null)
+      : Promise.resolve(null),
+    { default: () => null, watch: [landingBrandId] }
   ),
 ])
 
@@ -555,7 +579,9 @@ const canonicalPage = computed(() =>
   page.value > 1 && !activeFiltersCount.value && sort.value === 'default' ? page.value : 1
 )
 const pageSuffix = computed(() => (page.value > 1 ? ` — страница ${page.value}` : ''))
-const pageTitle = computed(() => (category.value
+const pageTitle = computed(() => landing.value
+  ? `${landing.value.seoTitle} | Gost.by`
+  : (category.value
   ? `${category.value.name} купить в Беларуси — цены`
   : 'Каталог инструмента и крепежа') + `${pageSuffix.value} | Gost.by`)
 /**
@@ -565,6 +591,7 @@ const pageTitle = computed(() => (category.value
  * no description, and the template says something a searcher can use.
  */
 const pageDescription = computed(() => {
+  if (landing.value) return landing.value.seoDescription
   const current = category.value
   if (!current) return 'Каталог инструментов, крепежа и расходников с фильтрами по категориям, брендам и цене.'
   const written = current.seoDescription?.trim()
@@ -578,7 +605,10 @@ const pageDescription = computed(() => {
 const listingUrl = computed(() =>
   absoluteUrl(category.value ? `/catalog/${category.value.slug}` : '/catalog'))
 const canonicalUrl = computed(() =>
-  canonicalPage.value > 1 ? `${listingUrl.value}?page=${canonicalPage.value}` : listingUrl.value
+  landing.value
+    // A landing is its own page: the brand filter is part of its address.
+    ? `${listingUrl.value}?brands=${landingBrandId.value}`
+    : canonicalPage.value > 1 ? `${listingUrl.value}?page=${canonicalPage.value}` : listingUrl.value
 )
 
 useSeoMeta({
@@ -609,7 +639,7 @@ useHead(() => ({
  * product grid.
  */
 const descriptionAll = computed(() =>
-  (category.value?.description ?? '')
+  (landing.value ? landing.value.description : category.value?.description ?? '')
     .split(/\n\s*\n|\n/)
     .map(paragraph => paragraph.trim())
     .filter(Boolean)
@@ -659,7 +689,7 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
 
     <header class="catalog-head">
       <div>
-        <h1>{{ category?.name || 'Каталог товаров' }}</h1>
+        <h1>{{ landing?.h1 || category?.name || 'Каталог товаров' }}</h1>
         <!-- The link sits outside the clamped paragraph: inside, the clamp hid
              it exactly when the text was long enough to need it. -->
         <p v-if="descriptionIntro" class="intro">{{ descriptionIntro }}</p>
@@ -845,7 +875,7 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
         <!-- The category text lives under the grid: three paragraphs above it
              pushed the products off the first screen. -->
         <section v-if="showAbout" id="category-about" class="category-about">
-          <h2>О разделе «{{ category?.name }}»</h2>
+          <h2>{{ landing ? landing.h1 : `О разделе «${category?.name}»` }}</h2>
           <p v-for="(paragraph, index) in descriptionAll" :key="index">{{ paragraph }}</p>
         </section>
       </div>

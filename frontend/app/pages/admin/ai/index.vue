@@ -3,7 +3,8 @@
  * «ИИ-тексты»: one screen for everything the AI writes. Pick rows on a tab
  * (товары / категории / бренды), tick fields, add instructions, try it on
  * one record, start a task; watch it under «Задачи»; tune the shop rules
- * and the template library under «Шаблоны и правила». The open tab is kept
+ * and the template library under «Шаблоны и правила»; let DeepSeek work on
+ * its own under «Помощник» (autopilot, categories, synonyms, lead drafts…). The open tab is kept
  * in `?tab=` so a link (and a reload) lands on it.
  */
 definePageMeta({ layout: 'admin' })
@@ -12,7 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const { status, loadStatus } = useAiStatus()
 
-const TABS = ['products', 'categories', 'brands', 'tasks', 'templates'] as const
+const TABS = ['products', 'categories', 'brands', 'tasks', 'templates', 'assist'] as const
 type Tab = typeof TABS[number]
 
 const tab = computed<Tab>({
@@ -30,6 +31,7 @@ const tabs = computed(() => [
   { value: 'brands', label: 'Бренды' },
   { value: 'tasks', label: 'Задачи', count: status.value?.activeTasks || null },
   { value: 'templates', label: 'Шаблоны и правила' },
+  { value: 'assist', label: 'Помощник' },
 ])
 
 </script>
@@ -49,6 +51,7 @@ const tabs = computed(() => [
     <AdminAiCategoriesTab v-else-if="tab === 'categories'" @created="tab = 'tasks'" />
     <AdminAiBrandsTab v-else-if="tab === 'brands'" @created="tab = 'tasks'" />
     <AdminAiTasksTab v-else-if="tab === 'tasks'" />
-    <AdminAiTemplatesTab v-else />
+    <AdminAiTemplatesTab v-else-if="tab === 'templates'" />
+    <AdminAiAssistTab v-else />
   </div>
 </template>

@@ -240,3 +240,75 @@ export function quotedPhrases(texts: string[]): string[] {
 export function hasPlaceholders(texts: string[]): boolean {
   return texts.some(text => /\[[^\]\n]{2,80}\]/.test(text))
 }
+
+/* ---- The AI assistant (`/admin/ai/assist`) ------------------------------- */
+
+export type AiAssistJobKey =
+  | 'autopilot' | 'categorize' | 'synonyms' | 'leads'
+  | 'specs' | 'duplicates' | 'landings' | 'variants'
+
+export type AiAssistJob = {
+  key: AiAssistJobKey
+  title: string
+  description: string
+  unit: string
+  settings: { enabled: boolean, daily: number, template?: string, fields?: string[] }
+  usage: {
+    day: string
+    items: number
+    requests: number
+    promptTokens: number
+    completionTokens: number
+    lastRunAt?: string
+    lastResult?: string
+  }
+}
+
+export type AiSuggestionKind = 'CATEGORY' | 'SYNONYM' | 'SPEC_MERGE' | 'DUPLICATE' | 'VARIANT'
+export type AiSuggestionStatus = 'PENDING' | 'APPLIED' | 'REJECTED' | 'REVERTED' | 'INFO'
+
+export type AiAssistOverview = {
+  enabled: boolean
+  jobs: AiAssistJob[]
+  pending: Partial<Record<AiSuggestionKind, number>>
+  autoAppliedCategories: number
+  landings: { published: number, unpublished: number }
+  presets: Array<{ id: string, title: string }>
+}
+
+export type AiSuggestion = {
+  id: string
+  kind: AiSuggestionKind
+  key: string
+  title: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the shape is per kind; each view reads its own
+  payload: Record<string, any>
+  status: AiSuggestionStatus
+  auto: boolean
+  model: string | null
+  createdAt: string
+  decidedAt: string | null
+  decidedBy: string | null
+}
+
+export type AiLanding = {
+  id: string
+  h1: string
+  description: string
+  seoTitle: string
+  seoDescription: string
+  isPublished: boolean
+  rejected: Record<string, string> | null
+  productCount: number
+  updatedAt: string
+  brand: { id: string, name: string }
+  category: { id: string, name: string, slug: string }
+}
+
+/** A verdict on a /admin/duplicates group, keyed `signal:key`. */
+export type AiDuplicateVerdict = {
+  productIds: string[]
+  verdict: 'same' | 'different' | 'unsure'
+  reason: string
+  at: string
+}

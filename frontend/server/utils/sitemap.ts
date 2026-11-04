@@ -39,6 +39,8 @@ export type SitemapSnapshot = {
   /** Sorted by slug, so a product stays in the same chunk between snapshots. */
   products: Array<{ slug: string, lastmod?: string }>
   categories: string[]
+  /** Published «категория + бренд» landings: `<category slug>?brands=<brand id>`. */
+  landings: Array<{ path: string, lastmod?: string }>
   fetchedAt: number
 }
 
@@ -60,9 +62,15 @@ async function fetchSnapshot(): Promise<SitemapSnapshot> {
   const apiBase = String(config.apiBaseServer).replace(/\/$/, '')
 
   // No `?depth=`: the full tree is what the sitemap needs.
-  const [products, categories] = await Promise.all([
+  const [products, categories, landings] = await Promise.all([
     $fetch<ProductEntry[]>(`${apiBase}/products/sitemap`, { timeout: FETCH_TIMEOUT_MS }),
     $fetch<CategoryTreeNode[]>(`${apiBase}/categories/tree`, { timeout: FETCH_TIMEOUT_MS }),
+    // Additive: without the landings the sitemap is still complete for what
+    // it always listed, so their failure is not an outage.
+    $fetch<Array<{ categorySlug: string, brandId: string, updatedAt?: string }>>(
+      `${apiBase}/storefront/landings`,
+      { timeout: FETCH_TIMEOUT_MS },
+    ).catch(() => []),
   ])
 
   if (!Array.isArray(products) || !Array.isArray(categories)) {
@@ -75,6 +83,12 @@ async function fetchSnapshot(): Promise<SitemapSnapshot> {
       .map(product => ({ slug: product.slug, lastmod: toLastmod(product.lastmod ?? product.updatedAt) }))
       .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)),
     categories: [...new Set(flattenCategories(categories).filter(Boolean))],
+    landings: (Array.isArray(landings) ? landings : [])
+      .filter(landing => landing.categorySlug && /^[0-9a-f-]{36}$/i.test(landing.brandId))
+      .map(landing => ({
+        path: `${landing.categorySlug}?brands=${landing.brandId}`,
+        lastmod: toLastmod(landing.updatedAt),
+      })),
     fetchedAt: Date.now(),
   }
 }
@@ -127,7 +141,10 @@ export function staticUrls(origin: string): SitemapUrl[] {
 }
 
 export function categoryUrls(origin: string, data: SitemapSnapshot): SitemapUrl[] {
-  return data.categories.map(slug => ({ loc: `${origin}/catalog/${slug}` }))
+  return [
+    ...data.categories.map(slug => ({ loc: `${origin}/catalog/${slug}` })),
+    ...data.landings.map(landing => ({ loc: `${origin}/catalog/${landing.path}`, lastmod: landing.lastmod })),
+  ]
 }
 
 /** `page` is 1-based; an out-of-range page is an empty list. */
