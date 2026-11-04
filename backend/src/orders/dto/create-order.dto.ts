@@ -12,6 +12,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Max,
   Min,
   ValidateNested,
@@ -161,6 +162,17 @@ export class CreateOrderDto {
   @IsNumber()
   @Min(0)
   expectedItemsTotal?: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Ключ попытки оформления (UUID): повтор с тем же ключом вернёт уже созданный заказ',
+  })
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @Matches(/^[A-Za-z0-9-]{16,64}$/)
+  idempotencyKey?: string;
 
   @ApiProperty({
     required: false,

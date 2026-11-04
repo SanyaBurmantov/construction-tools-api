@@ -454,10 +454,21 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   parser alerts, new kinds of 5xx (`ErrorLogService`: one per failure per
   hour, ≤10/h) and the host watchdog go to `TELEGRAM_ALERT_THREAD_ID`
   (optionally another chat, `TELEGRAM_ALERT_CHAT_ID`). The send goes through `fetchWithTimeout` like
-  every other outbound call (hard timeout, one retry, `Retry-After`) and is
-  fire-and-forget **with an explicit `.catch()`** — the order is already
-  committed at that point, so a Telegram outage must never fail the request,
-  hang it, or crash the process on an unhandled rejection. `axios` is gone from
+  every other outbound call (hard timeout, one retry, `Retry-After`).
+  **Order notifications go through a transactional outbox**
+  (`OutboxMessage`, `orders/order-notifications.service.ts`): Telegram, the
+  shop letter and the customer's letter are written *in the order's
+  transaction*, the API tries them right after the commit (fire-and-forget,
+  never throws — a Telegram outage must never fail or hang the request), and
+  the worker sweeps what is still pending every 30 s with backoff
+  (1/5/15/60/180 min, then `FAILED`); a lease claim (`FOR UPDATE SKIP
+  LOCKED`) keeps the two from sending twice. A restart between commit and
+  send used to lose them. The message is rebuilt from the stored order at
+  send time. **Checkout is idempotent**: the storefront sends one
+  `idempotencyKey` per attempt (`utils/checkout-attempt.ts`, sessionStorage
+  until the order is confirmed) and a repeated `POST /orders` with it
+  answers the order already created (`Order.idempotencyKey` unique; a key
+  replayed from another account is a 409). `axios` is gone from
   the backend entirely; don't bring it back for one POST. Customer-supplied text is HTML-escaped (the message uses
   `parse_mode: HTML`). `PUBLIC_ORIGIN` adds a deep link to the order in admin.
 - **E-mail** (`notifications/mail.service.ts`, nodemailer over the hosting

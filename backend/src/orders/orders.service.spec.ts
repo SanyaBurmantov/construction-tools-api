@@ -6,6 +6,11 @@ import { PromoService } from '../promo/promo.service';
 import { MailService } from '../notifications/mail.service';
 import { TelegramService } from '../notifications/telegram.service';
 import { ServerCartService } from '../cart/server-cart.service';
+import {
+  OrderNotificationsService,
+  OUTBOX_MAX_ATTEMPTS,
+  outboxAfterAttempt,
+} from './order-notifications.service';
 import { PromoCode, PromoCodeType } from '@prisma/client';
 import type { PayerAccount } from './order-payer';
 
@@ -48,21 +53,48 @@ function buildService(
   /** Orders to the customer's address in the last 24 h, this one included. */
   recentOrdersToAddress = 1,
 ) {
+  const created: Array<Record<string, unknown>> = [];
   const createMock = jest.fn((args: { data: unknown }) => {
     const data = args.data as { items?: { create?: unknown[] } };
     // `include: { items: true }` hands the created lines back as an array.
-    return {
-      id: 'order-1',
-      number: 1,
+    const order = {
+      id: `order-${created.length + 1}`,
+      number: created.length + 1,
       ...(args.data as object),
       items: data.items?.create ?? [],
     };
+    created.push(order);
+    return order;
   });
+  // The outbox, in memory: enqueue writes rows, the claim hands back the
+  // pending ones, an attempt updates them.
+  type Row = {
+    id: string;
+    kind: string;
+    payload: { orderId: string };
+    status: string;
+    attempts: number;
+  };
+  const outbox: Row[] = [];
   // The conditional "claim one use" UPDATE; 1 row = the code had a use left.
   const promoUpdateMock = jest.fn(() => Promise.resolve(1));
   const tx = {
     order: { create: createMock },
     $executeRaw: promoUpdateMock,
+    outboxMessage: {
+      createMany: jest.fn(
+        (args: { data: Array<Pick<Row, 'kind' | 'payload'>> }) => {
+          for (const row of args.data)
+            outbox.push({
+              id: `m${outbox.length + 1}`,
+              status: 'PENDING',
+              attempts: 0,
+              ...row,
+            });
+          return { count: args.data.length };
+        },
+      ),
+    },
   };
   const prisma = {
     product: {
@@ -71,6 +103,33 @@ function buildService(
     order: {
       create: createMock,
       count: jest.fn(() => Promise.resolve(recentOrdersToAddress)),
+      findUnique: jest.fn(
+        (args: { where: { id?: string; idempotencyKey?: string } }) =>
+          Promise.resolve(
+            created.find((o) =>
+              args.where.id
+                ? o.id === args.where.id
+                : o.idempotencyKey === args.where.idempotencyKey,
+            ) ?? null,
+          ),
+      ),
+    },
+    $queryRaw: jest.fn(() => {
+      const claimed = outbox.filter((m) => m.status === 'PENDING');
+      for (const m of claimed) {
+        m.status = 'CLAIMED';
+        m.attempts += 1;
+      }
+      return Promise.resolve(claimed.map((m) => ({ ...m })));
+    }),
+    outboxMessage: {
+      update: jest.fn(
+        (args: { where: { id: string }; data: { status: string } }) => {
+          const row = outbox.find((m) => m.id === args.where.id)!;
+          row.status = args.data.status;
+          return Promise.resolve(row);
+        },
+      ),
     },
     promoCode: {
       findUnique: jest.fn(() => Promise.resolve(promoCode ?? null)),
@@ -98,19 +157,38 @@ function buildService(
   const mailMock = jest.fn(() => Promise.resolve(true));
   const customerMailMock = jest.fn(() => Promise.resolve(true));
   const mail = {
+    enabled: true,
     sendToAdmins: mailMock,
     send: customerMailMock,
   } as unknown as MailService;
+  const notifications = new OrderNotificationsService(prisma, telegram, mail);
 
   return {
-    service: new OrdersService(prisma, promo, telegram, serverCart, mail),
+    service: new OrdersService(prisma, promo, serverCart, notifications),
+    outbox,
+    createMock,
     mailMock,
     customerMailMock,
-    createMock,
     promoUpdateMock,
     notifyMock,
     clearCartMock,
   };
+}
+
+const drillRow: ProductRow = {
+  id: 'p1',
+  name: 'Дрель',
+  slug: 'drel',
+  status: 'PUBLISHED',
+  priceValue: 10,
+  priceCurrency: 'BYN',
+  images: [],
+};
+
+/** Lets the fire-and-forget delivery after the commit run to its end. */
+async function settle() {
+  for (let i = 0; i < 20; i++)
+    await new Promise((resolve) => setImmediate(resolve));
 }
 
 const baseCustomer = {
@@ -492,9 +570,9 @@ describe('OrdersService.createOrder', () => {
       items: [{ productId: 'p1', quantity: 1 }],
     });
 
+    // Delivered off the request path, right after the commit.
+    await settle();
     expect(notifyMock).toHaveBeenCalledTimes(1);
-    // The letter is composed on the next tick, off the request path.
-    await new Promise((resolve) => setImmediate(resolve));
     expect(mailMock).toHaveBeenCalledTimes(1);
     const [letter] = mailMock.mock.calls[0] as unknown as [
       { subject: string; text: string },
@@ -506,17 +584,7 @@ describe('OrdersService.createOrder', () => {
   // The order is already committed by the time we notify, so a failing
   // notification must never surface as a failed order.
   it('still returns the order when the Telegram notification fails', async () => {
-    const { service, notifyMock } = buildService([
-      {
-        id: 'p1',
-        name: 'Дрель',
-        slug: 'drel',
-        status: 'PUBLISHED',
-        priceValue: 10,
-        priceCurrency: 'BYN',
-        images: [],
-      },
-    ]);
+    const { service, notifyMock, outbox } = buildService([drillRow]);
     notifyMock.mockRejectedValueOnce(new Error('telegram is down') as never);
 
     await expect(
@@ -526,6 +594,59 @@ describe('OrdersService.createOrder', () => {
         items: [{ productId: 'p1', quantity: 1 }],
       }),
     ).resolves.toMatchObject({ id: 'order-1' });
+    // …and the failed send waits in the outbox for the worker's retry.
+    await settle();
+    expect(outbox.find((m) => m.kind === 'order.telegram')?.status).toBe(
+      'PENDING',
+    );
+  });
+
+  it('writes the notifications in the order transaction and marks them sent', async () => {
+    const { service, outbox } = buildService([drillRow]);
+    await service.createOrder({
+      ...baseCustomer,
+      customerEmail: 'buyer@example.by',
+      deliveryMethod: 'PICKUP',
+      items: [{ productId: 'p1', quantity: 1 }],
+    });
+    expect(outbox.map((m) => m.kind).sort()).toEqual([
+      'order.mail.admins',
+      'order.mail.customer',
+      'order.telegram',
+    ]);
+    await settle();
+    expect(outbox.every((m) => m.status === 'SENT')).toBe(true);
+  });
+
+  // A lost response, a double click: the retry carries the same key.
+  it('answers a repeated checkout attempt with the order it already created', async () => {
+    const { service, createMock, notifyMock } = buildService([drillRow]);
+    const attempt = {
+      ...baseCustomer,
+      deliveryMethod: 'PICKUP' as const,
+      items: [{ productId: 'p1', quantity: 1 }],
+      idempotencyKey: '0b8e3a52-4c1f-4f7e-9d43-3c1f5e9a7a10',
+    };
+    const first = await service.createOrder(attempt);
+    const second = await service.createOrder(attempt);
+    expect(second.id).toBe(first.id);
+    expect(createMock).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a key replayed from another account', async () => {
+    const { service } = buildService([drillRow]);
+    const attempt = {
+      ...baseCustomer,
+      deliveryMethod: 'PICKUP' as const,
+      items: [{ productId: 'p1', quantity: 1 }],
+      idempotencyKey: '0b8e3a52-4c1f-4f7e-9d43-3c1f5e9a7a10',
+    };
+    await service.createOrder(attempt, 'user-a');
+    await expect(service.createOrder(attempt, 'user-b')).rejects.toThrow(
+      ConflictException,
+    );
   });
 
   // Supplier prices drift daily, so an order must never quietly cost more
@@ -840,7 +961,7 @@ describe('OrdersService.createOrder — payer', () => {
       deliveryMethod: 'PICKUP',
       items: [{ productId: 'p1', quantity: 1 }],
     });
-    await new Promise((resolve) => setImmediate(resolve));
+    await settle();
     expect(customerMailMock).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'buyer@example.by' }),
       expect.any(String),
@@ -862,9 +983,36 @@ describe('OrdersService.createOrder — payer', () => {
       deliveryMethod: 'PICKUP',
       items: [{ productId: 'p1', quantity: 1 }],
     });
-    await new Promise((resolve) => setImmediate(resolve));
+    await settle();
     expect(customerMailMock).not.toHaveBeenCalled();
     // The shop still hears about the order.
     expect(mailMock).toHaveBeenCalled();
+  });
+});
+
+describe('outboxAfterAttempt', () => {
+  const now = new Date('2026-11-04T10:00:00Z');
+
+  it('retries a failed send later, then gives up', () => {
+    const first = outboxAfterAttempt('failed', 1, now, 'down');
+    expect(first.status).toBe('PENDING');
+    expect((first.nextAttemptAt as Date).getTime() - now.getTime()).toBe(
+      60_000,
+    );
+    const fourth = outboxAfterAttempt('failed', 4, now);
+    expect((fourth.nextAttemptAt as Date).getTime() - now.getTime()).toBe(
+      60 * 60_000,
+    );
+    expect(outboxAfterAttempt('failed', OUTBOX_MAX_ATTEMPTS, now).status).toBe(
+      'FAILED',
+    );
+  });
+
+  it('closes a sent or skipped message', () => {
+    expect(outboxAfterAttempt('sent', 1, now)).toMatchObject({
+      status: 'SENT',
+      sentAt: now,
+    });
+    expect(outboxAfterAttempt('skipped', 1, now).status).toBe('SKIPPED');
   });
 });

@@ -124,12 +124,15 @@ async function submit() {
         promoCode: promo.appliedCode.value || undefined,
         expectedItemsTotal: cart.totalPrice,
         attribution: getAttribution(),
+        // Same key on a retry → the order already created, not a second one.
+        idempotencyKey: checkoutAttemptKey(),
       },
     })
     cart.clear()
     promo.clear()
     open.value = false
     // The id never enters the URL — analytics records URLs (utils/private-query.ts).
+    finishCheckoutAttempt()
     stashPrivateParam('/checkout/success', 'id', order.id)
     await navigateTo('/checkout/success')
   } catch (err) {

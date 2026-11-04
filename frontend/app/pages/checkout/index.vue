@@ -232,6 +232,8 @@ async function submit() {
           : {}),
         promoCode: promo.appliedCode.value || undefined,
         attribution: getAttribution(),
+        // Same key on a retry → the order already created, not a second one.
+        idempotencyKey: checkoutAttemptKey(),
         // Lets the API refuse the order rather than charge a total the
         // customer never saw.
         expectedItemsTotal: cart.totalPrice,
@@ -241,6 +243,7 @@ async function submit() {
     cart.clear()
     promo.clear()
     // The id never enters the URL — analytics records URLs (utils/private-query.ts).
+    finishCheckoutAttempt()
     stashPrivateParam('/checkout/success', 'id', order.id)
     await navigateTo('/checkout/success')
   } catch (error) {

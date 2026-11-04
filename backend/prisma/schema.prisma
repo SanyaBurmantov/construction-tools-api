@@ -491,6 +491,11 @@ enum PaymentMethod {
 model Order {
   id                 String         @id @default(uuid())
   number             Int            @unique @default(autoincrement())
+  /// Idempotency key of the checkout attempt (the storefront makes one per
+  /// submit and re-sends it on a retry): a second POST /orders with the same
+  /// key answers the order already created instead of creating another — a
+  /// lost response used to cost the customer a duplicate order.
+  idempotencyKey     String?        @unique
   status             OrderStatus    @default(NEW)
   /// Set only when the order was placed from a signed-in account — guest
   /// checkout stays the default, so this is null for most rows. It is what
@@ -1334,4 +1339,39 @@ model SearchEvent {
 
   @@index([createdAt])
   @@index([term, createdAt])
+}
+
+enum OutboxStatus {
+  PENDING
+  SENT
+  /// Nothing to send: the channel is not configured, or a rule said no (the
+  /// customer letter cap).
+  SKIPPED
+  /// Gave up after OUTBOX_MAX_ATTEMPTS.
+  FAILED
+}
+
+/// Transactional outbox (orders/order-notifications.service.ts). A
+/// notification is written in the same transaction as the order it announces
+/// and delivered afterwards with retries — the API tries at once, the worker
+/// picks up what is still pending. Before, the sends ran from the API's memory
+/// after the commit, so a restart at that moment lost them while the order
+/// stayed (audit 2026-11-03).
+model OutboxMessage {
+  id            String       @id @default(uuid())
+  /// order.telegram | order.mail.admins | order.mail.customer
+  kind          String
+  /// { orderId } — what the dispatcher needs to rebuild the message from the DB.
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  nextAttemptAt DateTime     @default(now())
+  /// Lease of whoever is sending it (API or worker), so nobody sends twice.
+  lockedUntil   DateTime?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  sentAt        DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
 }
