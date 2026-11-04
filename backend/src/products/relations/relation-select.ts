@@ -38,6 +38,8 @@ export const SIMILARITY_SELECT = {
   ...RECOMMENDATION_CARD_SELECT,
   brandId: true,
   categoryId: true,
+  // Whether a stored «Похожие» row predates the product's last text change.
+  contentUpdatedAt: true,
   productSpecs: {
     where: {
       valueNorm: { not: null },

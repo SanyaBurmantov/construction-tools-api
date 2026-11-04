@@ -24,6 +24,15 @@ const PAGE_SIZE = 12;
 // Each candidate brings its specs: 120 of them per product page, times a
 // cold-cache crawl after a deploy, ran the 256 MB API out of heap twice.
 const CANDIDATE_LIMIT = 48;
+/**
+ * «Похожие» computed ahead (ProductSimilar). Bump the version whenever the
+ * similarity rules change — every stored row is then recomputed.
+ */
+export const SIMILAR_RULE_VERSION = 2;
+export const SIMILAR_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+/** More than a row, so products going off sale still leave a full one. */
+const SIMILAR_STORED = 24;
+type SimilarEntry = { id: string; tier: number };
 /** A name with no kind joins «Похожие» only when it reads this much alike. */
 const UNKNOWN_KIND_MIN_TITLE = 0.4;
 /** Recommendations computed at once; the rest wait (bounded) or get a 503. */
@@ -553,6 +562,73 @@ export class RecommendationsService {
    * and only when those really read alike.
    */
   private async similar(product: SimilarityRow, familyKey?: string | null) {
+    return this.similarCards(
+      product,
+      await this.similarEntries(product, familyKey),
+    );
+  }
+
+  /**
+   * The ranked «Похожие» of a product: the stored row when it is usable
+   * (same rule version, younger than SIMILAR_TTL_MS, newer than the
+   * product's last text change), else computed now and stored — so the
+   * worker's pass and every product view keep each other's work.
+   */
+  private async similarEntries(
+    product: SimilarityRow,
+    familyKey: string | null | undefined,
+    options: { fresh?: boolean } = {},
+  ): Promise<SimilarEntry[]> {
+    if (!options.fresh) {
+      const stored = await this.prisma.productSimilar.findUnique({
+        where: { productId: product.id },
+      });
+      if (
+        stored &&
+        stored.ruleVersion === SIMILAR_RULE_VERSION &&
+        Date.now() - stored.computedAt.getTime() < SIMILAR_TTL_MS &&
+        stored.computedAt >= product.contentUpdatedAt
+      ) {
+        return stored.entries as SimilarEntry[];
+      }
+    }
+    const entries = await this.computeSimilarEntries(product, familyKey);
+    const data = {
+      entries,
+      ruleVersion: SIMILAR_RULE_VERSION,
+      computedAt: new Date(),
+    };
+    // Storing is a bonus: a failure costs a recomputation next time.
+    await this.prisma.productSimilar
+      .upsert({
+        where: { productId: product.id },
+        create: { productId: product.id, ...data },
+        update: data,
+      })
+      .catch(() => undefined);
+    return entries;
+  }
+
+  /**
+   * For the worker (SimilarRefreshService): recompute and store one
+   * product's «Похожие». False when the product is gone or not on sale.
+   */
+  async refreshSimilar(productId: string): Promise<boolean> {
+    const product = await this.prisma.product.findFirst({
+      where: { id: productId, status: 'PUBLISHED' },
+      select: SIMILARITY_SELECT,
+    });
+    if (!product) return false;
+    const family = await this.familyRow(product);
+    await this.similarEntries(product, family.familyKey, { fresh: true });
+    return true;
+  }
+
+  /** The ranking itself — no availability, no cards (those are live). */
+  private async computeSimilarEntries(
+    product: SimilarityRow,
+    familyKey?: string | null,
+  ): Promise<SimilarEntry[]> {
     // Other sizes of the same line are the variant switch's job; here they
     // crowded out real alternatives (audit 2026-10-30).
     const otherLine = familyKey
@@ -615,11 +691,39 @@ export class RecommendationsService {
       }
     }
 
-    // In stock first, then — for a cordless tool — the same battery
-    // platform: an alternative the buyer's batteries do not fit is a lesser
-    // one. Within a tier only: availability never lifts a less similar
-    // item over a more similar one from a better tier.
-    const ordered = tiers.flat();
+    const seen = new Set<string>();
+    return tiers
+      .flatMap((tier, tierIndex) =>
+        tier.map((candidate) => ({ id: candidate.id, tier: tierIndex })),
+      )
+      .filter(({ id }) => (seen.has(id) ? false : (seen.add(id), true)))
+      .slice(0, SIMILAR_STORED);
+  }
+
+  /**
+   * Live cards for stored entries: only what is on sale with a price right
+   * now, in stock first, then — for a cordless tool — the same battery
+   * platform: an alternative the buyer's batteries do not fit is a lesser
+   * one. Within a tier only: availability never lifts a less similar item
+   * over a more similar one from a better tier.
+   */
+  private async similarCards(product: SimilarityRow, entries: SimilarEntry[]) {
+    if (!entries.length) return [];
+    const rows = await this.prisma.product.findMany({
+      where: {
+        id: { in: entries.map((entry) => entry.id) },
+        status: 'PUBLISHED',
+        priceValue: { gt: 0 },
+      },
+      select: RECOMMENDATION_CARD_SELECT,
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const ordered = entries
+      .map((entry, index) => ({ ...entry, index, card: byId.get(entry.id) }))
+      .filter(
+        (entry): entry is typeof entry & { card: (typeof rows)[number] } =>
+          entry.card !== undefined,
+      );
     const platforms = await this.prisma.productFitment.findMany({
       where: {
         productId: { in: [product.id, ...ordered.map((c) => c.id)] },
@@ -635,25 +739,18 @@ export class RecommendationsService {
         .filter((t) => t.productId !== product.id && ownPlatforms.has(t.key))
         .map((t) => t.productId),
     );
-    const availability = (candidate: (typeof ordered)[number]) =>
-      (candidate.stockStatus === 'in_stock' ? 0 : 2) +
-      (ownPlatforms.size && !samePlatform.has(candidate.id) ? 1 : 0);
-    const seen = new Set<string>();
-    return tiers
-      .flatMap((tier, tierIndex) =>
-        tier.map((candidate, index) => ({ candidate, tierIndex, index })),
-      )
-      .filter(({ candidate }) =>
-        seen.has(candidate.id) ? false : (seen.add(candidate.id), true),
-      )
+    const availability = (entry: (typeof ordered)[number]) =>
+      (entry.card.stockStatus === 'in_stock' ? 0 : 2) +
+      (ownPlatforms.size && !samePlatform.has(entry.id) ? 1 : 0);
+    return ordered
       .sort(
         (a, b) =>
-          a.tierIndex - b.tierIndex ||
-          availability(a.candidate) - availability(b.candidate) ||
+          a.tier - b.tier ||
+          availability(a) - availability(b) ||
           a.index - b.index,
       )
       .slice(0, PAGE_SIZE)
-      .map(({ candidate }) => recommendationCard(candidate));
+      .map(({ card }) => recommendationCard(card));
   }
 
   async compatible(

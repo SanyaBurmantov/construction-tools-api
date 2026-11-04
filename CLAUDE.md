@@ -1034,7 +1034,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   tier. **Relevance over a full row** (owner, 2026-11-04): another kind never
   fills the gaps — the old «never empty» filler made 44% of the row another
   kind (window handles beside key tags); a short row or none is right, the
-  storefront hides an empty block.
+  storefront hides an empty block. The ranking is **computed ahead**
+  (`ProductSimilar`, `relations/similar-refresh.service.ts`, worker, 40
+  products / 30 s): only the ranked ids are stored — cards, prices and stock
+  are read live, so a stored row cannot show an old price; a row is redone
+  after 3 days, when the product's text changes, or when
+  `SIMILAR_RULE_VERSION` is bumped (do that whenever the similarity rules
+  change). A page with no usable row computes and stores it itself. It was
+  the costliest query of a product page (~1100 s of DB a day, crawlers).
   «Аксессуары» / «Подходит для» read one table, `ProductCompatibility`
   (accessory → tool), built by `CompatibilityRefreshService` in the worker —
   200 products / 30 s, a full pass ≈ 3.6 h, no button. Only an explicit

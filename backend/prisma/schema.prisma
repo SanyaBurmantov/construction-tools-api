@@ -227,6 +227,7 @@ model Product {
   fitsProducts          ProductCompatibility[] @relation("CompatibleAccessory")
   fitments              ProductFitment[]
   family                ProductFamily?
+  similar               ProductSimilar?
   /// «Линейка» set by an admin: products of one brand with the same line are
   /// one size switch whatever their names; «—» keeps a product out of any.
   /// Parsers never write it.
@@ -1374,4 +1375,21 @@ model OutboxMessage {
 
   @@index([status, nextAttemptAt])
   @@index([createdAt])
+}
+
+/// «Похожие» computed ahead (products/relations/similar-refresh.service.ts):
+/// the ranked ids only — cards, prices and stock are read live at show time,
+/// so a stored row can never show an old price. Recomputed by the worker
+/// every SIMILAR_TTL, when the product's text changed (contentUpdatedAt), or
+/// when SIMILAR_RULE_VERSION moves; a product page with no usable row
+/// computes it on the spot and stores it.
+model ProductSimilar {
+  productId   String   @id
+  /// [{ id, tier }]: similarity order; tier 0 = own category, 1 = elsewhere.
+  entries     Json
+  ruleVersion Int
+  computedAt  DateTime @default(now())
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([computedAt])
 }

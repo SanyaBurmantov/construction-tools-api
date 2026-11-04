@@ -9,6 +9,7 @@ import {
   RecommendationsController,
 } from './relations/recommendations.controller';
 import { RecommendationsService } from './relations/recommendations.service';
+import { SimilarRefreshService } from './relations/similar-refresh.service';
 @Module({
   providers: [
     ProductService,
@@ -16,6 +17,7 @@ import { RecommendationsService } from './relations/recommendations.service';
     FacetsWarmupService,
     CompatibilityRefreshService,
     RecommendationsService,
+    SimilarRefreshService,
   ],
   controllers: [
     ProductController,
