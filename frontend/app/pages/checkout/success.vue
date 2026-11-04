@@ -32,7 +32,6 @@ type OrderConfirmation = Pick<
   >
 }
 
-const route = useRoute()
 const config = useRuntimeConfig()
 const { formatPrice } = useFormatPrice()
 // Orders placed from an account show up in its history — point there instead
@@ -42,10 +41,13 @@ const { loadSeller, invoiceUrl, isInvoiceable } = useB2b()
 const invoiceReady = ref(false)
 
 // Order ids are UUIDs; nothing else is worth a request.
-const orderId = computed(() => {
-  const id = String(route.query.id || '')
-  return /^[0-9a-f-]{36}$/i.test(id) ? id : ''
-})
+// Read once and dropped from the address bar (utils/private-query.ts): the
+// UUID opens the order, and analytics records every URL it sees.
+const orderId = ref('')
+function readOrderId() {
+  const id = takePrivateParam('id')
+  orderId.value = /^[0-9a-f-]{36}$/i.test(id) ? id : ''
+}
 const order = ref<OrderConfirmation | null>(null)
 const pending = ref(true)
 const failed = ref(false)
@@ -68,7 +70,10 @@ async function loadOrder() {
   }
 }
 
-onMounted(loadOrder)
+onMounted(() => {
+  readOrderId()
+  loadOrder()
+})
 
 useHead({
   title: 'Заказ оформлен | Gost.by',

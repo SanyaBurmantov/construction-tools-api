@@ -240,7 +240,9 @@ async function submit() {
     rememberRequisites()
     cart.clear()
     promo.clear()
-    await navigateTo({ path: '/checkout/success', query: { id: order.id } })
+    // The id never enters the URL — analytics records URLs (utils/private-query.ts).
+    stashPrivateParam('/checkout/success', 'id', order.id)
+    await navigateTo('/checkout/success')
   } catch (error) {
     const status
       = (error as { statusCode?: number }).statusCode
