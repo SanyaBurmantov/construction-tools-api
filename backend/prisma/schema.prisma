@@ -1139,6 +1139,7 @@ model AdminActionLog {
 enum AiEntity {
   PRODUCT
   CATEGORY
+  BRAND
 }
 
 enum AiTaskStatus {
@@ -1165,13 +1166,18 @@ enum AiTaskItemStatus {
 /// Reusable instruction for an AI task. The task keeps its own copy of the
 /// text, so editing a prompt never rewrites what an old task did.
 model AiPrompt {
-  id        String   @id @default(uuid())
-  name      String
-  entity    AiEntity
-  text      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tasks     AiTask[]
+  id         String   @id @default(uuid())
+  name       String
+  entity     AiEntity
+  /// The general instruction.
+  text       String
+  /// Fields the template is meant for (ticked when it is picked).
+  fields     String[] @default([])
+  /// `{ field: instruction }` — what to do with each field.
+  fieldTexts Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tasks      AiTask[]
 
   @@index([entity])
 }
@@ -1187,6 +1193,9 @@ model AiTask {
   promptId         String?
   /// Snapshot of the instruction at creation time.
   promptText       String
+  /// The admin's own part of it, `{ general, fields: { key: text } }`:
+  /// phrases quoted there pass the checks verbatim (ai-phrases.ts).
+  promptParts      Json?
   model            String
   /// Entities per model request — the free tier counts requests, not tokens.
   batchSize        Int          @default(5)

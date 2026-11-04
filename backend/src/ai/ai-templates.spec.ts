@@ -1,4 +1,7 @@
 import {
+  composeInstruction,
+  instructionBlocks,
+  taskBlock,
   categoryInstruction,
   nameHead,
   productInstruction,
@@ -106,5 +109,72 @@ describe('instructions', () => {
     expect(text).toMatch(/оплата по безналу для организаций/);
     expect(text).toMatch(/только факты из входных данных/);
     expect(categoryInstruction()).toMatch(/оплата по безналу для организаций/);
+  });
+});
+
+describe('instruction blocks', () => {
+  const template = productTemplate({
+    name: 'Анкер клиновой',
+    categoryPath: '',
+  });
+
+  it('rules, the kind guide, then the task block — each under its heading', () => {
+    const blocks = instructionBlocks({
+      entity: 'PRODUCT',
+      templates: true,
+      template,
+      parts: {
+        general: 'Пиши для закупщика.',
+        fields: { seoTitle: 'В конце «купить в Минске»' },
+      },
+      fields: ['seoTitle'],
+    });
+    expect(blocks.map((block) => block.kind)).toEqual([
+      'rules',
+      'guide',
+      'task',
+    ]);
+    const text = composeInstruction(blocks);
+    expect(text).toMatch(/^### Правила магазина\n/);
+    expect(text).toMatch(/### Вид товара: Крепёж/);
+    expect(text).toMatch(/### Требования этой задачи\nПиши для закупщика\./);
+    expect(text).toMatch(
+      /- "seoTitle" \(SEO title\): В конце «купить в Минске»/,
+    );
+    // The admin's word wins over the shop rules, said in so many words.
+    expect(text).toMatch(/важнее правил магазина/);
+  });
+
+  it('a field instruction for a field the task does not write is left out', () => {
+    const block = taskBlock(
+      'PRODUCT',
+      { fields: { seoTitle: 'x y', descriptionFull: 'a b' } },
+      ['seoTitle'],
+    );
+    expect(block?.text).toMatch(/seoTitle/);
+    expect(block?.text).not.toMatch(/descriptionFull/);
+  });
+
+  it('no task block when the admin wrote nothing', () => {
+    expect(taskBlock('PRODUCT', { general: '  ', fields: {} })).toBeNull();
+    expect(
+      instructionBlocks({
+        entity: 'BRAND',
+        templates: true,
+        template: null,
+        parts: null,
+      }),
+    ).toEqual([expect.objectContaining({ kind: 'rules' })]);
+  });
+
+  it('brands get their own rules', () => {
+    const [rules] = instructionBlocks({
+      entity: 'BRAND',
+      templates: true,
+      template: null,
+      parts: null,
+    });
+    expect(rules.text).toMatch(/страницы бренда/);
+    expect(rules.text).toMatch(/оплата по безналу для организаций/);
   });
 });

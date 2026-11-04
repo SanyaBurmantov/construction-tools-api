@@ -17,6 +17,7 @@ import { AdminGuard } from '../admin/admin.guard';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { AiService } from './ai.service';
 import {
+  AiBrandQueryDto,
   AiCategoryQueryDto,
   AiCreateTaskDto,
   AiExplainDto,
@@ -54,6 +55,11 @@ export class AiController {
   @Get('categories')
   categories(@Query() query: AiCategoryQueryDto) {
     return this.ai.listCategories(query);
+  }
+
+  @Get('brands')
+  brands(@Query() query: AiBrandQueryDto) {
+    return this.ai.listBrands(query);
   }
 
   @Get('prompts')

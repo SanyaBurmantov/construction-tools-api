@@ -14,7 +14,7 @@ defineProps<{ status: AiStatus | null }>()
     <span v-if="status.quota?.dailyLimit != null">
       Бесплатных запросов сегодня: {{ status.quota.dailyRemaining }} из {{ status.quota.dailyLimit }}
     </span>
-    <NuxtLink v-if="status.activeTasks" to="/admin/ai/tasks">
+    <NuxtLink v-if="status.activeTasks" :to="{ path: '/admin/ai', query: { tab: 'tasks' } }">
       Активных задач: {{ status.activeTasks }}
     </NuxtLink>
   </div>

@@ -24,6 +24,17 @@ import { emptyToUndefined } from '../../common/dto/empty-to-undefined';
  */
 export const MAX_TASK_ITEMS = 5000;
 
+/** Product text fields an AI task writes (ai-fields.ts). */
+const AI_PRODUCT_TEXT_FIELDS = [
+  'name',
+  'descriptionShort',
+  'descriptionFull',
+  'seoTitle',
+  'seoDescription',
+];
+
+const MAX_INSTRUCTION = 8000;
+
 export class AiProductFilterDto {
   @IsOptional()
   @IsString()
@@ -52,14 +63,68 @@ export class AiProductFilterDto {
   @IsIn(['descriptionShort', 'descriptionFull', 'seoTitle', 'seoDescription'])
   missing?: string;
 
-  /** `yes` — already rewritten by AI, `no` — never touched. */
+  /**
+   * `yes` — already rewritten by AI, `no` — never touched, `not:<field>` —
+   * that one field was never written by AI (the others may have been).
+   */
   @IsOptional()
-  @IsIn(['yes', 'no'])
-  ai?: 'yes' | 'no';
+  @IsIn(['yes', 'no', ...AI_PRODUCT_TEXT_FIELDS.map((key) => `not:${key}`)])
+  ai?: string;
 
   @IsOptional()
   @IsIn(['in_stock', 'out_of_stock'])
   stock?: string;
+
+  /** Added to the catalogue within this many days — the new arrivals. */
+  @IsOptional()
+  @IsIn(['1', '7', '30', '90'])
+  createdWithin?: string;
+
+  /** Has a photo at all / has none. */
+  @IsOptional()
+  @IsIn(['yes', 'no'])
+  image?: 'yes' | 'no';
+
+  /** `thin` — no descriptions and no specs; `rich` — something to go on. */
+  @IsOptional()
+  @IsIn(['thin', 'rich'])
+  data?: 'thin' | 'rich';
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  priceMin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  priceMax?: number;
+
+  /** Only for the list; a task's rows are taken by name. */
+  @IsOptional()
+  @IsIn(['name', 'new', 'price_asc', 'price_desc'])
+  sort?: string;
+}
+
+export class AiBrandFilterDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  /** `description` — no text; `seo` — the SEO fields are still the default (= name). */
+  @IsOptional()
+  @IsIn(['description', 'seo'])
+  missing?: string;
+
+  /** `yes` — has published products (its page is reachable). */
+  @IsOptional()
+  @IsIn(['yes'])
+  withProducts?: 'yes';
+}
+
+export class AiBrandQueryDto extends AiBrandFilterDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number;
 }
 
 export class AiCategoryFilterDto {
@@ -132,9 +197,21 @@ export class AiPromptDto {
   @IsEnum(AiEntity)
   entity!: AiEntity;
 
+  /** The general instruction; may be empty when the template is per field. */
+  @IsOptional()
   @IsString()
-  @Length(1, 8000)
-  text!: string;
+  @Length(0, MAX_INSTRUCTION)
+  text?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fields?: string[];
+
+  /** `{ field: instruction }`. */
+  @IsOptional()
+  @IsObject()
+  fieldTexts?: Record<string, string>;
 }
 
 export class AiUpdatePromptDto {
@@ -145,8 +222,17 @@ export class AiUpdatePromptDto {
 
   @IsOptional()
   @IsString()
-  @Length(1, 8000)
+  @Length(0, MAX_INSTRUCTION)
   text?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  fields?: string[];
+
+  @IsOptional()
+  @IsObject()
+  fieldTexts?: Record<string, string>;
 }
 
 export class AiCreateTaskDto {
@@ -168,13 +254,18 @@ export class AiCreateTaskDto {
   promptId?: string;
 
   /**
-   * The instruction. With `templates` it is optional and only *added* to the
-   * built-in rules and the per-kind guide (`ai-templates.ts`).
+   * The general instruction. With `templates` it is optional and *added* to
+   * the built-in rules and the per-kind guide (`ai-templates.ts`).
    */
   @IsOptional()
   @IsString()
-  @Length(0, 8000)
+  @Length(0, MAX_INSTRUCTION)
   prompt?: string;
+
+  /** `{ field: instruction }` — only the task's fields are used. */
+  @IsOptional()
+  @IsObject()
+  fieldPrompts?: Record<string, string>;
 
   /** Built-in shop rules + a guide per kind of product (one task per kind). */
   @IsOptional()
@@ -227,8 +318,12 @@ export class AiPreviewDto {
 
   @IsOptional()
   @IsString()
-  @Length(0, 8000)
+  @Length(0, MAX_INSTRUCTION)
   prompt?: string;
+
+  @IsOptional()
+  @IsObject()
+  fieldPrompts?: Record<string, string>;
 
   @IsOptional()
   @IsBoolean()
@@ -255,8 +350,17 @@ export class AiExplainDto {
 
   @IsOptional()
   @IsString()
-  @Length(0, 8000)
+  @Length(0, MAX_INSTRUCTION)
   prompt?: string;
+
+  @IsOptional()
+  @IsObject()
+  fieldPrompts?: Record<string, string>;
+
+  /** Default true: what a task with the shop rules would send. */
+  @IsOptional()
+  @IsBoolean()
+  templates?: boolean;
 }
 
 export class AiTemplateTextDto {

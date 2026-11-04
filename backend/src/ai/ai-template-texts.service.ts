@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  BRAND_BASE_RULES,
   CATEGORY_BASE_RULES,
   PRODUCT_BASE_RULES,
   PRODUCT_TEMPLATES,
@@ -14,6 +15,7 @@ const MAX_TEXT = 8000;
 export type TemplateTextId =
   | 'product-rules'
   | 'category-rules'
+  | 'brand-rules'
   | `kind:${string}`;
 
 /**
@@ -30,6 +32,7 @@ export class AiTemplateTextsService {
   private defaultOf(id: TemplateTextId): string | null {
     if (id === 'product-rules') return PRODUCT_BASE_RULES;
     if (id === 'category-rules') return CATEGORY_BASE_RULES;
+    if (id === 'brand-rules') return BRAND_BASE_RULES;
     const key = id.slice('kind:'.length);
     return (
       PRODUCT_TEMPLATES.find((template) => template.key === key)?.guide ?? null
@@ -55,6 +58,7 @@ export class AiTemplateTextsService {
     return {
       productRules: stored.get('product-rules'),
       categoryRules: stored.get('category-rules'),
+      brandRules: stored.get('brand-rules'),
       guides,
     };
   }
@@ -75,6 +79,7 @@ export class AiTemplateTextsService {
     return {
       productRules: entry('product-rules'),
       categoryRules: entry('category-rules'),
+      brandRules: entry('brand-rules'),
       guides: Object.fromEntries(
         PRODUCT_TEMPLATES.map((template) => [
           template.key,

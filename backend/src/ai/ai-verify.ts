@@ -34,9 +34,16 @@ export const VERIFY_SYSTEM_PROMPT = [
   'Один элемент на каждый id, по одному ключу на каждое поле из proposed.',
 ].join('\n');
 
-export function buildVerifyMessages(items: VerifyInput[]): ChatMessage[] {
+export function buildVerifyMessages(
+  items: VerifyInput[],
+  /** The admin's quoted phrases: required by the shop, not an invention. */
+  phrases: string[] = [],
+): ChatMessage[] {
   const system = VERIFY_SYSTEM_PROMPT;
-  const user = `Товары:\n${JSON.stringify({ items })}`;
+  const allowed = phrases.length
+    ? `Эти фразы магазин требует вставлять — их наличие не ошибка: ${phrases.map((phrase) => `«${phrase}»`).join(', ')}.\n\n`
+    : '';
+  const user = `${allowed}Товары:\n${JSON.stringify({ items })}`;
   return [
     { role: 'system', content: system },
     { role: 'user', content: user },

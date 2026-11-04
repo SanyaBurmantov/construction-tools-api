@@ -119,7 +119,8 @@ export interface BrandCategory {
 }
 
 export interface BrandCategoriesResponse {
-  brand: Brand
+  /** The SEO fields are null until someone (an AI task, an admin) wrote them. */
+  brand: Brand & { description?: string | null, seoTitle?: string | null, seoDescription?: string | null }
   categories: BrandCategory[]
 }
 

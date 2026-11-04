@@ -1,4 +1,7 @@
+import { AiEntity } from '@prisma/client';
 import { fixHomoglyphs } from './ai-validate';
+import { AI_FIELDS } from './ai-fields';
+import type { PromptParts } from './ai-phrases';
 
 /**
  * Prompt templates for the catalogue rewrite: one set of shop-wide rules plus
@@ -368,6 +371,18 @@ export const CATEGORY_BASE_RULES = `
 Не пиши про наличие, цены, скидки, гарантию, «лучший» и не упоминай телефоны и сайты. Пиши по-русски, деловым языком.
 `.trim();
 
+/** Rules for brand pages. */
+export const BRAND_BASE_RULES = `
+Напиши тексты для страницы бренда в интернет-магазине инструмента gost.by (Беларусь).
+Покупатели — прежде всего организации (строительные и монтажные компании, производства, автосервисы), розничные покупатели тоже.
+Страница бренда показывает категории, в которых у нас есть его товары.
+
+- description — простой текст без HTML и Markdown, 2–3 абзаца: какие товары этого бренда есть в каталоге (по категориям и примерам товаров из данных), для каких работ и кому они подходят, как выбрать нужное в каталоге. Не пиши историю бренда, год основания, страну, заводы, сертификаты и награды, если этого нет во входных данных.
+- seoTitle — до 70 символов: бренд и что он делает («Инструмент STARTUL: ручной инструмент и оснастка» и т. п. — по категориям из данных).
+- seoDescription — до 160 символов: продукция бренда в каталоге, затем обязательно «Доставка по Беларуси, оплата по безналу для организаций».
+Не пиши про наличие, цены, скидки, гарантию, «лучший», «официальный дилер» и не упоминай телефоны и сайты. Пиши по-русски, деловым языком.
+`.trim();
+
 /**
  * The admin's edited texts (AiTemplateTextsService) over the code defaults;
  * a missing one is the default.
@@ -375,8 +390,96 @@ export const CATEGORY_BASE_RULES = `
 export type TemplateTexts = {
   productRules?: string;
   categoryRules?: string;
+  brandRules?: string;
   guides?: Record<string, string>;
 };
+
+/**
+ * One block of an instruction, as the admin sees it: «Формат ответа» is
+ * fixed in code, the shop rules and kind guides are edited in «Шаблоны»
+ * (and apply to every task), the task block is what this task adds.
+ */
+export type InstructionBlock = {
+  kind: 'fixed' | 'rules' | 'guide' | 'task';
+  title: string;
+  text: string;
+};
+
+/** What the task adds: the general instruction and one per ticked field. */
+export function taskBlock(
+  entity: AiEntity,
+  parts: PromptParts | null | undefined,
+  fields?: string[],
+): InstructionBlock | null {
+  const general = parts?.general?.trim() ?? '';
+  const perField = AI_FIELDS[entity]
+    .filter((field) => !fields || fields.includes(field.key))
+    .map((field) => [field, parts?.fields?.[field.key]?.trim() ?? ''] as const)
+    .filter(([, text]) => text);
+  if (!general && !perField.length) return null;
+  const lines: string[] = [];
+  if (general) lines.push(general);
+  if (perField.length) {
+    if (general) lines.push('');
+    lines.push('По полям:');
+    for (const [field, text] of perField) {
+      lines.push(`- "${field.key}" (${field.label}): ${text}`);
+    }
+  }
+  lines.push(
+    '',
+    'Эти требования важнее правил магазина выше: если они противоречат друг другу, выполняй эти требования.',
+    'Фразы в кавычках вставляй дословно, без изменений.',
+  );
+  return {
+    kind: 'task',
+    title: 'Требования этой задачи',
+    text: lines.join('\n'),
+  };
+}
+
+/**
+ * The instruction a task snapshots, block by block: with `templates` the
+ * shop rules (+ the kind's guide for a product), then the task's own block;
+ * without, the task block alone.
+ */
+export function instructionBlocks(params: {
+  entity: AiEntity;
+  templates: boolean;
+  template: AiTemplate | null;
+  parts: PromptParts | null | undefined;
+  fields?: string[];
+  texts?: TemplateTexts;
+}): InstructionBlock[] {
+  const texts = params.texts ?? {};
+  const blocks: InstructionBlock[] = [];
+  if (params.templates) {
+    const rules =
+      params.entity === AiEntity.PRODUCT
+        ? texts.productRules || PRODUCT_BASE_RULES
+        : params.entity === AiEntity.CATEGORY
+          ? texts.categoryRules || CATEGORY_BASE_RULES
+          : texts.brandRules || BRAND_BASE_RULES;
+    blocks.push({ kind: 'rules', title: 'Правила магазина', text: rules });
+    if (params.entity === AiEntity.PRODUCT && params.template) {
+      blocks.push({
+        kind: 'guide',
+        title: `Вид товара: ${params.template.label}`,
+        text: texts.guides?.[params.template.key] || params.template.guide,
+      });
+    }
+  }
+  const own = taskBlock(params.entity, params.parts, params.fields);
+  if (own) blocks.push(own);
+  return blocks;
+}
+
+/** The blocks as one text, each under its heading — `AiTask.promptText`. */
+export function composeInstruction(blocks: InstructionBlock[]): string {
+  return blocks
+    .map((block) => `### ${block.title}\n${block.text.trim()}`)
+    .join('\n\n');
+}
 
 /** The whole instruction for a product task: base rules, the kind's guide, the admin's extra. */
 export function productInstruction(
@@ -384,22 +487,25 @@ export function productInstruction(
   extra?: string,
   texts: TemplateTexts = {},
 ) {
-  return [
-    texts.productRules || PRODUCT_BASE_RULES,
-    '',
-    `Вид товара: ${template.label}.`,
-    texts.guides?.[template.key] || template.guide,
-    extra?.trim() ? `\nДополнительно:\n${extra.trim()}` : '',
-  ]
-    .join('\n')
-    .trim();
+  return composeInstruction(
+    instructionBlocks({
+      entity: AiEntity.PRODUCT,
+      templates: true,
+      template,
+      parts: { general: extra },
+      texts,
+    }),
+  );
 }
 
 export function categoryInstruction(extra?: string, texts: TemplateTexts = {}) {
-  return [
-    texts.categoryRules || CATEGORY_BASE_RULES,
-    extra?.trim() ? `\nДополнительно:\n${extra.trim()}` : '',
-  ]
-    .join('\n')
-    .trim();
+  return composeInstruction(
+    instructionBlocks({
+      entity: AiEntity.CATEGORY,
+      templates: true,
+      template: null,
+      parts: { general: extra },
+      texts,
+    }),
+  );
 }

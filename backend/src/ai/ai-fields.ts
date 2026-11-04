@@ -3,6 +3,7 @@ import {
   sanitizeSupplierTitle,
 } from '../parser/supplier-text';
 import { AiEntity } from '@prisma/client';
+import { protectPhrases } from './ai-phrases';
 
 /**
  * What an AI task may rewrite, and the pure prompt/answer plumbing around it.
@@ -80,6 +81,35 @@ export const AI_FIELDS: Record<AiEntity, AiFieldDef[]> = {
       hint: 'до 160 символов',
     },
   ],
+  // No name: a brand's name is its identity (slug, merges, the parsers'
+  // `upsertBrand`), not a text to polish.
+  BRAND: [
+    {
+      key: 'description',
+      label: 'Описание бренда',
+      maxLength: 3000,
+      hint: 'простой текст, без HTML и Markdown',
+    },
+    {
+      key: 'seoTitle',
+      label: 'SEO title',
+      maxLength: 120,
+      hint: 'до 70 символов',
+    },
+    {
+      key: 'seoDescription',
+      label: 'SEO description',
+      maxLength: 320,
+      hint: 'до 160 символов',
+    },
+  ],
+};
+
+/** «товаров» / «категорий» / «брендов». */
+export const ENTITY_GENITIVE: Record<AiEntity, string> = {
+  PRODUCT: 'товаров',
+  CATEGORY: 'категорий',
+  BRAND: 'брендов',
 };
 
 export function fieldDefs(entity: AiEntity, keys: string[]): AiFieldDef[] {
@@ -91,6 +121,31 @@ export function isKnownField(entity: AiEntity, key: string) {
 }
 
 export type ChatMessage = { role: 'system' | 'user'; content: string };
+
+/**
+ * The fixed part of every request: who the model is, which fields to return
+ * and the answer format. Not editable — the code that reads the answer
+ * depends on it. Shown in the admin as «Формат ответа (фиксировано)».
+ */
+export function formatBlock(entity: AiEntity, fields: AiFieldDef[]): string {
+  const fieldList = fields
+    .map((field) => `- "${field.key}" (${field.label}): ${field.hint}`)
+    .join('\n');
+  const example: Record<string, string> = { id: '<id из входных данных>' };
+  for (const field of fields) example[field.key] = '...';
+  return [
+    `Ты редактор каталога интернет-магазина строительных инструментов gost.by (Беларусь).`,
+    `Тебе дают JSON со списком ${ENTITY_GENITIVE[entity]}. Для каждого верни новые значения полей:`,
+    fieldList,
+    ``,
+    `Формат:`,
+    `- Отвечай ТОЛЬКО JSON-объектом вида {"items":[${JSON.stringify(example)}]} — без пояснений и без \`\`\`.`,
+    `- Один элемент на каждый входной id, id копируй как есть.`,
+    `- Только перечисленные поля. Если поле менять не нужно — верни текущее значение.`,
+    `- Пиши по-русски. Не выдумывай характеристики, которых нет во входных данных.`,
+    `- Не упоминай поставщиков и их контакты.`,
+  ].join('\n');
+}
 
 /**
  * One request covers a batch of entities: the free tier is counted in
@@ -107,26 +162,11 @@ export function buildMessages(params: {
   instruction: string;
   contexts: Array<Record<string, unknown> & { id: string }>;
 }): ChatMessage[] {
-  const what = params.entity === 'PRODUCT' ? 'товаров' : 'категорий';
-  const fieldList = params.fields
-    .map((field) => `- "${field.key}" (${field.label}): ${field.hint}`)
-    .join('\n');
-  const example: Record<string, string> = { id: '<id из входных данных>' };
-  for (const field of params.fields) example[field.key] = '...';
-
   const system = [
-    `Ты редактор каталога интернет-магазина строительных инструментов (Беларусь).`,
-    `Тебе дают JSON со списком ${what}. Для каждого верни новые значения полей:`,
-    fieldList,
+    `## Формат ответа`,
+    formatBlock(params.entity, params.fields),
     ``,
-    `Формат:`,
-    `- Отвечай ТОЛЬКО JSON-объектом вида {"items":[${JSON.stringify(example)}]} — без пояснений и без \`\`\`.`,
-    `- Один элемент на каждый входной id, id копируй как есть.`,
-    `- Только перечисленные поля. Если поле менять не нужно — верни текущее значение.`,
-    `- Пиши по-русски. Не выдумывай характеристики, которых нет во входных данных.`,
-    `- Не упоминай поставщиков, их телефоны, адреса и города.`,
-    ``,
-    `Задание:`,
+    `## Задание`,
     params.instruction.trim(),
   ].join('\n');
 
@@ -207,6 +247,8 @@ function sliceBetween(text: string, open: string, close: string) {
 export function cleanValue(
   field: AiFieldDef,
   value: unknown,
+  /** The admin's quoted phrases (ai-phrases.ts) — kept whatever the cleaner thinks. */
+  phrases: string[] = [],
 ): string | undefined {
   if (typeof value !== 'string') return undefined;
   let text = value
@@ -222,10 +264,11 @@ export function cleanValue(
   // boilerplate — a competitor's phone, «купить в Минске». The parse-side
   // cleaner never sees AI output, and the field is then locked against the
   // re-parse, so the same filter runs here.
-  text = (
+  // Phrases the admin quoted in the task are *ours*, not the supplier's.
+  text = protectPhrases(text, phrases, (masked) =>
     field.key === 'seoTitle' || field.key === 'name'
-      ? sanitizeSupplierTitle(text)
-      : sanitizeSupplierText(text)
+      ? sanitizeSupplierTitle(masked)
+      : sanitizeSupplierText(masked),
   ).trim();
   if (!text) return undefined;
   if (text.length > field.maxLength) {
@@ -243,10 +286,11 @@ export function diffAnswer(
   fields: AiFieldDef[],
   current: Record<string, unknown>,
   answer: Record<string, unknown>,
+  phrases: string[] = [],
 ): Record<string, FieldChange> {
   const changes: Record<string, FieldChange> = {};
   for (const field of fields) {
-    const next = cleanValue(field, answer[field.key]);
+    const next = cleanValue(field, answer[field.key], phrases);
     if (next === undefined) continue;
     const old = current[field.key];
     const oldText = typeof old === 'string' ? old : null;
