@@ -245,6 +245,12 @@ services:
     # storefront never notices.
     mem_limit: ${WORKER_MEM_LIMIT:-576m}
     mem_reservation: 192m
+    # At most one of the two cores, and half the weight of the others when
+    # they compete: a parser batch, the photo mirror and the AI runner used
+    # to take both cores at once while the storefront and Postgres waited.
+    # Background work just takes a little longer.
+    cpus: ${WORKER_CPUS:-1.0}
+    cpu_shares: 512
     # A batch saves product by product; give the one in flight time to finish
     # its current write on a deploy.
     stop_grace_period: 30s

@@ -23,6 +23,9 @@ normalizes them into a shared catalog shape, and serves a public storefront.
   the API cleanly at 85% of the V8 heap (`NODE_OPTIONS=--max-old-space-size=512`,
   `MEMORY_GUARD_MAX_HEAP_RATIO`) and logs heap/rss every 15 min, and
   `deploy/watchdog.sh` restarts a container left unhealthy for ~6 min.
+  The worker is also capped at one CPU (`cpus: ${WORKER_CPUS:-1.0}`,
+  `cpu_shares: 512`): background work may run slower, the storefront and
+  Postgres always keep a core.
   **The worker** (`construction-tools-worker`) has no HTTP to hang on, so it
   carries its own two: a heartbeat file the healthcheck checks, and an
   event-loop watchdog thread (`common/utils/event-loop-watchdog.ts`) that
