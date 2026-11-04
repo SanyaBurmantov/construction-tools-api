@@ -127,14 +127,22 @@ const link = computed(() => `/product/${props.product.slug}`)
           </span>
         </div>
 
+        <!-- One button for both widths: a phone hides the label and keeps the
+             icon (two columns leave no room for «В корзину» beside a price),
+             so the early-click key still names a single element. -->
         <UiButton
           v-if="canBuy"
+          class="buy"
           :variant="inCart ? 'secondary' : 'primary'"
           size="sm"
           :aria-label="`Добавить «${product.name}» в корзину`"
+          :title="inCart ? 'В корзине' : 'В корзину'"
           :data-early-click="`cart:${upsellSource ?? 'list'}:${product.id}`"
           @click="addToCart(1, upsellSource)"
         >
+          <template #leading>
+            <UiIcon class="buy-icon" :name="inCart ? 'check' : 'cart'" :size="18" :stroke-width="2" />
+          </template>
           {{ inCart ? 'В корзине' : 'В корзину' }}
         </UiButton>
         <UiButton v-else variant="secondary" size="sm" :to="link">
@@ -272,7 +280,8 @@ const link = computed(() => `/product/${props.product.slug}`)
   font-weight: 700;
   line-height: var(--leading-snug);
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  /* Three lines keep the model code of a long supplier title in view. */
+  -webkit-line-clamp: 3;
 }
 
 .title:hover {
@@ -358,5 +367,77 @@ const link = computed(() => `/product/${props.product.slug}`)
 .is-compact .image-link {
   aspect-ratio: 1;
   padding: var(--space-3);
+}
+
+/* The icon is the phone's whole button; a wide card keeps the text alone. */
+.buy-icon {
+  display: none;
+}
+
+/*
+ * Phones: two cards to a row (~165px each). The photo shrinks with the card;
+ * the chrome around it shrinks too, the spec preview goes (it was a column
+ * of truncated words at this width), and «В корзину» becomes an icon so it
+ * still sits to the right of the price and availability.
+ */
+@media (max-width: 560px) {
+  .image-link,
+  .is-compact .image-link {
+    padding: var(--space-2);
+  }
+
+  .flags {
+    top: var(--space-2);
+    left: var(--space-2);
+  }
+
+  .quick-actions {
+    top: var(--space-2);
+    right: var(--space-2);
+    gap: var(--space-1);
+  }
+
+  .icon-action {
+    width: 28px;
+    height: 28px;
+  }
+
+  .icon-action :deep(svg) {
+    width: 15px;
+    height: 15px;
+  }
+
+  .body {
+    padding: var(--space-3) var(--space-2) var(--space-2);
+    gap: var(--space-1);
+  }
+
+  .title {
+    font-size: var(--text-sm);
+  }
+
+  .specs {
+    display: none;
+  }
+
+  .footer {
+    padding-top: var(--space-2);
+    gap: var(--space-2);
+  }
+
+  .footer .buy {
+    width: 38px;
+    min-height: 38px;
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .footer .buy :deep(.label) {
+    display: none;
+  }
+
+  .buy-icon {
+    display: block;
+  }
 }
 </style>

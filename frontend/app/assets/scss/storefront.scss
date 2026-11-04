@@ -18,3 +18,11 @@
   gap: var(--space-4);
   list-style: none;
 }
+
+/* Phones: two cards to a row — one card per screen was a long scroll. */
+@media (max-width: 560px) {
+  .product-grid {
+    gap: var(--space-2);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

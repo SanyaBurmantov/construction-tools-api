@@ -173,6 +173,36 @@ const imageSize = computed(() =>
   font-size: var(--text-sm);
 }
 
+/* Phones: three tiles to a row (~105px each), so a smaller picture and a
+   two-line name that breaks long words rather than spilling out. */
+@media (max-width: 560px) {
+  .is-tile .media {
+    padding: var(--space-2);
+  }
+
+  .is-tile .plate {
+    font-size: var(--text-2xl);
+  }
+
+  .is-tile .body {
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+  }
+
+  .is-tile .name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    hyphens: auto;
+    line-height: var(--leading-snug);
+    overflow-wrap: break-word;
+  }
+
+  .is-tile .count {
+    font-size: 11px;
+  }
+}
+
 /* ---- row ---- */
 .is-row {
   align-items: center;
