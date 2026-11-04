@@ -22,9 +22,29 @@ type RouteRow = {
   errors: number
   slow: number
   totalMs: number
+  avgQueries: number
+  maxQueries: number
+}
+type SloRow = {
+  name: string
+  objective: number
+  withinMs: number
+  maxErrorShare: number
+  sampled: number
+  fastShare: number | null
+  requests: number
+  errorShare: number | null
+  ok: boolean
 }
 type SlowRequest = { at: string, method: string, route: string, url: string, status: number, ms: number }
-type Requests = { since: string, slowThresholdMs: number, routes: RouteRow[], slow: SlowRequest[] }
+type Requests = {
+  since: string
+  slowThresholdMs: number
+  routes: RouteRow[]
+  slow: SlowRequest[]
+  slo: SloRow[]
+  nPlusOneThreshold: number
+}
 type Statement = {
   queryid: string
   calls: number
@@ -102,6 +122,11 @@ const pct = (value: number | null) => (value === null ? '—' : `${(value * 100)
 const num = (value: number) => value.toLocaleString('ru-RU')
 const tone = (value: number) => (value >= 3000 ? 'bad' : value >= 1000 ? 'warn' : '')
 
+const sloMissed = computed(() => (requests.value?.slo ?? []).filter(row => !row.ok).length)
+/** Routes averaging more DB operations per request than the N+1 threshold. */
+const chattyRoutes = computed(() =>
+  (requests.value?.routes ?? []).filter(row => row.avgQueries > (requests.value?.nPlusOneThreshold ?? Infinity)).length,
+)
 const slowRoutes = computed(() => (requests.value?.routes ?? []).filter(row => row.p95Ms >= 1000).length)
 const connectionsTotal = computed(() => (db.value?.connections ?? []).reduce((sum, row) => sum + row.count, 0))
 const activeConnections = computed(() => db.value?.connections.find(row => row.state === 'active')?.count ?? 0)
@@ -114,6 +139,7 @@ const routeColumns = [
   { key: 'maxMs', label: 'Макс.', align: 'end' as const, nowrap: true },
   { key: 'slow', label: 'Медленных', align: 'end' as const, nowrap: true },
   { key: 'errors', label: '5xx', align: 'end' as const, nowrap: true },
+  { key: 'avgQueries', label: 'Запросов к БД', align: 'end' as const, nowrap: true },
 ]
 const slowColumns = [
   { key: 'at', label: 'Когда', width: '150px', nowrap: true },
@@ -147,6 +173,18 @@ const tableColumns = [
     <template v-else-if="requests && db">
       <div class="stats">
         <UiStat
+          label="Цели скорости (SLO)"
+          :value="sloMissed ? `${sloMissed} не выполнено` : 'все выполнены'"
+          :tone="sloMissed ? 'warning' : 'success'"
+          hint="Подробности — в блоке ниже"
+        />
+        <UiStat
+          label="Похоже на N+1"
+          :value="chattyRoutes"
+          :tone="chattyRoutes ? 'warning' : 'success'"
+          :hint="`Маршрутов, где в среднем больше ${requests.nPlusOneThreshold} запросов к базе`"
+        />
+        <UiStat
           label="Маршрутов с 95% дольше 1 с"
           :value="slowRoutes"
           :tone="slowRoutes ? 'warning' : 'success'"
@@ -177,6 +215,29 @@ const tableColumns = [
         </ul>
       </UiCard>
 
+      <!-- SLO -->
+      <UiCard>
+        <h2 class="section-title">Цели скорости (SLO)</h2>
+        <p class="admin-muted section-note">
+          Что такое «достаточно быстро», записанное числом. Время — по последним 300 запросам каждого маршрута,
+          ошибки — с {{ formatDateTime(requests.since) }}. Цели заданы в <code>backend/src/perf/request-stats.ts</code>.
+        </p>
+        <ul class="slo">
+          <li v-for="row in requests.slo" :key="row.name" :class="{ missed: !row.ok }">
+            <span class="slo-mark">{{ row.ok ? '✓' : '✕' }}</span>
+            <span class="slo-name">{{ row.name }}</span>
+            <span class="admin-muted">
+              цель: {{ pct(row.objective) }} быстрее {{ ms(row.withinMs) }}, ошибок не больше {{ pct(row.maxErrorShare) }}
+            </span>
+            <span>
+              сейчас: {{ row.fastShare === null ? 'нет запросов' : `${pct(row.fastShare)} быстрее ${ms(row.withinMs)}` }},
+              ошибок {{ pct(row.errorShare) }}
+              <span class="admin-muted">({{ num(row.requests) }} запросов)</span>
+            </span>
+          </li>
+        </ul>
+      </UiCard>
+
       <!-- API -->
       <UiCard>
         <div class="section-head">
@@ -185,7 +246,9 @@ const tableColumns = [
         </div>
         <p class="admin-muted section-note">
           С {{ formatDateTime(requests.since) }} (перезапуск API или сброс). «Медленные» — дольше {{ ms(requests.slowThresholdMs) }}.
-          Сверху — что отняло больше всего времени в сумме.
+          Сверху — что отняло больше всего времени в сумме. «Запросов к БД» — сколько раз за один запрос
+          API обратился к базе (в среднем / максимум); больше {{ requests.nPlusOneThreshold }} — обычно N+1: данные
+          подгружаются по одной записи в цикле вместо одного запроса на всех.
         </p>
         <UiTable :columns="routeColumns" :rows="requests.routes.slice(0, 40)" row-key="route" empty-text="Запросов ещё не было.">
           <template #cell-route="{ row }"><code class="route">{{ row.route }}</code></template>
@@ -195,6 +258,9 @@ const tableColumns = [
           <template #cell-maxMs="{ row }"><span :class="tone(row.maxMs)">{{ ms(row.maxMs) }}</span></template>
           <template #cell-slow="{ row }">{{ row.slow || '' }}</template>
           <template #cell-errors="{ row }"><span :class="{ bad: row.errors }">{{ row.errors || '' }}</span></template>
+          <template #cell-avgQueries="{ row }">
+            <span :class="{ warn: row.avgQueries > requests.nPlusOneThreshold }">{{ row.avgQueries }} / {{ row.maxQueries }}</span>
+          </template>
         </UiTable>
       </UiCard>
 
@@ -388,5 +454,45 @@ const tableColumns = [
 
 .sql.open {
   display: block;
+}
+.slo {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.slo li {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(180px, 1fr) minmax(220px, 2fr) minmax(220px, 2fr);
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: var(--text-sm);
+}
+
+.slo-mark {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.slo li.missed .slo-mark,
+.slo li.missed .slo-name {
+  color: var(--danger);
+}
+
+.slo-name {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .slo li {
+    grid-template-columns: 1.5rem 1fr;
+  }
+
+  .slo li > :nth-child(n + 3) {
+    grid-column: 2;
+  }
 }
 </style>

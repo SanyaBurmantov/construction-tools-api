@@ -7,6 +7,61 @@
  * (pg_stat_statements) keeps its numbers across restarts of the API.
  */
 export const SLOW_REQUEST_MS = 1000;
+/** A route averaging more DB operations than this per request smells of N+1. */
+export const N_PLUS_ONE_QUERIES = 15;
+
+/**
+ * Service level objectives: what «fast enough» means, written down, so a
+ * slowdown is a number against a target rather than a feeling. Measured over
+ * each route's last SAMPLE_PER_ROUTE requests (latency) and since the process
+ * started (errors). `routes` match the route key (`GET /products/:slug`).
+ */
+export const SLO_TARGETS: Array<{
+  name: string;
+  routes: RegExp;
+  /** This share of requests answers within `withinMs`… */
+  objective: number;
+  withinMs: number;
+  /** …and at most this share fails with a 5xx. */
+  maxErrorShare: number;
+}> = [
+  {
+    name: 'Каталог и карточка товара',
+    routes: /^GET \/(products|categories|brands|storefront)(\/|$)/,
+    objective: 0.99,
+    withinMs: 1000,
+    maxErrorShare: 0.001,
+  },
+  {
+    name: 'Корзина и оформление заказа',
+    routes:
+      /^(POST \/orders|POST \/cart\/validate|POST \/promo-codes\/validate)$/,
+    objective: 0.99,
+    withinMs: 2000,
+    maxErrorShare: 0.001,
+  },
+  {
+    name: 'Весь API',
+    routes: /./,
+    objective: 0.95,
+    withinMs: 1000,
+    maxErrorShare: 0.005,
+  },
+];
+
+export type SloRow = {
+  name: string;
+  objective: number;
+  withinMs: number;
+  maxErrorShare: number;
+  /** Requests in the latency sample. */
+  sampled: number;
+  /** Share of the sample within withinMs (null with no traffic yet). */
+  fastShare: number | null;
+  requests: number;
+  errorShare: number | null;
+  ok: boolean;
+};
 const SAMPLE_PER_ROUTE = 300;
 const SLOW_RING = 100;
 const MAX_ROUTES = 400;
@@ -17,6 +72,8 @@ type RouteBucket = {
   maxMs: number;
   errors: number;
   slow: number;
+  totalQueries: number;
+  maxQueries: number;
   /** Ring of the last SAMPLE_PER_ROUTE durations. */
   sample: number[];
   next: number;
@@ -32,6 +89,9 @@ export type RouteRow = {
   errors: number;
   slow: number;
   totalMs: number;
+  /** DB operations per request (query-context.ts). */
+  avgQueries: number;
+  maxQueries: number;
 };
 
 export type SlowRequest = {
@@ -56,6 +116,7 @@ export class RequestStats {
     url: string;
     status: number;
     ms: number;
+    queries?: number;
     now?: number;
   }) {
     const key = `${input.method} ${input.route}`;
@@ -68,6 +129,8 @@ export class RequestStats {
         maxMs: 0,
         errors: 0,
         slow: 0,
+        totalQueries: 0,
+        maxQueries: 0,
         sample: [],
         next: 0,
       };
@@ -77,6 +140,9 @@ export class RequestStats {
     bucket.totalMs += input.ms;
     bucket.maxMs = Math.max(bucket.maxMs, input.ms);
     if (input.status >= 500) bucket.errors++;
+    const queries = input.queries ?? 0;
+    bucket.totalQueries += queries;
+    bucket.maxQueries = Math.max(bucket.maxQueries, queries);
     if (bucket.sample.length < SAMPLE_PER_ROUTE) bucket.sample.push(input.ms);
     else {
       bucket.sample[bucket.next] = input.ms;
@@ -113,9 +179,43 @@ export class RequestStats {
           errors: b.errors,
           slow: b.slow,
           totalMs: Math.round(b.totalMs),
+          avgQueries: Math.round((b.totalQueries / b.count) * 10) / 10,
+          maxQueries: b.maxQueries,
         };
       })
       .sort((a, b) => b.totalMs - a.totalMs);
+  }
+
+  /** Each SLO against the traffic of the routes it covers. */
+  sloReport(): SloRow[] {
+    return SLO_TARGETS.map((target) => {
+      let sampled = 0;
+      let fast = 0;
+      let requests = 0;
+      let errors = 0;
+      for (const [key, b] of this.routes) {
+        if (!target.routes.test(key)) continue;
+        sampled += b.sample.length;
+        fast += b.sample.filter((ms) => ms <= target.withinMs).length;
+        requests += b.count;
+        errors += b.errors;
+      }
+      const fastShare = sampled ? fast / sampled : null;
+      const errorShare = requests ? errors / requests : null;
+      return {
+        name: target.name,
+        objective: target.objective,
+        withinMs: target.withinMs,
+        maxErrorShare: target.maxErrorShare,
+        sampled,
+        fastShare,
+        requests,
+        errorShare,
+        ok:
+          (fastShare === null || fastShare >= target.objective) &&
+          (errorShare === null || errorShare <= target.maxErrorShare),
+      };
+    });
   }
 
   recentSlow(): SlowRequest[] {

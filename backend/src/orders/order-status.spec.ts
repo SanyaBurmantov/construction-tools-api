@@ -29,13 +29,7 @@ function build(stored: OrderStatus, movedMeanwhile = false) {
     order: { findUnique: jest.fn(() => Promise.resolve(order)) },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
-  const service = new OrdersService(
-    prisma as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-  );
+  const service = new OrdersService(prisma as never, {} as never, {} as never);
   return { service, executeRaw };
 }
 

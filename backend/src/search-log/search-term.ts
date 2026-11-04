@@ -9,7 +9,8 @@ export function normalizeSearchTerm(raw: unknown): string {
   const term = raw
     .toLowerCase()
     .replace(/ё/g, 'е')
-    .replace(/[\u0000-\u001f]/g, ' ')
+    // Control characters (tabs, newlines pasted with a code) become spaces.
+    .replace(/\p{Cc}/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_TERM_LENGTH)

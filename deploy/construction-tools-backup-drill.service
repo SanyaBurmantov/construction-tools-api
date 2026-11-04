@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly restore drill of the construction tools database backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/construction-tools-backup-drill
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=7200

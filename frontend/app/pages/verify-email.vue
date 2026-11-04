@@ -1,13 +1,13 @@
 <script setup lang="ts">
 const { verifyEmail, whenReady, isAuthenticated, errorMessage } = useAuth()
-const route = useRoute()
 
 const state = ref<'pending' | 'done' | 'failed'>('pending')
 const email = ref('')
 const error = ref('')
 
 onMounted(async () => {
-  const token = typeof route.query.token === 'string' ? route.query.token : ''
+  // Dropped from the address bar at once: analytics records URLs (utils/private-query.ts).
+  const token = takePrivateParam('token')
   if (!token) {
     state.value = 'failed'
     error.value = 'В ссылке нет кода подтверждения'

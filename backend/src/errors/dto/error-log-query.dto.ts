@@ -13,12 +13,13 @@ import {
 export class ErrorLogQueryDto {
   @ApiProperty({
     required: false,
-    enum: ['server', 'client'],
-    description: 'server — 5xx, client — 4xx',
+    enum: ['server', 'client', 'browser'],
+    description:
+      'server — 5xx, client — 4xx, browser — ошибки JS у посетителей',
   })
   @IsOptional()
-  @IsIn(['server', 'client'])
-  kind?: 'server' | 'client';
+  @IsIn(['server', 'client', 'browser'])
+  kind?: 'server' | 'client' | 'browser';
 
   @ApiProperty({ required: false, description: 'Точный HTTP-код' })
   @IsOptional()

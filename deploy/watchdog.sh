@@ -310,6 +310,20 @@ if [[ -n "$(env_value S3_BACKUP_BUCKET)" ]]; then
     "✅ Бэкап базы снова выгружается в S3 ($s3_age_h ч)."
 fi
 
+# The weekly restore drill (backup-drill.sh stamps backup-drill.ok when a
+# dump really restored). Checked only once its timer is installed.
+if [[ -e /etc/systemd/system/construction-tools-backup-drill.timer ]]; then
+  drill_ok=$(stat -c %Y "$STATE_DIR/backup-drill.ok" 2>/dev/null || true)
+  if [[ -z "$drill_ok" ]]; then
+    # Not run yet: count from when the timer was installed.
+    drill_ok=$(stat -c %Y /etc/systemd/system/construction-tools-backup-drill.timer)
+  fi
+  drill_age_d=$(( (now - drill_ok) / 86400 ))
+  check_flag backup_drill "$(( drill_age_d > 8 ))" \
+    "🔴 Бэкап не проверяли восстановлением уже $drill_age_d дн.: учения (construction-tools-backup-drill.timer) не проходят или не запускались." \
+    "✅ Учения бэкапа снова проходят."
+fi
+
 free_mb=$(df -Pm / | awk 'NR == 2 { print $4 }')
 check_flag disk "$(( ${free_mb:-0} < DISK_MIN_FREE_MB ))" \
   "🟠 На диске сервера осталось ${free_mb} МБ (порог ${DISK_MIN_FREE_MB}). При <1 ГБ перестают писаться бэкапы и кеш страниц." \

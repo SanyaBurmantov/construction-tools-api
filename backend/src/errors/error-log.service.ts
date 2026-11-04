@@ -176,6 +176,7 @@ export class ErrorLogService {
     const where: Prisma.ErrorLogWhereInput = {};
     if (query.kind === 'server') where.statusCode = { gte: 500 };
     if (query.kind === 'client') where.statusCode = { gte: 400, lt: 500 };
+    if (query.kind === 'browser') where.statusCode = 0;
     if (query.statusCode) where.statusCode = query.statusCode;
     if (query.search?.trim()) {
       const search = query.search.trim();
@@ -185,7 +186,8 @@ export class ErrorLogService {
       ];
     }
 
-    const [data, total, serverErrors] = await Promise.all([
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [data, total, serverErrors, browserErrors] = await Promise.all([
       this.prisma.errorLog.findMany({
         where,
         orderBy: { lastSeenAt: 'desc' },
@@ -197,14 +199,19 @@ export class ErrorLogService {
       this.prisma.errorLog.count({
         where: {
           statusCode: { gte: 500 },
-          lastSeenAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          lastSeenAt: { gte: dayAgo },
         },
+      }),
+      // Visitors' JavaScript errors, distinct kinds seen in the last day.
+      this.prisma.errorLog.count({
+        where: { statusCode: 0, lastSeenAt: { gte: dayAgo } },
       }),
     ]);
 
     return {
       data,
       serverErrors24h: serverErrors,
+      browserErrors24h: browserErrors,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) || 1 },
     };
   }

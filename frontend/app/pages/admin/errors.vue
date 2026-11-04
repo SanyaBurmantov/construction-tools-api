@@ -23,16 +23,17 @@ type ErrorEntry = {
   lastSeenAt: string
 }
 
-type Response = Paginated<ErrorEntry> & { serverErrors24h: number }
+type Response = Paginated<ErrorEntry> & { serverErrors24h: number, browserErrors24h: number }
 
 const { adminFetch } = useAdminApi()
 const { run, busy } = useAdminAction()
 
 const serverErrors24h = ref(0)
+const browserErrors24h = ref(0)
 const confirmClear = ref(false)
 
 const filters = reactive({
-  kind: '' as '' | 'server' | 'client',
+  kind: '' as '' | 'server' | 'client' | 'browser',
   search: '',
 })
 
@@ -45,6 +46,7 @@ const { rows: entries, pagination, loading, error: loadError, setPage } = useAdm
   errorText: 'Не удалось загрузить журнал ошибок',
   onResponse: (response) => {
     serverErrors24h.value = response.serverErrors24h
+    browserErrors24h.value = response.browserErrors24h ?? 0
   },
 })
 
@@ -65,13 +67,16 @@ const messageLines = (row: ErrorEntry) =>
   row.detail?.message?.length ? row.detail.message : [row.message]
 
 const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
+
+/** statusCode 0 = a visitor's browser (POST /client-errors), not an HTTP answer. */
+const isBrowser = (row: ErrorEntry) => row.statusCode === 0
 </script>
 
 <template>
   <div class="admin-page admin-errors">
     <AdminPageHead
-      title="Ошибки API"
-      description="Все ответы 5xx и те 4xx, которые получила сама админка — то есть случаи, когда экран должен был сработать и не сработал. Запросы витрины с кодами 401/403/404 сюда не попадают, иначе журнал утонет в обычном шуме. Пароли и токены в теле заменяются на «[redacted]», записи старше 30 дней удаляются сами."
+      title="Ошибки"
+      description="Все ответы API 5xx и те 4xx, которые получила сама админка — то есть случаи, когда экран должен был сработать и не сработал, — и ошибки JavaScript в браузерах посетителей («Браузер»: кнопка, которая у кого-то не нажимается). Запросы витрины с кодами 401/403/404 сюда не попадают, иначе журнал утонет в обычном шуме. Пароли и токены в теле заменяются на «[redacted]», записи старше 30 дней удаляются сами."
     >
       <UiButton
         v-if="pagination.total"
@@ -88,6 +93,11 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
     <UiAlert v-else-if="serverErrors24h" tone="danger">
       За последние сутки серверных ошибок: {{ serverErrors24h }}. Это баг на
       нашей стороне — стоит посмотреть, что именно падает.
+    </UiAlert>
+
+    <UiAlert v-else-if="browserErrors24h && filters.kind !== 'browser'" tone="warning">
+      За сутки у посетителей было {{ browserErrors24h }} разных ошибок JavaScript —
+      фильтр «Браузер» покажет, на каких страницах и в каких браузерах.
     </UiAlert>
 
     <UiAlert v-else-if="!pagination.total && !loading" tone="success">
@@ -107,7 +117,8 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
         :options="[
           { value: '', label: 'Все ошибки' },
           { value: 'server', label: '5xx — наша поломка' },
-          { value: 'client', label: '4xx — запрос не прошёл' }
+          { value: 'client', label: '4xx — запрос не прошёл' },
+          { value: 'browser', label: 'Браузер — ошибки JS у посетителей' }
         ]"
       />
     </div>
@@ -137,7 +148,8 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
           <UiBadge tone="neutral" size="sm">{{ row.method }}</UiBadge>
           <code class="path">{{ row.path }}</code>
         </div>
-        <p v-if="row.actorLabel && row.actorLabel !== 'anonymous'" class="admin-muted hint">
+        <p v-if="isBrowser(row) && row.userAgent" class="admin-muted hint">{{ row.userAgent }}</p>
+        <p v-else-if="row.actorLabel && row.actorLabel !== 'anonymous'" class="admin-muted hint">
           {{ row.actorLabel }}<template v-if="row.ip"> · {{ row.ip }}</template>
         </p>
         <p v-else-if="row.ip" class="admin-muted hint">{{ row.ip }}</p>
@@ -149,7 +161,7 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
         </p>
         <p class="admin-muted hint">{{ row.kind }}</p>
         <button
-          v-if="row.stack || row.payload"
+          v-if="row.stack || row.payload || (isBrowser(row) && row.detail)"
           type="button"
           class="detail-toggle"
           @click="expanded = expanded === row.id ? '' : row.id"
@@ -158,12 +170,14 @@ const payloadFull = (payload: unknown) => JSON.stringify(payload, null, 2)
         </button>
         <template v-if="expanded === row.id">
           <pre v-if="row.payload" class="detail">{{ payloadFull(row.payload) }}</pre>
+          <pre v-if="isBrowser(row) && row.detail" class="detail">{{ payloadFull(row.detail) }}</pre>
           <pre v-if="row.stack" class="detail">{{ row.stack }}</pre>
         </template>
       </template>
 
       <template #cell-status="{ row }">
-        <UiBadge :tone="httpStatusTone(row.statusCode)" size="sm">
+        <UiBadge v-if="isBrowser(row)" tone="warning" size="sm">JS</UiBadge>
+        <UiBadge v-else :tone="httpStatusTone(row.statusCode)" size="sm">
           {{ row.statusCode }}
         </UiBadge>
       </template>

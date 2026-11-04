@@ -9,6 +9,8 @@ import { useCartStore } from '~/stores/cart'
  */
 const cart = useCartStore()
 const { apiBase } = useSite()
+// Kill switch in /admin/features.
+const enabled = useFeature('cart-suggestions')
 
 const ids = computed(() => cart.items.map((item) => item.productId).sort().slice(0, 50).join(','))
 const suggestions = ref<CartSuggestion[]>([])
@@ -17,7 +19,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let request = 0
 async function load(value: string) {
   const id = ++request
-  if (!value) {
+  if (!value || !enabled.value) {
     suggestions.value = []
     return
   }
@@ -34,7 +36,7 @@ async function load(value: string) {
 }
 
 // Quantity edits do not change the ids; adding a suggestion does, once.
-watch(ids, (value) => {
+watch([ids, enabled], ([value]) => {
   clearTimeout(timer)
   timer = setTimeout(() => load(value), 400)
 }, { immediate: true })

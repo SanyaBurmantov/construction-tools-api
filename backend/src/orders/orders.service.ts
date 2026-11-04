@@ -14,25 +14,16 @@ import {
   AdminUpdateOrderStatusDto,
 } from './dto/admin-order-query.dto';
 import { PromoService } from '../promo/promo.service';
-import { TelegramService } from '../notifications/telegram.service';
-import { MailService } from '../notifications/mail.service';
-import {
-  buildCustomerOrderMail,
-  buildOrderMail,
-} from '../notifications/order-mail';
 import { resolvePayer } from './order-payer';
 import { deliveryCostFor, orderMinimum, orderTerms } from './order-terms';
 import { attributionColumns } from '../attribution/traffic-source';
-import { SellerService } from '../b2b/seller.service';
+import { OrderNotificationsService } from './order-notifications.service';
 import { ServerCartService } from '../cart/server-cart.service';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 import { MAX_LINE_QUANTITY } from '../cart/cart-limits';
 
 const DEFAULT_CURRENCY = 'BYN';
 const MAX_INT4 = 2_147_483_647;
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** Confirmation letters to one address per 24 h; a buyer places a few at most. */
-const CUSTOMER_MAILS_PER_DAY = 5;
 
 /**
  * Who placed the order, when it came from an account. Admin-only: the public
@@ -65,10 +56,8 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private promo: PromoService,
-    private telegram: TelegramService,
     private serverCart: ServerCartService,
-    private mail: MailService,
-    @Optional() private seller?: SellerService,
+    @Optional() private notifications?: OrderNotificationsService,
   ) {}
 
   /**
@@ -76,6 +65,14 @@ export class OrdersService {
    * orders keep it null. It is the sole way an order joins «История заказов».
    */
   async createOrder(dto: CreateOrderDto, userId?: string) {
+    // A retry of a checkout that already went through (the response was lost,
+    // the button pressed twice) answers that order instead of a second one.
+    const idempotencyKey = dto.idempotencyKey?.trim() || null;
+    if (idempotencyKey) {
+      const existing = await this.findByIdempotencyKey(idempotencyKey, userId);
+      if (existing) return existing;
+    }
+
     // Collapse duplicate productIds into summed quantities, capped like a
     // single line (and like POST /cart/validate, so the totals agree).
     const quantities = new Map<string, number>();
@@ -219,51 +216,74 @@ export class OrdersService {
     const total =
       Math.round((itemsTotal - discountTotal + deliveryCost) * 100) / 100;
 
-    const order = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.order.create({
-        data: {
-          userId: userId ?? null,
-          customerName: dto.customerName.trim(),
-          customerPhone: dto.customerPhone.trim(),
-          customerEmail: dto.customerEmail?.trim() || null,
-          comment: dto.comment?.trim() || null,
-          deliveryMethod: dto.deliveryMethod,
-          deliveryAddress: dto.deliveryAddress?.trim() || null,
-          paymentMethod: dto.paymentMethod,
-          ...payer,
-          ...attributionColumns(dto.attribution),
-          currency,
-          itemsTotal,
-          deliveryCost,
-          discountTotal,
-          total,
-          promoCodeId,
-          promoCodeLabel,
-          items: { create: orderItems },
-        },
-        include: { items: true },
-      });
+    let order: Prisma.OrderGetPayload<{ include: { items: true } }>;
+    try {
+      order = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.order.create({
+          data: {
+            idempotencyKey,
+            userId: userId ?? null,
+            customerName: dto.customerName.trim(),
+            customerPhone: dto.customerPhone.trim(),
+            customerEmail: dto.customerEmail?.trim() || null,
+            comment: dto.comment?.trim() || null,
+            deliveryMethod: dto.deliveryMethod,
+            deliveryAddress: dto.deliveryAddress?.trim() || null,
+            paymentMethod: dto.paymentMethod,
+            ...payer,
+            ...attributionColumns(dto.attribution),
+            currency,
+            itemsTotal,
+            deliveryCost,
+            discountTotal,
+            total,
+            promoCodeId,
+            promoCodeLabel,
+            items: { create: orderItems },
+          },
+          include: { items: true },
+        });
 
-      if (promoCodeId) {
-        // The usage check in evaluate() ran outside this transaction, so N
-        // parallel checkouts with a single-use code would all pass it. The
-        // conditional increment is the real gate: only one of them gets the
-        // row, the rest roll back. Raw SQL because Prisma cannot compare two
-        // columns in a where.
-        const claimed = await tx.$executeRaw`
+        if (promoCodeId) {
+          // The usage check in evaluate() ran outside this transaction, so N
+          // parallel checkouts with a single-use code would all pass it. The
+          // conditional increment is the real gate: only one of them gets the
+          // row, the rest roll back. Raw SQL because Prisma cannot compare two
+          // columns in a where.
+          const claimed = await tx.$executeRaw`
           UPDATE "PromoCode"
           SET "usedCount" = "usedCount" + 1, "updatedAt" = NOW()
           WHERE "id" = ${promoCodeId}
             AND "isActive"
             AND ("maxUses" IS NULL OR "usedCount" < "maxUses")
         `;
-        if (claimed !== 1) {
-          throw new BadRequestException('Промокод исчерпан');
+          if (claimed !== 1) {
+            throw new BadRequestException('Промокод исчерпан');
+          }
         }
-      }
 
-      return created;
-    });
+        // Committed together with the order or not at all (transactional
+        // outbox): the notifications can no longer be lost to a restart.
+        if (this.notifications) await this.notifications.enqueue(tx, created);
+
+        return created;
+      });
+    } catch (error) {
+      // Two copies of one attempt raced past the lookup above: the loser hits
+      // the unique key and answers the winner's order.
+      if (
+        idempotencyKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const existing = await this.findByIdempotencyKey(
+          idempotencyKey,
+          userId,
+        );
+        if (existing) return existing;
+      }
+      throw error;
+    }
 
     // The stored cart has served its purpose. Same rule as the notification
     // below: the order is already committed, so a failure here is logged and
@@ -276,83 +296,33 @@ export class OrdersService {
       });
     }
 
-    // Fire-and-forget: the order is committed, so a failed or slow notification
-    // must not delay the response or fail the request. The catch is load-bearing
-    // — an unhandled rejection here would take the process down.
-    this.telegram.notifyNewOrder(order).catch((error) => {
-      this.logger.error(
-        `Order #${order.number} notification failed: ${String(error)}`,
-      );
-    });
-    // Same rule for the letter to the shop's mailbox (MAIL_ADMIN_TO). Built
-    // inside the promise so even a throw while composing it is caught here.
-    const publicOrigin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
-    Promise.resolve()
-      .then(() =>
-        this.mail.sendToAdmins(
-          buildOrderMail(order, publicOrigin),
-          `order #${order.number}`,
-        ),
-      )
-      .catch((error) => {
-        this.logger.error(
-          `Order #${order.number} mail failed: ${String(error)}`,
-        );
-      });
-    // And a copy for the customer: a purchaser attaches it to the request in
-    // their own accounting. Same never-throw rule.
-    if (order.customerEmail) {
-      const to = order.customerEmail;
-      Promise.resolve()
-        .then(async () => {
-          // A guest order takes any address, and the letter goes out from
-          // our mailbox: without a cap, 10 orders a minute per IP was a way to
-          // mail-bomb someone and get gost.by's SMTP listed as spam
-          // (audit 2026-10-30). The order itself is unaffected.
-          const recent = await this.prisma.order.count({
-            where: {
-              customerEmail: { equals: to, mode: 'insensitive' },
-              createdAt: { gte: new Date(Date.now() - DAY_MS) },
-            },
-          });
-          if (recent > CUSTOMER_MAILS_PER_DAY) {
-            this.logger.warn(
-              `Order #${order.number}: no customer letter, ${recent} orders to that address in 24 h`,
-            );
-            return false;
-          }
-          // A company paying by invoice gets the PDF link straight away —
-          // when the seller's requisites are complete.
-          const invoiceUrl =
-            publicOrigin &&
-            order.paymentMethod === 'INVOICE' &&
-            order.payerName &&
-            (await this.seller?.invoiceReady())
-              ? `${publicOrigin}/api/orders/${order.id}/invoice.pdf`
-              : undefined;
-          // The footer carries the seller's requisites as set in the admin.
-          const seller = await this.seller?.get().catch(() => undefined);
-          return this.mail.send(
-            {
-              to,
-              ...buildCustomerOrderMail(
-                order,
-                publicOrigin,
-                invoiceUrl,
-                seller,
-              ),
-            },
-            `order #${order.number} to customer`,
-          );
-        })
-        .catch((error) => {
-          this.logger.error(
-            `Order #${order.number} customer mail failed: ${String(error)}`,
-          );
-        });
-    }
+    // The API's immediate attempt; whatever it cannot send now the worker
+    // retries from the outbox (order-notifications.service.ts). Fire-and-
+    // forget and never throws: the order is committed, a slow Telegram or
+    // SMTP must not delay the response.
+    void this.notifications?.deliverForOrder(order.id);
 
     return order;
+  }
+
+  /**
+   * The order an earlier attempt with this key created. Only for the same
+   * caller: a key replayed from another account (or a guest replaying an
+   * account's key) is refused rather than handed someone else's order.
+   */
+  private async findByIdempotencyKey(key: string, userId?: string) {
+    const existing = await this.prisma.order.findUnique({
+      where: { idempotencyKey: key },
+      include: { items: true },
+    });
+    if (!existing) return null;
+    if ((existing.userId ?? null) !== (userId ?? null)) {
+      throw new ConflictException({
+        message: 'Этот заказ уже оформлен из другого аккаунта',
+        code: 'IDEMPOTENCY_KEY_REUSED',
+      });
+    }
+    return existing;
   }
 
   /**

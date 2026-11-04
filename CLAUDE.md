@@ -454,10 +454,21 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   parser alerts, new kinds of 5xx (`ErrorLogService`: one per failure per
   hour, ≤10/h) and the host watchdog go to `TELEGRAM_ALERT_THREAD_ID`
   (optionally another chat, `TELEGRAM_ALERT_CHAT_ID`). The send goes through `fetchWithTimeout` like
-  every other outbound call (hard timeout, one retry, `Retry-After`) and is
-  fire-and-forget **with an explicit `.catch()`** — the order is already
-  committed at that point, so a Telegram outage must never fail the request,
-  hang it, or crash the process on an unhandled rejection. `axios` is gone from
+  every other outbound call (hard timeout, one retry, `Retry-After`).
+  **Order notifications go through a transactional outbox**
+  (`OutboxMessage`, `orders/order-notifications.service.ts`): Telegram, the
+  shop letter and the customer's letter are written *in the order's
+  transaction*, the API tries them right after the commit (fire-and-forget,
+  never throws — a Telegram outage must never fail or hang the request), and
+  the worker sweeps what is still pending every 30 s with backoff
+  (1/5/15/60/180 min, then `FAILED`); a lease claim (`FOR UPDATE SKIP
+  LOCKED`) keeps the two from sending twice. A restart between commit and
+  send used to lose them. The message is rebuilt from the stored order at
+  send time. **Checkout is idempotent**: the storefront sends one
+  `idempotencyKey` per attempt (`utils/checkout-attempt.ts`, sessionStorage
+  until the order is confirmed) and a repeated `POST /orders` with it
+  answers the order already created (`Order.idempotencyKey` unique; a key
+  replayed from another account is a 409). `axios` is gone from
   the backend entirely; don't bring it back for one POST. Customer-supplied text is HTML-escaped (the message uses
   `parse_mode: HTML`). `PUBLIC_ORIGIN` adds a deep link to the order in admin.
 - **E-mail** (`notifications/mail.service.ts`, nodemailer over the hosting
@@ -715,6 +726,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   chrome the panels share (`.pad`, `.stat-row`, `.toolbar`, `.pagination` …) is
   styled once on the page with `:deep()` rather than copied into nine scoped
   stylesheets.
+- **Feature flags** (`features/`, `/admin/features` «Фичи»). Declared in
+  code (`features/feature-flags.ts`, mirrored as defaults in
+  `composables/useFeature.ts`) — a flag is added with the code that checks
+  it and removed with it; `SiteSetting feature.<key>` holds only an admin's
+  choice: `off` | `admins` (a signed-in ADMIN only) | `on`. The storefront
+  reads them **client-side** (`plugins/features.client.ts`, `GET /features`)
+  so cached shared HTML is never per-visitor; the backend checks with
+  `FeatureFlagsService.isOn(key, isAdmin)` (module is `@Global()`). Two kill
+  switches today: `cart-suggestions`, `client-error-reports`.
 - **Admin audit trail** (`audit/`, `AdminActionLog`, `/admin/audit`). Worth
   having only now that admins are accounts — under the shared token there was
   no "who". `AdminActionLogInterceptor` is registered **globally** (admin
@@ -756,6 +776,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   the page's ids, 2 ms), and the `(status, listingRank, name)` index could not
   serve `listingRank DESC, name ASC` (now `listingRank DESC` in the index).
   **Don't put `_count` of a big relation into a list query's include.**
+  The route table also counts **DB operations per request**
+  (`perf/query-context.ts`: an AsyncLocalStorage store opened by the timing
+  middleware, counted by a `$use` in `PrismaService`) — a route averaging
+  over `N_PLUS_ONE_QUERIES` (15) is flagged «похоже на N+1». And the
+  **SLOs** are written down in `request-stats.ts` (`SLO_TARGETS`: catalogue
+  99% ≤ 1 s, checkout 99% ≤ 2 s, whole API 95% ≤ 1 s, 5xx budgets) and
+  shown met/missed on the same screen.
 - **Search journal** (`search-log/`, `SearchEvent`, `/admin/search` «Поиск»).
   The browser reports each search it showed (`POST /search/events`,
   `useSearchLog()`: the catalogue's first page with its result count) and each
@@ -1031,6 +1058,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `backend/prisma/migrations`, starting from a squashed baseline
   `00000000000000_init`. The original pre-baseline migrations are archived in
   `backend/prisma/_migrations_archive_pre_baseline/` and are **not** applied.
+- **Images are built by GitHub Actions, not on the server** (`ci.yml` jobs
+  `image` + `images-prod`, pushed to `ghcr.io/sanyaburmantov/construction-tools-{backend,frontend}:<sha>`
+  for the prod branch, after lint/tests pass). `auto-deploy.sh` waits for the
+  commit's `images-prod` check via the GitHub API, pulls, and rolls back to
+  the kept `:rollback` images in seconds; a commit CI rejected is not
+  deployed (one Telegram alert). Building on the box (load 16 on 2 cores,
+  10–15 min of a slow site) is only the fallback after 30 min without a CI
+  answer or a failed pull. Details: the `deploy-prod` skill.
 - Prod containers run `prisma migrate deploy` on start (backend Dockerfile CMD),
   but the auto-deploy applies new migrations first, as a separate step: a DB
   backup, `compose run backend npx prisma migrate deploy`, and on failure
@@ -1048,8 +1083,42 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/data` volume with the TLS certificates) — a dump alone does not rebuild
   the server. The script reads the shared `S3_ENDPOINT/S3_ACCESS_KEY/
   S3_SECRET_KEY` (old `S3_BACKUP_*` names still win) and `S3_BACKUP_BUCKET`.
+  It refuses a backup bucket equal to `S3_MEDIA_BUCKET`, and the worker
+  refuses a media bucket equal to `S3_BACKUP_BUCKET` — the media bucket is
+  made public-read, so one typo would publish every dump.
+- **A backup is only a backup once it has been restored.**
+  `deploy/backup-drill.sh` (`construction-tools-backup-drill.timer`,
+  Sundays 05:10, installed and enabled by auto-deploy) restores the newest
+  dump into a throwaway capped Postgres container (384 MB, 0.75 CPU,
+  nice/ionice, refuses without ~8× the dump in free disk), compares row
+  counts of the key tables with the live DB (≥ 97%) and the migration
+  history, records the restore time (our RTO for a lost database), removes
+  everything and reports ✅/🔴 to the alerts topic. The watchdog alerts when
+  no drill has passed for 8 days. Never writes to the live database.
 - Add schema changes as new migrations and commit them. Never re-introduce
   `prisma db push` for prod.
+- **The app can run as a role without DDL rights** (opt-in, audit
+  2026-11-03): with `DB_APP_USER`/`DB_APP_PASSWORD` in `.env.prod` and
+  `deploy/db-app-role.sh` run once, API and worker connect as that role (data
+  rights, `pg_read_all_stats` and `pg_stat_statements_reset` for «Скорость»,
+  default privileges for tables future migrations create), the API skips
+  `migrate deploy` at boot (`MIGRATE_ON_BOOT=false`), and auto-deploy runs
+  migrations as the owner in the one-off container only. Without the
+  variables everything connects as `DB_USER`, as before.
+- **Expand → contract.** A failed release rolls back to the previous images
+  in seconds, on the *already-migrated* schema — so a migration must leave
+  the previous code working: add columns nullable or with a default, drop or
+  rename only in a later release once nothing reads the old one.
+  `scripts/check-migrations.mjs` fails CI on DROP/RENAME/TYPE/SET NOT NULL/
+  required ADD COLUMN in migrations newer than its `BASELINE`; a statement
+  that is really safe is allowed by `-- migration-safety: <why>` in the file.
+
+## Incidents
+
+After an outage customers noticed (or one that could have lost data) write a
+blameless postmortem in `docs/postmortems/` from `TEMPLATE.md`: what was
+seen, the timeline, the chain of causes, what changed (with commits) — and
+the rule it taught goes here, next to the code it protects.
 
 ## Parsing (the core of this project)
 

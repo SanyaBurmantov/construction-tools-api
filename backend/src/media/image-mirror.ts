@@ -29,6 +29,9 @@ export function mediaConfigFromEnv(
   const bucket = env.S3_MEDIA_BUCKET?.trim();
   const endpoint = env.S3_ENDPOINT?.trim().replace(/\/+$/, '');
   if (!bucket || !endpoint) return null;
+  // The worker makes this bucket public-read. Pointed at the backups bucket
+  // by a typo, that would publish every database dump (audit 2026-11-03).
+  if (bucket === env.S3_BACKUP_BUCKET?.trim()) return null;
   const publicBase = (
     env.S3_MEDIA_PUBLIC_BASE?.trim() || `${endpoint}/${bucket}`
   ).replace(/\/+$/, '');

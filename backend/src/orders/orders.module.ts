@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OrderNotificationsService } from './order-notifications.service';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { PromoModule } from '../promo/promo.module';
@@ -11,7 +12,7 @@ import { B2bModule } from '../b2b/b2b.module';
   // cart, so the next sign-in does not restore what was just bought.
   // B2bModule: whether the confirmation letter can link the PDF invoice.
   imports: [PromoModule, NotificationsModule, CartModule, B2bModule],
-  providers: [OrdersService],
+  providers: [OrdersService, OrderNotificationsService],
   controllers: [OrdersController],
   exports: [OrdersService],
 })

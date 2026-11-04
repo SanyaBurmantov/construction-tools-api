@@ -31,6 +31,11 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - run: npm run lint
+      # Expand → contract: a new migration must not break the release before
+      # it, because a failed deploy rolls back to those images on the
+      # already-migrated schema (scripts/check-migrations.mjs).
+      - run: node --test scripts/check-migrations.test.mjs
+      - run: node scripts/check-migrations.mjs
       # `npm run build` uses tsconfig.build.json, which excludes **/*spec.ts.
       # This checks the tests themselves: it is what catches a spec that
       # constructs a service with the wrong arguments and still passes because
@@ -54,3 +59,67 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+
+  # Production images, built here instead of on the 2-core prod box (a Nuxt
+  # build there pushed the load to 16 and made every release 10–15 minutes of
+  # a slow site). Only for the prod branch and only after everything above
+  # passed. deploy/auto-deploy.sh on the server pulls them by commit sha.
+  image:
+    name: image (${{ matrix.app }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
+    needs: [production-config, backend, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - id: owner
+        run: echo "name=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.app }}
+          target: production
+          # The backend job above already ran the tests; a build on the
+          # server (the fallback) still runs them.
+          build-args: |
+            RUN_TESTS=false
+            NUXT_PUBLIC_API_BASE=/api
+          push: true
+          provenance: false
+          tags: ghcr.io/${{ steps.owner.outputs.name }}/construction-tools-${{ matrix.app }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # Layer cache: an unchanged package-lock.json skips `npm ci`.
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+      # The registry keeps the last 20 releases (rollback window); the server
+      # itself keeps only the running one and the one before it.
+      - uses: actions/delete-package-versions@v5
+        continue-on-error: true
+        with:
+          package-name: construction-tools-${{ matrix.app }}
+          package-type: container
+          min-versions-to-keep: 20
+
+  # The one check the server asks GitHub about (check-runs?check_name=
+  # images-prod): success = both images are in the registry; skipped/failed =
+  # this commit must not be deployed. The name carries the branch so a master
+  # run of the same commit (skipped) can never answer for prod.
+  images:
+    name: images-${{ github.ref_name }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
+    needs: [image]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Images for ${{ github.sha }} are in ghcr.io"

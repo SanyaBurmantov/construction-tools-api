@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ErrorLogService } from './error-log.service';
 import { ErrorLogCleanupCron } from './error-log-cleanup.cron';
+import { ClientErrorsController } from './client-errors.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 /**
@@ -16,6 +17,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
   // NotificationsModule: a new 5xx is sent to the Telegram alerts topic.
   imports: [NotificationsModule],
   providers: [ErrorLogService, ErrorLogCleanupCron],
+  controllers: [ClientErrorsController],
   exports: [ErrorLogService],
 })
 export class ErrorsModule {}

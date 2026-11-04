@@ -66,6 +66,8 @@ x-backend-environment: &backend-environment
   S3_SECRET_KEY: ${S3_SECRET_KEY:-}
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET:-}
+  # Only to refuse a media bucket that is the backups one (image-mirror.ts).
+  S3_BACKUP_BUCKET: ${S3_BACKUP_BUCKET:-}
   S3_MEDIA_PUBLIC_BASE: ${S3_MEDIA_PUBLIC_BASE:-}
   S3_MEDIA_MAX_GB: ${S3_MEDIA_MAX_GB:-30}
   AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
@@ -173,6 +175,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
+    # Normally pulled, not built: CI builds the image from the prod commit and
+    # deploy/auto-deploy.sh pulls it from ghcr.io and tags it with this name.
+    # `build:` stays as the fallback when GitHub has no image for a release.
     # Tagged so `worker` runs the very same build without building it twice.
     image: construction-tools-backend:latest
     container_name: construction-tools-api
@@ -193,6 +198,8 @@ services:
       # an admin starts here is handed to it through ParserJobRequest.
       PROCESS_ROLE: api
       PORT: 8000
+      # Set (to false) only with DB_APP_USER: that role cannot run DDL.
+      MIGRATE_ON_BOOT: ${DB_APP_USER:+false}
       # Heap ceiling under mem_limit (the rest is buffers, Prisma's engine and
       # native memory). The in-process memory guard restarts the API at 85% of
       # it — a real heap OOM hung node for 13 h instead of ending it.
@@ -201,7 +208,10 @@ services:
       # is 5, which the app outgrew: /admin/stats alone fires 17 aggregates in
       # one Promise.all. Postgres allows 100 by default; the API and the worker
       # take 15 each.
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
+      # The app's own role when DB_APP_USER is set (deploy/db-app-role.sh: data
+      # rights only, no DDL, not the superuser); migrations keep the owner,
+      # passed only to the one-off `compose run` in auto-deploy.sh.
+      DATABASE_URL: postgresql://${DB_APP_USER:-${DB_USER:-postgres}}:${DB_APP_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required}}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
     depends_on:
       db:
         condition: service_healthy
@@ -216,7 +226,7 @@ services:
       - app-network
 
   worker:
-    # Same image as `backend`, built once by it (auto-deploy builds `backend`).
+    # Same image as `backend` (auto-deploy pulls or builds `backend` only).
     image: construction-tools-backend:latest
     container_name: construction-tools-worker
     # Never pulled: the tag only ever exists as the local `backend` build.
@@ -242,7 +252,7 @@ services:
       <<: *backend-environment
       PROCESS_ROLE: worker
       NODE_OPTIONS: ${WORKER_NODE_OPTIONS:---max-old-space-size=400}
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${WORKER_DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
+      DATABASE_URL: postgresql://${DB_APP_USER:-${DB_USER:-postgres}}:${DB_APP_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required}}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${WORKER_DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
     depends_on:
       db:
         condition: service_healthy
@@ -267,6 +277,8 @@ services:
       target: production
       args:
         NUXT_PUBLIC_API_BASE: /api
+    # Pulled from ghcr.io and tagged by auto-deploy, like `backend`.
+    image: construction-tools-frontend:latest
     container_name: construction-tools-front
     restart: unless-stopped
     logging: *default-logging

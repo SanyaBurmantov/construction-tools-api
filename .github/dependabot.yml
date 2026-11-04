@@ -1,0 +1,75 @@
+# Weekly dependency updates as pull requests into master. CI runs on each one;
+# a green PR is merged like any other change and ships with the next release.
+# The 2026-11-03 audit found Nuxt and body-parser with published advisories
+# nobody had heard about — this is what tells us next time.
+#
+# Patch and minor updates come grouped (one PR per directory a week); majors
+# come one by one, because those are the ones that need reading. Security
+# updates are opened at once, outside the weekly schedule (enable "Dependabot
+# security updates" in the repository settings → Code security).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    target-branch: master
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Minsk
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(backend)"
+
+  - package-ecosystem: npm
+    directory: /frontend
+    target-branch: master
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Minsk
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(frontend)"
+
+  - package-ecosystem: npm
+    directory: /e2e
+    target-branch: master
+    schedule:
+      interval: monthly
+    groups:
+      e2e:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(e2e)"
+
+  # Base images (node:22-bookworm-slim) — the OS patches inside them.
+  - package-ecosystem: docker
+    directories: [/backend, /frontend]
+    target-branch: master
+    schedule:
+      interval: weekly
+    ignore:
+      # Node majors are a decision (.nvmrc, CLAUDE.md), not a weekly update.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+    commit-message:
+      prefix: "deps(docker)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: master
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "deps(ci)"

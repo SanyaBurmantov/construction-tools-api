@@ -92,6 +92,14 @@ describe('withImageSources', () => {
 describe('mediaConfigFromEnv', () => {
   it('needs a bucket and an endpoint, and derives the public base', () => {
     expect(mediaConfigFromEnv({ S3_ENDPOINT: 'https://s3.by' })).toBeNull();
+    // A public-read media bucket must never be the backups bucket.
+    expect(
+      mediaConfigFromEnv({
+        S3_ENDPOINT: 'https://s3.by',
+        S3_MEDIA_BUCKET: 'gost-backups',
+        S3_BACKUP_BUCKET: 'gost-backups',
+      }),
+    ).toBeNull();
     expect(
       mediaConfigFromEnv({
         S3_ENDPOINT: 'https://s3.by/',
