@@ -1212,7 +1212,7 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `backend/prisma/_migrations_archive_pre_baseline/` and are **not** applied.
 - **Images are built by GitHub Actions, not on the server** (`ci.yml` jobs
   `image` + `images-prod`, pushed to `ghcr.io/sanyaburmantov/construction-tools-{backend,frontend}:<sha>`
-  for the prod branch, after lint/tests pass). `auto-deploy.sh` waits for the
+  for the prod branch, built **in parallel with** lint/tests; the `images-prod` check needs both, so a red commit is never deployed). The backend Dockerfile copies `prisma/` only after `npm ci`, so a migration does not reinstall the dependencies. `auto-deploy.sh` waits for the
   commit's `images-prod` check via the GitHub API, pulls, and rolls back to
   the kept `:rollback` images in seconds; a commit CI rejected is not
   deployed (one Telegram alert). Building on the box (load 16 on 2 cores,

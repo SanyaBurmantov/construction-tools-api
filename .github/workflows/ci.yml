@@ -63,12 +63,14 @@ jobs:
 
   # Production images, built here instead of on the 2-core prod box (a Nuxt
   # build there pushed the load to 16 and made every release 10–15 minutes of
-  # a slow site). Only for the prod branch and only after everything above
-  # passed. deploy/auto-deploy.sh on the server pulls them by commit sha.
+  # a slow site). Only for the prod branch. They build **alongside** the tests
+  # rather than after them (that wait was ~1.7 min of every release): an image
+  # of a commit whose tests fail does get pushed under its sha, but nothing
+  # deploys it — the server deploys only on `images-prod` below, which needs
+  # the tests too. deploy/auto-deploy.sh pulls the images by commit sha.
   image:
     name: image (${{ matrix.app }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
-    needs: [production-config, backend, frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -114,13 +116,14 @@ jobs:
           min-versions-to-keep: 20
 
   # The one check the server asks GitHub about (check-runs?check_name=
-  # images-prod): success = both images are in the registry; skipped/failed =
-  # this commit must not be deployed. The name carries the branch so a master
-  # run of the same commit (skipped) can never answer for prod.
+  # images-prod): success = both images are in the registry **and** every
+  # check above passed; skipped/failed = this commit must not be deployed.
+  # The name carries the branch so a master run of the same commit (skipped)
+  # can never answer for prod.
   images:
     name: images-${{ github.ref_name }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
-    needs: [image]
+    needs: [image, production-config, backend, frontend]
     runs-on: ubuntu-latest
     steps:
       - run: echo "Images for ${{ github.sha }} are in ghcr.io"
