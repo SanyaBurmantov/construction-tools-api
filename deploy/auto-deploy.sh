@@ -262,6 +262,14 @@ echo "$target" >"$STATE_FILE"
 rm -f "$FAILED_FILE" "$REJECTED_FILE"
 echo "Deployed $target successfully ($build_mode)"
 
+# A new frontend build starts with an empty page cache: warm the pages a
+# visitor reaches in a click or two (deploy/warm-cache.sh), as its own unit
+# so this deploy does not wait for it. A warm-up still running from a
+# previous release keeps the name and this one is skipped.
+systemd-run --unit=construction-tools-warmup --collect --no-block --quiet \
+  --property=Nice=10 bash "$APP_DIR/deploy/warm-cache.sh" ||
+  echo "Warm-up not started (one is still running?)"
+
 # The systemd units run copies in /usr/local/sbin, installed by hand once — so
 # a change to the watchdog or the backup never reached the server (the backup
 # there was a month older than the repository's). Refreshed from the release

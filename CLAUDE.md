@@ -202,6 +202,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   build keeps the cache and serves pages even with the API down; without
   `NUXT_CACHE_DIR` it is `bounded-memory.ts` (`NUXT_CACHE_MAX_MB`). Don't swap
   it back for the plain memory driver.
+  **After a release the cache is warmed** (`deploy/warm-cache.sh`, started by
+  auto-deploy as the transient unit `construction-tools-warmup`, not waited
+  for): home, catalogue, info pages, header strip + root categories, «Выбирают
+  покупатели» and the first products of every root category round-robin —
+  one page at a time, ≤ `WARM_MAX_PAGES` (220). The cache is per build, so
+  every deploy used to start cold for visitors and crawlers.
 - **Data model**: products are stored in two layers — `Product` (normalized
   storefront card) and `SourceProduct` (raw supplier snapshot, identity
   `@@unique([sourceId, url])`). See the parsing docs below.
