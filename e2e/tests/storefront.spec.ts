@@ -40,11 +40,15 @@ test('product → cart → the way into checkout', async ({ page }) => {
   await expect(heading).toBeVisible();
   const name = (await heading.innerText()).trim();
   await expect(page.getByText(/\d\s*(Br|BYN)/).first()).toBeVisible();
-  await page
-    .getByRole('button', { name: /^(в корзину|добавить ещё)$/i })
-    .filter({ visible: true })
-    .first()
-    .click();
+  // The button is in the server HTML before Vue has hydrated it; a click that
+  // early does nothing. Retry until the page says the item is in the cart.
+  const buy = page.getByRole('button', { name: /^в корзину$/i }).filter({ visible: true }).first();
+  await expect(async () => {
+    await buy.click({ timeout: 2_000 });
+    await expect(page.getByRole('button', { name: /^добавить ещё$/i }).filter({ visible: true }).first()).toBeVisible({
+      timeout: 2_000,
+    });
+  }).toPass({ timeout: 20_000 });
 
   // The cart holds it (client-side, localStorage) and re-prices it.
   await page.goto('/cart');
