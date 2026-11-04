@@ -1,4 +1,4 @@
-import { fetchWithTimeout } from './fetch-with-timeout';
+import { ResponseTooLargeError, fetchWithTimeout } from './fetch-with-timeout';
 
 describe('fetchWithTimeout', () => {
   const realFetch = global.fetch;
@@ -160,5 +160,66 @@ describe('fetchWithTimeout', () => {
         { retries: 0 },
       ),
     ).rejects.toThrow('https://api.telegram.org/bot***/sendMessage after');
+  });
+
+  describe('maxBytes', () => {
+    const streamOf = (chunks: number[], onPull?: () => void) =>
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          onPull?.();
+          const next = chunks.shift();
+          if (next === undefined) controller.close();
+          else controller.enqueue(new Uint8Array(next));
+        },
+      });
+
+    it('refuses a declared Content-Length over the limit without reading it', async () => {
+      let pulls = 0;
+      global.fetch = jest.fn(() =>
+        Promise.resolve(
+          new Response(
+            streamOf([10], () => pulls++),
+            {
+              headers: { 'content-length': String(20 * 1024 * 1024) },
+            },
+          ),
+        ),
+      ) as typeof fetch;
+      await expect(
+        fetchWithTimeout(
+          'https://img.example/a.jpg',
+          {},
+          { maxBytes: 1024, retries: 2 },
+        ),
+      ).rejects.toBeInstanceOf(ResponseTooLargeError);
+      expect(global.fetch).toHaveBeenCalledTimes(1); // not retried
+      expect(pulls).toBeLessThanOrEqual(1);
+    });
+
+    it('cuts a stream that passes the limit while it arrives', async () => {
+      let pulls = 0;
+      // No Content-Length (chunked): 400 bytes a chunk, endless.
+      global.fetch = jest.fn(() =>
+        Promise.resolve(
+          new Response(streamOf(Array(1000).fill(400), () => pulls++)),
+        ),
+      ) as typeof fetch;
+      await expect(
+        fetchWithTimeout('https://img.example/b.jpg', {}, { maxBytes: 1000 }),
+      ).rejects.toBeInstanceOf(ResponseTooLargeError);
+      expect(pulls).toBeLessThan(10);
+    });
+
+    it('returns a body within the limit intact', async () => {
+      global.fetch = jest.fn(() =>
+        Promise.resolve(new Response(streamOf([300, 300]), { status: 200 })),
+      ) as typeof fetch;
+      const res = await fetchWithTimeout(
+        'https://img.example/c.jpg',
+        {},
+        { maxBytes: 1000 },
+      );
+      expect((await res.arrayBuffer()).byteLength).toBe(600);
+    });
   });
 });
