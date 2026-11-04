@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
 import { SpecSelection, parseSpecFilter } from './spec-filter';
 import { searchVariants } from '../common/utils/transliterate';
+import { buildFtsQuery, FTS_DOCUMENT_SQL, ftsDocumentSql } from './search-fts';
 import { isIdentitySpec, publicSpecs } from '../parser/spec-filterable';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 
@@ -983,6 +984,21 @@ export class ProductService {
     const barcode = barcodeTerm(term);
 
     const branches: Prisma.Sql[] = [];
+    // Russian full text (search-fts.ts): every word in some form, any order.
+    // The branch uses the GIN expression index, so its document must be the
+    // unqualified FTS_DOCUMENT_SQL; ranking reads the same document off `p`.
+    const ftsQueries = [
+      ...new Set(
+        variants
+          .map((variant) => buildFtsQuery(variant))
+          .filter((q): q is string => q !== null),
+      ),
+    ];
+    for (const tsquery of ftsQueries) {
+      branches.push(
+        Prisma.sql`SELECT "id" FROM "Product" WHERE ${Prisma.raw(FTS_DOCUMENT_SQL)} @@ to_tsquery('russian', ${tsquery})`,
+      );
+    }
     for (const variant of variants) {
       const like = `%${escapeLike(variant)}%`;
       branches.push(
@@ -1028,6 +1044,18 @@ export class ProductService {
     });
     if (barcodeHit) {
       rankClauses.push(Prisma.sql`CASE WHEN ${barcodeHit} THEN 100 ELSE 0 END`);
+    }
+    // A full-text match sits between a name substring (65) and a model hit
+    // (60) when the words are only somewhere in the name, and above the
+    // substring when they are the product's kind — its first two words,
+    // weighted A (ts_rank ≈ 0.6+ there, ≈ 0.06 elsewhere).
+    for (const tsquery of ftsQueries) {
+      const doc = Prisma.raw(ftsDocumentSql('p'));
+      rankClauses.push(
+        Prisma.sql`CASE WHEN ${doc} @@ to_tsquery('russian', ${tsquery})
+          THEN 55 + LEAST(20, (ts_rank(${doc}, to_tsquery('russian', ${tsquery})) * 20)::int)
+          ELSE 0 END`,
+      );
     }
 
     const rows = await this.withTrigramThreshold<{ id: string }>(
