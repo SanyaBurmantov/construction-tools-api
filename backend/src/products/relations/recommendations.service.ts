@@ -9,7 +9,8 @@ import { withoutPlaceholderImages } from '../../common/utils/product-images';
 import { fitmentTitles, type FitmentRole } from './fitment';
 import { packOptions, parsePack } from './packs';
 import { MAX_FAMILY, productFamily, variantOptions } from './variants';
-import { similarityScore } from './similarity';
+import { productKindStem, similarityScore } from './similarity';
+import { nameSimilarity } from '../../offers/product-matching';
 import {
   RECOMMENDATION_CARD_SELECT,
   SIMILARITY_SELECT,
@@ -23,6 +24,8 @@ const PAGE_SIZE = 12;
 // Each candidate brings its specs: 120 of them per product page, times a
 // cold-cache crawl after a deploy, ran the 256 MB API out of heap twice.
 const CANDIDATE_LIMIT = 48;
+/** A name with no kind joins «Похожие» only when it reads this much alike. */
+const UNKNOWN_KIND_MIN_TITLE = 0.4;
 /** Recommendations computed at once; the rest wait (bounded) or get a 503. */
 // 6 while the API had a 256 MB heap; 448 MB since the RAM upgrade (02.11).
 const MAX_RUNNING = 10;
@@ -536,10 +539,18 @@ export class RecommendationsService {
   }
 
   /**
-   * Same category, the closest names first (pg_trgm), ranked by kind, title,
-   * specs, price and brand. When fewer than four share the kind, the rest of
-   * the row is the category's closest names — the block never goes empty for
-   * a product that has neighbours.
+   * «Похожие»: the same kind of item (productKind — «бирка», «перфоратор»),
+   * closest first by title, specs, sizes, price and brand. The product's own
+   * category first; when it holds fewer than a row, the same kind from the
+   * rest of the catalogue (an item is often filed in a neighbouring branch).
+   *
+   * **Relevance over a full row** (owner, 2026-11-04): another kind of item
+   * never fills the gaps. It used to — «the block never goes empty» — and 44%
+   * of the cards shown were another kind: window handles beside key tags, a
+   * heat gun beside an air freshener. A short row, or none (the storefront
+   * hides an empty block), is honest. Only a name with no recognisable kind
+   * («(1/2", 24 мм, L=38 мм)») falls back to the category's closest names,
+   * and only when those really read alike.
    */
   private async similar(product: SimilarityRow, familyKey?: string | null) {
     // Other sizes of the same line are the variant switch's job; here they
@@ -549,38 +560,66 @@ export class RecommendationsService {
           SELECT 1 FROM "ProductFamily" pf
           WHERE pf."productId" = "Product"."id" AND pf."familyKey" = ${familyKey})`
       : Prisma.empty;
-    const ids = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT "id" FROM "Product"
-      WHERE "categoryId" = ${product.categoryId} AND "status" = 'PUBLISHED'
-        AND "id" <> ${product.id} AND "priceValue" > 0 ${otherLine}
-      ORDER BY similarity("name", ${product.name}) DESC, "listingRank" DESC, "id"
-      LIMIT ${CANDIDATE_LIMIT}`;
-    if (!ids.length) return [];
-    const rows = await this.prisma.product.findMany({
-      where: { id: { in: ids.map((row) => row.id) } },
-      select: SIMILARITY_SELECT,
-    });
-    const order = new Map(ids.map((row, index) => [row.id, index]));
-    const candidates = rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
-    const ranked = candidates
-      .map((candidate) => ({
-        candidate,
-        score: similarityScore(product, candidate),
-      }))
-      .filter(({ score }) => score > 0)
-      .sort(
-        (a, b) =>
-          b.score - a.score || a.candidate.id.localeCompare(b.candidate.id),
-      )
-      .map(({ candidate }) => candidate);
-    const picked = new Set(ranked.map((candidate) => candidate.id));
-    const ordered = [
-      ...ranked,
-      ...candidates.filter((candidate) => !picked.has(candidate.id)),
-    ];
+    const load = async (where: Prisma.Sql) => {
+      const ids = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "Product"
+        WHERE "status" = 'PUBLISHED' AND "id" <> ${product.id}
+          AND "priceValue" > 0 ${otherLine} AND ${where}
+        ORDER BY similarity("name", ${product.name}) DESC, "listingRank" DESC, "id"
+        LIMIT ${CANDIDATE_LIMIT}`;
+      if (!ids.length) return [];
+      const rows = await this.prisma.product.findMany({
+        where: { id: { in: ids.map((row) => row.id) } },
+        select: SIMILARITY_SELECT,
+      });
+      const order = new Map(ids.map((row, index) => [row.id, index]));
+      return rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+    };
+    const rank = (
+      candidates: Awaited<ReturnType<typeof load>>,
+      anyCategory: boolean,
+    ) =>
+      candidates
+        .map((candidate) => ({
+          candidate,
+          score: similarityScore(product, candidate, { anyCategory }),
+        }))
+        .filter(({ score }) => score > 0)
+        .sort(
+          (a, b) =>
+            b.score - a.score || a.candidate.id.localeCompare(b.candidate.id),
+        )
+        .map(({ candidate }) => candidate);
+
+    const own = await load(Prisma.sql`"categoryId" = ${product.categoryId}`);
+    const kindStem = productKindStem(product);
+    let tiers: Array<typeof own>;
+    if (!kindStem) {
+      // No kind to compare: the category's names that really read alike.
+      tiers = [
+        own.filter(
+          (candidate) =>
+            nameSimilarity(product.name, candidate.name) >=
+            UNKNOWN_KIND_MIN_TITLE,
+        ),
+      ];
+    } else {
+      const sameKind = rank(own, false);
+      tiers = [sameKind];
+      if (sameKind.length < PAGE_SIZE) {
+        const like = `%${kindStem.replace(/[\\%_]/g, '\\$&')}%`;
+        const elsewhere = await load(
+          Prisma.sql`"categoryId" <> ${product.categoryId} AND "name" ILIKE ${like}`,
+        );
+        tiers.push(rank(elsewhere, true));
+      }
+    }
+
     // In stock first, then — for a cordless tool — the same battery
     // platform: an alternative the buyer's batteries do not fit is a lesser
-    // one. Otherwise the similarity order stands.
+    // one. Within a tier only: availability never lifts a less similar
+    // item over a more similar one from a better tier.
+    const ordered = tiers.flat();
     const platforms = await this.prisma.productFitment.findMany({
       where: {
         productId: { in: [product.id, ...ordered.map((c) => c.id)] },
@@ -588,21 +627,30 @@ export class RecommendationsService {
       },
       select: { productId: true, key: true },
     });
-    const own = new Set(
+    const ownPlatforms = new Set(
       platforms.filter((t) => t.productId === product.id).map((t) => t.key),
     );
     const samePlatform = new Set(
       platforms
-        .filter((t) => t.productId !== product.id && own.has(t.key))
+        .filter((t) => t.productId !== product.id && ownPlatforms.has(t.key))
         .map((t) => t.productId),
     );
-    const rank = (candidate: (typeof ordered)[number]) =>
+    const availability = (candidate: (typeof ordered)[number]) =>
       (candidate.stockStatus === 'in_stock' ? 0 : 2) +
-      (own.size && !samePlatform.has(candidate.id) ? 1 : 0);
-    return ordered
-      .map((candidate, index) => ({ candidate, index }))
+      (ownPlatforms.size && !samePlatform.has(candidate.id) ? 1 : 0);
+    const seen = new Set<string>();
+    return tiers
+      .flatMap((tier, tierIndex) =>
+        tier.map((candidate, index) => ({ candidate, tierIndex, index })),
+      )
+      .filter(({ candidate }) =>
+        seen.has(candidate.id) ? false : (seen.add(candidate.id), true),
+      )
       .sort(
-        (a, b) => rank(a.candidate) - rank(b.candidate) || a.index - b.index,
+        (a, b) =>
+          a.tierIndex - b.tierIndex ||
+          availability(a.candidate) - availability(b.candidate) ||
+          a.index - b.index,
       )
       .slice(0, PAGE_SIZE)
       .map(({ candidate }) => recommendationCard(candidate));

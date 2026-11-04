@@ -611,7 +611,9 @@ integration('product recommendations (PostgreSQL)', () => {
     ).toBe(400);
   });
 
-  it('fills «Похожие» from the category when the kind is shared by few', async () => {
+  // Relevance over a full row (owner, 2026-11-04): a bolt is not «like» an
+  // anchor, however few anchors there are.
+  it('never fills «Похожие» with another kind of item', async () => {
     const anchor = await create('Анкер клиновой М10х120 мм', '');
     const sibling = await create('Анкер рамный 10х112 мм', '');
     const neighbour = await create('Болт М10х120 мм', '');
@@ -619,7 +621,7 @@ integration('product recommendations (PostgreSQL)', () => {
       await service.get(anchor.slug, new RecommendationsQueryDto())
     ).similar.map((row) => row.id);
     expect(similar[0]).toBe(sibling.id);
-    expect(similar).toContain(neighbour.id);
+    expect(similar).not.toContain(neighbour.id);
   });
 
   it('hides changed source evidence immediately and rebuilds the reverse link', async () => {

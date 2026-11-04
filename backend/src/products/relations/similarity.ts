@@ -73,6 +73,24 @@ const ENDING = /(?:ами|ями|ов|ев|ей|ах|ях|ы|и|а|я|у|ю|е|�
 export function productKind(
   product: Pick<SimilarityProduct, 'name' | 'brand'>,
 ): string {
+  return kindOf(product).kind;
+}
+
+/**
+ * The kind, and the stem of the word that named it («Бирка для ключей» →
+ * «бирк»): what a search for the same kind elsewhere in the catalogue looks
+ * for in other names. Empty when the name has no kind.
+ */
+export function productKindStem(
+  product: Pick<SimilarityProduct, 'name' | 'brand'>,
+): string {
+  return kindOf(product).stem;
+}
+
+function kindOf(product: Pick<SimilarityProduct, 'name' | 'brand'>): {
+  kind: string;
+  stem: string;
+} {
   const brandWords = new Set(
     normalizeName(product.brand?.name ?? '').split(' '),
   );
@@ -91,14 +109,36 @@ export function productKind(
     if (!/^[а-я]+$/u.test(word) || NOT_A_KIND.has(word) || ADJECTIVE.test(word))
       continue;
     const type = TYPES.find(([, pattern]) => pattern.test(word));
-    const kind = type
-      ? type[0]
-      : word.length > 4
-        ? word.replace(ENDING, '')
-        : word;
-    return `${set ? 'набор ' : ''}${kind}`;
+    const bare = word.replace(ENDING, '');
+    const kind = type ? type[0] : word.length > 4 ? bare : word;
+    // For the search elsewhere: «биты» and «бита» both contain «бит».
+    const stem = bare.length >= 3 ? bare : word;
+    return { kind: `${set ? 'набор ' : ''}${kind}`, stem };
   }
-  return '';
+  return { kind: '', stem: '' };
+}
+
+/**
+ * The numbers of a name — diameters, lengths, drives («Круг отрезной 100 мм»
+ * → 100; «1/2", 24 мм» → 1/2, 24). A 100 mm disc for a mini grinder is not
+ * like a 230 mm one however alike the names read.
+ */
+function sizeTokens(name: string): Set<string> {
+  return new Set(
+    (name.toLowerCase().match(/\d+(?:[.,/]\d+)?/g) ?? [])
+      .map((token) => token.replace(',', '.'))
+      // Article numbers and years are not sizes.
+      .filter((token) => token.length <= 5),
+  );
+}
+
+function sizeAgreement(left: string, right: string): number | null {
+  const a = sizeTokens(left);
+  const b = sizeTokens(right);
+  if (!a.size || !b.size) return null;
+  let shared = 0;
+  for (const token of a) if (b.has(token)) shared += 1;
+  return shared / Math.max(a.size, b.size);
 }
 
 function properties(product: SimilarityProduct): Map<string, string> {
@@ -118,14 +158,21 @@ function properties(product: SimilarityProduct): Map<string, string> {
   );
 }
 
+/**
+ * 0 = not similar: another kind of item, or itself. `anyCategory` lets a
+ * candidate from another branch of the catalogue in (the same kind filed
+ * elsewhere), scored a little lower than one from the product's own.
+ */
 export function similarityScore(
   product: SimilarityProduct,
   candidate: SimilarityProduct,
+  options: { anyCategory?: boolean } = {},
 ): number {
   const kind = productKind(product);
+  const sameCategory = product.categoryId === candidate.categoryId;
   if (
     product.id === candidate.id ||
-    product.categoryId !== candidate.categoryId ||
+    (!sameCategory && !options.anyCategory) ||
     !kind ||
     kind !== productKind(candidate)
   )
@@ -150,10 +197,15 @@ export function similarityScore(
       ? Math.min(product.priceValue, candidate.priceValue) /
         Math.max(product.priceValue, candidate.priceValue)
       : 0;
-  return (
-    title * 0.45 +
-    specs * 0.4 +
+  // Names without numbers say nothing about size: neutral, not a penalty.
+  const sizes = sizeAgreement(product.name, candidate.name) ?? 0.5;
+  const score =
+    title * 0.35 +
+    specs * 0.35 +
+    sizes * 0.15 +
     price * 0.1 +
-    (product.brandId && product.brandId === candidate.brandId ? 0.05 : 0)
-  );
+    (product.brandId && product.brandId === candidate.brandId ? 0.05 : 0);
+  // Zero means «not similar» to the caller, so a same-kind item never drops
+  // to it; another category ranks under the product's own.
+  return Math.max(0.001, sameCategory ? score : score * 0.8);
 }

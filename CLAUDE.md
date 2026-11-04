@@ -1001,8 +1001,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (пропускается без `AI_PIPELINE_TEST_DATABASE_URL` на базе `*_test`).
 - **Product page recommendations** (`products/relations/`,
   `GET /products/:slug/recommendations`, details in `feature.md`). «Похожие»
-  are computed per request (same category, pg_trgm-closest names, ranked by
-  kind/specs/price; filled from the category so the row is never empty).
+  are computed per request: **the same kind of item only** (`productKind`),
+  the product's category first, then the same kind filed elsewhere, ranked by
+  title, specs, sizes in the name, price and brand; in stock first within a
+  tier. **Relevance over a full row** (owner, 2026-11-04): another kind never
+  fills the gaps — the old «never empty» filler made 44% of the row another
+  kind (window handles beside key tags); a short row or none is right, the
+  storefront hides an empty block.
   «Аксессуары» / «Подходит для» read one table, `ProductCompatibility`
   (accessory → tool), built by `CompatibilityRefreshService` in the worker —
   200 products / 30 s, a full pass ≈ 3.6 h, no button. Only an explicit
