@@ -48,6 +48,7 @@ const nav = computed(() => [
   { label: 'Реквизиты', to: '/admin/settings', icon: 'book' },
   { label: 'Поиск', to: '/admin/search', icon: 'search' },
   { label: 'Скорость', to: '/admin/performance', icon: 'gauge' },
+  { label: 'Фичи', to: '/admin/features', icon: 'spark' },
   { label: 'Журнал', to: '/admin/audit', icon: 'log' },
   {
     label: 'Ошибки',

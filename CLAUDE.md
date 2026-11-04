@@ -726,6 +726,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   chrome the panels share (`.pad`, `.stat-row`, `.toolbar`, `.pagination` …) is
   styled once on the page with `:deep()` rather than copied into nine scoped
   stylesheets.
+- **Feature flags** (`features/`, `/admin/features` «Фичи»). Declared in
+  code (`features/feature-flags.ts`, mirrored as defaults in
+  `composables/useFeature.ts`) — a flag is added with the code that checks
+  it and removed with it; `SiteSetting feature.<key>` holds only an admin's
+  choice: `off` | `admins` (a signed-in ADMIN only) | `on`. The storefront
+  reads them **client-side** (`plugins/features.client.ts`, `GET /features`)
+  so cached shared HTML is never per-visitor; the backend checks with
+  `FeatureFlagsService.isOn(key, isAdmin)` (module is `@Global()`). Two kill
+  switches today: `cart-suggestions`, `client-error-reports`.
 - **Admin audit trail** (`audit/`, `AdminActionLog`, `/admin/audit`). Worth
   having only now that admins are accounts — under the shared token there was
   no "who". `AdminActionLogInterceptor` is registered **globally** (admin

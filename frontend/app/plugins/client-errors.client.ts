@@ -31,12 +31,14 @@ type Report = {
 export default defineNuxtPlugin((nuxtApp) => {
   if (import.meta.dev) return
   const config = useRuntimeConfig()
+  // Kill switch in /admin/features; on until the flags say otherwise.
+  const enabled = useFeature('client-error-reports')
   const seen = new Set<string>()
   let sent = 0
 
   function send(report: Report) {
     const message = report.message.trim().slice(0, 1000)
-    if (!message || sent >= MAX_REPORTS || seen.has(message)) return
+    if (!enabled.value || !message || sent >= MAX_REPORTS || seen.has(message)) return
     if (NOISE.some(pattern => pattern.test(message))) return
     if (NOISY_SOURCES.test(`${report.source ?? ''} ${report.stack ?? ''}`)) return
     seen.add(message)
