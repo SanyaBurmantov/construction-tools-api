@@ -949,6 +949,8 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
           </div>
         </UiCard>
 
+        <AccountTwoFactor />
+
         <UiCard title="Удаление аккаунта">
           <p class="muted">
             Удалим профиль, корзину, избранное и сравнение. Оформленные заказы

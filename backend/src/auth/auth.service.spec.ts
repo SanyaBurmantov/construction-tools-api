@@ -4,7 +4,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { CustomerType, UserRole } from '@prisma/client';
-import { AuthService } from './auth.service';
+import { AuthService, LOGIN_MAX_FAILURES } from './auth.service';
+import { base32Encode, hotp, totpStep } from './totp.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashPassword } from './password.util';
 import type { EmailVerificationService } from './email-verification.service';
@@ -16,6 +17,11 @@ type UserRow = {
   role: UserRole;
   customerType: CustomerType;
   isActive: boolean;
+  failedLogins?: number;
+  loginLockedUntil?: Date | null;
+  totpSecret?: string | null;
+  totpEnabledAt?: Date | null;
+  totpLastStep?: number | null;
 };
 
 function buildService(options: { user?: UserRow | null } = {}) {
@@ -214,6 +220,97 @@ describe('AuthService.login', () => {
     await expect(
       service.login({ login: 'nobody', password: 'super-secret-1' }),
     ).rejects.toThrow('Неверный логин или пароль');
+  });
+
+  // The IP throttle alone let a guess spread over many addresses go on.
+  it('locks the account after five failures in a row, whatever the address', async () => {
+    const { service, userUpdate } = buildService({
+      user: await activeUser({ failedLogins: LOGIN_MAX_FAILURES - 1 }),
+    });
+    await expect(
+      service.login({ login: 'ivanov', password: 'wrong-password' }),
+    ).rejects.toThrow('Неверный логин или пароль');
+    const [[update]] = userUpdate.mock.calls as unknown as [
+      [{ data: { loginLockedUntil?: Date; failedLogins: number } }],
+    ];
+    expect(update.data.failedLogins).toBe(0);
+    expect(update.data.loginLockedUntil!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('refuses a locked account even with the right password, saying for how long', async () => {
+    const { service } = buildService({
+      user: await activeUser({
+        loginLockedUntil: new Date(Date.now() + 10 * 60_000),
+      }),
+    });
+    await expect(
+      service.login({ login: 'ivanov', password: 'super-secret-1' }),
+    ).rejects.toThrow(/Попробуйте через 10 мин/);
+  });
+
+  describe('with the second factor on', () => {
+    const secret = base32Encode(Buffer.from('12345678901234567890'));
+    const withTotp = () =>
+      activeUser({
+        totpSecret: secret,
+        totpEnabledAt: new Date(),
+        totpLastStep: null,
+      });
+    const currentCode = () =>
+      hotp(Buffer.from('12345678901234567890'), totpStep());
+
+    it('asks for the code after a right password, without counting a failure', async () => {
+      const { service, userUpdate } = buildService({ user: await withTotp() });
+      await expect(
+        service.login({ login: 'ivanov', password: 'super-secret-1' }),
+      ).rejects.toMatchObject({ response: { code: 'OTP_REQUIRED' } });
+      expect(userUpdate).not.toHaveBeenCalled();
+    });
+
+    it('signs in with the current code and remembers its step', async () => {
+      const { service, userUpdate } = buildService({ user: await withTotp() });
+      const result = await service.login({
+        login: 'ivanov',
+        password: 'super-secret-1',
+        otp: currentCode(),
+      });
+      expect(result.token).toBeTruthy();
+      expect(userUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            totpLastStep: totpStep(),
+            failedLogins: 0,
+          }),
+        }),
+      );
+    });
+
+    it('refuses a wrong code and counts it as a failure', async () => {
+      const { service, userUpdate } = buildService({ user: await withTotp() });
+      await expect(
+        service.login({
+          login: 'ivanov',
+          password: 'super-secret-1',
+          otp: '000000',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'OTP_INVALID' } });
+      expect(userUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { failedLogins: 1 } }),
+      );
+    });
+
+    it('refuses a code that was already used', async () => {
+      const { service } = buildService({
+        user: { ...(await withTotp()), totpLastStep: totpStep() + 1 },
+      });
+      await expect(
+        service.login({
+          login: 'ivanov',
+          password: 'super-secret-1',
+          otp: currentCode(),
+        }),
+      ).rejects.toMatchObject({ response: { code: 'OTP_INVALID' } });
+    });
   });
 
   it('refuses a deactivated account that knows its password', async () => {

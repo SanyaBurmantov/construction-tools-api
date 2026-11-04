@@ -184,3 +184,10 @@ hr {
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
 }
+
+/* A press taken before hydration (nuxt.config.ts `earlyClickScript`): it is
+   queued and replayed once the page is live — the dimmed button says so. */
+[data-early-pending] {
+  cursor: progress;
+  opacity: 0.6;
+}

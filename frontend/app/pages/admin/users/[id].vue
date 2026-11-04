@@ -105,6 +105,22 @@ async function confirmAccount() {
   pendingAccount.value = null
 }
 
+/** Locked out after failed attempts, or the second factor on: what «Снять блокировку входа» lifts. */
+const signInLocked = computed(() =>
+  Boolean(account.value?.loginLockedUntil && new Date(account.value.loginLockedUntil) > new Date()),
+)
+const unlockOpen = ref(false)
+
+async function unlockSignIn() {
+  const done = await run(() => adminFetch(`/users/${userId.value}/unlock-sign-in`, { method: 'POST' }), {
+    key: 'unlock',
+    error: 'Не удалось снять блокировку',
+    success: 'Блокировка входа снята, вход с кодом выключен',
+    after: load,
+  })
+  if (done) unlockOpen.value = false
+}
+
 function patchAccount(body: Record<string, unknown>, message: string) {
   return run(() => adminFetch(`/users/${userId.value}`, { method: 'PATCH', body }), {
     key: 'account',
@@ -166,11 +182,22 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
             <UiBadge size="sm">{{ CUSTOMER_TYPE_LABEL[account.customerType] }}</UiBadge>
             <UiBadge v-if="!account.isActive" tone="danger" size="sm">Отключён</UiBadge>
             <UiBadge v-if="isMe" tone="info" size="sm">это вы</UiBadge>
+            <UiBadge v-if="account.totpEnabledAt" tone="success" size="sm">вход с кодом</UiBadge>
+            <UiBadge v-if="signInLocked" tone="warning" size="sm">вход заблокирован после неудачных попыток</UiBadge>
           </span>
         </template>
 
         <UiButton size="sm" variant="ghost" @click="resetOpen = true">
           Сбросить пароль
+        </UiButton>
+        <UiButton
+          v-if="!isMe && (account.totpEnabledAt || signInLocked)"
+          size="sm"
+          variant="ghost"
+          :loading="busy === 'unlock'"
+          @click="unlockOpen = true"
+        >
+          Снять блокировку входа
         </UiButton>
         <UiButton
           v-if="!isMe"
@@ -466,6 +493,17 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
       @confirm="confirmAccount"
     >
       Изменение вступит в силу сразу — с ближайшего запроса пользователя.
+    </UiConfirm>
+    <UiConfirm
+      v-model:open="unlockOpen"
+      title="Снять блокировку входа?"
+      confirm-label="Снять"
+      :busy="busy === 'unlock'"
+      @confirm="unlockSignIn"
+    >
+      Снимется блокировка после неудачных попыток и выключится вход с кодом из
+      приложения — для потерянного телефона. Пользователь войдёт по паролю и
+      сможет снова включить код в личном кабинете.
     </UiConfirm>
   </div>
 </template>

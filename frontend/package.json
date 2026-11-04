@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "node --experimental-strip-types --no-warnings --test server/utils/*.test.ts"
   },
   "dependencies": {
     "@nuxt/image": "^2.1.0",

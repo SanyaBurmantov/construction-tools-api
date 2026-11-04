@@ -18,11 +18,25 @@ import { fileURLToPath } from 'node:url'
  * (`utils/private-query.ts`) — иначе вебвизор хранил бы ссылку на чужой
  * заказ, а следующий хит повторял бы её как referrer (аудит 03.11, E02).
  */
+/**
+ * Нажатия до гидратации. Кнопка «В корзину» приходит в HTML раньше, чем Vue
+ * повесит на неё обработчик: на медленном телефоне это секунды, и нажатие в
+ * эту щель терялось (робот synthetic.yml поймал это 04.11). Этот скрипт
+ * стоит первым в <head>, ловит нажатия по `[data-early-click]` до гидратации,
+ * помечает кнопку `data-early-pending` (кнопка тускнеет — нажатие принято), а
+ * `plugins/early-clicks.client.ts` повторяет их, как только страница ожила.
+ */
+const earlyClickScript = {
+  key: 'early-clicks',
+  innerHTML: `(function(d,w){if(w.__gostEarly)return;var q=w.__gostEarly=[];d.addEventListener('click',function(e){if(w.__gostHydrated)return;var t=e.target,el=t&&t.closest&&t.closest('[data-early-click]');if(!el)return;e.preventDefault();e.stopPropagation();var k=el.getAttribute('data-early-click');if(q.indexOf(k)<0){q.push(k);el.setAttribute('data-early-pending','')}},true)})(document,window);`,
+}
+
 const YANDEX_METRIKA_ID = 113800110
 const isProdBuild = process.env.NODE_ENV === 'production'
 const metrikaHead = isProdBuild
   ? {
       script: [
+        earlyClickScript,
         {
           key: 'yandex-metrika',
           innerHTML: `if(!/^\\/admin(\\/|$)/.test(location.pathname))(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href.replace(/([?&](?:token|id)=)[^&#]*/g,'$1-'),accurateTrackBounce:true,trackLinks:true});`,
@@ -35,7 +49,7 @@ const metrikaHead = isProdBuild
         },
       ],
     }
-  : {}
+  : { script: [earlyClickScript] }
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',

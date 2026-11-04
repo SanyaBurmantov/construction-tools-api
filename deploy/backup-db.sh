@@ -139,8 +139,9 @@ upload() {
 # The dump alone does not bring the site back on a new server: .env.prod holds
 # every key and password, and Caddy's volume the TLS certificates (re-issuing
 # them all at once can hit Let's Encrypt's rate limit). A few KB, kept as long
-# as the daily dumps. Its failure is logged but does not void the stamp —
-# the stamp is about the database.
+# as the daily dumps. It has its own stamp, backup-config-s3.ok, which the
+# watchdog checks like the database's — a failing config archive used to be
+# one line in the log while backup-s3.ok stayed fresh (audit 2026-11-03).
 upload_config() {
   local caddy_data archive cname
   cname="config-${name#database-}"
@@ -155,14 +156,26 @@ upload_config() {
     rm -f "$archive"
     return 1
   }
+  # Same check as the dump: the object is there and has our size.
+  local local_size remote_size
+  local_size=$(stat -c %s "$archive")
+  remote_size=$(s3 -I "$base/daily/$cname" | tr -d '\r' | awk 'tolower($1) == "content-length:" { print $2 }')
   rm -f "$archive"
+  [[ "$remote_size" == "$local_size" ]] || {
+    echo "S3: size mismatch for daily/$cname (local $local_size, remote ${remote_size:-none})" >&2
+    return 1
+  }
   echo "Config backup uploaded: $base/daily/$cname"
 }
 
 if upload; then
   touch "$state_dir/backup-s3.ok"
   prune_local
-  upload_config || echo "S3: config backup (.env.prod, certificates) failed" >&2
+  if upload_config; then
+    touch "$state_dir/backup-config-s3.ok"
+  else
+    echo "S3: config backup (.env.prod, certificates) failed" >&2
+  fi
 else
   echo "S3 upload failed; the local backup is kept" >&2
 fi

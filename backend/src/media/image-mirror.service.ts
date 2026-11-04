@@ -3,7 +3,10 @@ import { Interval } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../notifications/telegram.service';
-import { fetchWithTimeout } from '../common/utils/fetch-with-timeout';
+import {
+  fetchWithTimeout,
+  ResponseTooLargeError,
+} from '../common/utils/fetch-with-timeout';
 import { PLACEHOLDER_IMAGE_MARKERS } from '../common/utils/product-images';
 import { runsBackgroundJobs } from '../common/utils/process-role';
 import { mapWithConcurrency } from '../common/utils/run-with-concurrency';
@@ -269,7 +272,8 @@ export class ImageMirrorService implements OnModuleInit {
       const res = await fetchWithTimeout(
         sourceUrl,
         { headers: { 'user-agent': USER_AGENT, accept: 'image/*' } },
-        { timeoutMs: 15_000, retries: 1 },
+        // Cut off while downloading, not checked after a full buffer.
+        { timeoutMs: 15_000, retries: 1, maxBytes: MAX_IMAGE_BYTES },
       );
       if (!res.ok) {
         await this.markFailed(sourceUrl, `HTTP ${res.status}`);
@@ -277,6 +281,13 @@ export class ImageMirrorService implements OnModuleInit {
       }
       body = Buffer.from(await res.arrayBuffer());
     } catch (error) {
+      if (error instanceof ResponseTooLargeError) {
+        await this.markFailed(
+          sourceUrl,
+          `too big: over ${MAX_IMAGE_BYTES} bytes`,
+        );
+        return 'failed';
+      }
       // No answer at all: the host, not this photo. Its other photos wait.
       this.downHosts.set(host, Date.now() + HOST_DOWN_MS);
       this.logger.warn(

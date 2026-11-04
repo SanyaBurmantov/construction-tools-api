@@ -20,6 +20,9 @@ RUN npm run build
 FROM node:22-bookworm-slim AS production
 ENV NODE_ENV=production
 WORKDIR /frontend
-COPY --from=build /frontend/.output ./.output
+COPY --from=build --chown=node:node /frontend/.output ./.output
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint
 EXPOSE 3000
-CMD ["node", ".output/server/index.mjs"]
+# Starts as root only to hand the page-cache volume over, then drops to
+# `node` for good (docker-entrypoint.sh). `exec` keeps node as PID 1.
+CMD ["docker-entrypoint"]

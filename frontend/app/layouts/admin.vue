@@ -9,14 +9,16 @@
  */
 const { authorized, errorMessage, refresh, logout, user, isAdmin }
   = useAdminApi()
-const { login: signInWithPassword } = useAuth()
+const { login: signInWithPassword, errorCode } = useAuth()
 const { stats: badges, load: loadStats } = useAdminStats()
 
 const checking = ref(true)
 const signingIn = ref(false)
 const signInError = ref('')
 const sidebarOpen = ref(false)
-const credentials = reactive({ login: '', password: '' })
+const credentials = reactive({ login: '', password: '', otp: '' })
+/** The account has the second factor on: the code field is shown. */
+const needsOtp = ref(false)
 
 /** Signed in, but as a customer — a different problem from "not signed in". */
 const forbidden = computed(() => Boolean(user.value) && !isAdmin.value)
@@ -120,14 +122,23 @@ async function signIn() {
     const account = await signInWithPassword({
       login: credentials.login.trim(),
       password: credentials.password,
+      otp: needsOtp.value ? credentials.otp.trim() : undefined,
     })
     if (account.role !== 'ADMIN') {
       signInError.value = 'У этой учётной записи нет прав администратора'
       return
     }
     credentials.password = ''
+    credentials.otp = ''
+    needsOtp.value = false
     verify()
   } catch (error) {
+    const code = errorCode(error)
+    if (code === 'OTP_REQUIRED') {
+      needsOtp.value = true
+      return
+    }
+    if (code === 'OTP_INVALID') credentials.otp = ''
     signInError.value = errorMessage(error, 'Неверный логин или пароль')
   } finally {
     signingIn.value = false
@@ -228,6 +239,19 @@ useHead({
             autocomplete="current-password"
             placeholder="••••••••"
             :invalid="Boolean(signInError)"
+          />
+        </UiField>
+
+        <UiField v-if="needsOtp" label="Код из приложения" for="admin-otp">
+          <UiInput
+            id="admin-otp"
+            v-model="credentials.otp"
+            size="lg"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            placeholder="123456"
+            autofocus
           />
         </UiField>
 

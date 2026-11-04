@@ -1,5 +1,6 @@
 import type { ServerResponse } from 'node:http'
 import { createError, getRequestURL, setResponseHeader } from 'h3'
+import { ResizeGate } from '../utils/resize-gate'
 
 /**
  * `/_ipx` is a public image resizer, and its modifiers are user input: one
@@ -29,7 +30,12 @@ import { createError, getRequestURL, setResponseHeader } from 'h3'
  *    (02.11). A slot is now held at most `SLOT_HOLD_MS`, and a source host
  *    whose fetch failed slowly is answered 502 at once for `HOST_DOWN_MS`:
  *    the browser falls back to the supplier's own URL (useResilientImage),
- *    which the visitor can usually reach even when we cannot.
+ *    which the visitor can usually reach even when we cannot. The slow
+ *    request is *parked* (`ResizeGate`), not forgotten: when its fetch does
+ *    return, sharp still resizes it, so at most `MAX_PARKED` may be parked
+ *    and work in flight never exceeds MAX_ACTIVE + MAX_PARKED (audit
+ *    2026-11-03: the old timer just released the slot, without bound). A
+ *    request whose client hangs up while in line leaves the line.
  *
  * Errors are sent `no-store`: the `/_ipx/**` route rule gives every answer a
  * week of `max-age`, and a cached 503 would keep a photo broken for a week.
@@ -37,6 +43,7 @@ import { createError, getRequestURL, setResponseHeader } from 'h3'
 const MAX_DIMENSION = 1200
 const MAX_ACTIVE = 3
 const MAX_WAITING = 40
+const MAX_PARKED = 3
 const SLOT_HOLD_MS = 8_000
 const SLOW_FAILURE_MS = 5_000
 const HOST_DOWN_MS = 10 * 60_000
@@ -86,16 +93,9 @@ export function ipxSourceHost(path: string): string {
   return /^https?:\/\/?([^/?#]+)/i.exec(source)?.[1]?.toLowerCase() ?? ''
 }
 
-let active = 0
-const waiting: Array<() => void> = []
+const gate = new ResizeGate(MAX_ACTIVE, MAX_WAITING, MAX_PARKED)
 /** host → time until which its photos are not fetched. */
 const downHosts = new Map<string, number>()
-
-function release(): void {
-  const next = waiting.shift()
-  if (next) next()
-  else active--
-}
 
 function hostIsDown(host: string): boolean {
   const until = downHosts.get(host)
@@ -145,43 +145,41 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: 'Image source unavailable' })
   }
 
-  if (active >= MAX_ACTIVE) {
-    if (waiting.length >= MAX_WAITING) {
-      setResponseHeader(event, 'retry-after', 5)
-      throw createError({ statusCode: 503, statusMessage: 'Image resizer busy' })
-    }
-    // `release()` hands its slot straight to the next waiter, so `active`
-    // stays the same when a waiter starts.
-    await new Promise<void>(resolve => waiting.push(resolve))
-  } else {
-    active++
+  const ticket = gate.enter()
+  if (!ticket) {
+    setResponseHeader(event, 'retry-after', 5)
+    throw createError({ statusCode: 503, statusMessage: 'Image resizer busy' })
+  }
+  // Whatever happens next, the response closing — finished or abandoned —
+  // gives back what this request holds (a place in line or a slot).
+  const startedAt = Date.now()
+  let timer: ReturnType<typeof setTimeout> | undefined = undefined
+  const markDown = () => {
+    if (host) downHosts.set(host, Date.now() + HOST_DOWN_MS)
+  }
+  res.once('close', () => {
+    clearTimeout(timer)
+    if (res.statusCode >= 500 && Date.now() - startedAt >= SLOW_FAILURE_MS) markDown()
+    ticket.cancel()
+  })
+  try {
+    await ticket.ready
+  } catch {
+    // The client left while in line: nothing to resize for anyone.
+    return
   }
 
   // The host may have been marked down while this request was in line.
   if (host && hostIsDown(host)) {
-    release()
+    ticket.done()
     throw createError({ statusCode: 502, statusMessage: 'Image source unavailable' })
   }
 
-  const startedAt = Date.now()
-  let held = true
-  const markDown = () => {
-    if (host) downHosts.set(host, Date.now() + HOST_DOWN_MS)
-  }
-  const free = () => {
-    if (!held) return
-    held = false
-    clearTimeout(timer)
-    release()
-  }
   // A fetch still hanging after this long is a source that is not answering:
-  // give the slot to the next photo and stop sending this host's photos here.
-  const timer = setTimeout(() => {
+  // park it (its slot goes to the next photo, within MAX_PARKED) and stop
+  // sending this host's photos here.
+  timer = setTimeout(() => {
     markDown()
-    free()
+    ticket.park()
   }, SLOT_HOLD_MS)
-  res.once('close', () => {
-    if (res.statusCode >= 500 && Date.now() - startedAt >= SLOW_FAILURE_MS) markDown()
-    free()
-  })
 })

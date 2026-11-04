@@ -21,6 +21,8 @@ export type AccountUser = {
   bankBic: string | null
   isActive: boolean
   lastLoginAt: string | null
+  /** Set when sign-in asks for a code from an authenticator app. */
+  totpEnabledAt: string | null
   createdAt: string
 }
 
@@ -159,7 +161,8 @@ export function useAuth() {
     }
   }
 
-  async function login(credentials: { login: string, password: string }) {
+  /** `otp`: the authenticator code, asked for when the API answers OTP_REQUIRED. */
+  async function login(credentials: { login: string, password: string, otp?: string }) {
     const session = await authFetch<Session>('/auth/login', {
       method: 'POST',
       body: credentials,
@@ -281,6 +284,12 @@ export function useAuth() {
    * without one gets the fallback: ofetch's own message ("[POST] /api/orders:
    * 500 …") is not something to show a customer.
    */
+  /** The machine-readable `code` of an API error (OTP_REQUIRED, LOGIN_LOCKED…). */
+  function errorCode(error: unknown): string | undefined {
+    const code = (error as { data?: { code?: unknown } }).data?.code
+    return typeof code === 'string' ? code : undefined
+  }
+
   function errorMessage(error: unknown, fallback = 'Что-то пошло не так') {
     const message = (error as { data?: { message?: string | string[] } }).data?.message
     if (Array.isArray(message)) return message.join(', ')
@@ -295,6 +304,7 @@ export function useAuth() {
     isAdmin,
     authFetch,
     login,
+    errorCode,
     register,
     logout,
     refresh,

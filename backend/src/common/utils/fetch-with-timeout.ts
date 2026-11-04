@@ -16,7 +16,26 @@ export type FetchWithTimeoutOptions = {
   timeoutMs?: number;
   retries?: number;
   retryBaseMs?: number;
+  /**
+   * Refuse a body larger than this, *while* it downloads: a declared
+   * Content-Length over it is refused before reading, and the stream is cut
+   * the moment it passes it. Without it a body is buffered whole first — the
+   * photo mirror held a 16 MiB «photo» in memory before its 15 MiB check
+   * (audit 2026-11-03). Not retried: the same URL would be as big again.
+   */
+  maxBytes?: number;
 };
+
+/** The body passed `maxBytes`; the download was stopped there. */
+export class ResponseTooLargeError extends Error {
+  constructor(
+    readonly url: string,
+    readonly limit: number,
+  ) {
+    super(`Response from ${redactUrl(url)} is over ${limit} bytes`);
+    this.name = 'ResponseTooLargeError';
+  }
+}
 
 /**
  * `fetch` with a hard timeout and bounded retries with exponential backoff.
@@ -67,8 +86,12 @@ export async function fetchWithTimeout(
         continue;
       }
 
-      return await bufferResponse(res);
+      return await bufferResponse(res, url, opts.maxBytes);
     } catch (error) {
+      if (error instanceof ResponseTooLargeError) {
+        controller.abort();
+        throw error;
+      }
       // Network error or timeout abort — retry while attempts remain.
       lastError = error;
       if (attempt >= retries) break;
@@ -96,8 +119,14 @@ export async function fetchWithTimeout(
  * equivalent, already-buffered Response. `url` and `redirected` are kept —
  * a supplier redirecting a dead product to its home page is a signal.
  */
-async function bufferResponse(res: Response): Promise<Response> {
-  const body = await res.arrayBuffer();
+async function bufferResponse(
+  res: Response,
+  url: string,
+  maxBytes?: number,
+): Promise<Response> {
+  const body = maxBytes
+    ? await readCapped(res, url, maxBytes)
+    : await res.arrayBuffer();
   const buffered = new Response(
     // A null-body status (204/304) must not be given a body.
     [101, 204, 205, 304].includes(res.status) ? null : body,
@@ -106,6 +135,40 @@ async function bufferResponse(res: Response): Promise<Response> {
   Object.defineProperty(buffered, 'url', { value: res.url });
   Object.defineProperty(buffered, 'redirected', { value: res.redirected });
   return buffered;
+}
+
+async function readCapped(
+  res: Response,
+  url: string,
+  maxBytes: number,
+): Promise<ArrayBuffer> {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new ResponseTooLargeError(url, maxBytes);
+  }
+  if (!res.body) return new ArrayBuffer(0);
+  // The header can lie or be absent (chunked): count what actually arrives.
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new ResponseTooLargeError(url, maxBytes);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer;
 }
 
 /**

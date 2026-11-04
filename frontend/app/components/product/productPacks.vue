@@ -50,7 +50,14 @@ function add(pack: PackOption) {
         <span v-if="saving(pack)" class="saving">−{{ saving(pack) }}%</span>
         <span v-else class="saving" aria-hidden="true" />
         <span v-if="pack.current" class="here">эта</span>
-        <button v-else type="button" class="add" :aria-label="`В корзину: ${pack.quantity} ${pack.unit}`" @click="add(pack)">
+        <button
+          v-else
+          type="button"
+          class="add"
+          :aria-label="`В корзину: ${pack.quantity} ${pack.unit}`"
+          :data-early-click="`pack:${pack.slug}`"
+          @click="add(pack)"
+        >
           <UiIcon name="cart" />
         </button>
       </li>

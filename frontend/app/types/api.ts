@@ -305,6 +305,8 @@ export interface AdminStats {
 /** An account as `/admin/users` lists it: the profile plus its live session count. */
 export type AdminUser = import('~/composables/useAuth').AccountUser & {
   _count?: { sessions: number }
+  /** One account's page only: sign-in refused until then after failed attempts. */
+  loginLockedUntil?: string | null
 }
 
 /* ---- Storefront catalogue (CatalogView, catalogFilters, product, compare) ---- */

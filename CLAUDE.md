@@ -23,6 +23,9 @@ normalizes them into a shared catalog shape, and serves a public storefront.
   the API cleanly at 85% of the V8 heap (`NODE_OPTIONS=--max-old-space-size=512`,
   `MEMORY_GUARD_MAX_HEAP_RATIO`) and logs heap/rss every 15 min, and
   `deploy/watchdog.sh` restarts a container left unhealthy for ~6 min.
+  The worker is also capped at one CPU (`cpus: ${WORKER_CPUS:-1.0}`,
+  `cpu_shares: 512`): background work may run slower, the storefront and
+  Postgres always keep a core.
   **The worker** (`construction-tools-worker`) has no HTTP to hang on, so it
   carries its own two: a heartbeat file the healthcheck checks, and an
   event-loop watchdog thread (`common/utils/event-loop-watchdog.ts`) that
@@ -89,6 +92,18 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   Passwords are **scrypt** from `node:crypto` (`auth/password.util.ts`,
   parameters stored alongside each hash) — no native build step, so the
   `node:22-slim` images need no toolchain; bcrypt would.
+  **Sign-in is limited per account and can ask for a code.** Five failed
+  attempts in a row (password or code) lock that account's sign-in for 15
+  min whatever the address (`LOGIN_MAX_FAILURES`, `User.loginLockedUntil`;
+  the per-IP `@Throttle` alone let a spread-out guess go on). Any account can
+  switch on a **TOTP second factor** (`auth/totp.util.ts`, RFC 6238 on
+  `node:crypto`, tested against the RFC vectors): `/account` → «Вход с кодом
+  из приложения» (`POST /auth/totp/setup|enable|disable`; off needs password
+  *and* code); then `POST /auth/login` answers 401 `OTP_REQUIRED` to the
+  password alone and both login forms show the code field; a code works once
+  (`totpLastStep`). A lost phone: `/admin/users/:id` → «Снять блокировку
+  входа» (`POST /admin/users/:id/unlock-sign-in`, not on yourself through a
+  session; the `x-admin-token` path can).
   `AdminGuard` now accepts **either** an ADMIN session **or** the old
   `x-admin-token: $ADMIN_TOKEN` header, which stays the service-to-service
   path (the runbook/CI curl commands depend on it, and it is the rescue path
@@ -187,6 +202,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but
   not rendered (`<ClientOnly>`, `v-if`) — into `preload`; Vite's import helper
   attaches it on the client. Keep component styles `scoped` for that to hold.
+  **A press before hydration is not lost**: an inline script first in
+  `<head>` (`earlyClickScript`, nuxt.config.ts) catches clicks on
+  `[data-early-click="<key>"]` while the page is still server HTML, dims the
+  button (`data-early-pending`) and `plugins/early-clicks.client.ts` replays
+  each key once after `app:suspense:resolve`. Every buy button carries a key
+  (catalogue card/row, buy box, sticky bar, packs) — give one to any new
+  button whose press must not vanish on a slow phone.
   Manrope is self-hosted from `public/fonts/` (no Google Fonts, and the CSP in
   `deploy/caddy/Caddyfile` no longer allows it). That cache lives in the
   frontend's heap, and Nitro's stock production driver never evicts — a crawl
@@ -199,6 +221,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   build keeps the cache and serves pages even with the API down; without
   `NUXT_CACHE_DIR` it is `bounded-memory.ts` (`NUXT_CACHE_MAX_MB`). Don't swap
   it back for the plain memory driver.
+  **After a release the cache is warmed** (`deploy/warm-cache.sh`, started by
+  auto-deploy as the transient unit `construction-tools-warmup`, not waited
+  for): home, catalogue, info pages, header strip + root categories, «Выбирают
+  покупатели» and the first products of every root category round-robin —
+  one page at a time, ≤ `WARM_MAX_PAGES` (220). The cache is per build, so
+  every deploy used to start cold for visitors and crawlers.
 - **Data model**: products are stored in two layers — `Product` (normalized
   storefront card) and `SourceProduct` (raw supplier snapshot, identity
   `@@unique([sourceId, url])`). See the parsing docs below.
@@ -776,6 +804,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   the page's ids, 2 ms), and the `(status, listingRank, name)` index could not
   serve `listingRank DESC, name ASC` (now `listingRank DESC` in the index).
   **Don't put `_count` of a big relation into a list query's include.**
+  A listing's total + facets (~0.5 s, most of its cost) are cached in the
+  API's memory for **15 min** per filter set (`FACETS_CACHE_TTL_MS`; it was
+  2 min), and `FacetsWarmupService` — in the API process, where that cache
+  lives — refreshes the whole catalogue and up to 40 category pages (header
+  strip, featured, roots) every 10 min, one at a time, before they expire.
   The route table also counts **DB operations per request**
   (`perf/query-context.ts`: an AsyncLocalStorage store opened by the timing
   middleware, counted by a `$use` in `PrismaService`) — a route averaging
@@ -794,8 +827,21 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   within 10 min once. The report: totals, «ничего не найдено» (what the
   catalogue is missing), frequent searches with click rate, latest events.
   `SEARCH_LOG_TTL_DAYS` (365), purged nightly by the worker. It is the input
-  for the next search work (Russian morphology, synonyms; vectors only if the
-  zero-result list turns out to be «смысловые» queries).
+  for the next search work (vectors only if the zero-result list turns out to
+  be «смысловые» queries).
+- **Search understands Russian word forms** (`products/search-fts.ts`, 04.11).
+  `rankedMatchIds` has a full-text `UNION` branch beside the trigram ones:
+  every word of the term must match in some form (`russian` Snowball
+  config, prefix per word, AND), so «компрессоры» (0 → 678), «пилы
+  циркулярные» (0 → 73), «ключи гаечные» (1 → 455) find products. The
+  document is an **expression** (name + sku + model, first two words of
+  the name weighted A — the product's kind ranks first), indexed by
+  `Product_search_fts_idx`; the planner uses it only while
+  `FTS_DOCUMENT_SQL` is byte-identical to the migration (tested) — change
+  it only together with a new index. `SEARCH_SYNONYMS` holds trade words
+  and fleeting-vowel stems (болгарка/УШМ, диск/круг, уровень/уровни); add
+  a group when /admin/search shows people missing one. Only letters and
+  digits reach `to_tsquery`, so a term is never a syntax error.
 - **Error log** (`errors/`, `ErrorLog`, `/admin/errors`). The audit says who
   changed what; this says what *broke*. `HttpExceptionFilter` is now registered
   through `APP_FILTER` in `AppModule` (not `useGlobalFilters` in `main.ts`) so
@@ -1001,8 +1047,20 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (пропускается без `AI_PIPELINE_TEST_DATABASE_URL` на базе `*_test`).
 - **Product page recommendations** (`products/relations/`,
   `GET /products/:slug/recommendations`, details in `feature.md`). «Похожие»
-  are computed per request (same category, pg_trgm-closest names, ranked by
-  kind/specs/price; filled from the category so the row is never empty).
+  are computed per request: **the same kind of item only** (`productKind`),
+  the product's category first, then the same kind filed elsewhere, ranked by
+  title, specs, sizes in the name, price and brand; in stock first within a
+  tier. **Relevance over a full row** (owner, 2026-11-04): another kind never
+  fills the gaps — the old «never empty» filler made 44% of the row another
+  kind (window handles beside key tags); a short row or none is right, the
+  storefront hides an empty block. The ranking is **computed ahead**
+  (`ProductSimilar`, `relations/similar-refresh.service.ts`, worker, 40
+  products / 30 s): only the ranked ids are stored — cards, prices and stock
+  are read live, so a stored row cannot show an old price; a row is redone
+  after 3 days, when the product's text changes, or when
+  `SIMILAR_RULE_VERSION` is bumped (do that whenever the similarity rules
+  change). A page with no usable row computes and stores it itself. It was
+  the costliest query of a product page (~1100 s of DB a day, crawlers).
   «Аксессуары» / «Подходит для» read one table, `ProductCompatibility`
   (accessory → tool), built by `CompatibilityRefreshService` in the worker —
   200 products / 30 s, a full pass ≈ 3.6 h, no button. Only an explicit
@@ -1081,7 +1139,8 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   failed upload never fails the backup: auto-deploy runs it before migrations.
   Next to each dump it uploads `config-*.tar.gz` (`.env.prod` + Caddy's
   `/data` volume with the TLS certificates) — a dump alone does not rebuild
-  the server. The script reads the shared `S3_ENDPOINT/S3_ACCESS_KEY/
+  the server. It is size-verified and stamps its own
+  `backup-config-s3.ok`; the watchdog alerts when that is over 26 h old. The script reads the shared `S3_ENDPOINT/S3_ACCESS_KEY/
   S3_SECRET_KEY` (old `S3_BACKUP_*` names still win) and `S3_BACKUP_BUCKET`.
   It refuses a backup bucket equal to `S3_MEDIA_BUCKET`, and the worker
   refuses a media bucket equal to `S3_BACKUP_BUCKET` — the media bucket is

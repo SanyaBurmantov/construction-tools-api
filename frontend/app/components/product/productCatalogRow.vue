@@ -93,6 +93,7 @@ const link = computed(() => `/product/${props.product.slug}`)
         :variant="inCart ? 'secondary' : 'primary'"
         size="sm"
         block
+        :data-early-click="`cart:${product.id}`"
         @click="addToCart()"
       >
         {{ inCart ? 'В корзине' : 'В корзину' }}

@@ -227,6 +227,7 @@ model Product {
   fitsProducts          ProductCompatibility[] @relation("CompatibleAccessory")
   fitments              ProductFitment[]
   family                ProductFamily?
+  similar               ProductSimilar?
   /// «Линейка» set by an admin: products of one brand with the same line are
   /// one size switch whatever their names; «—» keeps a product out of any.
   /// Parsers never write it.
@@ -920,39 +921,53 @@ enum CustomerType {
 /// Storefront account. Guest checkout stays the default — an account only adds
 /// a saved profile and, for ADMIN, access to /admin.
 model User {
-  id              String       @id @default(uuid())
+  id                String       @id @default(uuid())
   /// Normalized (trimmed + lowercased) login — an e-mail works as one. Stored
   /// already normalized so "Admin" and "admin" cannot become two accounts.
-  login           String       @unique
+  login             String       @unique
   /// scrypt hash with its own salt and parameters — see auth/password.util.ts.
   /// Never selected into anything the API returns.
-  passwordHash    String
-  role            UserRole     @default(CUSTOMER)
-  customerType    CustomerType @default(INDIVIDUAL)
-  name            String?
-  email           String?
+  passwordHash      String
+  role              UserRole     @default(CUSTOMER)
+  customerType      CustomerType @default(INDIVIDUAL)
+  name              String?
+  email             String?
   /// When `email` was proven to belong to the account (link from the
   /// confirmation letter). Reset to null whenever `email` changes.
-  emailVerifiedAt DateTime?
-  phone           String?
+  emailVerifiedAt   DateTime?
+  phone             String?
   /// Required for COMPANY accounts (checked in the service, not the schema, so
   /// an admin can still fix a half-filled row).
-  companyName     String?
+  companyName       String?
   /// УНП (checksum-validated on input, see common/utils/requisites.ts).
-  taxId           String?
+  taxId             String?
   /// Invoice requisites of a COMPANY account — copied into every order it
   /// places (see Order.payer*), so the profile can change afterwards.
-  legalAddress    String?
+  legalAddress      String?
   /// Settlement account, a BY IBAN.
-  bankAccount     String?
-  bankName        String?
-  bankBic         String?
+  bankAccount       String?
+  bankName          String?
+  bankBic           String?
   /// Deactivated accounts keep their orders and sessions history but cannot
   /// log in, and every live session is dropped the moment the flag goes off.
-  isActive        Boolean      @default(true)
-  lastLoginAt     DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  isActive          Boolean      @default(true)
+  lastLoginAt       DateTime?
+  /// Consecutive failed sign-ins (password or code) — reset by a success;
+  /// LOGIN_MAX_FAILURES in a row lock sign-in for LOGIN_LOCK_MS, whatever
+  /// address the attempts come from (the IP throttle alone did not stop a
+  /// distributed guess).
+  failedLogins      Int          @default(0)
+  loginLockedUntil  DateTime?
+  /// TOTP second factor (auth/totp.util.ts), base32. Set = a code from the
+  /// authenticator app is required at sign-in. Never leaves the API.
+  totpSecret        String?
+  totpEnabledAt     DateTime?
+  /// Being set up: becomes totpSecret once a first code from it is valid.
+  totpPendingSecret String?
+  /// Last accepted time step: every code works once.
+  totpLastStep      Int?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   sessions           UserSession[]
   orders             Order[]
@@ -1374,4 +1389,21 @@ model OutboxMessage {
 
   @@index([status, nextAttemptAt])
   @@index([createdAt])
+}
+
+/// «Похожие» computed ahead (products/relations/similar-refresh.service.ts):
+/// the ranked ids only — cards, prices and stock are read live at show time,
+/// so a stored row can never show an old price. Recomputed by the worker
+/// every SIMILAR_TTL, when the product's text changed (contentUpdatedAt), or
+/// when SIMILAR_RULE_VERSION moves; a product page with no usable row
+/// computes it on the spot and stores it.
+model ProductSimilar {
+  productId   String   @id
+  /// [{ id, tier }]: similarity order; tier 0 = own category, 1 = elsewhere.
+  entries     Json
+  ruleVersion Int
+  computedAt  DateTime @default(now())
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([computedAt])
 }
