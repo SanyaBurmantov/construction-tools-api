@@ -18,6 +18,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   AI_FIELDS,
   buildMessages,
+  cleanValue,
+  formatBlock,
   diffAnswer,
   fieldDefs,
   FieldChange,
@@ -26,6 +28,8 @@ import {
   truncate,
 } from './ai-fields';
 import {
+  AiBrandFilterDto,
+  AiBrandQueryDto,
   AiCategoryFilterDto,
   AiCategoryQueryDto,
   AiCreateTaskDto,
@@ -42,14 +46,16 @@ import {
 import { AiClient, AiRateLimitError, AiUsage } from './ai.client';
 import { AiTemplateTextsService } from './ai-template-texts.service';
 import { AI_CHECKS } from './ai-validate';
-import { FIELD_GUIDE, PROMPT_SCAFFOLDS } from './ai-scaffolds';
+import { AI_PRESETS, FIELD_GUIDE } from './ai-scaffolds';
+import { PromptParts, quotedPhrases } from './ai-phrases';
 import { VERIFY_SYSTEM_PROMPT } from './ai-verify';
 import {
   AiTemplate,
+  composeInstruction,
+  InstructionBlock,
+  instructionBlocks,
   PRODUCT_TEMPLATES,
-  categoryInstruction,
   explainTemplate,
-  productInstruction,
   productTemplate,
   templateKeywords,
 } from './ai-templates';
@@ -73,6 +79,7 @@ import {
   slugFromName,
 } from '../products/product-slug';
 import {
+  brandPath,
   categoryPath,
   IndexNowService,
   productPath,
@@ -88,6 +95,26 @@ const NEAR_DUPLICATE_LOOKBACK = 300;
 export type BatchOutcome = 'done' | 'progress' | 'rate-limited' | 'error';
 
 /** The answer's fields that were asked for, nothing else. */
+/**
+ * The admin's part of an instruction, only for the fields the task writes:
+ * a template's text for an unticked field must not leak into the prompt.
+ */
+function promptParts(
+  general: string | null | undefined,
+  fieldPrompts: Record<string, unknown> | null | undefined,
+  fields: string[],
+): PromptParts {
+  const own: Record<string, string> = {};
+  for (const key of fields) {
+    const text = fieldPrompts?.[key];
+    if (typeof text === 'string' && text.trim()) own[key] = text.trim();
+  }
+  return { general: general?.trim() || '', fields: own };
+}
+
+/** A non-product's SEO column is NOT NULL and defaults to the name. */
+const NAME_DEFAULT_FIELDS = new Set(['seoTitle', 'seoDescription']);
+
 function pickFields(record: Record<string, unknown>, keys: string[]) {
   return Object.fromEntries(
     keys.filter((key) => key in record).map((key) => [key, record[key]]),
@@ -144,10 +171,18 @@ export class AiService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
     const where = await this.productWhere(query);
+    const orderBy: Prisma.ProductOrderByWithRelationInput[] =
+      query.sort === 'new'
+        ? [{ createdAt: 'desc' }, { id: 'asc' }]
+        : query.sort === 'price_asc'
+          ? [{ priceValue: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }]
+          : query.sort === 'price_desc'
+            ? [{ priceValue: { sort: 'desc', nulls: 'last' } }, { name: 'asc' }]
+            : [{ name: 'asc' }];
     const [rows, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        orderBy: { name: 'asc' },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
         select: {
@@ -157,6 +192,8 @@ export class AiService {
           sku: true,
           status: true,
           stockStatus: true,
+          priceValue: true,
+          createdAt: true,
           descriptionShort: true,
           descriptionFull: true,
           seoTitle: true,
@@ -185,6 +222,7 @@ export class AiService {
           // Lengths, not texts: the grid shows what is filled in, and 50 full
           // descriptions would be most of the payload.
           lengths: {
+            name: row.name.length,
             descriptionShort: descriptionShort?.length ?? 0,
             descriptionFull: descriptionFull?.length ?? 0,
             seoTitle: seoTitle?.length ?? 0,
@@ -235,6 +273,85 @@ export class AiService {
     };
   }
 
+  async listBrands(query: AiBrandQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 50;
+    const where = await this.brandWhere(query);
+    const [rows, total] = await Promise.all([
+      this.prisma.brand.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logo: true,
+          country: true,
+          description: true,
+          seoTitle: true,
+          seoDescription: true,
+        },
+      }),
+      this.prisma.brand.count({ where }),
+    ]);
+    // Counts for this page only — `_count` of Product in the list query
+    // would group the whole catalogue (see CLAUDE.md, «Speed»).
+    const counts = rows.length
+      ? await this.prisma.product.groupBy({
+          by: ['brandId'],
+          where: {
+            brandId: { in: rows.map((row) => row.id) },
+            status: 'PUBLISHED',
+          },
+          _count: { _all: true },
+        })
+      : [];
+    const byBrand = new Map(
+      counts.map((row) => [row.brandId, row._count._all]),
+    );
+    return {
+      data: rows.map(({ description, seoTitle, seoDescription, ...row }) => ({
+        ...row,
+        products: byBrand.get(row.id) ?? 0,
+        lengths: {
+          description: description?.length ?? 0,
+          // The parser seeds both with the name: that is «not written».
+          seoTitle: seoTitle && seoTitle !== row.name ? seoTitle.length : 0,
+          seoDescription:
+            seoDescription && seoDescription !== row.name
+              ? seoDescription.length
+              : 0,
+        },
+      })),
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
+  }
+
+  private async brandWhere(
+    filter: AiBrandFilterDto,
+  ): Promise<Prisma.BrandWhereInput> {
+    const and: Prisma.BrandWhereInput[] = [];
+    const search = filter.search?.trim();
+    if (search) and.push({ name: { contains: search, mode: 'insensitive' } });
+    if (filter.missing === 'description') {
+      and.push({ OR: [{ description: null }, { description: '' }] });
+    }
+    if (filter.missing === 'seo') {
+      // Still the parser's default (the name) — Prisma cannot compare two
+      // columns, so the ids come from SQL; brands are a few hundred rows.
+      const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Brand"
+        WHERE "seoTitle" IN ('', name) OR "seoDescription" IN ('', name)`;
+      and.push({ id: { in: rows.map((row) => row.id) } });
+    }
+    if (filter.withProducts === 'yes') {
+      and.push({ products: { some: { status: 'PUBLISHED' } } });
+    }
+    return and.length ? { AND: and } : {};
+  }
+
   private async productWhere(
     filter: AiProductFilterDto,
   ): Promise<Prisma.ProductWhereInput> {
@@ -272,6 +389,32 @@ export class AiService {
     if (filter.ai === 'yes')
       and.push({ NOT: { aiLockedFields: { isEmpty: true } } });
     if (filter.ai === 'no') and.push({ aiLockedFields: { isEmpty: true } });
+    if (filter.ai?.startsWith('not:')) {
+      and.push({ NOT: { aiLockedFields: { has: filter.ai.slice(4) } } });
+    }
+    if (filter.createdWithin) {
+      const days = Number(filter.createdWithin);
+      and.push({
+        createdAt: { gte: new Date(Date.now() - days * 86_400_000) },
+      });
+    }
+    if (filter.image === 'yes') and.push({ images: { some: {} } });
+    if (filter.image === 'no') and.push({ images: { none: {} } });
+    const thin: Prisma.ProductWhereInput = {
+      AND: [
+        { OR: [{ descriptionFull: null }, { descriptionFull: '' }] },
+        { OR: [{ descriptionShort: null }, { descriptionShort: '' }] },
+        { productSpecs: { none: {} } },
+      ],
+    };
+    if (filter.data === 'thin') and.push(thin);
+    if (filter.data === 'rich') and.push({ NOT: thin });
+    if (filter.priceMin !== undefined) {
+      and.push({ priceValue: { gte: filter.priceMin } });
+    }
+    if (filter.priceMax !== undefined) {
+      and.push({ priceValue: { lte: filter.priceMax } });
+    }
     return and.length ? { AND: and } : {};
   }
 
@@ -313,22 +456,56 @@ export class AiService {
   }
 
   createPrompt(dto: AiPromptDto) {
+    const fields = this.knownFields(dto.entity, dto.fields ?? []);
+    const fieldTexts = this.fieldTexts(dto.entity, dto.fieldTexts);
+    const text = dto.text?.trim() ?? '';
+    if (!text && !Object.keys(fieldTexts).length) {
+      throw new BadRequestException(
+        'Напишите общую инструкцию или инструкцию хотя бы для одного поля',
+      );
+    }
     return this.prisma.aiPrompt.create({
       data: {
         name: dto.name.trim(),
         entity: dto.entity,
-        text: dto.text.trim(),
+        text,
+        fields,
+        fieldTexts,
       },
     });
   }
 
+  private knownFields(entity: AiEntity, keys: string[]) {
+    return [...new Set(keys)].filter((key) => isKnownField(entity, key));
+  }
+
+  /** `{ field: text }` with unknown fields and blank texts dropped. */
+  private fieldTexts(
+    entity: AiEntity,
+    raw: Record<string, unknown> | undefined,
+  ) {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw ?? {})) {
+      if (!isKnownField(entity, key) || typeof value !== 'string') continue;
+      const text = value.trim().slice(0, 4000);
+      if (text) out[key] = text;
+    }
+    return out;
+  }
+
   async updatePrompt(id: string, dto: AiUpdatePromptDto) {
-    await this.ensurePrompt(id);
+    const prompt = await this.ensurePrompt(id);
     return this.prisma.aiPrompt.update({
       where: { id },
       data: {
         ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
         ...(dto.text !== undefined ? { text: dto.text.trim() } : {}),
+        ...(dto.fields !== undefined
+          ? { fields: this.knownFields(prompt.entity, dto.fields) }
+          : {}),
+        ...(dto.fieldTexts !== undefined
+          ? { fieldTexts: this.fieldTexts(prompt.entity, dto.fieldTexts) }
+          : {}),
       },
     });
   }
@@ -349,25 +526,44 @@ export class AiService {
   /* ---- Tasks ----------------------------------------------------------- */
 
   /**
-   * The instruction a task or a preview sends: the admin's own prompt, or —
-   * with `templates` — the built-in rules (+ the kind's guide for a product)
-   * with the admin's text added at the end.
+   * The instruction a task or a preview sends, block by block: with
+   * `templates` the shop rules (+ the kind's guide for a product), then what
+   * the admin wrote — the general instruction and one per field.
    */
+  private async instructionBlocks(
+    entity: AiEntity,
+    parts: PromptParts,
+    fields: string[],
+    templates: boolean | undefined,
+    template: AiTemplate | null,
+  ): Promise<InstructionBlock[]> {
+    const blocks = instructionBlocks({
+      entity,
+      templates: Boolean(templates),
+      template,
+      parts,
+      fields,
+      // The admin's edited texts («Шаблоны») over the defaults.
+      texts: templates ? await this.texts.effective() : {},
+    });
+    if (!blocks.length) {
+      throw new BadRequestException(
+        'Напишите общую инструкцию или инструкцию хотя бы для одного поля',
+      );
+    }
+    return blocks;
+  }
+
   private async instruction(
     entity: AiEntity,
-    prompt: string | undefined,
+    parts: PromptParts,
+    fields: string[],
     templates: boolean | undefined,
     template: AiTemplate | null,
   ) {
-    if (templates) {
-      // The admin's edited texts («Шаблоны и проверки») over the defaults.
-      const texts = await this.texts.effective();
-      return entity === AiEntity.PRODUCT && template
-        ? productInstruction(template, prompt, texts)
-        : categoryInstruction(prompt, texts);
-    }
-    if (!prompt?.trim()) throw new BadRequestException('Напишите промпт');
-    return prompt.trim();
+    return composeInstruction(
+      await this.instructionBlocks(entity, parts, fields, templates, template),
+    );
   }
 
   async createTask(dto: AiCreateTaskDto, createdBy: string | null) {
@@ -381,6 +577,7 @@ export class AiService {
     if (dto.promptId) await this.ensurePrompt(dto.promptId);
     this.assertModel(dto.model);
 
+    const parts = promptParts(dto.prompt, dto.fieldPrompts, fields);
     const ids = dto.ids?.length
       ? [...new Set(dto.ids)]
       : dto.filter
@@ -428,7 +625,8 @@ export class AiService {
               key,
               await this.instruction(
                 dto.entity,
-                dto.prompt,
+                parts,
+                fields,
                 dto.templates,
                 group.template,
               ),
@@ -450,6 +648,7 @@ export class AiService {
             fields,
             promptId: dto.promptId ?? null,
             promptText: instructions.get(key)!,
+            promptParts: parts as Prisma.InputJsonValue,
             model: dto.model?.trim() || this.client.defaultModel,
             batchSize: dto.batchSize ?? 5,
             scheduledAt: dto.scheduledAt
@@ -516,34 +715,50 @@ export class AiService {
 
   private async idsByFilter(entity: AiEntity, raw: Record<string, unknown>) {
     const Dto =
-      entity === AiEntity.PRODUCT ? AiProductFilterDto : AiCategoryFilterDto;
+      entity === AiEntity.PRODUCT
+        ? AiProductFilterDto
+        : entity === AiEntity.CATEGORY
+          ? AiCategoryFilterDto
+          : AiBrandFilterDto;
     const filter = plainToInstance(Dto, raw);
     const errors = validateSync(filter, { whitelist: true });
     if (errors.length) throw new BadRequestException('Некорректный фильтр');
 
     const take = MAX_TASK_ITEMS + 1;
+    const select = { id: true } as const;
+    const orderBy = { name: 'asc' } as const;
     const rows =
       entity === AiEntity.PRODUCT
         ? await this.prisma.product.findMany({
             where: await this.productWhere(filter),
-            select: { id: true },
-            orderBy: { name: 'asc' },
+            select,
+            orderBy,
             take,
           })
-        : await this.prisma.category.findMany({
-            where: await this.categoryWhere(filter as AiCategoryFilterDto),
-            select: { id: true },
-            orderBy: { name: 'asc' },
-            take,
-          });
+        : entity === AiEntity.CATEGORY
+          ? await this.prisma.category.findMany({
+              where: await this.categoryWhere(filter as AiCategoryFilterDto),
+              select,
+              orderBy,
+              take,
+            })
+          : await this.prisma.brand.findMany({
+              where: await this.brandWhere(filter as AiBrandFilterDto),
+              select,
+              orderBy,
+              take,
+            });
     return rows.map((row) => row.id);
   }
 
   private entityNames(entity: AiEntity, ids: string[]) {
     const select = { id: true, name: true } as const;
-    return entity === AiEntity.PRODUCT
-      ? this.prisma.product.findMany({ where: { id: { in: ids } }, select })
-      : this.prisma.category.findMany({ where: { id: { in: ids } }, select });
+    const where = { id: { in: ids } };
+    if (entity === AiEntity.PRODUCT)
+      return this.prisma.product.findMany({ where, select });
+    if (entity === AiEntity.CATEGORY)
+      return this.prisma.category.findMany({ where, select });
+    return this.prisma.brand.findMany({ where, select });
   }
 
   async listTasks(query: AiTaskListQueryDto) {
@@ -749,10 +964,10 @@ export class AiService {
     let skipped = 0;
     for (const key of keys) {
       if (current[key] === changes[key].new) {
-        // Category SEO columns are NOT NULL — fall back to the name.
+        // Category and brand SEO columns are NOT NULL — fall back to the name.
         data[key] =
           changes[key].old ??
-          (entity === AiEntity.CATEGORY && key !== 'description'
+          (entity !== AiEntity.PRODUCT && NAME_DEFAULT_FIELDS.has(key)
             ? typeof current.name === 'string'
               ? current.name
               : ''
@@ -795,11 +1010,188 @@ export class AiService {
           slug !== aiSlug ? productPath(aiSlug) : null,
         ]);
       }
-    } else if (Object.keys(data).length) {
+    } else if (Object.keys(data).length && entity === AiEntity.CATEGORY) {
       await this.prisma.category.update({ where: { id }, data });
       await this.indexNow.enqueue([categoryPath(String(current.slug))]);
+    } else if (Object.keys(data).length) {
+      await this.prisma.brand.update({ where: { id }, data });
+      await this.indexNow.enqueue([brandPath(String(current.slug))]);
     }
     return { skipped };
+  }
+
+  /* ---- «Отклонённое»: fields the checks refused ------------------------ */
+
+  /**
+   * Items with a refused field nobody has dealt with yet — what the admin's
+   * «Отклонённое» compares (current value ↔ the model's text) and lets them
+   * write by hand or dismiss.
+   */
+  async listRejected(query: { entity?: AiEntity; page?: number }) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = 20;
+    const entity = query.entity ?? null;
+    const open = Prisma.sql`
+      FROM "AiTaskItem" i JOIN "AiTask" t ON t.id = i."taskId"
+      WHERE i."rejected" IS NOT NULL
+        AND (${entity}::text IS NULL OR t."entity"::text = ${entity}::text)
+        AND EXISTS (
+          SELECT 1 FROM jsonb_object_keys(i."rejected") AS k
+          WHERE i."resolved" IS NULL OR NOT jsonb_exists(i."resolved", k))`;
+    const [ids, counted] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT i.id ${open}
+        ORDER BY i."updatedAt" DESC, i.id
+        LIMIT ${limit} OFFSET ${(page - 1) * limit}`,
+      this.prisma.$queryRaw<Array<{ n: bigint }>>`SELECT count(*) AS n ${open}`,
+    ]);
+    const items = await this.prisma.aiTaskItem.findMany({
+      where: { id: { in: ids.map((row) => row.id) } },
+      include: {
+        task: {
+          select: { id: true, name: true, entity: true, promptParts: true },
+        },
+      },
+    });
+    const order = new Map(ids.map((row, index) => [row.id, index]));
+    items.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+
+    const data = [];
+    for (const item of items) {
+      const rejected = (item.rejected ?? {}) as Record<string, string>;
+      const resolved = (item.resolved ?? {}) as Record<string, string>;
+      const keys = Object.keys(rejected).filter(
+        (key) => !resolved[key] && isKnownField(item.task.entity, key),
+      );
+      const current = await this.currentValues(
+        item.task.entity,
+        item.entityId,
+        keys,
+      );
+      const response = (item.response ?? {}) as Record<string, unknown>;
+      const phrases = quotedPhrases(
+        item.task.promptParts as PromptParts | null,
+      );
+      data.push({
+        id: item.id,
+        taskId: item.task.id,
+        taskName: item.task.name,
+        entity: item.task.entity,
+        entityId: item.entityId,
+        entityName: item.entityName,
+        slug: current ? String(current.slug) : null,
+        exists: Boolean(current),
+        updatedAt: item.updatedAt,
+        fields: keys.map((key) => {
+          const def = fieldDefs(item.task.entity, [key])[0];
+          const raw = response[key];
+          return {
+            key,
+            label: def.label,
+            maxLength: def.maxLength,
+            reason: rejected[key],
+            current:
+              current && typeof current[key] === 'string' ? current[key] : null,
+            proposed:
+              cleanValue(def, raw, phrases) ??
+              (typeof raw === 'string' ? raw : ''),
+          };
+        }),
+      });
+    }
+    const total = Number(counted[0]?.n ?? 0);
+    return {
+      data,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    };
+  }
+
+  /**
+   * The admin writes a refused field after all — the model's text as it was
+   * or as they edited it. Recorded on the item like an AI change (so the
+   * item's rollback covers it) and locked against the re-parse.
+   */
+  async applyRejected(itemId: string, field: string, value: string) {
+    const item = await this.openRejected(itemId, field);
+    const text = value.replace(/\r\n/g, '\n').trim();
+    const def = fieldDefs(item.task.entity, [field])[0];
+    if (!text) throw new BadRequestException('Пустой текст');
+    if (text.length > def.maxLength) {
+      throw new BadRequestException(`Не длиннее ${def.maxLength} символов`);
+    }
+    const announce: string[] = [];
+    await this.prisma.$transaction(async (tx) => {
+      const current = await this.currentValues(
+        item.task.entity,
+        item.entityId,
+        [field],
+        tx,
+      );
+      if (!current) throw new NotFoundException('Запись удалена');
+      const old = typeof current[field] === 'string' ? current[field] : null;
+      const changes: Record<string, FieldChange> =
+        old === text ? {} : { [field]: { old, new: text } };
+      announce.push(
+        ...(await this.applyChanges(
+          item.task.entity,
+          item.entityId,
+          changes,
+          current,
+          tx,
+        )),
+      );
+      await tx.aiTaskItem.update({
+        where: { id: item.id },
+        data: {
+          changes: {
+            ...((item.changes ?? {}) as Record<string, FieldChange>),
+            ...changes,
+          } as Prisma.InputJsonValue,
+          status:
+            Object.keys(changes).length &&
+            item.status === AiTaskItemStatus.UNCHANGED
+              ? AiTaskItemStatus.APPLIED
+              : item.status,
+          resolved: {
+            ...((item.resolved ?? {}) as Record<string, string>),
+            [field]: 'applied',
+          },
+        },
+      });
+    });
+    await this.recount(item.taskId);
+    await this.indexNow.enqueue(announce);
+    return { ok: true };
+  }
+
+  /** «Оставить как есть»: the current text stays, the refused one leaves the list. */
+  async dismissRejected(itemId: string, field: string) {
+    const item = await this.openRejected(itemId, field);
+    await this.prisma.aiTaskItem.update({
+      where: { id: item.id },
+      data: {
+        resolved: {
+          ...((item.resolved ?? {}) as Record<string, string>),
+          [field]: 'dismissed',
+        },
+      },
+    });
+    return { ok: true };
+  }
+
+  private async openRejected(itemId: string, field: string) {
+    const item = await this.prisma.aiTaskItem.findUnique({
+      where: { id: itemId },
+      include: { task: { select: { entity: true } } },
+    });
+    if (!item) throw new NotFoundException('Запись задачи не найдена');
+    const rejected = (item.rejected ?? {}) as Record<string, string>;
+    const resolved = (item.resolved ?? {}) as Record<string, string>;
+    if (!rejected[field] || !isKnownField(item.task.entity, field)) {
+      throw new BadRequestException('Это поле не отклонялось');
+    }
+    if (resolved[field]) throw new ConflictException('Уже разобрано');
+    return item;
   }
 
   /* ---- Templates and checks («Шаблоны и проверки») -------------------- */
@@ -816,7 +1208,7 @@ export class AiService {
       checks: AI_CHECKS,
       verifyPrompt: VERIFY_SYSTEM_PROMPT,
       fieldGuide: FIELD_GUIDE,
-      scaffolds: PROMPT_SCAFFOLDS,
+      presets: AI_PRESETS,
     };
   }
 
@@ -825,25 +1217,29 @@ export class AiService {
   }
 
   /**
-   * «Объяснить по товару»: which kind's guide a product gets and why, and the
-   * exact messages a task with templates would send for it. No model call.
+   * «Как соберётся запрос»: which kind's guide a record gets and why, the
+   * instruction block by block (what is fixed, what comes from «Шаблоны»,
+   * what the task adds) and the exact messages. No model call — free.
    */
   async explain(dto: AiExplainDto) {
     const contexts = await this.contexts(dto.entity, [dto.id]);
     const context = contexts.get(dto.id);
     if (!context) throw new NotFoundException('Запись не найдена');
+    const templates = dto.templates ?? true;
     const choice =
-      dto.entity === AiEntity.PRODUCT ? explainTemplate(context.kind) : null;
-    const fields = fieldDefs(
+      dto.entity === AiEntity.PRODUCT && templates
+        ? explainTemplate(context.kind)
+        : null;
+    const keys = dto.fields?.length
+      ? dto.fields
+      : AI_FIELDS[dto.entity].map((field) => field.key);
+    const fields = fieldDefs(dto.entity, keys);
+    const parts = promptParts(dto.prompt, dto.fieldPrompts, keys);
+    const blocks = await this.instructionBlocks(
       dto.entity,
-      dto.fields?.length
-        ? dto.fields
-        : AI_FIELDS[dto.entity].map((field) => field.key),
-    );
-    const instruction = await this.instruction(
-      dto.entity,
-      dto.prompt,
-      true,
+      parts,
+      keys,
+      templates,
       choice?.template ?? null,
     );
     return {
@@ -855,10 +1251,24 @@ export class AiService {
             subject: choice.subject,
           }
         : null,
+      blocks: [
+        {
+          kind: 'fixed',
+          title: 'Формат ответа',
+          text: formatBlock(dto.entity, fields),
+        },
+        ...blocks,
+        {
+          kind: 'data',
+          title: 'Данные записи',
+          text: JSON.stringify(context.prompt, null, 2),
+        },
+      ],
+      phrases: quotedPhrases(parts),
       messages: buildMessages({
         entity: dto.entity,
         fields,
-        instruction,
+        instruction: composeInstruction(blocks),
         contexts: [context.prompt],
       }),
     };
@@ -878,9 +1288,13 @@ export class AiService {
       dto.templates && dto.entity === AiEntity.PRODUCT
         ? productTemplate(context.kind)
         : null;
+    const keys = fields.map((field) => field.key);
+    const parts = promptParts(dto.prompt, dto.fieldPrompts, keys);
+    const phrases = quotedPhrases(parts);
     const instruction = await this.instruction(
       dto.entity,
-      dto.prompt,
+      parts,
+      keys,
       dto.templates,
       template,
     );
@@ -896,7 +1310,7 @@ export class AiService {
       const answer = await this.client.chat(model, messages);
       const parsed = parseAnswer(answer.content);
       const record = parsed.get(dto.id) ?? [...parsed.values()][0] ?? {};
-      const changes = diffAnswer(fields, context.current, record);
+      const changes = diffAnswer(fields, context.current, record, phrases);
       // The same two checks a task runs, so the preview shows what it would write.
       const verdicts = await this.secondOpinion(
         model,
@@ -904,9 +1318,13 @@ export class AiService {
         fields,
         new Map([[dto.id, record]]),
         contexts,
+        phrases,
       );
       const rejected: Rejections = {
-        ...validateAnswer(context.validation, newValues(changes)),
+        ...validateAnswer(
+          { ...context.validation, allowed: phrases },
+          newValues(changes),
+        ),
         ...pickKeys(verdicts.get(dto.id) ?? {}, Object.keys(changes)),
       };
       return {
@@ -921,6 +1339,7 @@ export class AiService {
           ]),
         ),
         usage: answer.usage,
+        phrases,
         raw: answer.content,
       };
     } catch (error) {
@@ -1025,6 +1444,8 @@ export class AiService {
       contexts: items.map((item) => contexts.get(item.entityId)!.prompt),
     });
 
+    // The admin's quoted phrases pass the cleaner and the checks verbatim.
+    const phrases = quotedPhrases(task.promptParts as PromptParts | null);
     let records: Map<string, Record<string, unknown>>;
     let verdicts: Map<string, Rejections>;
     try {
@@ -1049,6 +1470,7 @@ export class AiService {
         fields,
         records,
         contexts,
+        phrases,
       );
     } catch (error) {
       const message = (error as Error).message;
@@ -1096,10 +1518,10 @@ export class AiService {
           );
           if (!current) throw new Error('Запись удалена');
           // What the checks refuse is not written; the old text stays.
-          const proposed = diffAnswer(fields, current, record);
+          const proposed = diffAnswer(fields, current, record, phrases);
           const rejected: Rejections = {
             ...validateAnswer(
-              contexts.get(item.entityId)!.validation,
+              { ...contexts.get(item.entityId)!.validation, allowed: phrases },
               newValues(proposed),
             ),
             ...pickKeys(
@@ -1172,6 +1594,7 @@ export class AiService {
     fields: ReturnType<typeof fieldDefs>,
     records: Map<string, Record<string, unknown>>,
     contexts: Map<string, EntityContext>,
+    phrases: string[] = [],
   ): Promise<Map<string, Rejections>> {
     const verdicts = new Map<string, Rejections>();
     if (process.env.AI_VERIFY?.trim() === 'false') return verdicts;
@@ -1184,8 +1607,13 @@ export class AiService {
     for (const [id, record] of records) {
       const context = contexts.get(id);
       if (!context || context.validation.entity !== AiEntity.PRODUCT) continue;
-      const proposed = newValues(diffAnswer(checked, context.current, record));
-      const failed = validateAnswer(context.validation, proposed);
+      const proposed = newValues(
+        diffAnswer(checked, context.current, record, phrases),
+      );
+      const failed = validateAnswer(
+        { ...context.validation, allowed: phrases },
+        proposed,
+      );
       const toCheck = withoutKeys(proposed, Object.keys(failed));
       if (Object.keys(toCheck).length) {
         inputs.push({ id, data: context.prompt, proposed: toCheck });
@@ -1193,7 +1621,10 @@ export class AiService {
     }
     if (!inputs.length) return verdicts;
 
-    const answer = await this.client.chat(model, buildVerifyMessages(inputs));
+    const answer = await this.client.chat(
+      model,
+      buildVerifyMessages(inputs, phrases),
+    );
     if (taskId) await this.addUsage(taskId, answer.usage);
     for (const [id, problems] of parseVerifyAnswer(
       parseAnswer(answer.content),
@@ -1313,8 +1744,12 @@ export class AiService {
         newSlug !== oldSlug ? productPath(oldSlug) : '',
       ].filter(Boolean);
     }
-    await db.category.update({ where: { id }, data });
-    return [categoryPath(String(current.slug))];
+    if (entity === AiEntity.CATEGORY) {
+      await db.category.update({ where: { id }, data });
+      return [categoryPath(String(current.slug))];
+    }
+    await db.brand.update({ where: { id }, data });
+    return [brandPath(String(current.slug))];
   }
 
   private async chargeAttempt(
@@ -1389,7 +1824,13 @@ export class AiService {
         select: { ...select, aiLockedFields: true, lockedFields: true },
       }) as Promise<Record<string, unknown> | null>;
     }
-    return db.category.findUnique({
+    if (entity === AiEntity.CATEGORY) {
+      return db.category.findUnique({
+        where: { id },
+        select,
+      }) as Promise<Record<string, unknown> | null>;
+    }
+    return db.brand.findUnique({
       where: { id },
       select,
     }) as Promise<Record<string, unknown> | null>;
@@ -1486,6 +1927,11 @@ export class AiService {
       return map;
     }
 
+    if (entity === AiEntity.BRAND) {
+      await this.brandContexts(ids, map);
+      return map;
+    }
+
     const categories = await this.prisma.category.findMany({
       where: { id: { in: ids } },
       include: {
@@ -1540,6 +1986,95 @@ export class AiService {
       });
     }
     return map;
+  }
+
+  /**
+   * A brand's page lists the categories it has published products in, so
+   * that is what the model is shown: those categories (biggest first) and a
+   * handful of its product names — the facts a brand text may use.
+   */
+  private async brandContexts(ids: string[], map: Map<string, EntityContext>) {
+    const brands = await this.prisma.brand.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        country: true,
+        description: true,
+        seoTitle: true,
+        seoDescription: true,
+      },
+    });
+    for (const brand of brands) {
+      const [byCategory, examples, total] = await Promise.all([
+        this.prisma.product.groupBy({
+          by: ['categoryId'],
+          where: { brandId: brand.id, status: 'PUBLISHED' },
+          _count: { _all: true },
+          orderBy: { _count: { categoryId: 'desc' } },
+          take: 15,
+        }),
+        this.prisma.product.findMany({
+          where: { brandId: brand.id, status: 'PUBLISHED' },
+          select: { name: true },
+          orderBy: { listingRank: 'desc' },
+          take: 10,
+        }),
+        this.prisma.product.count({
+          where: { brandId: brand.id, status: 'PUBLISHED' },
+        }),
+      ]);
+      const names = new Map(
+        (
+          await this.prisma.category.findMany({
+            where: {
+              id: { in: byCategory.map((row) => row.categoryId) },
+              isVisible: true,
+            },
+            select: { id: true, name: true },
+          })
+        ).map((row) => [row.id, row.name]),
+      );
+      const categories = byCategory
+        .map((row) => names.get(row.categoryId))
+        .filter((name): name is string => Boolean(name));
+      // The parser seeds the SEO fields with the name: not a text to show.
+      const own = (value: string | null) =>
+        value && value !== brand.name ? value : null;
+      const shown = truncate(brand.description, DESCRIPTION_CONTEXT_CHARS);
+      map.set(brand.id, {
+        current: brand as unknown as Record<string, unknown>,
+        kind: { name: brand.name, categoryPath: '' },
+        validation: {
+          entity: AiEntity.BRAND,
+          oldName: brand.name,
+          source: [
+            brand.name,
+            brand.country,
+            shown,
+            own(brand.seoTitle),
+            own(brand.seoDescription),
+            String(total),
+            ...categories,
+            ...examples.map((product) => product.name),
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        },
+        prompt: {
+          id: brand.id,
+          name: brand.name,
+          country: brand.country,
+          description: shown,
+          seoTitle: own(brand.seoTitle),
+          seoDescription: own(brand.seoDescription),
+          productCount: total,
+          categories,
+          exampleProducts: examples.map((product) => product.name),
+        },
+      });
+    }
   }
 }
 

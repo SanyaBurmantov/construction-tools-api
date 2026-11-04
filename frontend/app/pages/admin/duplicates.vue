@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AiDuplicateVerdict } from '~/types/ai'
+
 definePageMeta({ layout: 'admin' })
 
 type Signal = 'barcode' | 'sku' | 'model' | 'name'
@@ -37,9 +39,27 @@ const { run, busy } = useAdminAction()
 /** Chosen survivor per group; defaults to the one carrying the most offers. */
 const chosen = reactive<Record<string, string>>({})
 
+/** The AI assistant's second opinion per group (`signal:key`) — advice, never a merge. */
+const verdicts = ref<Record<string, AiDuplicateVerdict>>({})
+/** Shown only while the group still holds the products the opinion was about. */
+function verdictOf(group: OfferDuplicateGroup) {
+  const verdict = verdicts.value[`${group.signal}:${group.key}`]
+  if (!verdict) return null
+  const ids = group.products.map(product => product.id).sort().join(',')
+  return verdict.productIds.join(',') === ids ? verdict : null
+}
+const VERDICT: Record<AiDuplicateVerdict['verdict'], { label: string, tone: 'success' | 'danger' | 'neutral' }> = {
+  same: { label: 'ИИ: один товар', tone: 'success' },
+  different: { label: 'ИИ: разные товары', tone: 'danger' },
+  unsure: { label: 'ИИ: не уверен', tone: 'neutral' },
+}
+
 async function load() {
   loading.value = true
   loadError.value = ''
+  adminFetch<Record<string, AiDuplicateVerdict>>('/ai/assist/duplicates')
+    .then((value) => { verdicts.value = value })
+    .catch(() => { /* decoration: the page works without it */ })
   try {
     groups.value = await adminFetch<OfferDuplicateGroup[]>('/offers/duplicates')
     for (const group of groups.value) {
@@ -178,6 +198,15 @@ const autoMergeableCount = computed(
             </UiBadge>
             <span>{{ SIGNAL_LABELS[group.signal] }}</span>
             <code>{{ group.key }}</code>
+            <UiBadge
+              v-if="verdictOf(group)"
+              size="sm"
+              :tone="VERDICT[verdictOf(group)!.verdict].tone"
+              :title="verdictOf(group)!.reason"
+            >
+              {{ VERDICT[verdictOf(group)!.verdict].label }}
+            </UiBadge>
+            <small v-if="verdictOf(group)?.reason" class="ai-reason">{{ verdictOf(group)!.reason }}</small>
           </div>
           <UiButton
             size="sm"
@@ -249,6 +278,12 @@ const autoMergeableCount = computed(
 </template>
 
 <style scoped>
+.ai-reason {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
 .list {
   display: flex;
   flex-direction: column;

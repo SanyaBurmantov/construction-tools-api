@@ -108,3 +108,4 @@ export class IndexNowService {
 /** Storefront paths, in one place. */
 export const productPath = (slug: string) => `/product/${slug}`;
 export const categoryPath = (slug: string) => `/catalog/${slug}`;
+export const brandPath = (slug: string) => `/brand/${slug}`;

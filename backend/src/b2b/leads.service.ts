@@ -68,6 +68,8 @@ const LEAD_SELECT = {
   currency: true,
   trafficSource: true,
   firstTrafficSource: true,
+  aiDraft: true,
+  aiDraftAt: true,
   createdAt: true,
   updatedAt: true,
   user: { select: { id: true, login: true } },

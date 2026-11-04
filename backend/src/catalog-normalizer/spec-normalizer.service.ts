@@ -7,6 +7,11 @@ import {
   normalizeSpecValue,
 } from '../parser/spec-canonical';
 import { isIdentitySpec, isOffByDefaultSpec } from '../parser/spec-filterable';
+import {
+  parseSpecAliases,
+  resolveSpecAlias,
+  SPEC_ALIASES_SETTING,
+} from './spec-aliases';
 
 /**
  * Rows touched per statement. Large enough that 227k characteristic values are
@@ -176,6 +181,17 @@ export class SpecNormalizerService {
       },
     });
 
+    // Folds an admin accepted (spec-aliases.ts) — applied on top of the code's
+    // canonical reading, every run, so they are not undone at night.
+    const aliasRow = await Promise.resolve()
+      .then(() =>
+        this.prisma.siteSetting.findUnique({
+          where: { key: SPEC_ALIASES_SETTING },
+        }),
+      )
+      .catch(() => null);
+    const aliases = parseSpecAliases(aliasRow?.value);
+
     const identity = new Map<string, SpecIdentity>();
     const updates: Array<{
       id: string;
@@ -192,10 +208,13 @@ export class SpecNormalizerService {
       // would flip back from `ves~kg` to `ves` — splitting the filter that the
       // first run merged, and breaking every catalogue URL that carries the
       // old key. A unit spelled out in the *name* still wins over both.
-      const canonical = canonicalSpec(
+      const read = canonicalSpec(
         spec.name,
         units.get(spec.id) ?? spec.canonicalUnit ?? undefined,
       );
+      const alias = read ? resolveSpecAlias(read.key, aliases) : null;
+      const canonical =
+        read && alias ? { ...read, key: alias.key, name: alias.name } : read;
 
       if (!canonical) {
         // No canonical reading of this name — one row in production. Carry the

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -17,6 +18,7 @@ import { AdminGuard } from '../admin/admin.guard';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { AiService } from './ai.service';
 import {
+  AiBrandQueryDto,
   AiCategoryQueryDto,
   AiCreateTaskDto,
   AiExplainDto,
@@ -54,6 +56,42 @@ export class AiController {
   @Get('categories')
   categories(@Query() query: AiCategoryQueryDto) {
     return this.ai.listCategories(query);
+  }
+
+  @Get('brands')
+  brands(@Query() query: AiBrandQueryDto) {
+    return this.ai.listBrands(query);
+  }
+
+  /** «Отклонённое»: AI fields the checks refused, not dealt with yet. */
+  @Get('rejected')
+  rejected(@Query('entity') entity?: string, @Query('page') page?: string) {
+    if (entity && !(entity in AiEntity))
+      throw new BadRequestException('entity');
+    return this.ai.listRejected({
+      entity: entity as AiEntity | undefined,
+      page: Number(page) || 1,
+    });
+  }
+
+  @Post('rejected/:itemId/apply')
+  applyRejected(
+    @Param('itemId') itemId: string,
+    @Body() body: { field?: unknown; value?: unknown },
+  ) {
+    if (typeof body?.field !== 'string' || typeof body.value !== 'string') {
+      throw new BadRequestException('field, value');
+    }
+    return this.ai.applyRejected(itemId, body.field, body.value);
+  }
+
+  @Post('rejected/:itemId/dismiss')
+  dismissRejected(
+    @Param('itemId') itemId: string,
+    @Body() body: { field?: unknown },
+  ) {
+    if (typeof body?.field !== 'string') throw new BadRequestException('field');
+    return this.ai.dismissRejected(itemId, body.field);
   }
 
   @Get('prompts')

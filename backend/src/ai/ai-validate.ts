@@ -1,4 +1,5 @@
 import type { AiEntity } from '@prisma/client';
+import { withoutPhrases } from './ai-phrases';
 
 /**
  * Checks on what a model wrote, before it is written. Pure — no DB, no HTTP —
@@ -231,6 +232,12 @@ export type ValidationInput = {
   brand?: string | null;
   /** Little to go on: no description and fewer than three specs. */
   thin?: boolean;
+  /**
+   * Phrases the admin quoted in the task (ai-phrases.ts): the content checks
+   * look at the text without them — «по низким ценам», «Минск», a number
+   * the admin wrote are the admin's, not the model's invention.
+   */
+  allowed?: string[];
 };
 
 /** Hard limits per field — over them the field is not written. */
@@ -292,6 +299,11 @@ function checkField(
   if (limit && value.length > limit.max)
     return `слишком длинно (${value.length} > ${limit.max})`;
 
+  // Length counts the whole text; what is in it is checked without the
+  // admin's own phrases.
+  const full = value;
+  if (input.allowed?.length) value = withoutPhrases(value, input.allowed);
+
   for (const [pattern, what] of FORBIDDEN) {
     if (pattern.test(value)) return `недопустимо: ${what}`;
   }
@@ -333,7 +345,7 @@ function checkField(
     }
   }
 
-  if (field === 'name') return checkName(value, input);
+  if (field === 'name') return checkName(value, input, full);
 
   if (input.thin && (field === 'descriptionFull' || field === 'description')) {
     if (value.length > THIN_DESCRIPTION_MAX) {
@@ -341,17 +353,22 @@ function checkField(
     }
   }
 
-  if (field === 'seoDescription' && !B2B_PAYMENT.test(value)) {
+  if (field === 'seoDescription' && !B2B_PAYMENT.test(full)) {
     return 'нет упоминания оплаты по безналу';
   }
   return null;
 }
 
-function checkName(value: string, input: ValidationInput): string | null {
+function checkName(
+  value: string,
+  input: ValidationInput,
+  /** With the admin's phrases — what is written. */
+  full: string = value,
+): string | null {
   // «… (2 шт.)», «… 3 мм.» end in an abbreviation's dot — that one is fine.
   if (
-    /[!?…]$/.test(value) ||
-    (/\.$/.test(value) && !/(^|[\s(])[а-яёa-z]{1,4}\.\)?$/i.test(value))
+    /[!?…]$/.test(full) ||
+    (/\.$/.test(full) && !/(^|[\s(])[а-яёa-z]{1,4}\.\)?$/i.test(full))
   )
     return 'название заканчивается знаком препинания';
   if (/купить|цена|минск|доставк/i.test(value))
@@ -365,7 +382,7 @@ function checkName(value: string, input: ValidationInput): string | null {
   }
 
   const old = fixHomoglyphs(input.oldName);
-  const next = codeKey(fixHomoglyphs(value));
+  const next = codeKey(fixHomoglyphs(full));
 
   // The brand stays, if the old name carried it.
   const brand = input.brand?.trim();
@@ -393,7 +410,7 @@ function checkName(value: string, input: ValidationInput): string | null {
 
   // Sizes and pack quantities stay: «М10х12х40», «(4 шт в зип-локе)».
   // A size may come back more exact from the specs: «125х22» → «125х22,2».
-  const kept = [...numbersIn(fixHomoglyphs(value))];
+  const kept = [...numbersIn(fixHomoglyphs(full))];
   for (const group of numberGroups(old)) {
     const found = [group.joined, ...group.parts].some((number) =>
       kept.some((next) => next === number || next.startsWith(`${number}.`)),
@@ -525,6 +542,12 @@ export const AI_CHECKS: Array<{ id: string; title: string; detail: string }> = [
     title: 'Название: числа',
     detail:
       'Каждое число старого названия (размеры, фасовка) должно остаться — по ним работают переключатель размеров и подбор крепежа.',
+  },
+  {
+    id: 'phrases',
+    title: 'Ваши фразы в кавычках',
+    detail:
+      'Фраза из двух и больше слов, взятая в кавычки в инструкции задачи («купить в Минске по низким ценам»), вставляется как есть: очистка от рекламы поставщика её не вырезает, а проверки выше её не считают выдумкой.',
   },
   {
     id: 'similar',

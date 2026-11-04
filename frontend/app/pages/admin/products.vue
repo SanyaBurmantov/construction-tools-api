@@ -86,6 +86,14 @@ const {
 onMounted(() => {
   void loadReferences()
   void load()
+  // `?edit=<id>`: opened from elsewhere in the admin («Отклонённое», the AI
+  // screens) straight on one product's editor.
+  const editId = useRoute().query.edit
+  if (typeof editId === 'string' && editId) {
+    adminFetch<AdminProduct>(`/products/${encodeURIComponent(editId)}`)
+      .then(product => openEdit(product))
+      .catch(() => toast.error('Товар не найден'))
+  }
 })
 
 /* ---- Editor ------------------------------------------------------------ */

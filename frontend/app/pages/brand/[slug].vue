@@ -36,6 +36,8 @@ const totalProducts = computed(() =>
  */
 function categoryLink(category: BrandCategory) {
   if (!brand.value?.id) return '/catalog'
+  // A written landing («Перфораторы Makita») has its own pretty address.
+  if (category.slug && category.landing && brand.value.slug) return `/catalog/${category.slug}/${brand.value.slug}`
   if (category.slug) return `/catalog/${category.slug}?brands=${brand.value.id}`
   return `/catalog?brands=${brand.value.id}&categoryId=${category.id}`
 }
@@ -50,16 +52,24 @@ const heroStats = computed(() => [
 ])
 
 const description = computed(() =>
-  brand.value
+  brand.value?.seoDescription
+  || (brand.value
     ? `Товары бренда ${brand.value.name} в каталоге Gost.by: ${pluralize(totalProducts.value, 'position')} в ${pluralize(categories.value.length, 'categoryIn')}.`
-    : 'Категории бренда в каталоге Gost.by.'
+    : 'Категории бренда в каталоге Gost.by.')
+)
+const pageTitle = computed(() =>
+  brand.value?.seoTitle || (brand.value ? `${brand.value.name} | Gost.by` : 'Бренд | Gost.by')
+)
+/** The brand text, paragraph by paragraph, under the categories. */
+const brandText = computed(() =>
+  (brand.value?.description ?? '').split(/\n+/).map(line => line.trim()).filter(Boolean)
 )
 const canonical = computed(() => absoluteUrl(`/brand/${slug.value}`))
 
 useSeoMeta({
-  title: () => (brand.value ? `${brand.value.name} | Gost.by` : 'Бренд | Gost.by'),
+  title: () => pageTitle.value,
   description: () => description.value,
-  ogTitle: () => (brand.value ? `${brand.value.name} | Gost.by` : 'Бренд | Gost.by'),
+  ogTitle: () => pageTitle.value,
   ogDescription: () => description.value,
   ogType: 'website',
   ogUrl: () => canonical.value,
@@ -110,6 +120,11 @@ useHead(() => ({ link: [{ rel: 'canonical', href: canonical.value }] }))
         variant="row"
       />
     </section>
+
+    <section v-if="brandText.length" class="brand-about">
+      <h2>О бренде {{ brand?.name }}</h2>
+      <p v-for="(paragraph, index) in brandText" :key="index">{{ paragraph }}</p>
+    </section>
   </div>
 </template>
 
@@ -125,6 +140,24 @@ useHead(() => ({ link: [{ rel: 'canonical', href: canonical.value }] }))
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+.brand-about {
+  max-width: 80ch;
+  margin-top: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.brand-about h2 {
+  margin-bottom: var(--space-3);
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+
+.brand-about p + p {
+  margin-top: var(--space-3);
 }
 
 .grid {

@@ -4,7 +4,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
 import { SpecSelection, parseSpecFilter } from './spec-filter';
 import { searchVariants } from '../common/utils/transliterate';
-import { buildFtsQuery, FTS_DOCUMENT_SQL, ftsDocumentSql } from './search-fts';
+import {
+  buildFtsQuery,
+  cleanSynonymGroups,
+  FTS_DOCUMENT_SQL,
+  ftsDocumentSql,
+} from './search-fts';
+
+/** Where accepted synonym groups live (the AI assistant writes it). */
+export const SEARCH_SYNONYMS_SETTING = 'search.synonyms';
+const SYNONYMS_TTL_MS = 60_000;
 import { isIdentitySpec, publicSpecs } from '../parser/spec-filterable';
 import { withoutPlaceholderImages } from '../common/utils/product-images';
 
@@ -997,9 +1006,30 @@ export class ProductService {
    * ranked over the matched rows only — exact/prefix SKU and barcode first,
    * then name prefix, substring, model, brand, and word similarity.
    */
+  /** Accepted synonym groups, re-read at most once a minute; a failed read is «none». */
+  private synonyms: { at: number; groups: Promise<string[][]> } | null = null;
+  private extraSynonyms(): Promise<string[][]> {
+    if (this.synonyms && Date.now() - this.synonyms.at < SYNONYMS_TTL_MS) {
+      return this.synonyms.groups;
+    }
+    // Through a resolved promise: a test double without `siteSetting` must
+    // degrade to «no extra synonyms», not throw out of the search.
+    const groups = Promise.resolve()
+      .then(() =>
+        this.prisma.siteSetting.findUnique({
+          where: { key: SEARCH_SYNONYMS_SETTING },
+        }),
+      )
+      .then((row) => cleanSynonymGroups(row ? JSON.parse(row.value) : []))
+      .catch(() => [] as string[][]);
+    this.synonyms = { at: Date.now(), groups };
+    return groups;
+  }
+
   private async queryRankedMatchIds(term: string): Promise<string[] | null> {
     const variants = searchVariants(term);
     if (!variants.length) return [];
+    const synonyms = await this.extraSynonyms();
     const barcode = barcodeTerm(term);
 
     const branches: Prisma.Sql[] = [];
@@ -1009,7 +1039,7 @@ export class ProductService {
     const ftsQueries = [
       ...new Set(
         variants
-          .map((variant) => buildFtsQuery(variant))
+          .map((variant) => buildFtsQuery(variant, synonyms))
           .filter((q): q is string => q !== null),
       ),
     ];

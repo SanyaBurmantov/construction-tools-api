@@ -1,10 +1,9 @@
 <script setup lang="ts">
 /**
- * The «ИИ · Товары» / «ИИ · Категории» screen: filters, the bulk bar, a table
- * of rows with how long each text field is, and the wizard that turns the
- * selection into a task. The two pages were the same 330 lines with different
- * columns, so they now pass their filters and columns in and keep only what
- * is really theirs.
+ * One tab of «ИИ-тексты» (товары / категории / бренды): filters, the bulk
+ * bar, a table of rows with how long each text field is, and the wizard that
+ * turns the selection into a task. The tabs pass their filters and columns
+ * in and keep only what is really theirs.
  *
  * `filters` is the page's reactive object, edited by the page's own inputs in
  * the `#filters` slot; every value is a string, and «Сбросить» blanks them all.
@@ -13,8 +12,6 @@
 import type { AiEntity, AiPickerRow } from '~/types/ai'
 
 const props = defineProps<{
-  title: string
-  description: string
   entity: AiEntity
   /** List endpoint under `/admin`. */
   path: string
@@ -44,6 +41,7 @@ defineSlots<{
 }>()
 
 const { status, loadStatus } = useAiStatus()
+const emit = defineEmits<{ created: [] }>()
 
 const { rows, pagination, loading, error: loadError, setPage } = useAdminList<AiPickerRow>(props.path, {
   params: () => ({ ...props.filters }),
@@ -82,20 +80,14 @@ const sample = computed(() => picker.sample.value
 function onCreated() {
   picker.clear()
   void loadStatus()
-  void navigateTo('/admin/ai/tasks')
+  emit('created')
 }
 
 const colspan = computed(() => 1 + props.extraColumns + props.fillColumns.length)
 </script>
 
 <template>
-  <div class="admin-page">
-    <AdminPageHead :title="title" :description="description">
-      <UiButton variant="secondary" to="/admin/ai/tasks">Задачи и планировщик</UiButton>
-    </AdminPageHead>
-
-    <AdminAiStatusLine :status="status" />
-
+  <div class="picker">
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
     <div class="filters">
@@ -199,6 +191,12 @@ const colspan = computed(() => 1 + props.extraColumns + props.fillColumns.length
 </template>
 
 <style scoped>
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));

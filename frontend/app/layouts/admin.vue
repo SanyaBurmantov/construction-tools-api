@@ -59,10 +59,7 @@ const nav = computed(() => [
     badge: badges.value?.recentErrors,
   },
   { label: 'Парсинг', to: '/admin/parsing', icon: 'refresh' },
-  { label: 'ИИ · Товары', to: '/admin/ai/products', icon: 'spark' },
-  { label: 'ИИ · Категории', to: '/admin/ai/categories', icon: 'spark' },
-  { label: 'ИИ · Задачи', to: '/admin/ai/tasks', icon: 'spark' },
-  { label: 'ИИ · Шаблоны', to: '/admin/ai/templates', icon: 'spark' },
+  { label: 'ИИ-тексты', to: '/admin/ai', icon: 'spark' },
   { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
 

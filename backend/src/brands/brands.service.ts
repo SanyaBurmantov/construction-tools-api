@@ -31,11 +31,22 @@ export class BrandsService {
   async getCategories(slug: string) {
     const brand = await this.prisma.brand.findFirst({
       where: { OR: [{ slug }, { id: slug }] },
-      select: { id: true, name: true, slug: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        seoTitle: true,
+        seoDescription: true,
+      },
     });
     if (!brand) {
       throw new NotFoundException('Brand not found');
     }
+    // The parser seeds both SEO fields with the name — that is «not written»,
+    // and the page builds its own title then (as categories do).
+    const own = (value: string | null) =>
+      value?.trim() && value.trim() !== brand.name ? value.trim() : null;
 
     const counts = await this.prisma.product.groupBy({
       by: ['categoryId'],
@@ -58,13 +69,29 @@ export class BrandsService {
     const countByCategory = new Map(
       counts.map((item) => [item.categoryId, item._count._all]),
     );
+    // A published «категория + бренд» landing: the brand page links to its
+    // pretty URL (`/catalog/<category>/<brand>`) instead of the filtered view.
+    const landings = new Set(
+      (
+        await this.prisma.brandCategoryLanding.findMany({
+          where: { brandId: brand.id, isPublished: true },
+          select: { categoryId: true },
+        })
+      ).map((row) => row.categoryId),
+    );
 
     return {
-      brand,
+      brand: {
+        ...brand,
+        description: brand.description?.trim() || null,
+        seoTitle: own(brand.seoTitle),
+        seoDescription: own(brand.seoDescription),
+      },
       categories: categories
         .map((category) => ({
           ...category,
           count: countByCategory.get(category.id) ?? 0,
+          landing: landings.has(category.id),
         }))
         .sort(
           (a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'),

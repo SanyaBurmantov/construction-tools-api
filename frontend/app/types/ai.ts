@@ -1,7 +1,11 @@
 /** Shapes of `/admin/ai/*` (backend `src/ai/`). */
 import type { ProductStatus } from '~/utils/product-status'
 
-export type AiEntity = 'PRODUCT' | 'CATEGORY'
+export type AiEntity = 'PRODUCT' | 'CATEGORY' | 'BRAND'
+
+export const AI_ENTITY_LABEL: Record<AiEntity, string> = { PRODUCT: 'Товары', CATEGORY: 'Категории', BRAND: 'Бренды' }
+/** «товаров» / «категорий» / «брендов». */
+export const AI_ENTITY_GENITIVE: Record<AiEntity, string> = { PRODUCT: 'товаров', CATEGORY: 'категорий', BRAND: 'брендов' }
 export type AiTaskStatus = 'QUEUED' | 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED'
 export type AiTaskItemStatus = 'PENDING' | 'APPLIED' | 'UNCHANGED' | 'FAILED' | 'REVERTED'
 
@@ -26,11 +30,14 @@ export type AiStatus = {
 
 export type AiModel = { id: string, name: string, contextLength: number }
 
+/** A saved template: the general instruction, the fields it fills, one instruction per field. */
 export type AiPrompt = {
   id: string
   name: string
   entity: AiEntity
   text: string
+  fields: string[]
+  fieldTexts: Record<string, string> | null
   createdAt: string
   updatedAt: string
 }
@@ -44,6 +51,8 @@ export type AiProductRow = {
   stockStatus: string | null
   image: string | null
   aiLockedFields: string[]
+  priceValue: number | null
+  createdAt: string
   brand: { id: string, name: string } | null
   category: { id: string, name: string } | null
   lengths: Record<string, number>
@@ -57,6 +66,17 @@ export type AiCategoryRow = {
   isVisible: boolean
   parent: { id: string, name: string } | null
   _count: { products: number, children: number }
+  lengths: Record<string, number>
+}
+
+export type AiBrandRow = {
+  id: string
+  name: string
+  slug: string
+  logo: string | null
+  country: string | null
+  /** Published products — a brand without them has no page worth a text. */
+  products: number
   lengths: Record<string, number>
 }
 
@@ -74,6 +94,8 @@ export type AiTask = {
   promptId: string | null
   prompt: { id: string, name: string } | null
   promptText: string
+  /** The admin's own part: general instruction and one per field. */
+  promptParts: { general?: string, fields?: Record<string, string> } | null
   model: string
   batchSize: number
   scheduledAt: string
@@ -120,6 +142,8 @@ export type AiPreview = {
   changes: Record<string, AiFieldChange>
   rejected: Record<string, { reason: string, value: string }>
   usage?: { promptTokens: number, completionTokens: number, cacheHitTokens: number }
+  /** The quoted phrases that pass the checks verbatim. */
+  phrases?: string[]
   raw: string
 }
 
@@ -155,6 +179,7 @@ export type AiTemplates = {
   texts: {
     productRules: AiTemplateText
     categoryRules: AiTemplateText
+    brandRules: AiTemplateText
     guides: Record<string, AiTemplateText>
   }
   kinds: Array<{ key: string, label: string, keywords: string[] }>
@@ -162,12 +187,128 @@ export type AiTemplates = {
   verifyPrompt: string
   /** What each field is and where it is seen — for whoever writes prompts. */
   fieldGuide: Array<{ entity: AiEntity, key: string, label: string, where: string, length: string, notes: string }>
-  /** Ready prompt frameworks; [в скобках] — what to fill in. */
-  scaffolds: Array<{ id: string, title: string, entity: AiEntity, fields: string[], goal: string, text: string }>
+  /** Built-in templates; [в скобках] — what to fill in. */
+  presets: AiPreset[]
+}
+
+/** A built-in template (backend `ai-scaffolds.ts`). */
+export type AiPreset = {
+  id: string
+  title: string
+  entity: AiEntity
+  goal: string
+  fields: string[]
+  general: string
+  fieldTexts: Record<string, string>
+}
+
+/** One block of the instruction as the model gets it. */
+export type AiPromptBlock = {
+  kind: 'fixed' | 'rules' | 'guide' | 'task' | 'data'
+  title: string
+  text: string
 }
 
 /** `POST /ai/templates/explain`: the guide a record gets and the exact messages. */
 export type AiExplain = {
   template: { key: string, label: string, by: 'name' | 'category' | 'chain' | 'default', subject: string } | null
+  blocks: AiPromptBlock[]
+  phrases: string[]
   messages: Array<{ role: string, content: string }>
+}
+
+/** The admin's instruction, as the wizard and the template editor hold it. */
+export type AiInstruction = {
+  general: string
+  fieldTexts: Record<string, string>
+}
+
+/** Phrases of two words or more in quotes — the same rule as backend `ai-phrases.ts`. */
+export function quotedPhrases(texts: string[]): string[] {
+  const found = new Set<string>()
+  const pattern = /«([^«»\n]{3,200})»|"([^"\n]{3,200})"|“([^“”\n]{3,200})”|„([^„“\n]{3,200})“/g
+  for (const text of texts) {
+    for (const match of text.matchAll(pattern)) {
+      const phrase = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? '').replace(/\s+/g, ' ').trim()
+      if (/\s/.test(phrase) && !/[[\]]/.test(phrase)) found.add(phrase)
+    }
+  }
+  return [...found]
+}
+
+/** «[впишите запрос]» left in a template — the model would get it literally. */
+export function hasPlaceholders(texts: string[]): boolean {
+  return texts.some(text => /\[[^\]\n]{2,80}\]/.test(text))
+}
+
+/* ---- The AI assistant (`/admin/ai/assist`) ------------------------------- */
+
+export type AiAssistJobKey =
+  | 'autopilot' | 'categorize' | 'synonyms' | 'leads'
+  | 'specs' | 'duplicates' | 'landings' | 'variants'
+
+export type AiAssistJob = {
+  key: AiAssistJobKey
+  title: string
+  description: string
+  unit: string
+  settings: { enabled: boolean, daily: number, template?: string, fields?: string[] }
+  usage: {
+    day: string
+    items: number
+    requests: number
+    promptTokens: number
+    completionTokens: number
+    lastRunAt?: string
+    lastResult?: string
+  }
+}
+
+export type AiSuggestionKind = 'CATEGORY' | 'SYNONYM' | 'SPEC_MERGE' | 'DUPLICATE' | 'VARIANT'
+export type AiSuggestionStatus = 'PENDING' | 'APPLIED' | 'REJECTED' | 'REVERTED' | 'INFO'
+
+export type AiAssistOverview = {
+  enabled: boolean
+  jobs: AiAssistJob[]
+  pending: Partial<Record<AiSuggestionKind, number>>
+  autoAppliedCategories: number
+  landings: { published: number, unpublished: number }
+  presets: Array<{ id: string, title: string }>
+}
+
+export type AiSuggestion = {
+  id: string
+  kind: AiSuggestionKind
+  key: string
+  title: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the shape is per kind; each view reads its own
+  payload: Record<string, any>
+  status: AiSuggestionStatus
+  auto: boolean
+  model: string | null
+  createdAt: string
+  decidedAt: string | null
+  decidedBy: string | null
+}
+
+export type AiLanding = {
+  id: string
+  h1: string
+  description: string
+  seoTitle: string
+  seoDescription: string
+  isPublished: boolean
+  rejected: Record<string, string> | null
+  productCount: number
+  updatedAt: string
+  brand: { id: string, name: string, slug: string }
+  category: { id: string, name: string, slug: string }
+}
+
+/** A verdict on a /admin/duplicates group, keyed `signal:key`. */
+export type AiDuplicateVerdict = {
+  productIds: string[]
+  verdict: 'same' | 'different' | 'unsure'
+  reason: string
+  at: string
 }
