@@ -186,12 +186,22 @@ pending_migrations() {
   [[ -n "$added" ]]
 }
 
+# With DB_APP_USER set the app connects as a role without DDL rights
+# (deploy/db-app-role.sh), so migrations run as the owner — given to this
+# one-off container only, never to the running ones.
+owner_env=()
+if [[ -n "$(env_value DB_APP_USER)" ]]; then
+  db_owner=$(env_value DB_USER); db_owner=${db_owner:-postgres}
+  db_name=$(env_value DB_NAME); db_name=${db_name:-construction_tools}
+  owner_env=(-e "DATABASE_URL=postgresql://$db_owner:$(env_value DB_PASSWORD)@db:5432/$db_name?schema=public")
+fi
+
 migrate() {
   bash "$APP_DIR/deploy/backup-db.sh" || {
     echo "Backup before migration failed; not migrating" >&2
     return 1
   }
-  if "${compose[@]}" run --rm --no-deps -T backend npx prisma migrate deploy; then
+  if "${compose[@]}" run --rm --no-deps -T "${owner_env[@]}" backend npx prisma migrate deploy; then
     return 0
   fi
   echo "Migration failed; marking it rolled back so the previous release can start" >&2
@@ -199,7 +209,7 @@ migrate() {
   failed=$("${compose[@]}" exec -T db sh -c \
     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "select migration_name from _prisma_migrations where finished_at is null and rolled_back_at is null"' || true)
   for name in $failed; do
-    "${compose[@]}" run --rm --no-deps -T backend npx prisma migrate resolve --rolled-back "$name" || true
+    "${compose[@]}" run --rm --no-deps -T "${owner_env[@]}" backend npx prisma migrate resolve --rolled-back "$name" || true
   done
   return 1
 }

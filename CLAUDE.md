@@ -1097,6 +1097,14 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   no drill has passed for 8 days. Never writes to the live database.
 - Add schema changes as new migrations and commit them. Never re-introduce
   `prisma db push` for prod.
+- **The app can run as a role without DDL rights** (opt-in, audit
+  2026-11-03): with `DB_APP_USER`/`DB_APP_PASSWORD` in `.env.prod` and
+  `deploy/db-app-role.sh` run once, API and worker connect as that role (data
+  rights, `pg_read_all_stats` and `pg_stat_statements_reset` for «Скорость»,
+  default privileges for tables future migrations create), the API skips
+  `migrate deploy` at boot (`MIGRATE_ON_BOOT=false`), and auto-deploy runs
+  migrations as the owner in the one-off container only. Without the
+  variables everything connects as `DB_USER`, as before.
 - **Expand → contract.** A failed release rolls back to the previous images
   in seconds, on the *already-migrated* schema — so a migration must leave
   the previous code working: add columns nullable or with a default, drop or

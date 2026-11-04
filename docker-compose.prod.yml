@@ -198,6 +198,8 @@ services:
       # an admin starts here is handed to it through ParserJobRequest.
       PROCESS_ROLE: api
       PORT: 8000
+      # Set (to false) only with DB_APP_USER: that role cannot run DDL.
+      MIGRATE_ON_BOOT: ${DB_APP_USER:+false}
       # Heap ceiling under mem_limit (the rest is buffers, Prisma's engine and
       # native memory). The in-process memory guard restarts the API at 85% of
       # it — a real heap OOM hung node for 13 h instead of ending it.
@@ -206,7 +208,10 @@ services:
       # is 5, which the app outgrew: /admin/stats alone fires 17 aggregates in
       # one Promise.all. Postgres allows 100 by default; the API and the worker
       # take 15 each.
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
+      # The app's own role when DB_APP_USER is set (deploy/db-app-role.sh: data
+      # rights only, no DDL, not the superuser); migrations keep the owner,
+      # passed only to the one-off `compose run` in auto-deploy.sh.
+      DATABASE_URL: postgresql://${DB_APP_USER:-${DB_USER:-postgres}}:${DB_APP_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required}}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
     depends_on:
       db:
         condition: service_healthy
@@ -247,7 +252,7 @@ services:
       <<: *backend-environment
       PROCESS_ROLE: worker
       NODE_OPTIONS: ${WORKER_NODE_OPTIONS:---max-old-space-size=400}
-      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${WORKER_DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
+      DATABASE_URL: postgresql://${DB_APP_USER:-${DB_USER:-postgres}}:${DB_APP_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required}}@db:5432/${DB_NAME:-construction_tools}?schema=public&connection_limit=${WORKER_DB_CONNECTION_LIMIT:-15}&pool_timeout=${DB_POOL_TIMEOUT:-20}
     depends_on:
       db:
         condition: service_healthy

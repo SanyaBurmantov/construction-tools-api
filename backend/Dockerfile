@@ -46,4 +46,7 @@ EXPOSE 8000
 # `exec` makes node PID 1. Without it `sh` is PID 1 and does not forward
 # SIGTERM, so enableShutdownHooks() never ran and every deploy hard-killed
 # in-flight parser and AI writes after the 10 s grace period.
-CMD ["sh", "-c", "npx prisma migrate deploy && exec node dist/main"]
+# MIGRATE_ON_BOOT=false when the app runs as a role without DDL rights
+# (docker-compose.prod.yml sets it with DB_APP_USER): auto-deploy.sh has
+# applied the migrations as the owner before this container started.
+CMD ["sh", "-c", "if [ \"$MIGRATE_ON_BOOT\" != false ]; then npx prisma migrate deploy; fi && exec node dist/main"]
