@@ -18,6 +18,7 @@ import {
   UpdateProfileDto,
 } from './dto/update-profile.dto';
 import { loginProblem, normalizeLogin } from './login.util';
+import { generateTotpSecret, otpauthUrl, verifyTotp } from './totp.util';
 import { isUniqueViolation } from './prisma-errors';
 import {
   dummyPasswordHash,
@@ -45,8 +46,14 @@ export const USER_SELECT = {
   bankBic: true,
   isActive: true,
   lastLoginAt: true,
+  // Whether sign-in asks for a code; the secret itself never leaves the API.
+  totpEnabledAt: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;
+
+/** Failed sign-ins in a row before the account is locked for a while. */
+export const LOGIN_MAX_FAILURES = 5;
+export const LOGIN_LOCK_MS = 15 * 60_000;
 
 export type PublicUser = Prisma.UserGetPayload<{ select: typeof USER_SELECT }>;
 
@@ -194,17 +201,155 @@ export class AuthService {
       await verifyPassword(dto.password, await dummyPasswordHash());
       throw invalid;
     }
-    if (!(await verifyPassword(dto.password, user.passwordHash))) throw invalid;
+    // Per account, whatever address the attempts come from: the IP throttle
+    // alone let a guess spread over many addresses go on for ever.
+    if (user.loginLockedUntil && user.loginLockedUntil > new Date()) {
+      const minutes = Math.ceil(
+        (user.loginLockedUntil.getTime() - Date.now()) / 60_000,
+      );
+      throw new UnauthorizedException({
+        message: `Слишком много неудачных попыток. Попробуйте через ${minutes} мин.`,
+        code: 'LOGIN_LOCKED',
+      });
+    }
+    if (!(await verifyPassword(dto.password, user.passwordHash))) {
+      await this.loginFailed(user.id, user.failedLogins);
+      throw invalid;
+    }
     if (!user.isActive)
       throw new UnauthorizedException('Учётная запись отключена');
+
+    // The second factor, when the account has one: the password alone is
+    // answered «code required» (not a failure — the password was right).
+    let totpLastStep = user.totpLastStep;
+    if (user.totpSecret && user.totpEnabledAt) {
+      const otp = dto.otp?.trim();
+      if (!otp) {
+        throw new UnauthorizedException({
+          message: 'Введите код из приложения-аутентификатора',
+          code: 'OTP_REQUIRED',
+        });
+      }
+      const step = verifyTotp(user.totpSecret, otp, {
+        lastStep: user.totpLastStep,
+      });
+      if (step === null) {
+        await this.loginFailed(user.id, user.failedLogins);
+        throw new UnauthorizedException({
+          message: 'Неверный код',
+          code: 'OTP_INVALID',
+        });
+      }
+      totpLastStep = step;
+    }
 
     const session = await this.issueSession(user.id, userAgent);
     const updated = await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: {
+        lastLoginAt: new Date(),
+        failedLogins: 0,
+        loginLockedUntil: null,
+        totpLastStep,
+      },
       select: USER_SELECT,
     });
     return { ...session, user: updated };
+  }
+
+  private async loginFailed(userId: string, before: number | null | undefined) {
+    const failures = (before ?? 0) + 1;
+    await this.prisma.user.update({
+      where: { id: userId },
+      data:
+        failures >= LOGIN_MAX_FAILURES
+          ? {
+              failedLogins: 0,
+              loginLockedUntil: new Date(Date.now() + LOGIN_LOCK_MS),
+            }
+          : { failedLogins: failures },
+    });
+  }
+
+  /**
+   * Step 1 of the second factor: a new secret, kept pending until a first
+   * code from it proves the app has it. Shown once, as text and as the
+   * otpauth link an authenticator opens.
+   */
+  async totpSetup(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { login: true, email: true, totpEnabledAt: true },
+    });
+    if (user.totpEnabledAt) {
+      throw new BadRequestException('Вход с кодом уже включён');
+    }
+    const secret = generateTotpSecret();
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { totpPendingSecret: secret },
+    });
+    return { secret, otpauthUrl: otpauthUrl(secret, user.email || user.login) };
+  }
+
+  /** Step 2: the first valid code switches the second factor on. */
+  async totpEnable(userId: string, code: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { totpPendingSecret: true },
+    });
+    if (!user.totpPendingSecret) {
+      throw new BadRequestException('Сначала получите ключ для приложения');
+    }
+    const step = verifyTotp(user.totpPendingSecret, code);
+    if (step === null) throw new BadRequestException('Неверный код');
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        totpSecret: user.totpPendingSecret,
+        totpPendingSecret: null,
+        totpEnabledAt: new Date(),
+        totpLastStep: step,
+      },
+      select: USER_SELECT,
+    });
+  }
+
+  /** Off again: the password and a current code, both — a session alone is not enough. */
+  async totpDisable(userId: string, password: string, code: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { passwordHash: true, totpSecret: true, totpLastStep: true },
+    });
+    if (!user.totpSecret)
+      throw new BadRequestException('Вход с кодом не включён');
+    if (!(await verifyPassword(password, user.passwordHash))) {
+      throw new BadRequestException('Неверный пароль');
+    }
+    if (
+      verifyTotp(user.totpSecret, code, { lastStep: user.totpLastStep }) ===
+      null
+    ) {
+      throw new BadRequestException('Неверный код');
+    }
+    return this.clearTotp(userId);
+  }
+
+  /**
+   * The rescue for a lost phone: an admin switches someone's second factor
+   * off from /admin/users (or the x-admin-token path does it for an admin).
+   */
+  clearTotp(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        totpSecret: null,
+        totpPendingSecret: null,
+        totpEnabledAt: null,
+        totpLastStep: null,
+      },
+      select: USER_SELECT,
+    });
   }
 
   async logout(token: string) {

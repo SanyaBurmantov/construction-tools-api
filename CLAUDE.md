@@ -92,6 +92,18 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   Passwords are **scrypt** from `node:crypto` (`auth/password.util.ts`,
   parameters stored alongside each hash) — no native build step, so the
   `node:22-slim` images need no toolchain; bcrypt would.
+  **Sign-in is limited per account and can ask for a code.** Five failed
+  attempts in a row (password or code) lock that account's sign-in for 15
+  min whatever the address (`LOGIN_MAX_FAILURES`, `User.loginLockedUntil`;
+  the per-IP `@Throttle` alone let a spread-out guess go on). Any account can
+  switch on a **TOTP second factor** (`auth/totp.util.ts`, RFC 6238 on
+  `node:crypto`, tested against the RFC vectors): `/account` → «Вход с кодом
+  из приложения» (`POST /auth/totp/setup|enable|disable`; off needs password
+  *and* code); then `POST /auth/login` answers 401 `OTP_REQUIRED` to the
+  password alone and both login forms show the code field; a code works once
+  (`totpLastStep`). A lost phone: `/admin/users/:id` → «Снять блокировку
+  входа» (`POST /admin/users/:id/unlock-sign-in`, not on yourself through a
+  session; the `x-admin-token` path can).
   `AdminGuard` now accepts **either** an ADMIN session **or** the old
   `x-admin-token: $ADMIN_TOKEN` header, which stays the service-to-service
   path (the runbook/CI curl commands depend on it, and it is the rescue path

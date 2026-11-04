@@ -18,6 +18,7 @@ import { EmailVerificationService } from './email-verification.service';
 import { AuthGuard } from './auth.guard';
 import { RegisterDto, VerifyEmailDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { TotpCodeDto, TotpDisableDto } from './dto/totp.dto';
 import {
   ChangePasswordDto,
   DeleteAccountDto,
@@ -178,6 +179,42 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.auth.changePassword(user.id, sessionId, dto);
+  }
+
+  /**
+   * The second factor (TOTP, auth/totp.util.ts): `setup` hands out a new
+   * secret (kept pending), `enable` switches it on with a first valid code,
+   * `disable` needs the password *and* a current code. Throttled like the
+   * password change: each call is a guess at a 6-digit code.
+   */
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60 * 60 * 1000 } })
+  @HttpCode(200)
+  @Post('totp/setup')
+  totpSetup(@CurrentUser() user: AuthenticatedUser) {
+    return this.auth.totpSetup(user.id);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 15 * 60 * 1000 } })
+  @HttpCode(200)
+  @Post('totp/enable')
+  totpEnable(@CurrentUser() user: AuthenticatedUser, @Body() dto: TotpCodeDto) {
+    return this.auth.totpEnable(user.id, dto.code);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 15 * 60 * 1000 } })
+  @HttpCode(200)
+  @Post('totp/disable')
+  totpDisable(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: TotpDisableDto,
+  ) {
+    return this.auth.totpDisable(user.id, dto.password, dto.code);
   }
 
   /**

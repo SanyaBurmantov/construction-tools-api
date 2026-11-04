@@ -648,4 +648,15 @@ export class AdminController {
   deleteUser(@Param('id') id: string, @ActingAdminId() actorId?: string) {
     return this.usersAdminService.remove(id, actorId);
   }
+
+  /**
+   * A lost phone or a locked account: switches the second factor off and
+   * lifts the sign-in lock. Not on yourself through a session — that would
+   * let a stolen session drop the code; the x-admin-token path can.
+   */
+  @HttpCode(200)
+  @Post('users/:id/unlock-sign-in')
+  unlockSignIn(@Param('id') id: string, @ActingAdminId() actorId?: string) {
+    return this.usersAdminService.unlockSignIn(id, actorId);
+  }
 }

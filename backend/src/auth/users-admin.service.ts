@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -66,7 +67,12 @@ export class UsersAdminService {
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
-        select: { ...USER_SELECT, _count: { select: { sessions: true } } },
+        select: {
+          ...USER_SELECT,
+          // The admin sees a sign-in lock to lift it (unlockSignIn).
+          loginLockedUntil: true,
+          _count: { select: { sessions: true } },
+        },
         orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
@@ -281,6 +287,28 @@ export class UsersAdminService {
     return losesAdmin
       ? this.withAdminLock(write)
       : this.prisma.$transaction(write);
+  }
+
+  async unlockSignIn(id: string, actorId?: string) {
+    if (actorId && actorId === id) {
+      throw new ForbiddenException(
+        'Свой вход с кодом отключают в личном кабинете (пароль + код)',
+      );
+    }
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Пользователь не найден');
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        totpSecret: null,
+        totpPendingSecret: null,
+        totpEnabledAt: null,
+        totpLastStep: null,
+        failedLogins: 0,
+        loginLockedUntil: null,
+      },
+    });
+    return this.getOne(id);
   }
 
   async remove(id: string, actorId?: string) {
