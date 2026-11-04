@@ -26,10 +26,13 @@ const SEARCH_MATCH_LIMIT = 20_000;
  * the page or the sort, and computing them is most of a listing's cost: a
  * count plus a groupBy per dimension (category, brand, price, specs) over the
  * whole filtered catalogue — ~0.5 s on production for every page turn and
- * sort change. The catalogue changes when parsers run, so two minutes stale
- * is invisible; prices on the cards themselves are never cached here.
+ * sort change. The catalogue changes when parsers run — hourly batches — so
+ * a quarter of an hour stale is invisible (it was 2 min, which made the
+ * first visitor of every filter set pay the 0.5 s every two minutes); prices
+ * on the cards themselves are never cached here. The popular sets are kept
+ * warm by FacetsWarmupService before they expire.
  */
-const FACETS_CACHE_TTL_MS = 120_000;
+export const FACETS_CACHE_TTL_MS = 15 * 60_000;
 const FACETS_CACHE_MAX_ENTRIES = 300;
 
 /** Repeated searches (autocomplete, filter changes) reuse the id list. */
@@ -565,7 +568,15 @@ export class ProductService {
       .map((product) => toListCard(product, offers.get(product.id) ?? 0));
   }
 
-  async findAllFiltered(filter: ProductFilterDto) {
+  /**
+   * `refreshSummaryOlderThanMs`: recompute the cached total + facets when they
+   * are older than this — the warm-up passes it so a popular listing is
+   * refreshed before it expires, never by a visitor.
+   */
+  async findAllFiltered(
+    filter: ProductFilterDto,
+    options: { refreshSummaryOlderThanMs?: number } = {},
+  ) {
     const page = filter.page ?? 1;
     const limit = Math.min(filter.limit ?? 20, 100);
     const skip = (page - 1) * limit;
@@ -779,7 +790,11 @@ export class ProductService {
             orderBy,
             include: LIST_INCLUDE,
           }),
-      this.cachedSummary(facetsCacheKey(filter), computeSummary),
+      this.cachedSummary(
+        facetsCacheKey(filter),
+        computeSummary,
+        options.refreshSummaryOlderThanMs,
+      ),
     ]);
 
     const offers = await this.offerCounts(products.map((p) => p.id));
@@ -908,10 +923,14 @@ export class ProductService {
    * same filter set within FACETS_CACHE_TTL_MS — concurrent ones included, so
    * a crawler paging through a category computes them once, not per page.
    */
-  private cachedSummary<T>(key: string, compute: () => Promise<T>): Promise<T> {
+  private cachedSummary<T>(
+    key: string,
+    compute: () => Promise<T>,
+    maxAgeMs = FACETS_CACHE_TTL_MS,
+  ): Promise<T> {
     const now = Date.now();
     const hit = this.summaryCache.get(key);
-    if (hit && now - hit.at < FACETS_CACHE_TTL_MS) {
+    if (hit && now - hit.at < Math.min(maxAgeMs, FACETS_CACHE_TTL_MS)) {
       this.summaryCache.delete(key);
       this.summaryCache.set(key, hit);
       return hit.value as Promise<T>;

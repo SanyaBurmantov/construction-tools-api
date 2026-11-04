@@ -776,6 +776,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   the page's ids, 2 ms), and the `(status, listingRank, name)` index could not
   serve `listingRank DESC, name ASC` (now `listingRank DESC` in the index).
   **Don't put `_count` of a big relation into a list query's include.**
+  A listing's total + facets (~0.5 s, most of its cost) are cached in the
+  API's memory for **15 min** per filter set (`FACETS_CACHE_TTL_MS`; it was
+  2 min), and `FacetsWarmupService` — in the API process, where that cache
+  lives — refreshes the whole catalogue and up to 40 category pages (header
+  strip, featured, roots) every 10 min, one at a time, before they expire.
   The route table also counts **DB operations per request**
   (`perf/query-context.ts`: an AsyncLocalStorage store opened by the timing
   middleware, counted by a `$use` in `PrismaService`) — a route averaging

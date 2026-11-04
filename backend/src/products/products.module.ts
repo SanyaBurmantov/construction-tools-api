@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ListingRankService } from './listing-rank.service';
+import { FacetsWarmupService } from './facets-warmup.service';
 import { ProductService } from './products.service';
 import { ProductController } from './products.controller';
 import { CompatibilityRefreshService } from './relations/compatibility-refresh.service';
@@ -12,6 +13,7 @@ import { RecommendationsService } from './relations/recommendations.service';
   providers: [
     ProductService,
     ListingRankService,
+    FacetsWarmupService,
     CompatibilityRefreshService,
     RecommendationsService,
   ],
