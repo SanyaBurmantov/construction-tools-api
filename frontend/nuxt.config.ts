@@ -121,7 +121,7 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/site.webmanifest' },
         // Self-hosted Manrope (see assets/scss/main.scss). Both subsets are
         // preloaded: the latin one is not optional on a Russian page — it
-        // holds the digits, spaces and punctuation, so «50 000+ позиций» in
+        // holds the digits, spaces and punctuation, so «95 000+ позиций» in
         // the hero waited for it at the end of HTML → CSS → font (PageSpeed:
         // 2.3 s on the critical path, the LCP element). `crossorigin` is
         // required even same-origin, or the preload is fetched twice.
