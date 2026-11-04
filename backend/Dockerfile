@@ -6,8 +6,10 @@ RUN apt-get update -y \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
+# Only the lockfile before `npm ci`: `prisma/` changes with every migration,
+# and copied here it invalidated the dependency layer — a release with a
+# migration reinstalled every package twice (build + production), ~2 min.
 COPY package*.json ./
-COPY prisma ./prisma/
 
 FROM base AS development
 RUN npm ci
@@ -34,8 +36,10 @@ RUN apt-get update -y \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
+RUN npm ci --omit=dev
+# The schema after the dependencies, for the same reason as in `base`.
 COPY prisma ./prisma/
-RUN npm ci --omit=dev && npx prisma generate
+RUN npx prisma generate
 COPY --from=build /backend/dist ./dist
 # Fonts for the PDF invoice and quote (src/documents/).
 COPY --from=build /backend/assets ./assets
