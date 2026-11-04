@@ -80,7 +80,27 @@ const listActions = computed(() => [
 ])
 
 /* ---- Search + live suggestions ---------------------------------------- */
-const search = ref('')
+/**
+ * The catalogue's `?search=` is the box's text: a shared link
+ * (/catalog?search=дрель) opened with the right results and an empty box, so
+ * the visitor could not see — or refine — what was searched. Set on the
+ * server too, so the word is there in the first paint. Anywhere else the box
+ * keeps what was typed (a product opened from the results keeps its query).
+ */
+function routeSearch(): string | null {
+  if (route.path !== '/catalog' && !route.path.startsWith('/catalog/')) return null
+  const value = route.query.search
+  return typeof value === 'string' ? value : ''
+}
+const search = ref(routeSearch() ?? '')
+/** The box was filled from the address, not typed: no suggestions panel. */
+let fromRoute = false
+watch(() => [route.path, route.query.search], () => {
+  const value = routeSearch()
+  if (value === null || value === search.value) return
+  fromRoute = true
+  search.value = value
+})
 const suggest = ref<SuggestResponse | null>(null)
 const suggestOpen = ref(false)
 /** A request is in flight: the panel shows a skeleton, or dims the last answer. */
@@ -127,6 +147,13 @@ function submitSearch() {
 watch(search, (value) => {
   if (suggestTimer) clearTimeout(suggestTimer)
   const query = value.trim()
+  if (fromRoute) {
+    fromRoute = false
+    suggestAbort?.abort()
+    suggestOpen.value = false
+    suggestLoading.value = false
+    return
+  }
   if (query.length < 2) {
     suggestAbort?.abort()
     suggest.value = null
