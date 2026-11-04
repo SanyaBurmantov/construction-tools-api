@@ -8,9 +8,9 @@ const { formatPrice } = useFormatPrice()
 
 const PAGE_SIZE = 24
 /**
- * Cards whose photo loads eagerly. `.product-grid` has 228px tracks, so the
- * widest common layout fits four per row — enough to cover what is actually
- * above the fold without pulling the whole page in at once.
+ * Cards whose photo loads eagerly: what is above the fold. On a desktop
+ * `.product-grid`'s 228px tracks fit four per row; on a phone it is two to a
+ * row, and the toolbar leaves room for about two rows — four again.
  */
 const LCP_CARD_COUNT = 4
 // 'default' не шлёт sortBy: при активном поиске бэкенд сортирует по
@@ -943,6 +943,14 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
   display: grid;
   gap: var(--space-3);
   grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
+}
+
+/* Phones: three to a row — one 343px tile per row was a long scroll. */
+@media (max-width: 560px) {
+  .category-grid {
+    gap: var(--space-2);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .subcategories :deep(.viewport) {

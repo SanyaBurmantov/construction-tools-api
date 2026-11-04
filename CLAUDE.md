@@ -381,9 +381,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   «Витрина»). Two lists in `SiteSetting` (`storefront.headerCategories`,
   `storefront.popularProducts`, JSON): the strip under the header on every
   page — categories of **any level**, own order, optional shorter label and
-  «выделить» (accent colour, `.nav-link.is-accent`); its first four are also
-  «Популярное:» under the home search — and the home page's «Выбирают
-  покупатели» row. Public `GET /storefront/header-categories` and
+  «выделить» (accent colour, `.nav-link.is-accent`); it also sets the order
+  of the home page's «Каталог» tiles (9, the automatic grid fills the rest;
+  artwork and count come in the same answer, read under the home page's own
+  key `useHomeCategoryTiles()` so they stay out of every other page's
+  payload), whose first four are «Популярное:» under the home search — and
+  the home page's «Выбирают покупатели» row. Public `GET /storefront/header-categories` and
   `/storefront/popular-products` answer only what may be shown right now
   (`CategoriesService.listableByIds()`: visible, non-empty, no hidden
   ancestor; `ProductService.cardsByIds()`: published with a price), so a pick
@@ -408,11 +411,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   keeps the old biggest-first order for the thousand categories no one has
   touched; `isVisible: false` hides a branch from the menu, the tree, the
   facets and search suggestions while leaving its URL working;
-  `isFeatured` pins it into the home page grid. None of this touches `pathKey`,
+  `isFeatured` pins it into the home page grid's automatic part (after the
+  header strip's picks). None of this touches `pathKey`,
   so the parsers keep upserting the same rows. Admin edits that *do* move a
   category (`parentId`, `slug`) rebuild `path`/`level`/`pathKey` for the whole
   subtree (old keys kept as aliases, see above) and leave the old slug behind
   as a `CategoryRedirect`.
+  **Phones (≤ 560px)**: category tiles three to a row, product cards two to
+  a row (`.product-grid`, `storefront.scss`) with the spec preview hidden and
+  «В корзину» as a cart icon beside the price; a card's name is clamped to
+  three lines everywhere.
   Frontend: one `components/ui/UiCategoryCard.vue` renders every "link to a
   category" (`tile` / `row` / `chip`) — home grid, catalogue, brand page — and
   `composables/useCategoryTree.ts` is the single tree fetch (one shared

@@ -51,7 +51,7 @@ const [
   { data: sales },
   { data: popular },
   { data: curatedPopular },
-  { data: curatedStrip },
+  { data: curatedTiles },
   { data: newest },
   { data: banners },
   { data: tree },
@@ -66,7 +66,7 @@ const [
     () => soft($fetch<{ data: ProductsResponse['data'] }>(`${apiBase}/storefront/popular-products`), { data: [] }),
     { default: () => ({ data: [] }), transform: answer => ({ data: answer.data.map(toCardProduct) }) }
   ),
-  useHeaderCategories(),
+  useHomeCategoryTiles(),
   useRail('home-newest', { sortBy: 'createdAt', sortOrder: 'desc' }),
   useAsyncData<{ data: Banner[] }>(
     'home-banners',
@@ -99,17 +99,23 @@ const [
 if (unavailable.value) throw apiUnavailableError()
 
 /**
- * The grid an admin curates: categories pinned in `/admin/categories` lead,
- * then the biggest ones fill the row.
+ * The «Каталог» tiles follow the header strip an admin curates in
+ * `/admin/storefront` (the same order as «Популярное:» under the search), and
+ * the automatic grid — categories pinned in `/admin/categories`, then the
+ * biggest roots — fills what is left, skipping what the strip already shows.
+ * Nine tiles: three full rows on a phone.
  *
- * Tile artwork arrives with the tree itself: `GET /categories/tree` falls
- * back to the photo of the dearest product in a category's subtree when no
- * admin set one. This page used to ask `/products?limit=1` once per tile for
- * that — a dozen extra requests per render, and it took whatever product came
- * first rather than the one worth showing.
+ * Tile artwork arrives with both answers: the API falls back to the photo of
+ * the dearest product in a category's subtree when no admin set one.
  */
-const HOME_CATEGORY_COUNT = 8
-const topCategories = computed(() => featuredCategories(tree.value, HOME_CATEGORY_COUNT))
+const HOME_CATEGORY_COUNT = 9
+const topCategories = computed(() => {
+  const curated = curatedTiles.value ?? []
+  const shown = new Set(curated.map(category => category.id))
+  const filler = featuredCategories(tree.value, HOME_CATEGORY_COUNT)
+    .filter(category => !shown.has(category.id))
+  return [...curated, ...filler].slice(0, HOME_CATEGORY_COUNT)
+})
 
 const popularProducts = computed(() =>
   curatedPopular.value.data.length
@@ -117,10 +123,8 @@ const popularProducts = computed(() =>
     : popular.value.data.filter((product) => product.ratingCount)
 )
 
-/** «Популярное:» under the search: the header strip's first picks, else the biggest roots. */
-const heroLinks = computed(() =>
-  (curatedStrip.value?.length ? curatedStrip.value : topCategories.value).slice(0, 4)
-)
+/** «Популярное:» under the search: the first tiles, i.e. the header strip's first picks. */
+const heroLinks = computed(() => topCategories.value.slice(0, 4))
 
 const recentlyViewed = useRecentlyViewed()
 
@@ -542,6 +546,14 @@ useHead({
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--space-3);
+}
+
+/* Phones: three to a row — one 343px tile per row was a long scroll. */
+@media (max-width: 560px) {
+  .category-grid {
+    gap: var(--space-2);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 /* ---- Recently viewed ---- */

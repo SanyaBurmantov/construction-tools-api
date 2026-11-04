@@ -16,6 +16,12 @@ export type HeaderCategoryLink = {
   name: string;
   slug: string;
   highlight: boolean;
+  /**
+   * What the home page's «Каталог» tiles draw — they follow the strip's
+   * order. The category's own artwork, else its subtree's fallback photo.
+   */
+  image: string | null;
+  productCount: number;
 };
 
 /** The header strip is fetched by every SSR render — read it once a while. */
@@ -75,6 +81,8 @@ export class StorefrontService {
               name: pick.label ?? node.name,
               slug: node.slug,
               highlight: pick.highlight,
+              image: node.image,
+              productCount: node.productCount,
             },
           ]
         : [];
