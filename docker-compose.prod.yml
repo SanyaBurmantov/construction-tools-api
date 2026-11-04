@@ -66,6 +66,8 @@ x-backend-environment: &backend-environment
   S3_SECRET_KEY: ${S3_SECRET_KEY:-}
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET:-}
+  # Only to refuse a media bucket that is the backups one (image-mirror.ts).
+  S3_BACKUP_BUCKET: ${S3_BACKUP_BUCKET:-}
   S3_MEDIA_PUBLIC_BASE: ${S3_MEDIA_PUBLIC_BASE:-}
   S3_MEDIA_MAX_GB: ${S3_MEDIA_MAX_GB:-30}
   AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}

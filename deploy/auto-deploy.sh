@@ -259,12 +259,26 @@ echo "Deployed $target successfully ($build_mode)"
 # from the next run.
 for pair in auto-deploy.sh:construction-tools-auto-deploy \
             watchdog.sh:construction-tools-watchdog \
-            backup-db.sh:construction-tools-backup; do
+            backup-db.sh:construction-tools-backup \
+            backup-drill.sh:construction-tools-backup-drill; do
   src="$APP_DIR/deploy/${pair%%:*}" dst="/usr/local/sbin/${pair##*:}"
   if [[ -f "$src" ]] && ! cmp -s "$src" "$dst"; then
     install -m 0755 "$src" "$dst.new" && mv -f "$dst.new" "$dst" && echo "Updated $dst"
   fi
 done
+# Units that ship with the repository and are installed by it (the older
+# deploy/backup/watchdog units were installed by hand and stay so).
+units_changed=0
+for unit in construction-tools-backup-drill.service construction-tools-backup-drill.timer; do
+  src="$APP_DIR/deploy/$unit" dst="/etc/systemd/system/$unit"
+  if [[ -f "$src" ]] && ! cmp -s "$src" "$dst"; then
+    install -m 0644 "$src" "$dst" && echo "Updated $dst" && units_changed=1
+  fi
+done
+if ((units_changed)); then
+  systemctl daemon-reload
+  systemctl enable --now construction-tools-backup-drill.timer || true
+fi
 # Untagged old releases go; :latest and :rollback stay.
 docker image prune -f >/dev/null
 docker builder prune -af --keep-storage 1GB >/dev/null || true

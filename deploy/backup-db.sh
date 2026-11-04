@@ -79,6 +79,12 @@ if [[ -z "$s3_endpoint" || -z "$s3_bucket" || -z "$s3_key" || -z "$s3_secret" ]]
   echo "S3 endpoint/keys or S3_BACKUP_BUCKET not set; off-site copy skipped"
   exit 0
 fi
+# The media bucket is public-read (the worker sets that policy itself): a
+# backup uploaded there would be a database dump anyone could download.
+if [[ "$s3_bucket" == "$(env_value S3_MEDIA_BUCKET)" ]]; then
+  echo "S3_BACKUP_BUCKET is the public media bucket; refusing to upload a backup there" >&2
+  exit 0
+fi
 s3_endpoint=${s3_endpoint%/}
 base="$s3_endpoint/$s3_bucket"
 

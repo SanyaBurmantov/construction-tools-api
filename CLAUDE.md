@@ -1083,6 +1083,18 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/data` volume with the TLS certificates) — a dump alone does not rebuild
   the server. The script reads the shared `S3_ENDPOINT/S3_ACCESS_KEY/
   S3_SECRET_KEY` (old `S3_BACKUP_*` names still win) and `S3_BACKUP_BUCKET`.
+  It refuses a backup bucket equal to `S3_MEDIA_BUCKET`, and the worker
+  refuses a media bucket equal to `S3_BACKUP_BUCKET` — the media bucket is
+  made public-read, so one typo would publish every dump.
+- **A backup is only a backup once it has been restored.**
+  `deploy/backup-drill.sh` (`construction-tools-backup-drill.timer`,
+  Sundays 05:10, installed and enabled by auto-deploy) restores the newest
+  dump into a throwaway capped Postgres container (512 MB, 0.75 CPU,
+  nice/ionice, refuses without ~8× the dump in free disk), compares row
+  counts of the key tables with the live DB (≥ 97%) and the migration
+  history, records the restore time (our RTO for a lost database), removes
+  everything and reports ✅/🔴 to the alerts topic. The watchdog alerts when
+  no drill has passed for 8 days. Never writes to the live database.
 - Add schema changes as new migrations and commit them. Never re-introduce
   `prisma db push` for prod.
 - **Expand → contract.** A failed release rolls back to the previous images
@@ -1092,6 +1104,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `scripts/check-migrations.mjs` fails CI on DROP/RENAME/TYPE/SET NOT NULL/
   required ADD COLUMN in migrations newer than its `BASELINE`; a statement
   that is really safe is allowed by `-- migration-safety: <why>` in the file.
+
+## Incidents
+
+After an outage customers noticed (or one that could have lost data) write a
+blameless postmortem in `docs/postmortems/` from `TEMPLATE.md`: what was
+seen, the timeline, the chain of causes, what changed (with commits) — and
+the rule it taught goes here, next to the code it protects.
 
 ## Parsing (the core of this project)
 
