@@ -1127,7 +1127,8 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   failed upload never fails the backup: auto-deploy runs it before migrations.
   Next to each dump it uploads `config-*.tar.gz` (`.env.prod` + Caddy's
   `/data` volume with the TLS certificates) — a dump alone does not rebuild
-  the server. The script reads the shared `S3_ENDPOINT/S3_ACCESS_KEY/
+  the server. It is size-verified and stamps its own
+  `backup-config-s3.ok`; the watchdog alerts when that is over 26 h old. The script reads the shared `S3_ENDPOINT/S3_ACCESS_KEY/
   S3_SECRET_KEY` (old `S3_BACKUP_*` names still win) and `S3_BACKUP_BUCKET`.
   It refuses a backup bucket equal to `S3_MEDIA_BUCKET`, and the worker
   refuses a media bucket equal to `S3_BACKUP_BUCKET` — the media bucket is

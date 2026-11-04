@@ -308,6 +308,15 @@ if [[ -n "$(env_value S3_BACKUP_BUCKET)" ]]; then
   check_flag backup_s3 "$(( s3_age_h > BACKUP_MAX_AGE_HOURS ))" \
     "🔴 Бэкап базы не выгружается в S3: последняя выгрузка $( [[ $s3_age_h == 9999 ]] && echo 'не найдена' || echo "$s3_age_h ч назад"). Локальные копии есть; смотрите journalctl -u construction-tools-backup." \
     "✅ Бэкап базы снова выгружается в S3 ($s3_age_h ч)."
+  # The config archive (.env.prod + TLS certificates) has its own stamp;
+  # checked once backup-db.sh has written it at least once.
+  if [[ -e "$STATE_DIR/backup-config-s3.ok" ]]; then
+    cfg_ok=$(stat -c %Y "$STATE_DIR/backup-config-s3.ok")
+    cfg_age_h=$(( (now - cfg_ok) / 3600 ))
+    check_flag backup_config_s3 "$(( cfg_age_h > BACKUP_MAX_AGE_HOURS ))" \
+      "🔴 Архив настроек сервера (.env.prod и TLS-сертификаты) не выгружается в S3 уже $cfg_age_h ч. Без него сервер с нуля не поднять; смотрите journalctl -u construction-tools-backup." \
+      "✅ Архив настроек сервера снова выгружается в S3 ($cfg_age_h ч)."
+  fi
 fi
 
 # The weekly restore drill (backup-drill.sh stamps backup-drill.ok when a
