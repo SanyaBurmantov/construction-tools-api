@@ -1089,7 +1089,7 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
 - **A backup is only a backup once it has been restored.**
   `deploy/backup-drill.sh` (`construction-tools-backup-drill.timer`,
   Sundays 05:10, installed and enabled by auto-deploy) restores the newest
-  dump into a throwaway capped Postgres container (512 MB, 0.75 CPU,
+  dump into a throwaway capped Postgres container (384 MB, 0.75 CPU,
   nice/ionice, refuses without ~8× the dump in free disk), compares row
   counts of the key tables with the live DB (≥ 97%) and the migration
   history, records the restore time (our RTO for a lost database), removes

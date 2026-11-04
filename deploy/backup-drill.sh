@@ -71,7 +71,7 @@ gzip -t "$dump" || fail "архив $(basename "$dump") повреждён (gzip
 
 started=$(date +%s)
 docker run -d --name "$container" \
-  --memory 512m --cpus 0.75 \
+  --memory 384m --cpus 0.75 \
   -e POSTGRES_PASSWORD=drill -e POSTGRES_USER=drill -e POSTGRES_DB=drill \
   -v "$volume:/var/lib/postgresql/data" \
   postgres:15-alpine \
