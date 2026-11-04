@@ -377,7 +377,7 @@ useHead(() => {
 
             <div v-if="canBuy" class="buy-actions">
               <UiQuantity v-model="quantity" />
-              <UiButton size="lg" class="buy-button" @click="addToCart(quantity)">
+              <UiButton size="lg" class="buy-button" data-early-click="buy-box" @click="addToCart(quantity)">
                 {{ inCart ? 'Добавить ещё' : 'В корзину' }}
               </UiButton>
             </div>
@@ -493,7 +493,7 @@ useHead(() => {
           />
           <span :class="{ 'is-in-stock': inStock }">{{ availabilityLabel }}</span>
         </div>
-        <UiButton size="lg" @click="addToCart(quantity)">В корзину</UiButton>
+        <UiButton size="lg" data-early-click="buy-sticky" @click="addToCart(quantity)">В корзину</UiButton>
       </div>
 
     </template>

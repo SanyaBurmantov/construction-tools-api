@@ -190,6 +190,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but
   not rendered (`<ClientOnly>`, `v-if`) — into `preload`; Vite's import helper
   attaches it on the client. Keep component styles `scoped` for that to hold.
+  **A press before hydration is not lost**: an inline script first in
+  `<head>` (`earlyClickScript`, nuxt.config.ts) catches clicks on
+  `[data-early-click="<key>"]` while the page is still server HTML, dims the
+  button (`data-early-pending`) and `plugins/early-clicks.client.ts` replays
+  each key once after `app:suspense:resolve`. Every buy button carries a key
+  (catalogue card/row, buy box, sticky bar, packs) — give one to any new
+  button whose press must not vanish on a slow phone.
   Manrope is self-hosted from `public/fonts/` (no Google Fonts, and the CSP in
   `deploy/caddy/Caddyfile` no longer allows it). That cache lives in the
   frontend's heap, and Nitro's stock production driver never evicts — a crawl

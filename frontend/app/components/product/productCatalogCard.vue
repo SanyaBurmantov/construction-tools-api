@@ -132,6 +132,7 @@ const link = computed(() => `/product/${props.product.slug}`)
           :variant="inCart ? 'secondary' : 'primary'"
           size="sm"
           :aria-label="`Добавить «${product.name}» в корзину`"
+          :data-early-click="`cart:${upsellSource ?? 'list'}:${product.id}`"
           @click="addToCart(1, upsellSource)"
         >
           {{ inCart ? 'В корзине' : 'В корзину' }}
