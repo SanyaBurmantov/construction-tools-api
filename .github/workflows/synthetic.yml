@@ -1,0 +1,118 @@
+name: Synthetic
+
+# A robot buyer on the live storefront, hourly: home, search, a category, a
+# product, add to cart, the cart re-priced, the way into checkout (to the
+# sign-in screen — nothing is ever submitted), on a desktop and a phone
+# viewport (e2e/). The uptime check says the site answers; this says it works
+# — a broken «В корзину» or a page that renders but throws fails it.
+# Metrika, the search journal and our own browser-error reports are blocked
+# for these runs, so the robot is never counted as a visitor.
+#
+# Alerts the Telegram alerts topic like uptime.yml: on a change of state, and
+# every 6 hours while it stays broken. Screenshots and traces of a failure are
+# attached to the run.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: synthetic
+  cancel-in-progress: false
+
+jobs:
+  storefront:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: e2e
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      - name: Walk the storefront
+        id: check
+        run: |
+          set +e
+          npx playwright test
+          echo "ok=$([ $? -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+
+      - name: Keep the evidence
+        if: steps.check.outputs.ok != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-failure
+          path: e2e/test-results
+          retention-days: 7
+
+      - name: Previous result
+        id: previous
+        run: |
+          prev=$(curl -fsS -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/synthetic.yml/runs?status=completed&per_page=1" \
+            | jq -r '.workflow_runs[0].conclusion // "success"') || prev=success
+          echo "conclusion=$prev" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Alert
+        # Only for the real checks; a run started by a push is a test of the
+        # checks themselves.
+        if: github.event_name != 'push'
+        run: |
+          ok="${{ steps.check.outputs.ok }}"
+          prev="${{ steps.previous.outputs.conclusion }}"
+          hour=$((10#$(date -u +%H)))
+          failed() {
+            jq -r '[.. | objects | select(has("specs")) | .specs[] | select(.ok == false)
+                   | "\(.title) [\(.tests[0].projectName)]"] | unique | .[]' \
+              test-results/report.json 2>/dev/null | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/^/• /'
+          }
+          if [ "$ok" = "false" ] && [ "$prev" != "failure" ]; then
+            text="🛒 <b>На gost.by что-то сломалось у покупателя</b> (проверка роботом)
+          $(failed)"
+          elif [ "$ok" = "false" ] && [ $((hour % 6)) -eq 0 ]; then
+            text="🛒 <b>Проверка роботом всё ещё падает</b>
+          $(failed)"
+          elif [ "$ok" = "true" ] && [ "$prev" = "failure" ]; then
+            text="✅ <b>Проверка роботом снова проходит</b>"
+          else
+            exit 0
+          fi
+          text="$(printf '%s\n' "$text" | sed 's/^ *//')
+          <a href=\"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID\">скриншоты и подробности</a>"
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram secrets are not set — alert not sent"
+            exit 0
+          fi
+          args=(--data-urlencode "chat_id=$TELEGRAM_ALERT_CHAT_ID"
+                --data-urlencode "parse_mode=HTML"
+                --data-urlencode "disable_web_page_preview=true"
+                --data-urlencode "text=$text")
+          [ -n "$TELEGRAM_ALERT_THREAD_ID" ] && args+=(--data-urlencode "message_thread_id=$TELEGRAM_ALERT_THREAD_ID")
+          curl -fsS -m 20 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" "${args[@]}" > /dev/null \
+            || echo "::warning::Telegram send failed"
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          TELEGRAM_ALERT_THREAD_ID: ${{ secrets.TELEGRAM_ALERT_THREAD_ID }}
+
+      - name: Fail when broken
+        if: steps.check.outputs.ok != 'true'
+        run: exit 1
