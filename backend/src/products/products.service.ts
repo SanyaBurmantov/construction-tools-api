@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { articlePatterns, pickLegacyProduct } from './legacy-product-slug';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
@@ -246,6 +247,19 @@ function escapeLike(value: string) {
 export class ProductService {
   constructor(private prisma: PrismaService) {}
 
+  /** Slug of the published product an article-first address meant, if any. */
+  private async findByLegacySlug(slug: string): Promise<string | null> {
+    const patterns = articlePatterns(slug);
+    if (!patterns.length) return null;
+    const products = await this.prisma.$queryRaw<
+      Array<{ slug: string; sku: string | null; name: string }>
+    >`
+      SELECT slug, sku, name FROM "Product"
+      WHERE status = 'PUBLISHED' AND sku ILIKE ANY(${patterns}::text[])
+      LIMIT 50`;
+    return pickLegacyProduct(slug, products)?.slug ?? null;
+  }
+
   async getProductBySlug(slug: string) {
     const product = await this.prisma.product.findFirst({
       where: { slug, status: 'PUBLISHED' },
@@ -276,6 +290,17 @@ export class ProductService {
           message: 'Product moved',
           code: 'PRODUCT_MERGED',
           redirectTo: redirect.product.slug,
+        });
+      }
+      // An address in someone else's scheme (article first, see
+      // legacy-product-slug.ts): find the card by its article and send the
+      // visitor there instead of a 404.
+      const legacy = await this.findByLegacySlug(slug);
+      if (legacy) {
+        throw new NotFoundException({
+          message: 'Product moved',
+          code: 'PRODUCT_LEGACY_SLUG',
+          redirectTo: legacy,
         });
       }
       throw new NotFoundException('Product not found');

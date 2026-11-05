@@ -203,6 +203,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `server/middleware/0.legacy-urls.ts` (runs first) 301s each old section to
   our closest category (`utils/legacy-urls.ts`, tested) — they were the
   «Страница не найдена» views in Metrika.
+  **Article-first product addresses** (`products/legacy-product-slug.ts`):
+  robots visit ~250 `/product/<article>-<name in kh/ts/yy translit>` URLs
+  that were never ours; `getProductBySlug` falls back to the article (ILIKE
+  on the trigram-indexed `sku`, exact slug compare, name words to tell
+  same-article products apart, nothing when still ambiguous) and answers
+  `redirectTo`, which the product page turns into a 301 — 119 of 258 found.
   **No render-blocking CSS**: `features.inlineStyles: true` inlines every SSR
   style (global `main.scss` included) and `server/plugins/defer-unused-css.ts`
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but
