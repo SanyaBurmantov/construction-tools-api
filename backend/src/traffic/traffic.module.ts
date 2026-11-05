@@ -4,11 +4,12 @@ import {
   TrafficController,
 } from './traffic.controller';
 import { TrafficCleanupCron } from './traffic.cron';
+import { MetrikaService } from './metrika.service';
 import { TrafficService } from './traffic.service';
 
 /** The site's own visit statistics and 404 journal (`/admin/traffic`). */
 @Module({
   controllers: [TrafficController, TrafficAdminController],
-  providers: [TrafficService, TrafficCleanupCron],
+  providers: [TrafficService, MetrikaService, TrafficCleanupCron],
 })
 export class TrafficModule {}

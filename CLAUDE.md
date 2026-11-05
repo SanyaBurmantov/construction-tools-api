@@ -203,6 +203,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `server/middleware/0.legacy-urls.ts` (runs first) 301s each old section to
   our closest category (`utils/legacy-urls.ts`, tested) — they were the
   «Страница не найдена» views in Metrika.
+  **Article-first product addresses** (`products/legacy-product-slug.ts`):
+  robots visit ~250 `/product/<article>-<name in kh/ts/yy translit>` URLs
+  that were never ours; `getProductBySlug` falls back to the article (ILIKE
+  on the trigram-indexed `sku`, exact slug compare, name words to tell
+  same-article products apart, nothing when still ambiguous) and answers
+  `redirectTo`, which the product page turns into a 301 — 119 of 258 found.
   **No render-blocking CSS**: `features.inlineStyles: true` inlines every SSR
   style (global `main.scss` included) and `server/plugins/defer-unused-css.ts`
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but
@@ -859,6 +865,20 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   tiles from `GET /admin/traffic/summary`. `TRAFFIC_LOG_TTL_DAYS` (730),
   purged nightly by the worker. Starts empty on 2026-11-05 — Metrika keeps
   the history before that.
+  **Yandex Metrika on the same screen** (`traffic/metrika.service.ts`,
+  `metrika-report.ts` pure + tested): switch «Яндекс.Метрика / Наш счётчик»,
+  default Metrika once connected. Counter 113800110 (`METRIKA_COUNTER_ID`),
+  read-only OAuth token pasted on the screen → `SiteSetting metrika.token`
+  (checked against the counter before it is kept, never sent back; env
+  `METRIKA_TOKEN` as fallback). Each block is its own Reporting API request
+  (a refused one becomes a warning, a 401 the whole error), cached 15 min in
+  the API; 404s there = pageviews titled «…не найден…». The dashboard tiles
+  prefer Metrika's summary. **Every Metrika number is people only**
+  (`isRobot=='No'`): in the counter's first ten days 1 299 of 1 780 visits
+  and 260 of 301 visits to a 404 were robots (headless Chrome, Singapore /
+  China, walking old product URLs). Address lists (landings, pages, 404s)
+  are read *with* robots and labelled so — under the people filter Metrika
+  hides every URL row below its privacy threshold.
 - **Search understands Russian word forms** (`products/search-fts.ts`, 04.11).
   `rankedMatchIds` has a full-text `UNION` branch beside the trigram ones:
   every word of the term must match in some form (`russian` Snowball

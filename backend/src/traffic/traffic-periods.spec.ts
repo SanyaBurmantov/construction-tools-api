@@ -3,6 +3,7 @@ import {
   dayOfMonth,
   daysInMonth,
   lastMonths,
+  minskDate,
   monthStart,
   previousMonthToDate,
 } from './traffic-periods';
@@ -57,5 +58,12 @@ describe('traffic periods (Minsk time)', () => {
   it('reports a relative change only against something', () => {
     expect(change(150, 100)).toBeCloseTo(0.5);
     expect(change(5, 0)).toBeNull();
+  });
+});
+
+describe('minskDate', () => {
+  it('formats the Minsk calendar date', () => {
+    expect(minskDate(new Date('2026-10-31T22:30:00Z'))).toBe('2026-11-01');
+    expect(minskDate(new Date('2026-11-05T07:00:00Z'))).toBe('2026-11-05');
   });
 });

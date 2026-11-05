@@ -14,9 +14,9 @@ const loadError = ref('')
 
 // Traffic is a separate, cheap answer: a failure there must not hide sales.
 const { adminFetch } = useAdminApi()
-const traffic = ref<TrafficSummary | null>(null)
+const traffic = ref<(TrafficSummary & { source?: 'metrika' | 'own' }) | null>(null)
 async function loadTraffic() {
-  traffic.value = await adminFetch<TrafficSummary>('/traffic/summary').catch(() => null)
+  traffic.value = await adminFetch<TrafficSummary & { source?: 'metrika' | 'own' }>('/traffic/summary').catch(() => null)
 }
 
 async function load() {
@@ -126,7 +126,7 @@ const maxRevenue = computed(() =>
 
       <section v-if="traffic" class="tiles">
         <UiStat
-          :label="`Визиты за месяц (1–${traffic.day})`"
+          :label="`Визиты за месяц (1–${traffic.day})${traffic.source === 'metrika' ? ', Метрика' : ''}`"
           :value="formatCount(traffic.current.visits)"
           :tone="traffic.change.visits === null ? 'neutral' : traffic.change.visits >= 0 ? 'success' : 'warning'"
           :hint="`${formatChange(traffic.change.visits)} к тому же периоду прошлого месяца`"
