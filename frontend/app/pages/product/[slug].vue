@@ -29,9 +29,15 @@ if (error.value) {
 
   // A product merged into another answers 404 with the survivor's slug, so the
   // old URL keeps its links and search ranking instead of dying.
-  const redirectTo = (error.value as { data?: { redirectTo?: string } }).data?.redirectTo
+  const detail = (error.value as { data?: { redirectTo?: string, searchTo?: string } }).data
+  const redirectTo = detail?.redirectTo
   if (redirectTo) {
     await navigateTo(`/product/${redirectTo}`, { redirectCode: 301, replace: true })
+  } else if (detail?.searchTo) {
+    // An address naming a pack we do not carry, of an item we do in other
+    // packs (backend legacy-product-slug.ts): the search shows them all.
+    // 302, not 301 — a search page is not where this address lives for good.
+    await navigateTo({ path: '/catalog', query: { search: detail.searchTo } }, { redirectCode: 302, replace: true })
   } else {
     throw createError({ statusCode: 404, statusMessage: 'Товар не найден', fatal: true })
   }

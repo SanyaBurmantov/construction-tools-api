@@ -2,6 +2,9 @@ import {
   articleCandidates,
   articlePatterns,
   articleSlug,
+  commonNamePrefix,
+  itemCodes,
+  pickByItemCode,
   pickLegacyProduct,
 } from './legacy-product-slug';
 
@@ -75,5 +78,70 @@ describe('legacy product slugs', () => {
     const a = { slug: 'a', sku: 'F-828', name: 'Набор А' };
     const b = { slug: 'b', sku: 'F-828', name: 'Набор Б' };
     expect(pickLegacyProduct('f-828-bolty-v-komplekte', [a, b])).toBeNull();
+  });
+});
+
+describe('legacy product slugs by item code', () => {
+  const packs = [
+    {
+      slug: 'p2',
+      sku: 'SMZ1-63731-2',
+      name: 'Шуруп 10х60 мм шестигр. головка, цинк, DIN 571 (2 шт в зип-локе) STARFIX',
+    },
+    {
+      slug: 'p50',
+      sku: 'SMC2-63731-50',
+      name: 'Шуруп 10х60 мм шестигр. головка, цинк, DIN 571 (50 шт в карт. уп.) STARFIX',
+    },
+    {
+      slug: 'p700',
+      sku: 'SM-63731-700',
+      name: 'Шуруп 10х60 мм шестигр. головка, цинк, DIN 571 (700 шт в коробе) STARFIX',
+    },
+    { slug: 'bit', sku: 'JBC-HW-S22', name: 'Бита удлиненная PH2х100мм' },
+  ];
+  const address =
+    'smp-63731-1-shurup-10kh60-mm-shestigr-golovka-tsink-din-571-';
+
+  it('reads item codes', () => {
+    expect(itemCodes(address)).toEqual(['63731']);
+    expect(itemCodes('ach-104-konvektor')).toEqual([]);
+  });
+
+  it('sends packs of one item to a search for their common name', () => {
+    expect(pickByItemCode(address, packs)).toEqual({
+      search: 'Шуруп 10х60 мм шестигр. головка, цинк, DIN 571',
+    });
+  });
+
+  it('goes straight to the card when only one pack is carried', () => {
+    expect(pickByItemCode(address, [packs[1], packs[3]])).toEqual({
+      slug: 'p50',
+    });
+  });
+
+  it('does not send an address for a product to a part of it', () => {
+    const membrane = {
+      slug: 'membrana',
+      sku: 'PA-1003-M',
+      name: 'Мембрана для емкости для нагнетания густой смазки PA-1003',
+    };
+    expect(
+      pickByItemCode(
+        'pa-1003-emkost-dlya-nagnetaniya-gustoy-smazki-20l-s-pnevmona',
+        [membrane],
+      ),
+    ).toBeNull();
+  });
+
+  it('never matches a code without the name to back it', () => {
+    expect(pickByItemCode('smp-63731-1-bolt-m8', packs)).toBeNull();
+  });
+
+  it('cuts a common prefix back to whole words', () => {
+    expect(commonNamePrefix(['Круг 125 мм', 'Круг 150 мм'])).toBe('Круг');
+    expect(commonNamePrefix(['Набор бит 10 шт', 'Набор бит 20 шт'])).toBe(
+      'Набор бит',
+    );
   });
 });
