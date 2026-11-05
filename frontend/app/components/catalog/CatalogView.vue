@@ -370,9 +370,11 @@ const categoryLinks = computed(() => {
         image: node.image,
         productCount: node.productCount
       }))
+  // Biggest first by what the visitor would get under the current filters.
   return items
     .map(item => ({ ...item, count: contextCount(item.id) }))
     .filter(item => item.count > 0)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'))
 })
 
 

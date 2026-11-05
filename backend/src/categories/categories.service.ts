@@ -315,21 +315,14 @@ export class CategoriesService {
     };
     roots.forEach(inherit);
 
-    // Curated order first, then the catalogue's own gravity.
-    //
-    // `sortOrder = 0` means "nobody has placed this one" — the default for
-    // every category a parser created — so it sorts *after* the curated rows
-    // rather than ahead of them, and those rows keep listing biggest-first.
-    // Admin reordering renumbers a whole row of siblings from 1, so a category
-    // can be pushed down as well as pulled up.
-    const rank = (node: CategoryTreeNode) =>
-      node.sortOrder > 0 ? node.sortOrder : Number.MAX_SAFE_INTEGER;
+    // Biggest first, everywhere (owner, 2026-11-05: «сортировать просто по
+    // количеству товаров»). `sortOrder` no longer orders anything: one press
+    // of the old ↑/↓ buttons renumbered all 42 roots almost alphabetically
+    // and put «Косметика, уход» and the hidden fallback at the top.
     const sortChildren = (list: CategoryTreeNode[]) => {
       list.sort(
         (a, b) =>
-          rank(a) - rank(b) ||
-          b.productCount - a.productCount ||
-          a.name.localeCompare(b.name, 'ru'),
+          b.productCount - a.productCount || a.name.localeCompare(b.name, 'ru'),
       );
       list.forEach((node) => sortChildren(node.children));
     };

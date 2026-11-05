@@ -434,13 +434,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `facets.categories` entirely instead of reporting `0`, so the subcategory
   strip beside the grid stays filter-aware (switch on `onSale` at the top level
   and only categories that actually have a discounted product remain).
-- **Categories are curatable, identity is not.** `Category.sortOrder` /
-  `isVisible` / `isFeatured` are admin presentation settings, editable per row
-  in `/admin/categories` (plus `PATCH /admin/categories/order`, which renumbers
-  a whole row of siblings in one transaction so two can't claim one slot).
-  `sortOrder = 0` means "never placed" and sorts *after* curated rows, which
-  keeps the old biggest-first order for the thousand categories no one has
-  touched; `isVisible: false` hides a branch from the menu, the tree, the
+- **Categories are curatable, identity is not.** `Category.isVisible` /
+  `isFeatured` are admin presentation settings, editable per row
+  in `/admin/categories`. **Order is the product count, biggest first,
+  everywhere** — tree, menu, category page, the catalogue's subcategory
+  strip (by the count under the current filters) and the admin tree (owner,
+  2026-11-05). `sortOrder` stays in the table but orders nothing: the old
+  ↑/↓ buttons renumbered all 42 roots almost alphabetically and put
+  «Косметика, уход» first; the buttons and the field are gone
+  (`PATCH /admin/categories/order` remains for scripts, the normalizer still
+  treats `sortOrder > 0` as «curated» when pruning empties). `isVisible: false` hides a branch from the menu, the tree, the
   facets and search suggestions while leaving its URL working;
   `isFeatured` pins it into the home page grid's automatic part (after the
   header strip's picks). None of this touches `pathKey`,
