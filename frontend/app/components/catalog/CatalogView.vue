@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { reachGoal } from '~/utils/metrika'
 import type { CatalogProductsResponse, CategoryPage, FacetItem, SpecFacet, CatalogLanding  } from '~/types/api'
 import { toCardProduct } from '~/composables/useProductActions'
 
@@ -736,7 +737,7 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
       <div class="head-links">
         <!-- Purchasers compare in their own sheet; same URL for everyone, so
              the cached page can carry it. -->
-        <a :href="priceListUrl({ categorySlug: category?.slug })" class="price-link" rel="nofollow" download>
+        <a :href="priceListUrl({ categorySlug: category?.slug })" class="price-link" rel="nofollow" download @click="reachGoal('price_list')">
           Прайс-лист{{ category ? ' раздела' : '' }} (Excel)
         </a>
         <NuxtLink v-if="parentLink" :to="parentLink.to" class="up-link">

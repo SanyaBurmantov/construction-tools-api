@@ -841,6 +841,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   **SLOs** are written down in `request-stats.ts` (`SLO_TARGETS`: catalogue
   99% ≤ 1 s, checkout 99% ≤ 2 s, whole API 95% ≤ 1 s, 5xx budgets) and
   shown met/missed on the same screen.
+- **Metrika goals and e-commerce** (`utils/metrika.ts`, 05.11 — ads learn
+  from orders, not clicks). The storefront fires «JavaScript-событие» goals:
+  `order` / `order_invoice` (with `order_price`), `lead`, `quote`,
+  `price_list`, `register` / `register_company`, `checkout`, `add_to_cart`,
+  `phone_click` / `messenger_click` (one delegated listener,
+  `plugins/metrika-goals.client.ts`), plus `dataLayer` e-commerce `add` and
+  `purchase`. The goals themselves are created in the counter by
+  `backend/scripts/metrika-goals.mjs` (idempotent, needs a `metrika:write`
+  token). Never rename a goal id — its goal stops counting; add a new one.
 - **Search journal** (`search-log/`, `SearchEvent`, `/admin/search` «Поиск»).
   The browser reports each search it showed (`POST /search/events`,
   `useSearchLog()`: the catalogue's first page with its result count) and each

@@ -1,3 +1,4 @@
+import { reachGoal } from '~/utils/metrika'
 export type CustomerType = 'INDIVIDUAL' | 'COMPANY'
 export type UserRole = 'CUSTOMER' | 'ADMIN'
 
@@ -179,6 +180,8 @@ export function useAuth() {
     })
     persist(session)
     ready.value = true
+    reachGoal('register')
+    if (session.user?.customerType === 'COMPANY') reachGoal('register_company')
     return session.user
   }
 

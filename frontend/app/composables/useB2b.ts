@@ -1,3 +1,4 @@
+import { reachGoal } from '~/utils/metrika'
 /**
  * What a company buyer gets beyond the cart: the PDF invoice and quote, the
  * XLSX price list, and whether invoices are issued automatically right now
@@ -73,6 +74,7 @@ export function useB2b() {
       responseType: 'blob',
     })
     saveBlob(blob, `kommercheskoe-predlozhenie-gost-by.pdf`)
+    reachGoal('quote')
   }
 
   return { seller, loadSeller, invoiceUrl, isInvoiceable, priceListUrl, downloadQuote }

@@ -1,3 +1,4 @@
+import { ecommerce, reachGoal } from '~/utils/metrika'
 import { defineStore } from 'pinia'
 import { onStorageChange, readArray, readStoredArray, writeJson } from '~/utils/safe-storage'
 
@@ -70,6 +71,8 @@ export const useCartStore = defineStore('cart', {
         this.items.push({ ...item, quantity: Math.min(quantity, MAX_QTY) })
       }
       this.persist()
+      reachGoal('add_to_cart')
+      ecommerce('add', [{ id: item.productId, name: item.name, price: item.price, quantity }])
     },
     setQuantity(productId: string, quantity: number) {
       this.refresh()

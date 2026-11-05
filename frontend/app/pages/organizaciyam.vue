@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { reachGoal } from '~/utils/metrika'
 import { company } from '~/data/company'
 import type { SellerInfo } from '~/composables/useB2b'
 
@@ -73,6 +74,7 @@ async function send() {
         attribution: getAttribution(),
       },
     })
+    reachGoal('lead')
     sent.value = true
     toast.success('Заявка отправлена — менеджер свяжется с вами')
   } catch (error) {
@@ -110,7 +112,7 @@ const tools = [
       </p>
       <div class="hero-actions">
         <UiButton to="/catalog" size="lg">Перейти в каталог</UiButton>
-        <UiButton :href="priceListUrl()" variant="secondary" size="lg" rel="nofollow" download>
+        <UiButton :href="priceListUrl()" variant="secondary" size="lg" rel="nofollow" download @click="reachGoal('price_list')">
           Скачать прайс-лист (Excel)
         </UiButton>
       </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { reachGoal } from '~/utils/metrika'
 /**
  * «Уточнить наличие / подобрать аналог». A purchaser with a list to fill
  * often needs a replacement for what is out of stock, or a firm date — a
@@ -64,6 +65,7 @@ async function send() {
         attribution: getAttribution(),
       },
     })
+    reachGoal('lead')
     open.value = false
     toast.success('Вопрос отправлен — менеджер перезвонит в рабочее время')
   } catch (err) {
