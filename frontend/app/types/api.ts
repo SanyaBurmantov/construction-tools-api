@@ -462,3 +462,37 @@ export type MetrikaStatus = {
   tokenHint?: string
   error?: string
 }
+
+/** «Планы» (`/admin/plans`, backend `plans/`). */
+export type PlanKind = 'GOAL' | 'TASK'
+export type PlanStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'DROPPED'
+export type PlanArea = 'SALES' | 'SEO' | 'ADS' | 'CATALOG' | 'CONTENT' | 'TECH' | 'OTHER'
+export type PlanAttachment = { url: string, name?: string | null }
+export type PlanItem = {
+  id: string
+  kind: PlanKind
+  title: string
+  description: string | null
+  status: PlanStatus
+  area: PlanArea
+  /** 1 — high, 2 — normal, 3 — low. */
+  priority: number
+  dueDate: string | null
+  assignee: string | null
+  metric: string | null
+  target: number | null
+  goalId: string | null
+  attachments: PlanAttachment[]
+  doneAt: string | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  /** A goal's measure, counted live; null without one. */
+  value: number | null
+  /** value / target, 0…1. */
+  progress: number | null
+  tasksTotal: number
+  tasksDone: number
+}
+export type PlanMetric = { key: string, label: string, unit: string }
+export type PlansResponse = { items: PlanItem[], metrics: PlanMetric[] }

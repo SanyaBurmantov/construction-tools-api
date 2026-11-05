@@ -12,6 +12,7 @@ import { FeaturesModule } from './features/features.module';
 import { PerfModule } from './perf/perf.module';
 import { SearchLogModule } from './search-log/search-log.module';
 import { TrafficModule } from './traffic/traffic.module';
+import { PlansModule } from './plans/plans.module';
 import { BrandsModule } from './brands/brands.module';
 import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
@@ -68,6 +69,7 @@ import { runsBackgroundJobs } from './common/utils/process-role';
     PerfModule,
     SearchLogModule,
     TrafficModule,
+    PlansModule,
     BrandsModule,
     SourcesModule,
     ParserModule,

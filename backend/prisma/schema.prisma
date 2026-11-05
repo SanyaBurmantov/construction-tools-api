@@ -1528,3 +1528,59 @@ model PageView {
   @@index([createdAt])
   @@index([status, createdAt])
 }
+
+enum PlanKind {
+  GOAL
+  TASK
+}
+
+enum PlanStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  DROPPED
+}
+
+enum PlanArea {
+  SALES
+  SEO
+  ADS
+  CATALOG
+  CONTENT
+  TECH
+  OTHER
+}
+
+/// «Планы» (`/admin/plans`): the project's goals and its to-do list, kept in
+/// the admin instead of in chat threads. A GOAL may name a measure
+/// (`metric`, a key of `plans/plan-metrics.ts`) and a `target`; its current
+/// value is counted live from our own tables, never typed in. A TASK may
+/// belong to a goal. Screenshots are uploaded to our S3 and listed in
+/// `attachments` as `[{ url, name }]`.
+model PlanItem {
+  id            String     @id @default(uuid())
+  kind          PlanKind   @default(TASK)
+  title         String
+  description   String?
+  status        PlanStatus @default(TODO)
+  area          PlanArea   @default(OTHER)
+  /// 1 — high, 2 — normal, 3 — low.
+  priority      Int        @default(2)
+  dueDate       DateTime?
+  /// Who does it, free text: «владелец», «сеошник», «разработка».
+  assignee      String?
+  metric        String?
+  target        Float?
+  goalId        String?
+  goal          PlanItem?  @relation("PlanGoalTasks", fields: [goalId], references: [id], onDelete: SetNull)
+  tasks         PlanItem[] @relation("PlanGoalTasks")
+  attachments   Json       @default("[]")
+  doneAt        DateTime?
+  /// Snapshot of who created it (an account may be deleted later).
+  createdByName String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([kind, status])
+  @@index([goalId])
+}

@@ -893,6 +893,21 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   China, walking old product URLs). Address lists (landings, pages, 404s)
   are read *with* robots and labelled so — under the people filter Metrika
   hides every URL row below its privacy threshold.
+- **Планы и цели** (`plans/`, `PlanItem`, `/admin/plans` «Планы», 05.11 —
+  the owner wanted the project's to-do list in the admin, not in chat). A
+  GOAL may name a measure (`plans/plan-metrics.ts`: orders / company orders /
+  revenue / profit ≈15% / leads this Minsk month, visits — Metrika's people
+  count, our counter as fallback —, products on sale, products with AI
+  texts) and a `target`; the value is **counted live on every read**, never
+  typed in, and only for keys some goal uses. Never rename a metric key —
+  it is stored in the row. A TASK may belong to a goal (only to a GOAL — a
+  goal has no parent, a task no measure; the service enforces it), carries a
+  due date, assignee, priority and **screenshots**: uploaded through
+  `POST /admin/media/upload?kind=screenshot` (one WebP ≤ 2400 px under
+  `s/<sha1>`, readable text; public by exact key like every media object,
+  listing closed) from the button, a drop or Ctrl+V in the form, and saved
+  into `attachments` at once on an existing item. The migration seeded the
+  plans as they stood on 05.11; the goals' targets are starting points.
 - **Search understands Russian word forms** (`products/search-fts.ts`, 04.11).
   `rankedMatchIds` has a full-text `UNION` branch beside the trigram ones:
   every word of the term must match in some form (`russian` Snowball

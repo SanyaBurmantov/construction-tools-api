@@ -19,10 +19,16 @@ import {
 } from './image-mirror';
 import { renderVariants, Variant } from './image-variants';
 
-export type UploadKind = 'image' | 'banner';
+export type UploadKind = 'image' | 'banner' | 'screenshot';
 
 /** A banner spans the page: one WebP up to this wide, `object-fit: cover`. */
 const BANNER_CAP = 1920;
+/**
+ * A screenshot attached to a plan: one WebP, large enough for its text to
+ * stay readable. Stored under an unguessable key (the hash of the bytes) —
+ * the bucket is public by exact key and closed for listing.
+ */
+const SCREENSHOT_CAP = 2400;
 const CACHE = 'public, max-age=31536000, immutable';
 
 /**
@@ -34,6 +40,7 @@ const CACHE = 'public, max-age=31536000, immutable';
  *   (`v/ab/<sha1>/<cap>.webp`), so the storefront picks a size from the URL
  *   exactly as it does for photos (utils/media-variants.ts).
  * - `banner` is one WebP whose longer side is at most 1920 px.
+ * - `screenshot` (a plan's attachment) is one WebP of at most 2400 px under `s/`.
  *
  * The key is the hash of the bytes: the same file uploaded twice is one
  * object, and a changed picture is a new URL (the objects are cached for a
@@ -83,18 +90,23 @@ export class MediaUploadService {
     const hash = createHash('sha1').update(body).digest('hex');
     let files: Array<{ key: string; body: Buffer }>;
     try {
-      files =
-        kind === 'banner'
-          ? [
-              {
-                key: `b/${hash.slice(0, 2)}/${hash}.webp`,
-                body: await banner(body),
-              },
-            ]
-          : (await renderVariants(body)).map((v: Variant) => ({
-              key: `v/${hash.slice(0, 2)}/${hash}/${v.cap}.webp`,
-              body: v.body,
-            }));
+      if (kind === 'banner' || kind === 'screenshot') {
+        const prefix = kind === 'banner' ? 'b' : 's';
+        files = [
+          {
+            key: `${prefix}/${hash.slice(0, 2)}/${hash}.webp`,
+            body:
+              kind === 'banner'
+                ? await single(body, BANNER_CAP, 82)
+                : await single(body, SCREENSHOT_CAP, 88),
+          },
+        ];
+      } else {
+        files = (await renderVariants(body)).map((v: Variant) => ({
+          key: `v/${hash.slice(0, 2)}/${hash}/${v.cap}.webp`,
+          body: v.body,
+        }));
+      }
     } catch (error) {
       this.logger.warn(`Upload decode: ${message(error)}`);
       throw new BadRequestException('Не удалось прочитать картинку');
@@ -131,16 +143,17 @@ export class MediaUploadService {
   }
 }
 
-function banner(body: Buffer): Promise<Buffer> {
+/** One WebP whose longer side is at most `cap`, never enlarged. */
+function single(body: Buffer, cap: number, quality: number): Promise<Buffer> {
   return sharp(body, { limitInputPixels: 40_000_000, failOn: 'error' })
     .autoOrient()
     .resize({
-      width: BANNER_CAP,
-      height: BANNER_CAP,
+      width: cap,
+      height: cap,
       fit: 'inside',
       withoutEnlargement: true,
     })
-    .webp({ quality: 82, effort: 4 })
+    .webp({ quality, effort: 4 })
     .toBuffer();
 }
 
