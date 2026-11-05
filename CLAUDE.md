@@ -467,7 +467,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   «В корзину» as a cart icon beside the price; a card's name is clamped to
   three lines everywhere.
   Frontend: one `components/ui/UiCategoryCard.vue` renders every "link to a
-  category" (`tile` / `row` / `chip`) — home grid, catalogue, brand page — and
+  category" — `tile` (shop window: photo on a soft plate in one scale,
+  count as a label, lift on hover; home + `/catalog`), `compact` (64px
+  photo + name + count; a category page's subcategories, first 8 then
+  «Показать все», the rest rendered hidden for crawlers), `row` (brand
+  page), `chip` (the strip once a filter is on). Tile artwork is the
+  category's **typical** product — first with a real photo in the default
+  order (`listingRank`, name), placeholders skipped — and a parent borrows
+  its biggest part's picture (owner, 2026-11-05; the dearest product was the
+  odd one out — a stand, a watermarked station). The map is cached 15 min
+  and refreshed in the background. — and
   `composables/useCategoryTree.ts` is the single tree fetch (one shared
   `useAsyncData` key for header, home and catalogue). That SSR fetch is
   **roots only** (`GET /categories/tree?depth=1`, trimmed to the fields drawn):

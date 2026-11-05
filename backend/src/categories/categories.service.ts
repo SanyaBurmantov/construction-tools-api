@@ -3,9 +3,26 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CategoryPage, CategoryTreeNode } from './types/category-tree.type';
 import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
+import { Prisma } from '@prisma/client';
+import {
+  isPlaceholderImageUrl,
+  PLACEHOLDER_IMAGE_MARKERS,
+} from '../common/utils/product-images';
+
+/**
+ * A real photo, not a supplier's «нет фото» asset (`product-images.ts`): a
+ * tile must never show a placeholder, and ~12% of old products carry one.
+ */
+const REAL_PHOTO_SQL = Prisma.join(
+  PLACEHOLDER_IMAGE_MARKERS.map(
+    (marker) =>
+      Prisma.sql`i."url" NOT ILIKE ${`%${marker.replace(/[\\%_]/g, '\\$&')}%`}`,
+  ),
+  ' AND ',
+);
 
 /** The dearest product with a photo in a category — see `showcaseImages()`. */
-type CategoryShowcase = { price: number; url: string };
+type CategoryShowcase = { url: string };
 
 /** How long a built artwork map is reused. Supplier prices move daily. */
 const SHOWCASE_TTL_MS = 15 * 60 * 1000;
@@ -142,47 +159,55 @@ export class CategoriesService {
   }
 
   /**
-   * Tile artwork a category has not been given by hand: the photo of the most
-   * expensive published product in it, its own or any descendant's.
-   *
-   * Why the most expensive: a category tile is a shop window, and the dearest
-   * item is the one that looks like the category rather than like a consumable.
-   * Products without a photo are skipped outright, so the picture is never a
-   * placeholder — a category where nothing has a photo keeps its letter plate.
+   * Tile artwork a category has not been given by hand: the photo of its
+   * **typical** product — the first one with a real photo in the category's
+   * default order (`listingRank` — complete cards first —, then the name),
+   * i.e. what a visitor sees first on opening it (owner, 2026-11-05). It used
+   * to be the most expensive product, which is usually the odd one out: a
+   * workshop station with another shop's watermark for «Наборы
+   * инструментов», a display stand for «Сантехника». Products without a
+   * photo, or with a supplier's «нет фото» asset, are skipped, so the picture
+   * is never a placeholder — a category with no photo keeps its letter plate.
    *
    * The shape of the query matters on this box (2 cores, `work_mem` 4 MB).
    * It is deliberately two cheap steps instead of one join of `Product` to the
    * 147k-row image table: pick the winning product per category from a narrow
    * `EXISTS` filter (a hash semi join, and the sort carries three columns, not
    * a URL), then read the first image of those ~1.5k winners by primary-key
-   * index. Over a 15-minute cache, since prices move once a day at most.
+   * index. Over a 15-minute cache, refreshed in the background.
    */
   private async showcaseImages(): Promise<Map<string, CategoryShowcase>> {
-    const fresh = this.showcases;
-    if (fresh && Date.now() - fresh.at < SHOWCASE_TTL_MS) return fresh.value;
+    const cached = this.showcases;
+    if (cached && Date.now() - cached.at < SHOWCASE_TTL_MS) return cached.value;
     // One request fills the cache; the rest of a burst waits for that one.
     this.showcasesInFlight ??= this.loadShowcaseImages().finally(() => {
       this.showcasesInFlight = null;
     });
+    // Stale artwork is served while the next map is built (~1.3 s on prod):
+    // only the very first request after a start waits for the query.
+    if (cached) {
+      void this.showcasesInFlight;
+      return cached.value;
+    }
     return this.showcasesInFlight;
   }
 
   private async loadShowcaseImages(): Promise<Map<string, CategoryShowcase>> {
     try {
       const winners = await this.prisma.$queryRaw<
-        Array<{ categoryId: string; productId: string; price: number }>
+        Array<{ categoryId: string; productId: string }>
       >`
         SELECT DISTINCT ON (p."categoryId")
           p."categoryId" AS "categoryId",
-          p."id"         AS "productId",
-          p."priceValue" AS "price"
+          p."id"         AS "productId"
         FROM "Product" p
         WHERE p."status" = 'PUBLISHED'
           AND p."priceValue" IS NOT NULL
           AND EXISTS (
-            SELECT 1 FROM "ProductImage" i WHERE i."productId" = p."id"
+            SELECT 1 FROM "ProductImage" i
+            WHERE i."productId" = p."id" AND ${REAL_PHOTO_SQL}
           )
-        ORDER BY p."categoryId", p."priceValue" DESC, p."id"
+        ORDER BY p."categoryId", p."listingRank" DESC, p."name", p."id"
       `;
 
       const images = winners.length
@@ -195,6 +220,7 @@ export class CategoriesService {
 
       const firstImage = new Map<string, string>();
       for (const image of images) {
+        if (isPlaceholderImageUrl(image.url)) continue;
         if (!firstImage.has(image.productId)) {
           firstImage.set(image.productId, image.url);
         }
@@ -203,7 +229,7 @@ export class CategoriesService {
       const byCategory = new Map<string, CategoryShowcase>();
       for (const row of winners) {
         const url = firstImage.get(row.productId);
-        if (url) byCategory.set(row.categoryId, { price: row.price, url });
+        if (url) byCategory.set(row.categoryId, { url });
       }
 
       this.showcases = { at: Date.now(), value: byCategory };
@@ -299,15 +325,23 @@ export class CategoriesService {
     roots.forEach(aggregate);
 
     // Artwork rolls up the same way counts do: a root category holds no
-    // products of its own, so its tile borrows the dearest photo in its
-    // subtree. An image an admin set is never overwritten.
+    // products of its own, so its tile borrows the picture of its biggest
+    // part — its own products or the child with the most products, whichever
+    // is larger — so «Наборы инструментов» looks like what most of it is. An
+    // image an admin set is shown, but the rolled-up one still travels up.
     const showcases = await this.showcaseImages();
     const inherit = (node: CategoryTreeNode): CategoryShowcase | null => {
+      const childTotal = node.children.reduce(
+        (sum, c) => sum + c.productCount,
+        0,
+      );
       let best = showcases.get(node.id) ?? null;
+      let weight = best ? node.productCount - childTotal : -1;
       for (const child of node.children) {
         const fromChild = inherit(child);
-        if (fromChild && (!best || fromChild.price > best.price)) {
+        if (fromChild && child.productCount > weight) {
           best = fromChild;
+          weight = child.productCount;
         }
       }
       if (!node.image && best) node.image = best.url;

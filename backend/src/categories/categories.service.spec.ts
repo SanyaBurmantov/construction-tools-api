@@ -152,7 +152,7 @@ describe('CategoriesService.getTree depth', () => {
     expect(tree).toHaveLength(1);
     expect(tree[0].children).toEqual([]);
     expect(tree[0].productCount).toBe(8);
-    expect(tree[0].image).toBe('https://cdn/perf.jpg');
+    expect(tree[0].image).toBe('https://cdn/drill.jpg');
   });
 
   it('returns the full tree when depth covers it', async () => {
@@ -283,7 +283,7 @@ describe('CategoriesService category redirects', () => {
 });
 
 describe('CategoriesService category artwork', () => {
-  it('fills a category without a picture from its dearest product', async () => {
+  it('fills a category without a picture from its typical product', async () => {
     const tree = await buildService().getTree();
     const [drills, perforators] = tree[0].children;
 
@@ -291,11 +291,11 @@ describe('CategoriesService category artwork', () => {
     expect(perforators.image).toBe('https://cdn/perf.jpg');
   });
 
-  // A root holds no products of its own: its tile borrows the dearest photo
-  // from anywhere below it, which is the perforator, not the cheaper drill.
-  it('inherits the dearest photo in the subtree onto the parent', async () => {
+  // A root holds no products of its own: its tile borrows the picture of its
+  // biggest part — drills (5 products), not perforators (3).
+  it('inherits the picture of the biggest child onto the parent', async () => {
     const tree = await buildService().getTree();
-    expect(tree[0].image).toBe('https://cdn/perf.jpg');
+    expect(tree[0].image).toBe('https://cdn/drill.jpg');
   });
 
   it('never overwrites a picture an admin set', async () => {
