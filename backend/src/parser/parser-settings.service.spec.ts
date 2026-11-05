@@ -148,12 +148,28 @@ describe('ParserSettingsService — runtime knobs', () => {
     });
   });
 
-  it('falls back to the code default when nothing is stored or in env', async () => {
+  it('imports every category by default (nothing stored or in env)', async () => {
     delete process.env.TH_TOOLS_CATEGORY_EXCLUDE_REGEX;
+    delete process.env.TOOLS_BY_CATEGORY_EXCLUDE_REGEX;
+    const { service } = createService();
+
+    await expect(service.getCategoryFilters('th-tools')).resolves.toEqual({
+      include: '',
+      exclude: '',
+    });
+    await expect(service.getCategoryFilters('tools-by')).resolves.toEqual({
+      include: '',
+      exclude: '',
+    });
+  });
+
+  it('still applies an exclude set in env', async () => {
+    process.env.TH_TOOLS_CATEGORY_EXCLUDE_REGEX = 'косметика';
     const { service } = createService();
 
     const filters = await service.getCategoryFilters('th-tools');
-    expect(filters.exclude).toContain('косметика');
+    expect(filters.exclude).toBe('косметика');
+    delete process.env.TH_TOOLS_CATEGORY_EXCLUDE_REGEX;
   });
 
   it('refuses a regex that would throw on every product', async () => {

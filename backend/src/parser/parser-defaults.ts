@@ -5,22 +5,16 @@
  * registry need them — putting them in either would make the two import each
  * other. Every value here is only a fallback: a `ParserSetting` row written
  * from /admin/parsing wins, and the matching env var wins over the constant.
+ *
+ * Both are empty on purpose (owner, 2026-11-05): the shop sells whatever its
+ * suppliers carry — car accessories, garden, household goods, cosmetics. The
+ * old exclude lists kept ~7.7k products out of the catalogue, and the hidden
+ * cards answered «Страница не найдена» to visitors who had found them before.
+ * A filter can still be set per source in /admin/parsing.
  */
 
-/**
- * th-tool.by is a tool shop that also carries car accessories, bikes and
- * toiletries. The rules deliberately keep "Аксессуары / Измерительные приборы"
- * and "Аксессуары / Спецодежда, защита" — welding masks and PPE live there.
- */
-export const TH_TOOLS_DEFAULT_EXCLUDE_REGEX =
-  'косметика|автохими|автоламп|антенн|ароматизатор|брелок|ковры напольные|' +
-  'кресла детские|очки для чтения|помощь водителю|щ[её]тки стеклоочистител|' +
-  'уход за авто|внешний тюнинг|внутрисалонн|велотехник|дача, отдых';
+/** th-tool.by: no default filter — every category is imported. */
+export const TH_TOOLS_DEFAULT_EXCLUDE_REGEX = '';
 
-/**
- * tools.by is a tool shop end to end, so there is little to cut — only the
- * household/leisure corners a construction aggregator has no use for.
- */
-export const TOOLS_BY_DEFAULT_EXCLUDE_REGEX =
-  'товары для дома|товары для уборки|посуда|текстиль|игрушк|' +
-  'канцеляр|зоотовар|космет|бытовая химия|продукты питания';
+/** tools.by: no default filter — every category is imported. */
+export const TOOLS_BY_DEFAULT_EXCLUDE_REGEX = '';
