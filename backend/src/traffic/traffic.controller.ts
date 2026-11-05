@@ -13,6 +13,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { IsString, MaxLength } from 'class-validator';
 import { AdminGuard } from '../admin/admin.guard';
+import { SeoAccess } from '../admin/seo-access';
 import { MetrikaService } from './metrika.service';
 import { PageViewDto } from './traffic.dto';
 import { TrafficService } from './traffic.service';
@@ -51,6 +52,7 @@ export class TrafficAdminController {
 
   /** Our own counter. */
   @Get('report')
+  @SeoAccess()
   report() {
     return this.traffic.report();
   }
@@ -60,6 +62,7 @@ export class TrafficAdminController {
    * the history), our own counter otherwise or when Metrika does not answer.
    */
   @Get('summary')
+  @SeoAccess()
   async summary() {
     const metrika = (await this.metrika.report().catch(() => null)) as {
       summary?: unknown;
@@ -70,11 +73,13 @@ export class TrafficAdminController {
 
   /** The same report read from Yandex Metrika (`?refresh=1` skips the 15-min cache). */
   @Get('metrika')
+  @SeoAccess()
   metrikaReport(@Query('refresh') refresh?: string) {
     return this.metrika.report(refresh === '1');
   }
 
   @Get('metrika/status')
+  @SeoAccess()
   metrikaStatus() {
     return this.metrika.status();
   }

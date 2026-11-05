@@ -39,7 +39,13 @@ type AdminProduct = {
   supplierNameChange?: unknown
 }
 
-const { adminFetch, errorMessage } = useAdminApi()
+const { adminFetch, errorMessage, isSeo } = useAdminApi()
+/**
+ * The SEO specialist edits the card's texts only — name, address, descriptions,
+ * SEO, the size line; prices, stock, status, category and the like stay with
+ * the admin (the API refuses them too, `admin/seo-access.ts`).
+ */
+const SEO_FIELDS = ['name', 'slug', 'descriptionShort', 'descriptionFull', 'seoTitle', 'seoDescription', 'variantLine', 'variantLabel']
 const toast = useAppToast()
 const { run, busy } = useAdminAction()
 
@@ -236,13 +242,16 @@ async function save() {
   }
   const oldPrice = numOrNull(form.oldPrice)
   const price = numOrNull(form.priceValue)
-  if (oldPrice && price && oldPrice <= price) {
+  if (!isSeo.value && oldPrice && price && oldPrice <= price) {
     formError.value = 'Старая цена должна быть выше текущей — иначе скидка не покажется'
     editorTab.value = 'price'
     return
   }
 
-  const body = formBody()
+  const full = formBody()
+  const body = isSeo.value
+    ? Object.fromEntries(Object.entries(full).filter(([key]) => SEO_FIELDS.includes(key)))
+    : full
 
   saving.value = true
   try {
@@ -393,7 +402,7 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
 <template>
   <div class="admin-page">
     <AdminPageHead title="Товары" :description="`${pagination.total} товаров в каталоге`">
-      <UiButton @click="openCreate">Добавить товар</UiButton>
+      <UiButton v-if="!isSeo" @click="openCreate">Добавить товар</UiButton>
     </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
@@ -446,7 +455,7 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
       </div>
     </Transition>
 
-    <UiTable :columns="COLUMNS" :rows="products" row-key="id" :loading="loading">
+    <UiTable :columns="isSeo ? COLUMNS.filter(c => c.key !== 'select') : COLUMNS" :rows="products" row-key="id" :loading="loading">
       <template #head-select>
         <UiCheckbox :model-value="allSelected" @update:model-value="toggleAll" />
       </template>
@@ -527,7 +536,7 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
           >
             ↗
           </UiButton>
-          <UiButton variant="ghost" size="sm" @click="deleting = product">✕</UiButton>
+          <UiButton v-if="!isSeo" variant="ghost" size="sm" @click="deleting = product">✕</UiButton>
         </div>
       </template>
     </UiTable>
@@ -547,11 +556,13 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
     >
       <UiTabs
         v-model="editorTab"
-        :tabs="[
-          { value: 'main', label: 'Основное' },
-          { value: 'price', label: 'Цена и наличие' },
-          { value: 'seo', label: 'SEO и описание' }
-        ]"
+        :tabs="isSeo
+          ? [{ value: 'main', label: 'Основное' }, { value: 'seo', label: 'SEO и описание' }]
+          : [
+            { value: 'main', label: 'Основное' },
+            { value: 'price', label: 'Цена и наличие' },
+            { value: 'seo', label: 'SEO и описание' }
+          ]"
       />
 
       <UiAlert v-if="formError" tone="danger" class="form-error">{{ formError }}</UiAlert>
@@ -572,13 +583,14 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
 
         <div class="admin-form-row">
           <UiField label="Категория" required for="p-category">
-            <UiSelect id="p-category" v-model="form.categoryId" :options="categoryOptions" />
+            <UiSelect id="p-category" v-model="form.categoryId" :options="categoryOptions" :disabled="isSeo" />
           </UiField>
 
           <UiField label="Бренд" for="p-brand">
             <UiSelect
               id="p-brand"
               v-model="form.brandId"
+              :disabled="isSeo"
               :options="[{ value: '', label: 'Без бренда' }, ...brandOptions]"
             />
           </UiField>
@@ -586,15 +598,15 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
 
         <div class="admin-form-row">
           <UiField label="Артикул" for="p-sku">
-            <UiInput id="p-sku" v-model="form.sku" />
+            <UiInput id="p-sku" v-model="form.sku" :disabled="isSeo" />
           </UiField>
           <UiField label="Модель" for="p-model">
-            <UiInput id="p-model" v-model="form.model" />
+            <UiInput id="p-model" v-model="form.model" :disabled="isSeo" />
           </UiField>
         </div>
 
         <UiField label="Статус" for="p-status">
-          <UiSelect id="p-status" v-model="form.status" :options="productStatusOptions()" />
+          <UiSelect id="p-status" v-model="form.status" :options="productStatusOptions()" :disabled="isSeo" />
         </UiField>
 
         <div class="admin-form-row">
@@ -611,7 +623,7 @@ const brandOptions = computed(() => brands.value.map(b => ({ value: b.id, label:
         </div>
       </div>
 
-      <div v-show="editorTab === 'price'" class="admin-form editor-pane">
+      <div v-show="editorTab === 'price' && !isSeo" class="admin-form editor-pane">
         <UiField
           label="Режим цены"
           :hint="form.pricingMode === 'AUTO'

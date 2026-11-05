@@ -1,6 +1,6 @@
 import { reachGoal } from '~/utils/metrika'
 export type CustomerType = 'INDIVIDUAL' | 'COMPANY'
-export type UserRole = 'CUSTOMER' | 'ADMIN'
+export type UserRole = 'CUSTOMER' | 'ADMIN' | 'SEO'
 
 export type AccountUser = {
   id: string
@@ -89,6 +89,10 @@ export function useAuth() {
 
   const isAuthenticated = computed(() => Boolean(user.value))
   const isAdmin = computed(() => user.value?.role === 'ADMIN')
+  /** The SEO specialist: a part of the admin only (backend `admin/seo-access.ts`). */
+  const isSeo = computed(() => user.value?.role === 'SEO')
+  /** May open the admin panel at all — an ADMIN, or the SEO specialist for its screens. */
+  const canUseAdmin = computed(() => isAdmin.value || isSeo.value)
 
   /**
    * Every localStorage access is guarded: `getItem` throws outright when site
@@ -305,6 +309,8 @@ export function useAuth() {
     ready,
     isAuthenticated,
     isAdmin,
+    isSeo,
+    canUseAdmin,
     authFetch,
     login,
     errorCode,

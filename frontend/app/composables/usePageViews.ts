@@ -6,7 +6,7 @@ import { pageViewBody } from '~/utils/page-view'
  * browsing the storefront is never counted, and skips the admin panel itself.
  */
 export function usePageViews() {
-  const { authFetch, whenReady, isAdmin } = useAuth()
+  const { authFetch, whenReady, canUseAdmin } = useAuth()
 
   async function report(status: 200 | 404, previousPath?: string) {
     if (import.meta.server) return
@@ -15,7 +15,7 @@ export function usePageViews() {
     // may already be on the next one.
     const body = pageViewBody(status, previousPath)
     await whenReady().catch(() => undefined)
-    if (isAdmin.value) return
+    if (canUseAdmin.value) return
     await authFetch('/traffic/views', { method: 'POST', body }).catch(() => undefined)
   }
 

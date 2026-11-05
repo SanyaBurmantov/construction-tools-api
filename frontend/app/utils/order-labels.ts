@@ -84,3 +84,16 @@ export const CUSTOMER_TYPE_LABEL: Record<CustomerType, string> = {
   INDIVIDUAL: 'Физическое лицо',
   COMPANY: 'Юридическое лицо',
 }
+
+/** Account roles (`UserRole`). */
+export const USER_ROLE_LABEL: Record<'CUSTOMER' | 'ADMIN' | 'SEO', string> = {
+  CUSTOMER: 'Покупатель',
+  ADMIN: 'Администратор',
+  SEO: 'SEO-специалист',
+}
+
+export const USER_ROLE_TONE: Record<'CUSTOMER' | 'ADMIN' | 'SEO', 'neutral' | 'brand' | 'info'> = {
+  CUSTOMER: 'neutral',
+  ADMIN: 'brand',
+  SEO: 'info',
+}

@@ -1,3 +1,4 @@
+import { assertSeoChanges, forbiddenSeoChanges, SeoEntity } from './seo-access';
 import {
   BadRequestException,
   ConflictException,
@@ -498,6 +499,20 @@ export class AdminService {
    *   automatic publish/hide rules leave it alone. A renamed slug leaves a
    *   ProductRedirect behind so indexed URLs keep working.
    */
+  /**
+   * Refuses an SEO specialist's change to a field outside its part
+   * (`seo-access.ts`): a price, a status, a category, the tree…
+   */
+  async assertSeoEdit(entity: SeoEntity, id: string, dto: object) {
+    const current =
+      entity === 'product'
+        ? await this.ensureProductExists(id)
+        : entity === 'category'
+          ? await this.ensureCategoryExists(id)
+          : await this.ensureBrandExists(id);
+    assertSeoChanges(forbiddenSeoChanges(entity, dto, current, differs));
+  }
+
   async updateProduct(id: string, dto: AdminUpdateProductDto) {
     const current = await this.ensureProductExists(id);
     const data: Prisma.ProductUncheckedUpdateInput = this.productData(dto);

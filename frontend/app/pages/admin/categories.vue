@@ -19,7 +19,9 @@ type Category = {
   _count?: { products: number, children: number }
 }
 
-const { adminFetch, errorMessage } = useAdminApi()
+const { adminFetch, errorMessage, isSeo } = useAdminApi()
+/** What the SEO specialist may change (the API refuses the rest, `admin/seo-access.ts`). */
+const SEO_FIELDS = ['name', 'description', 'image', 'seoTitle', 'seoDescription']
 const toast = useAppToast()
 const { run, busy } = useAdminAction()
 
@@ -269,7 +271,7 @@ async function save() {
   }
 
   const isUpdate = Boolean(editing.value)
-  const body = {
+  const full = {
     name: form.name.trim(),
     slug: form.slug.trim(),
     // On an update a blank is sent as '' — that is how «Корневая категория»
@@ -288,6 +290,9 @@ async function save() {
     isVisible: form.isVisible,
     isFeatured: form.isFeatured,
   }
+  const body = isSeo.value
+    ? Object.fromEntries(Object.entries(full).filter(([key]) => SEO_FIELDS.includes(key)))
+    : full
 
   saving.value = true
   try {
@@ -501,7 +506,7 @@ const mergeOptions = computed(() =>
       title="Категории"
       :description="`${categories.length} категорий · ${hiddenCount} скрыто · ${featuredCount} на главной`"
     >
-      <UiSelect v-model="view" size="sm" class="view" :options="VIEWS" />
+      <UiSelect v-model="view" size="sm" class="view" :options="isSeo ? VIEWS.filter(v => v.value !== 'duplicates') : VIEWS" />
       <UiInput v-model="search" placeholder="Найти категорию" size="sm" class="search" />
       <UiButton
         v-if="!filtering && expanded.size"
@@ -511,7 +516,7 @@ const mergeOptions = computed(() =>
       >
         Свернуть всё
       </UiButton>
-      <UiButton @click="openCreate()">Добавить</UiButton>
+      <UiButton v-if="!isSeo" @click="openCreate()">Добавить</UiButton>
     </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
@@ -528,7 +533,7 @@ const mergeOptions = computed(() =>
       :title="search || view !== 'all' ? 'Ничего не найдено' : 'Категорий пока нет'"
       description="Категории обычно создаются парсерами из хлебных крошек поставщиков."
     >
-      <UiButton @click="openCreate()">Добавить категорию</UiButton>
+      <UiButton v-if="!isSeo" @click="openCreate()">Добавить категорию</UiButton>
     </UiEmpty>
 
     <ul v-else class="tree">
@@ -584,7 +589,7 @@ const mergeOptions = computed(() =>
 
         <!-- Order, visibility and pinning sit on the row: they are changed
              while looking at the tree, not inside the editor. -->
-        <div class="row-display">
+        <div v-if="!isSeo" class="row-display">
           <button
             type="button"
             class="icon-btn"
@@ -632,10 +637,12 @@ const mergeOptions = computed(() =>
         </div>
 
         <div class="row-actions">
-          <UiButton variant="ghost" size="sm" @click="openCreate(row.id)">+ Подкатегория</UiButton>
+          <UiButton v-if="!isSeo" variant="ghost" size="sm" @click="openCreate(row.id)">+ Подкатегория</UiButton>
           <UiButton variant="ghost" size="sm" @click="openEdit(row)">Изменить</UiButton>
-          <UiButton variant="ghost" size="sm" @click="merging = row">Объединить</UiButton>
-          <UiButton variant="ghost" size="sm" @click="deleting = row">✕</UiButton>
+          <template v-if="!isSeo">
+            <UiButton variant="ghost" size="sm" @click="merging = row">Объединить</UiButton>
+            <UiButton variant="ghost" size="sm" @click="deleting = row">✕</UiButton>
+          </template>
         </div>
       </li>
     </ul>
@@ -664,13 +671,14 @@ const mergeOptions = computed(() =>
           :hint="editing ? 'Изменение сломает существующие ссылки на категорию' : undefined"
           for="c-slug"
         >
-          <UiInput id="c-slug" v-model="form.slug" />
+          <UiInput id="c-slug" v-model="form.slug" :disabled="isSeo" />
         </UiField>
 
         <UiField label="Родительская категория" for="c-parent">
           <UiSelect
             id="c-parent"
             v-model="form.parentId"
+            :disabled="isSeo"
             :options="[
               { value: '', label: 'Корневая категория' },
               ...categoryOptions.filter((o) => o.value !== editing?.id)
@@ -705,12 +713,12 @@ const mergeOptions = computed(() =>
           hint="Пусто или 0 — сортировать по числу товаров"
           for="c-order"
         >
-          <UiInput id="c-order" v-model="form.sortOrder" type="number" min="0" />
+          <UiInput id="c-order" v-model="form.sortOrder" type="number" min="0" :disabled="isSeo" />
         </UiField>
 
         <div class="form-switches">
-          <UiCheckbox v-model="form.isVisible" label="Показывать в каталоге" />
-          <UiCheckbox v-model="form.isFeatured" label="Закрепить на главной" />
+          <UiCheckbox v-model="form.isVisible" label="Показывать в каталоге" :disabled="isSeo" />
+          <UiCheckbox v-model="form.isFeatured" label="Закрепить на главной" :disabled="isSeo" />
         </div>
 
         <UiField label="SEO title" hint="Пусто — берётся название" for="c-seo-title">

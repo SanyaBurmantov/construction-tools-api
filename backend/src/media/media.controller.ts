@@ -12,6 +12,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AdminGuard } from '../admin/admin.guard';
+import { SeoAccess } from '../admin/seo-access';
 import { MAX_IMAGE_BYTES } from './image-mirror';
 import { ImageMirrorService } from './image-mirror.service';
 import { MediaUploadService, UploadKind } from './media-upload.service';
@@ -42,6 +43,7 @@ export class MediaAdminController {
    * attachment, anything else for category tiles and brand logos. Answers the public URL to put into the form's field.
    */
   @Post('upload')
+  @SeoAccess()
   @HttpCode(201)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @UseInterceptors(

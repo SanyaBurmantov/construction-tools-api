@@ -31,7 +31,7 @@ const wishlist = useWishlistStore()
 const compare = useCompareStore()
 // Accounts are optional on the storefront: guests still check out. The header
 // only shows who is signed in — and, for an ADMIN, the way into /admin.
-const { user, isAdmin, isAuthenticated } = useAuth()
+const { user, canUseAdmin, isAuthenticated } = useAuth()
 const { formatPrice } = useFormatPrice()
 
 // Two small SSR fetches, started together.
@@ -327,7 +327,7 @@ onBeforeUnmount(() => {
           <!-- The session is an HttpOnly cookie SSR never sees, so this can
                only be decided on the client. -->
           <ClientOnly>
-            <NuxtLink v-if="isAdmin" to="/admin" class="admin-link">Админка</NuxtLink>
+            <NuxtLink v-if="canUseAdmin" to="/admin" class="admin-link">Админка</NuxtLink>
           </ClientOnly>
         </div>
       </div>
@@ -604,7 +604,7 @@ onBeforeUnmount(() => {
           <NuxtLink :to="isAuthenticated ? '/account' : '/login'" class="mobile-link">
             {{ isAuthenticated ? 'Личный кабинет' : 'Вход и регистрация' }}
           </NuxtLink>
-          <NuxtLink v-if="isAdmin" to="/admin" class="mobile-link">Админка</NuxtLink>
+          <NuxtLink v-if="canUseAdmin" to="/admin" class="mobile-link">Админка</NuxtLink>
         </ClientOnly>
 
         <p class="mobile-heading">Категории</p>

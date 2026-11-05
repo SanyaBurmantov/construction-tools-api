@@ -15,7 +15,7 @@ type AuditEntry = {
   ip: string | null
   durationMs: number | null
   createdAt: string
-  actor: { id: string, login: string, role: 'CUSTOMER' | 'ADMIN' } | null
+  actor: { id: string, login: string, role: 'CUSTOMER' | 'ADMIN' | 'SEO' } | null
 }
 
 const filters = reactive({

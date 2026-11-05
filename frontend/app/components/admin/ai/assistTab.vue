@@ -8,7 +8,7 @@
  */
 import type { AiAssistJob, AiAssistOverview, AiPrompt } from '~/types/ai'
 
-const { adminFetch, errorMessage } = useAdminApi()
+const { adminFetch, errorMessage, isSeo } = useAdminApi()
 const toast = useAppToast()
 const { run, busy } = useAdminAction()
 
@@ -105,6 +105,10 @@ const section = ref('suggestions')
         Помощник сам меняет только то, что дёшево исправить и что откатывается; остальное предлагает ниже.
       </p>
 
+      <UiAlert v-if="isSeo" tone="info">
+        Включает работы, задаёт лимиты и шаблон автопилота администратор — они тратят оплаченный баланс DeepSeek. Предложения ниже можно принимать и отклонять.
+      </UiAlert>
+
       <div class="jobs">
         <article v-for="job in data.jobs" :key="job.key" class="job" :class="{ 'is-on': job.settings.enabled }">
           <header>
@@ -112,14 +116,14 @@ const section = ref('suggestions')
             <UiCheckbox
               :model-value="job.settings.enabled"
               :label="job.settings.enabled ? 'Включено' : 'Выключено'"
-              :disabled="busy === `job:${job.key}`"
+              :disabled="isSeo || busy === `job:${job.key}`"
               @update:model-value="save(job, { enabled: Boolean($event) }, $event ? 'Включено' : 'Выключено')"
             />
           </header>
           <p class="muted">{{ job.description }}</p>
 
           <div class="limit">
-            <UiInput v-model="daily[job.key]" type="number" min="0" max="5000" size="sm" :aria-label="`Лимит: ${job.unit}`" />
+            <UiInput v-model="daily[job.key]" type="number" min="0" max="5000" size="sm" :disabled="isSeo" :aria-label="`Лимит: ${job.unit}`" />
             <span class="muted">{{ job.unit }}</span>
             <UiButton
               v-if="Number(daily[job.key]) !== job.settings.daily"
@@ -139,6 +143,7 @@ const section = ref('suggestions')
                 :model-value="job.settings.template ?? ''"
                 :options="templateOptions"
                 size="sm"
+                :disabled="isSeo"
                 @update:model-value="save(job, { template: String($event) }, 'Шаблон автопилота сохранён')"
               />
             </UiField>
@@ -148,6 +153,7 @@ const section = ref('suggestions')
                 :key="field.key"
                 :model-value="(job.settings.fields ?? []).includes(field.key)"
                 :label="field.label"
+                :disabled="isSeo"
                 @update:model-value="toggleAutopilotField(job, field.key, Boolean($event))"
               />
             </div>
@@ -162,7 +168,7 @@ const section = ref('suggestions')
           </p>
 
           <div class="actions">
-            <UiButton size="sm" variant="ghost" :loading="busy === `run:${job.key}`" :disabled="!data.enabled" @click="runNow(job)">
+            <UiButton size="sm" variant="ghost" :loading="busy === `run:${job.key}`" :disabled="isSeo || !data.enabled" @click="runNow(job)">
               Шаг сейчас
             </UiButton>
             <UiButton v-if="RESULTS_AT[job.key]" size="sm" variant="ghost" :to="RESULTS_AT[job.key]!.to">

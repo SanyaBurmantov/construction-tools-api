@@ -9,9 +9,12 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../auth/auth-request';
+import { isSeoRequest, productForSeo, SeoAccess } from './seo-access';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 import { AdminCreateBrandDto } from './dto/admin-create-brand.dto';
@@ -121,8 +124,14 @@ export class AdminController {
   }
 
   @Get('products')
-  getProducts(@Query() query: AdminProductQueryDto) {
-    return this.adminService.getProducts(query);
+  @SeoAccess()
+  async getProducts(
+    @Query() query: AdminProductQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.adminService.getProducts(query);
+    if (!isSeoRequest(req)) return result;
+    return { ...result, data: result.data.map((p) => productForSeo(p)) };
   }
 
   /**
@@ -137,8 +146,13 @@ export class AdminController {
   }
 
   @Get('products/:id')
-  getProduct(@Param('id', ParseUUIDPipe) id: string) {
-    return this.adminService.getProduct(id);
+  @SeoAccess()
+  async getProduct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const product = await this.adminService.getProduct(id);
+    return isSeoRequest(req) ? productForSeo(product) : product;
   }
 
   @Post('products')
@@ -147,8 +161,15 @@ export class AdminController {
   }
 
   @Patch('products/:id')
-  updateProduct(@Param('id') id: string, @Body() dto: AdminUpdateProductDto) {
-    return this.adminService.updateProduct(id, dto);
+  @SeoAccess()
+  async updateProduct(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdateProductDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    if (!isSeoRequest(req)) return this.adminService.updateProduct(id, dto);
+    await this.adminService.assertSeoEdit('product', id, dto);
+    return productForSeo(await this.adminService.updateProduct(id, dto));
   }
 
   @Delete('products/:id')
@@ -157,6 +178,7 @@ export class AdminController {
   }
 
   @Get('brands')
+  @SeoAccess()
   getBrands() {
     return this.adminService.getBrands();
   }
@@ -167,7 +189,14 @@ export class AdminController {
   }
 
   @Patch('brands/:id')
-  updateBrand(@Param('id') id: string, @Body() dto: AdminUpdateBrandDto) {
+  @SeoAccess()
+  async updateBrand(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdateBrandDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    if (isSeoRequest(req))
+      await this.adminService.assertSeoEdit('brand', id, dto);
     return this.adminService.updateBrand(id, dto);
   }
 
@@ -182,6 +211,7 @@ export class AdminController {
   }
 
   @Get('categories')
+  @SeoAccess()
   getCategories() {
     return this.adminService.getCategories();
   }
@@ -350,7 +380,15 @@ export class AdminController {
   }
 
   @Patch('categories/:id')
-  updateCategory(@Param('id') id: string, @Body() dto: AdminUpdateCategoryDto) {
+  @SeoAccess()
+  async updateCategory(
+    @Param('id') id: string,
+    @Body() dto: AdminUpdateCategoryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    if (isSeoRequest(req)) {
+      await this.adminService.assertSeoEdit('category', id, dto);
+    }
     return this.adminService.updateCategory(id, dto);
   }
 

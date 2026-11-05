@@ -7,7 +7,7 @@
  * not the `ADMIN_TOKEN` form it used to be — that token stayed a
  * service-to-service header.
  */
-const { authorized, errorMessage, refresh, logout, user, isAdmin }
+const { authorized, errorMessage, refresh, logout, user, isAdmin, isSeo, canUseAdmin }
   = useAdminApi()
 const { login: signInWithPassword, errorCode } = useAuth()
 const { stats: badges, load: loadStats } = useAdminStats()
@@ -21,9 +21,16 @@ const credentials = reactive({ login: '', password: '', otp: '' })
 const needsOtp = ref(false)
 
 /** Signed in, but as a customer — a different problem from "not signed in". */
-const forbidden = computed(() => Boolean(user.value) && !isAdmin.value)
+const forbidden = computed(() => Boolean(user.value) && !canUseAdmin.value)
 
-const nav = computed(() => [
+/**
+ * The SEO specialist's screens (backend `admin/seo-access.ts` decides what the
+ * API answers; this only keeps the menu and the pages honest about it).
+ */
+const SEO_PATHS = ['/admin/plans', '/admin/products', '/admin/categories', '/admin/brands', '/admin/traffic', '/admin/search', '/admin/ai', '/admin/docs']
+const seoAllowed = (path: string) => SEO_PATHS.some(prefix => path === prefix || path.startsWith(`${prefix}/`))
+
+const allNav = computed(() => [
   { label: 'Дашборд', to: '/admin', icon: 'grid', exact: true },
   { label: 'Планы', to: '/admin/plans', icon: 'flag' },
   { label: 'Заказы', to: '/admin/orders', icon: 'cart', badge: badges.value?.newOrders },
@@ -64,6 +71,7 @@ const nav = computed(() => [
   { label: 'ИИ-тексты', to: '/admin/ai', icon: 'spark' },
   { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
+const nav = computed(() => (isSeo.value ? allNav.value.filter(item => seoAllowed(item.to)) : allNav.value))
 
 const ICONS: Record<string, string> = {
   flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
@@ -99,8 +107,8 @@ const ICONS: Record<string, string> = {
  * The counters are now loaded separately: they are decoration, not a gate.
  */
 function verify() {
-  authorized.value = isAdmin.value
-  if (authorized.value) void loadBadges()
+  authorized.value = canUseAdmin.value
+  if (isAdmin.value) void loadBadges()
   return authorized.value
 }
 
@@ -125,7 +133,7 @@ async function signIn() {
       password: credentials.password,
       otp: needsOtp.value ? credentials.otp.trim() : undefined,
     })
-    if (account.role !== 'ADMIN') {
+    if (account.role !== 'ADMIN' && account.role !== 'SEO') {
       signInError.value = 'У этой учётной записи нет прав администратора'
       return
     }
@@ -172,11 +180,18 @@ watch(() => route.fullPath, () => {
 // each one re-ran the heaviest query in the app. Counters only — a page change
 // must not re-run the access check.
 watch(() => route.path, () => {
-  if (authorized.value) void loadBadges()
+  if (authorized.value && isAdmin.value) void loadBadges()
 })
 
+/** A screen outside the SEO specialist's part: say so instead of a page of 403s. */
+const seoBlocked = computed(() => authorized.value && isSeo.value && !seoAllowed(route.path))
+// The dashboard is the shop's money and orders: the SEO specialist starts at the plans.
+watch([() => route.path, authorized, isSeo], ([path]) => {
+  if (authorized.value && isSeo.value && path === '/admin') void navigateTo('/admin/plans', { replace: true })
+}, { immediate: true })
+
 // New leads and orders arrive while the panel stays open (useAdminInbox).
-startAdminInboxPolling(() => authorized.value)
+startAdminInboxPolling(() => authorized.value && isAdmin.value)
 const { inbox } = useAdminInbox()
 /** «(3) …» in the tab title: what waits for an answer, seen from another tab. */
 const waiting = computed(() => (inbox.value ? inbox.value.newLeads + inbox.value.newOrders : 0))
@@ -318,7 +333,15 @@ useHead({
         </header>
 
         <main class="page">
-          <slot />
+          <UiEmpty
+            v-if="seoBlocked"
+            icon="alert"
+            title="Раздел только для администратора"
+            description="У SEO-специалиста свои разделы — они в меню слева."
+          >
+            <UiButton to="/admin/plans" size="sm">К планам</UiButton>
+          </UiEmpty>
+          <slot v-else />
         </main>
       </div>
     </div>
