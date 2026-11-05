@@ -60,6 +60,34 @@ export class SearchLogService {
    * searches with their click rate, the ones that found nothing, and the
    * latest events.
    */
+  private popularCache: { at: number; terms: Promise<string[]> } | null = null;
+
+  /**
+   * What people search for, for «Популярное:» under the home page search:
+   * terms with results that at least two different visitors used in 30 days,
+   * most visitors first. Cached an hour; empty until the journal has some.
+   */
+  popularTerms(limit = 4): Promise<string[]> {
+    const hit = this.popularCache;
+    if (hit && Date.now() - hit.at < 60 * 60_000) return hit.terms;
+    const terms = this.prisma.$queryRaw<Array<{ term: string }>>`
+        SELECT term FROM "SearchEvent"
+        WHERE kind = 'SEARCH' AND results > 0
+          AND "createdAt" > now() - interval '30 days'
+          AND length(term) BETWEEN 3 AND 40
+        GROUP BY term
+        HAVING count(DISTINCT COALESCE("ipHash", id)) >= 2
+        ORDER BY count(DISTINCT COALESCE("ipHash", id)) DESC, term
+        LIMIT ${limit}`
+      .then((rows) => rows.map((row) => row.term))
+      .catch(() => {
+        this.popularCache = null;
+        return [] as string[];
+      });
+    this.popularCache = { at: Date.now(), terms };
+    return terms;
+  }
+
   async report(days: number) {
     const since = new Date(Date.now() - days * 86_400_000);
     const [totals] = await this.prisma.$queryRaw<

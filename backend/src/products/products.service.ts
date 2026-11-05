@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { nonCoreCategoryIds } from './core-catalog';
 import {
   articlePatterns,
   itemCodes,
@@ -108,6 +109,7 @@ export function facetsCacheKey(filter: ProductFilterDto): string {
     filter.priceMax ?? null,
     Boolean(filter.inStock),
     Boolean(filter.onSale),
+    Boolean(filter.core),
     filter.specs ?? null,
     filter.search?.trim().toLowerCase() || null,
   ]);
@@ -375,6 +377,23 @@ export class ProductService {
           .map((offer) => offer.lastSync)
           .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
     };
+  }
+
+  private nonCoreCache: { at: number; ids: Promise<string[]> } | null = null;
+
+  /** Categories under the non-core roots (`core-catalog.ts`), cached 10 min. */
+  nonCoreIds(): Promise<string[]> {
+    const hit = this.nonCoreCache;
+    if (hit && Date.now() - hit.at < 10 * 60_000) return hit.ids;
+    const ids = this.prisma.category
+      .findMany({ select: { id: true, parentId: true, name: true } })
+      .then(nonCoreCategoryIds)
+      .catch((error: unknown) => {
+        this.nonCoreCache = null;
+        throw error;
+      });
+    this.nonCoreCache = { at: Date.now(), ids };
+    return ids;
   }
 
   /** Parents of a category, root first (by `parentId`, never `path`). */
@@ -697,6 +716,7 @@ export class ProductService {
       : undefined;
 
     const specSelections = parseSpecFilter(filter.specs);
+    const nonCore = filter.core ? await this.nonCoreIds() : null;
 
     // Where is rebuilt per facet with that facet's own dimension excluded,
     // so counts answer "what would I get if I picked this value instead".
@@ -710,6 +730,7 @@ export class ProductService {
       // `AND` too and the last writer would otherwise win.
       const and: Prisma.ProductWhereInput[] = [];
       if (searchWhere) and.push(searchWhere);
+      if (nonCore?.length) and.push({ categoryId: { notIn: nonCore } });
       if (filter.inStock) where.stockStatus = 'in_stock';
       // A product counts as discounted only when oldPrice really exceeds the
       // current price — parsers sometimes leave a stale oldPrice behind.
