@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { login, isAdmin, errorMessage, errorCode } = useAuth()
+const { login, canUseAdmin, errorMessage, errorCode } = useAuth()
 const { redirect, reason, otherLink: registerLink, leaveIfSignedIn } = useAuthRedirect('/register')
 const toast = useAppToast()
 
@@ -25,7 +25,7 @@ async function submit() {
       otp: needsOtp.value ? form.otp.trim() : undefined,
     })
     toast.success('Вы вошли в аккаунт')
-    await navigateTo(redirect.value || (isAdmin.value ? '/admin' : '/account'))
+    await navigateTo(redirect.value || (canUseAdmin.value ? '/admin' : '/account'))
   } catch (err) {
     const code = errorCode(err)
     if (code === 'OTP_REQUIRED') {

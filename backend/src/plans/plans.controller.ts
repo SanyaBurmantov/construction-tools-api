@@ -11,12 +11,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AdminGuard } from '../admin/admin.guard';
+import { SeoAccess } from '../admin/seo-access';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { PlanItemDto } from './plans.dto';
 import { PlansService } from './plans.service';
 
 @Controller('admin/plans')
 @UseGuards(AdminGuard)
+@SeoAccess()
 export class PlansAdminController {
   constructor(private readonly plans: PlansService) {}
 

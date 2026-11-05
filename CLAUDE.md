@@ -104,6 +104,20 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (`totpLastStep`). A lost phone: `/admin/users/:id` → «Снять блокировку
   входа» (`POST /admin/users/:id/unlock-sign-in`, not on yourself through a
   session; the `x-admin-token` path can).
+  **A third role, `SEO`** (05.11, `admin/seo-access.ts`): the SEO
+  specialist enters the admin but `AdminGuard` lets that session through
+  **only** on routes marked `@SeoAccess()` (route or controller;
+  `@AdminOnly()` closes one route of an open controller again) — a new admin
+  route is closed to the role by default. Open: plans, traffic/search
+  reports, AI texts (the assistant's job switches, limits and «шаг сейчас»
+  stay ADMIN — they spend the DeepSeek balance), media upload, and the
+  product / category / brand list + PATCH, where `assertSeoEdit` refuses
+  any changed field outside `SEO_EDITABLE_FIELDS` (403 naming them; the
+  forms send every field, so an unchanged one passes) and `productForSeo`
+  drops `costPrice`, `sourceProducts`, `priceReviewNeeded`. The layout
+  filters the menu (`SEO_PATHS`), sends `/admin` to `/admin/plans`, shows
+  «Раздел только для администратора» elsewhere, never loads stats/inbox; the
+  forms disable what the role cannot change. Granted in `/admin/users`.
   `AdminGuard` now accepts **either** an ADMIN session **or** the old
   `x-admin-token: $ADMIN_TOKEN` header, which stays the service-to-service
   path (the runbook/CI curl commands depend on it, and it is the rescue path

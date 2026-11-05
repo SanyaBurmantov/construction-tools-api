@@ -3,7 +3,7 @@ import type { AdminBrand } from '~/types/api'
 
 definePageMeta({ layout: 'admin' })
 
-const { adminFetch, errorMessage } = useAdminApi()
+const { adminFetch, errorMessage, isSeo } = useAdminApi()
 const toast = useAppToast()
 const { run, busy } = useAdminAction()
 
@@ -178,7 +178,7 @@ const mergeOptions = computed(() =>
         size="sm"
         class="search"
       />
-      <UiButton @click="openCreate">Добавить</UiButton>
+      <UiButton v-if="!isSeo" @click="openCreate">Добавить</UiButton>
     </AdminPageHead>
 
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
@@ -193,7 +193,7 @@ const mergeOptions = computed(() =>
       :title="search ? 'Ничего не найдено' : 'Брендов пока нет'"
       description="Бренды обычно заводятся парсерами вместе с товарами."
     >
-      <UiButton @click="openCreate">Добавить бренд</UiButton>
+      <UiButton v-if="!isSeo" @click="openCreate">Добавить бренд</UiButton>
     </UiEmpty>
 
     <ul v-else class="grid">
@@ -216,8 +216,10 @@ const mergeOptions = computed(() =>
 
         <div class="brand-actions">
           <UiButton variant="ghost" size="sm" @click="openEdit(brand)">Изменить</UiButton>
-          <UiButton variant="ghost" size="sm" @click="merging = brand">Объединить</UiButton>
-          <UiButton variant="ghost" size="sm" @click="deleting = brand">Удалить</UiButton>
+          <template v-if="!isSeo">
+            <UiButton variant="ghost" size="sm" @click="merging = brand">Объединить</UiButton>
+            <UiButton variant="ghost" size="sm" @click="deleting = brand">Удалить</UiButton>
+          </template>
         </div>
       </li>
     </ul>
@@ -231,7 +233,7 @@ const mergeOptions = computed(() =>
 
       <div class="admin-form">
         <UiField label="Название" required for="b-name">
-          <UiInput id="b-name" v-model="form.name" />
+          <UiInput id="b-name" v-model="form.name" :disabled="isSeo" />
         </UiField>
 
         <UiField
@@ -240,7 +242,7 @@ const mergeOptions = computed(() =>
           :hint="editing ? 'Изменение сломает существующие ссылки на бренд' : undefined"
           for="b-slug"
         >
-          <UiInput id="b-slug" v-model="form.slug" />
+          <UiInput id="b-slug" v-model="form.slug" :disabled="isSeo" />
         </UiField>
 
         <UiField label="Страна" for="b-country">

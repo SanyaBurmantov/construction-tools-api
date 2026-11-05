@@ -910,6 +910,10 @@ model CategoryRepairConflict {
 enum UserRole {
   CUSTOMER
   ADMIN
+  /// SEO specialist: the admin's SEO screens only — plans, traffic, search,
+  /// AI texts, and the *text* fields of products, categories and brands
+  /// (`admin/seo-access.ts`). No orders, customers, prices, costs, suppliers.
+  SEO
 }
 
 /// Физическое или юридическое лицо. Chosen at registration; drives what the

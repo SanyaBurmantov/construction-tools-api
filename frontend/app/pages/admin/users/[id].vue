@@ -96,7 +96,7 @@ function setStatus(order: Order, status: OrderStatus) {
 
 /* ---- Account actions --------------------------------------------------- */
 /** Role and access changes wait for a confirmation: they take effect at once. */
-const pendingAccount = ref<{ body: Record<string, unknown>, message: string, title: string } | null>(null)
+const pendingAccount = ref<{ body: Record<string, unknown>, message: string, title: string, note?: string } | null>(null)
 
 async function confirmAccount() {
   const pending = pendingAccount.value
@@ -159,7 +159,7 @@ async function resetPassword() {
   }
 }
 
-const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администратор' : 'Покупатель')
+const roleLabel = (role: UserRole) => USER_ROLE_LABEL[role]
 </script>
 
 <template>
@@ -176,7 +176,7 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
       <AdminPageHead :title="account.login">
         <template #description>
           <span class="badges">
-            <UiBadge :tone="account.role === 'ADMIN' ? 'brand' : 'neutral'" size="sm">
+            <UiBadge :tone="USER_ROLE_TONE[account.role]" size="sm">
               {{ roleLabel(account.role) }}
             </UiBadge>
             <UiBadge size="sm">{{ CUSTOMER_TYPE_LABEL[account.customerType] }}</UiBadge>
@@ -198,6 +198,20 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
           @click="unlockOpen = true"
         >
           Снять блокировку входа
+        </UiButton>
+        <UiButton
+          v-if="!isMe && account.role !== 'ADMIN'"
+          size="sm"
+          variant="ghost"
+          :loading="busy === 'account'"
+          @click="pendingAccount = {
+            body: { role: account.role === 'SEO' ? 'CUSTOMER' : 'SEO' },
+            message: account.role === 'SEO' ? 'Роль SEO-специалиста снята' : 'Выдана роль SEO-специалиста',
+            title: account.role === 'SEO' ? 'Снять роль SEO-специалиста?' : 'Сделать SEO-специалистом?',
+            note: account.role === 'SEO' ? undefined : 'Откроются планы, посещаемость, поиск, ИИ-тексты и тексты товаров, категорий и брендов. Заказы, покупатели, цены, закупка и поставщики останутся закрыты.',
+          }"
+        >
+          {{ account.role === 'SEO' ? 'Снять роль SEO' : 'Сделать SEO-специалистом' }}
         </UiButton>
         <UiButton
           v-if="!isMe"
@@ -492,6 +506,7 @@ const roleLabel = (role: UserRole) => (role === 'ADMIN' ? 'Администра�
       @update:open="pendingAccount = null"
       @confirm="confirmAccount"
     >
+      <template v-if="pendingAccount?.note">{{ pendingAccount.note }} </template>
       Изменение вступит в силу сразу — с ближайшего запроса пользователя.
     </UiConfirm>
     <UiConfirm

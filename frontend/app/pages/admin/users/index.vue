@@ -158,7 +158,7 @@ async function save() {
         body: { ...shared, login: form.login.trim(), password: form.password },
       })
       toast.success(
-        form.role === 'ADMIN' ? 'Администратор создан' : 'Пользователь создан'
+        form.role === 'CUSTOMER' ? 'Пользователь создан' : `${USER_ROLE_LABEL[form.role]}: учётная запись создана`
       )
     }
     editorOpen.value = false
@@ -206,6 +206,7 @@ const isMe = (row: AdminUser) => row.id === me.value?.id
       <UiButton variant="secondary" @click="openCreate('CUSTOMER')">
         Добавить покупателя
       </UiButton>
+      <UiButton variant="secondary" @click="openCreate('SEO')">Добавить SEO-специалиста</UiButton>
       <UiButton @click="openCreate('ADMIN')">Добавить администратора</UiButton>
     </AdminPageHead>
 
@@ -223,6 +224,7 @@ const isMe = (row: AdminUser) => row.id === me.value?.id
         :options="[
           { value: '', label: 'Все роли' },
           { value: 'ADMIN', label: 'Администраторы' },
+          { value: 'SEO', label: 'SEO-специалисты' },
           { value: 'CUSTOMER', label: 'Покупатели' }
         ]"
       />
@@ -259,8 +261,8 @@ const isMe = (row: AdminUser) => row.id === me.value?.id
       </template>
 
       <template #cell-role="{ row }">
-        <UiBadge :tone="row.role === 'ADMIN' ? 'brand' : 'neutral'" size="sm">
-          {{ row.role === 'ADMIN' ? 'Администратор' : 'Покупатель' }}
+        <UiBadge :tone="USER_ROLE_TONE[row.role as UserRole]" size="sm">
+          {{ USER_ROLE_LABEL[row.role as UserRole] }}
         </UiBadge>
         <UiBadge v-if="!row.isActive" tone="danger" size="sm">Отключён</UiBadge>
       </template>
@@ -337,6 +339,7 @@ const isMe = (row: AdminUser) => row.id === me.value?.id
               v-model="form.role"
               :options="[
                 { value: 'CUSTOMER', label: 'Покупатель' },
+                { value: 'SEO', label: 'SEO-специалист — тексты и SEO' },
                 { value: 'ADMIN', label: 'Администратор' }
               ]"
             />

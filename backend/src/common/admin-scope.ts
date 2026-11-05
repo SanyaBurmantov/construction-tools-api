@@ -17,6 +17,7 @@ export function isAdminScope(request: AuthenticatedRequest): boolean {
   return (
     request.adminToken === true ||
     request.authUser?.role === UserRole.ADMIN ||
+    request.authUser?.role === UserRole.SEO ||
     isAdminPath(request)
   );
 }

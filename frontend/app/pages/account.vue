@@ -38,6 +38,8 @@ type Summary = {
 const {
   user,
   isAdmin,
+  isSeo,
+  canUseAdmin,
   authFetch,
   refresh,
   logout,
@@ -463,10 +465,11 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
           {{ user.login }}
           <UiBadge size="sm">{{ CUSTOMER_TYPE_LABEL[user.customerType] }}</UiBadge>
           <UiBadge v-if="isAdmin" tone="brand" size="sm">Администратор</UiBadge>
+          <UiBadge v-else-if="isSeo" tone="info" size="sm">SEO-специалист</UiBadge>
         </p>
       </div>
       <div class="head-actions">
-        <UiButton v-if="isAdmin" to="/admin" variant="secondary">Админка</UiButton>
+        <UiButton v-if="canUseAdmin" to="/admin" variant="secondary">Админка</UiButton>
         <UiButton variant="ghost" @click="signOut">Выйти</UiButton>
       </div>
     </header>

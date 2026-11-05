@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../admin/admin.guard';
+import { SeoAccess } from '../admin/seo-access';
 import { SearchEventDto } from './search-log.dto';
 import { SearchLogService } from './search-log.service';
 
@@ -27,6 +28,7 @@ export class SearchLogController {
 }
 
 @Controller('admin/search')
+@SeoAccess()
 @UseGuards(AdminGuard)
 export class SearchLogAdminController {
   constructor(private readonly searchLog: SearchLogService) {}

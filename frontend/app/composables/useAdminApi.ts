@@ -13,7 +13,7 @@ import type { AdminStats } from '~/types/api'
  */
 export function useAdminApi() {
   const config = useRuntimeConfig()
-  const { user, isAdmin, isAuthenticated, refresh, logout, errorMessage } = useAuth()
+  const { user, isAdmin, isSeo, canUseAdmin, isAuthenticated, refresh, logout, errorMessage } = useAuth()
   const authorized = useState('admin-authorized', () => false)
 
   async function adminFetch<T>(path: string, options: Parameters<typeof $fetch>[1] = {}) {
@@ -44,6 +44,8 @@ export function useAdminApi() {
     hasSession: isAuthenticated,
     user,
     isAdmin,
+    isSeo,
+    canUseAdmin,
     authorized,
     refresh,
     logout,

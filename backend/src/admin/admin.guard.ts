@@ -5,6 +5,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { UserRole } from '@prisma/client';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { AuthService } from '../auth/auth.service';
@@ -14,6 +15,7 @@ import {
   assertNotCrossSite,
   clearStaleSessionCookie,
 } from '../auth/session-cookie';
+import { SEO_ACCESS } from './seo-access';
 
 /**
  * Constant-time comparison. Hashing first gives both sides the same length,
@@ -34,10 +36,16 @@ function sameSecret(given: string, expected: string): boolean {
  * 2. **`x-admin-token: $ADMIN_TOKEN`** — the service-to-service path. Kept
  *    deliberately: the runbook/CI curl commands depend on it, and it is the
  *    rescue path when nobody can log in.
+ *
+ * An **SEO** account passes only on routes marked `@SeoAccess()` (on the
+ * route or its controller) — everything else stays ADMIN only.
  */
 @Injectable()
 export class AdminGuard implements CanActivate {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly reflector: Reflector = new Reflector(),
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
@@ -63,7 +71,7 @@ export class AdminGuard implements CanActivate {
       }
       // 403, not 401: the session is valid, the account simply isn't an admin.
       // The UI keeps the login instead of bouncing to the login screen.
-      if (session.user.role !== UserRole.ADMIN)
+      if (!this.allows(session.user.role, context))
         throw new ForbiddenException('Недостаточно прав');
       request.authUser = session.user;
       request.authSessionId = session.sessionId;
@@ -71,5 +79,16 @@ export class AdminGuard implements CanActivate {
     }
 
     throw new UnauthorizedException('Требуется авторизация администратора');
+  }
+
+  private allows(role: UserRole, context: ExecutionContext): boolean {
+    if (role === UserRole.ADMIN) return true;
+    if (role !== UserRole.SEO) return false;
+    return (
+      this.reflector.getAllAndOverride<boolean>(SEO_ACCESS, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
   }
 }

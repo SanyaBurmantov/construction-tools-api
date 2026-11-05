@@ -15,6 +15,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { AiEntity } from '@prisma/client';
 import { AdminGuard } from '../admin/admin.guard';
+import { SeoAccess } from '../admin/seo-access';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { AiService } from './ai.service';
 import {
@@ -35,6 +36,7 @@ import {
 @ApiTags('Admin AI')
 @UseGuards(AdminGuard)
 @Controller('admin/ai')
+@SeoAccess()
 export class AiController {
   constructor(private readonly ai: AiService) {}
 

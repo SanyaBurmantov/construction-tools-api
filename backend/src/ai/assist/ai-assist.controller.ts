@@ -16,6 +16,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { AiSuggestionKind, AiSuggestionStatus } from '@prisma/client';
 import { AdminGuard } from '../../admin/admin.guard';
+import { AdminOnly, SeoAccess } from '../../admin/seo-access';
 import type { AuthenticatedRequest } from '../../auth/auth-request';
 import { ASSIST_JOBS, AssistJob } from './assist-jobs';
 import { AiAssistService } from './ai-assist.service';
@@ -33,6 +34,7 @@ const who = (req: AuthenticatedRequest) =>
 @ApiTags('Admin AI assistant')
 @UseGuards(AdminGuard)
 @Controller('admin/ai/assist')
+@SeoAccess()
 export class AiAssistController {
   constructor(private readonly assist: AiAssistService) {}
 
@@ -42,6 +44,7 @@ export class AiAssistController {
   }
 
   @Put('jobs/:job')
+  @AdminOnly()
   update(
     @Param('job') key: string,
     @Body()
@@ -68,6 +71,7 @@ export class AiAssistController {
 
   /** One step now, in this process — even when the job is switched off. */
   @Post('jobs/:job/run')
+  @AdminOnly()
   run(@Param('job') key: string) {
     return this.assist.step(job(key), { force: true });
   }
