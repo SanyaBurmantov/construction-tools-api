@@ -38,12 +38,16 @@ function fold(token: string): string {
   return token.replace(/kh/g, 'h').replace(/ts/g, 'c').replace(/y/g, 'i');
 }
 
+/** Function words that prove nothing about which product is meant. */
+const STOP_WORDS = new Set(['dlia', 'bez', 'pod', 'nad', 'ili', 'pri', 'sht']);
+
 function words(slug: string): Set<string> {
   return new Set(
     slug
       .split('-')
       .filter((t) => t.length >= 3 && !/^\d+$/.test(t))
-      .map(fold),
+      .map(fold)
+      .filter((t) => !STOP_WORDS.has(t)),
   );
 }
 
@@ -83,4 +87,87 @@ export function pickLegacyProduct<
 /** ILIKE patterns for the candidates: a hyphen stands for any one character. */
 export function articlePatterns(slug: string): string[] {
   return articleCandidates(slug).map((c) => c.replace(/-/g, '_'));
+}
+
+/**
+ * Second chance when the exact article is not ours: the item code inside it.
+ * STARFIX articles read «pack-code-quantity» (`SMP-63731-1` is the 63731 screw
+ * in a bag; we carry `SMZ1-63731-2`, `SMC2-63731-50`, `SM-63731-700`). Codes
+ * are digit runs of 4+ among the first three tokens.
+ */
+export function itemCodes(slug: string): string[] {
+  return [
+    ...new Set(
+      slug
+        .toLowerCase()
+        .split('-')
+        .slice(0, 3)
+        .filter((t) => /^\d{4,}$/.test(t)),
+    ),
+  ];
+}
+
+/** Name words the address and a product share (both transliterations folded). */
+export function sharedNameWords(slug: string, name: string): number {
+  const own = words(generateSlug(name));
+  let shared = 0;
+  for (const w of words(slug)) if (own.has(w)) shared++;
+  return shared;
+}
+
+/**
+ * Whether a product's name backs the address: at least two shared words and
+ * more than half of the address's own. «Мембрана для ёмкости … PA-1003»
+ * shares three words with an address for the tank PA-1003 itself, out of six
+ * — a part, not the product, so no.
+ */
+function nameBacks(slug: string, name: string): boolean {
+  const shared = sharedNameWords(slug, name);
+  return shared >= 2 && shared / Math.max(1, words(slug).size) > 0.5;
+}
+
+/**
+ * The words several product names begin with — «Шуруп 10х60 мм шестигр.
+ * головка, цинк, DIN 571» for three packs of one screw — as a search term.
+ */
+export function commonNamePrefix(names: string[]): string {
+  if (!names.length) return '';
+  let prefix = names[0];
+  for (const name of names.slice(1)) {
+    let i = 0;
+    while (i < prefix.length && i < name.length && prefix[i] === name[i]) i++;
+    prefix = prefix.slice(0, i);
+  }
+  // Whole words only, without a dangling bracket or comma.
+  const full = names.every(
+    (n) => n.length === prefix.length || /[\s(,]/.test(n[prefix.length] ?? ' '),
+  );
+  const cut = full ? prefix : prefix.slice(0, prefix.lastIndexOf(' ') + 1);
+  return cut.replace(/[\s(,.;:-]+$/u, '').trim();
+}
+
+export type LegacyTarget = { slug: string } | { search: string };
+
+/**
+ * By item code: products whose article holds the code and whose names share
+ * at least two words with the address. One → that card; several (packs of
+ * one item) → a search for what their names have in common.
+ */
+export function pickByItemCode<
+  T extends { slug: string; sku: string | null; name: string },
+>(slug: string, products: T[]): LegacyTarget | null {
+  const codes = itemCodes(slug);
+  const matching = products.filter(
+    (p) =>
+      p.sku &&
+      codes.some((code) => articleSlug(p.sku!).split('-').includes(code)) &&
+      nameBacks(slug, p.name),
+  );
+  if (!matching.length) return null;
+  if (matching.length === 1) return { slug: matching[0].slug };
+  const best = Math.max(...matching.map((p) => sharedNameWords(slug, p.name)));
+  const top = matching.filter((p) => sharedNameWords(slug, p.name) === best);
+  if (top.length === 1) return { slug: top[0].slug };
+  const search = commonNamePrefix(top.map((p) => p.name));
+  return search.split(/\s+/).length >= 2 ? { search } : null;
 }

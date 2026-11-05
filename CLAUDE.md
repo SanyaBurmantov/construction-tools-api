@@ -209,6 +209,11 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   on the trigram-indexed `sku`, exact slug compare, name words to tell
   same-article products apart, nothing when still ambiguous) and answers
   `redirectTo`, which the product page turns into a 301 — 119 of 258 found.
+  Second chance, **by item code** (STARFIX «pack-code-qty»: `SMP-63731-1` is
+  the 63731 screw in a pack we do not carry): products whose article holds
+  the code *and* whose name backs more than half of the address's words —
+  one → 301 to it, several packs → `searchTo` = their common name, a 302 to
+  the catalogue search (19 more; 138 of 258).
   **No render-blocking CSS**: `features.inlineStyles: true` inlines every SSR
   style (global `main.scss` included) and `server/plugins/defer-unused-css.ts`
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but

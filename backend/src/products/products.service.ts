@@ -1,5 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { articlePatterns, pickLegacyProduct } from './legacy-product-slug';
+import {
+  articlePatterns,
+  itemCodes,
+  pickByItemCode,
+  pickLegacyProduct,
+  type LegacyTarget,
+} from './legacy-product-slug';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductFilterDto } from './dto/product-filter-dto';
@@ -247,17 +253,33 @@ function escapeLike(value: string) {
 export class ProductService {
   constructor(private prisma: PrismaService) {}
 
-  /** Slug of the published product an article-first address meant, if any. */
-  private async findByLegacySlug(slug: string): Promise<string | null> {
+  /**
+   * Where an article-first address should go (legacy-product-slug.ts): the
+   * card with that exact article, else — by the item code inside it — the
+   * one card or a search over the packs we carry; null for a real 404.
+   */
+  private async findByLegacySlug(slug: string): Promise<LegacyTarget | null> {
     const patterns = articlePatterns(slug);
-    if (!patterns.length) return null;
-    const products = await this.prisma.$queryRaw<
+    if (patterns.length) {
+      const exact = await this.prisma.$queryRaw<
+        Array<{ slug: string; sku: string | null; name: string }>
+      >`
+        SELECT slug, sku, name FROM "Product"
+        WHERE status = 'PUBLISHED' AND sku ILIKE ANY(${patterns}::text[])
+        LIMIT 50`;
+      const hit = pickLegacyProduct(slug, exact);
+      if (hit) return { slug: hit.slug };
+    }
+    const codes = itemCodes(slug);
+    if (!codes.length) return null;
+    const byCode = await this.prisma.$queryRaw<
       Array<{ slug: string; sku: string | null; name: string }>
     >`
       SELECT slug, sku, name FROM "Product"
-      WHERE status = 'PUBLISHED' AND sku ILIKE ANY(${patterns}::text[])
-      LIMIT 50`;
-    return pickLegacyProduct(slug, products)?.slug ?? null;
+      WHERE status = 'PUBLISHED'
+        AND sku ILIKE ANY(${codes.map((c) => `%${c}%`)}::text[])
+      LIMIT 100`;
+    return pickByItemCode(slug, byCode);
   }
 
   async getProductBySlug(slug: string) {
@@ -300,7 +322,9 @@ export class ProductService {
         throw new NotFoundException({
           message: 'Product moved',
           code: 'PRODUCT_LEGACY_SLUG',
-          redirectTo: legacy,
+          ...('slug' in legacy
+            ? { redirectTo: legacy.slug }
+            : { searchTo: legacy.search }),
         });
       }
       throw new NotFoundException('Product not found');
