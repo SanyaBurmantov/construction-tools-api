@@ -96,12 +96,34 @@ const postCost = computed(() => Number(config.public.deliveryPost))
 const { formatPrice } = useFormatPrice()
 
 /* ---- Description tabs -------------------------------------------------- */
-const tab = ref<'description' | 'specs'>('description')
+type DetailsTab = 'description' | 'specs' | 'reviews'
 const shortOpen = ref(false)
 const hasDescription = computed(
   () => Boolean(product.value?.descriptionFull || product.value?.descriptionShort)
 )
 const specs = computed(() => product.value?.productSpecs ?? [])
+/**
+ * Описание / Характеристики / Отзывы. Every panel is rendered into the HTML
+ * and only the inactive ones are hidden (`v-show`): with `v-if` the specs
+ * were never in the page a search engine reads.
+ */
+const tab = ref<DetailsTab>(hasDescription.value ? 'description' : specs.value.length ? 'specs' : 'reviews')
+const detailTabs = computed(() => [
+  ...(hasDescription.value ? [{ value: 'description', label: 'Описание' }] : []),
+  ...(specs.value.length ? [{ value: 'specs', label: 'Характеристики', count: specs.value.length }] : []),
+  { value: 'reviews', label: 'Отзывы', count: product.value?.ratingCount || null },
+])
+
+/** «Все характеристики →», «К отзывам»: open the tab and bring it into view. */
+function openTab(value: DetailsTab) {
+  tab.value = value
+  nextTick(() => document.getElementById('details')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
+// A link to …#reviews (a letter, a search snippet) lands on the open tab.
+onMounted(() => {
+  if (window.location.hash === '#reviews') openTab('reviews')
+})
 
 watch(() => product.value?.id, () => {
   quantity.value = 1
@@ -321,7 +343,7 @@ useHead(() => {
                 size="sm"
                 show-value
               />
-              <a v-if="product.ratingCount" href="#reviews" class="meta-link">К отзывам</a>
+              <a v-if="product.ratingCount" href="#reviews" class="meta-link" @click.prevent="openTab('reviews')">К отзывам</a>
               <span v-if="product.sku" class="meta-item">Арт. {{ product.sku }}</span>
               <span v-if="product.model" class="meta-item">Модель: {{ product.model }}</span>
             </div>
@@ -351,7 +373,7 @@ useHead(() => {
               v-if="(product.productSpecs?.length ?? 0) > KEY_SPEC_COUNT"
               type="button"
               class="all-specs"
-              @click="tab = 'specs'"
+              @click="openTab('specs')"
             >
               Все характеристики ({{ product.productSpecs!.length }}) →
             </button>
@@ -451,26 +473,24 @@ useHead(() => {
       </div>
 
       <!-- Details -->
-      <section v-if="hasDescription || specs.length" class="details">
-        <UiTabs
-          v-model="tab"
-          :tabs="[
-            ...(hasDescription ? [{ value: 'description', label: 'Описание' }] : []),
-            ...(specs.length ? [{ value: 'specs', label: 'Характеристики', count: specs.length }] : [])
-          ]"
-        />
+      <section id="details" class="details">
+        <UiTabs v-model="tab" :tabs="detailTabs" />
 
-        <div v-if="tab === 'description' && hasDescription" class="description">
+        <div v-if="hasDescription" v-show="tab === 'description'" class="description">
           <p>{{ product.descriptionFull || product.descriptionShort }}</p>
         </div>
 
-        <div v-else-if="tab === 'specs' && specs.length" class="specs-table">
+        <div v-if="specs.length" v-show="tab === 'specs'" class="specs-table">
           <dl>
             <div v-for="spec in specs" :key="spec.name">
               <dt>{{ spec.name }}</dt>
               <dd>{{ spec.value }}</dd>
             </div>
           </dl>
+        </div>
+
+        <div v-show="tab === 'reviews'">
+          <ProductReviews :slug="product.slug" :product-name="product.name" in-tab />
         </div>
       </section>
 
@@ -482,7 +502,6 @@ useHead(() => {
         @retry="refreshRecommendations()"
       />
 
-      <ProductReviews :slug="product.slug" :product-name="product.name" />
 
 
       <!-- Sticky buy bar: on a phone the buy box scrolls away long before the
@@ -523,7 +542,8 @@ useHead(() => {
   display: grid;
   align-items: start;
   gap: var(--space-8);
-  grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+  /* Photo and summary half and half on a computer (owner, 2026-11-05). */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 /* ---- Summary ---- */
@@ -784,6 +804,7 @@ useHead(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  scroll-margin-top: var(--space-20, 80px);
 }
 
 .description {
