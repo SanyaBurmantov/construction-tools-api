@@ -1500,3 +1500,31 @@ model BrandCategoryLanding {
   @@index([categoryId])
   @@index([isPublished])
 }
+
+/// One page shown to a visitor — the site's own traffic statistics
+/// (`traffic/`, `/admin/traffic` «Посещаемость»). Reported by the browser, so
+/// crawlers that run no script stay out and a page served from the cache still
+/// counts; bot User-Agents are dropped on arrival. Nothing personal: the
+/// visitor id is a random value the browser keeps, never an account or an IP.
+model PageView {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  /// Path only (no query), ≤ 300 characters.
+  path      String
+  /// What the visitor saw: 200, or 404 for «Страница не найдена».
+  status    Int      @default(200)
+  /// First page of a visit (30 minutes of silence start a new one).
+  isEntry   Boolean  @default(false)
+  /// Random id from the browser's localStorage — counts unique visitors.
+  visitorId String?
+  /// `mobile` | `tablet` | `desktop`, from the User-Agent.
+  device    String
+  /// Entry pages only: «yandex / organic», «direct»… (attribution's label).
+  source    String?
+  /// Entry page: the external referrer's host. 404: the full address of the
+  /// page that linked to it (ours or someone else's), ≤ 500 characters.
+  referrer  String?
+
+  @@index([createdAt])
+  @@index([status, createdAt])
+}

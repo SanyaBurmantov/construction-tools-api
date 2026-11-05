@@ -36,6 +36,18 @@ const detail = computed(() => {
   return message
 })
 
+/**
+ * The 404 journal (`/admin/traffic`): which address was wanted and which page
+ * linked to it — our previous page after a client-side move (the router keeps
+ * it in `history.state.back`), the browser's referrer on a fresh load.
+ */
+const pageViews = usePageViews()
+onMounted(() => {
+  if (props.error.statusCode !== 404) return
+  const back = (window.history.state as { back?: unknown } | null)?.back
+  void pageViews.report(404, typeof back === 'string' ? back : undefined)
+})
+
 const handleError = () => clearError({ redirect: '/' })
 const retry = () => reloadNuxtApp({ persistState: false })
 </script>

@@ -197,6 +197,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/catalog/`). `server/middleware/canonical-url.ts` 301s every other form
   (query kept; `/api`, `/_*`, files with an extension untouched), matching the
   canonicals and the sitemap — so write internal links without the slash.
+  **Old addresses of the domain** — an OpenCart workwear shop (2017–2019:
+  `/spetsodezhda`, `/siz`, `/spetsobuv`, `index.php?route=…`) and a Bitrix
+  site (until 2025) lived on gost.by, and visitors still arrive by their links:
+  `server/middleware/0.legacy-urls.ts` (runs first) 301s each old section to
+  our closest category (`utils/legacy-urls.ts`, tested) — they were the
+  «Страница не найдена» views in Metrika.
   **No render-blocking CSS**: `features.inlineStyles: true` inlines every SSR
   style (global `main.scss` included) and `server/plugins/defer-unused-css.ts`
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but
@@ -837,6 +843,22 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `SEARCH_LOG_TTL_DAYS` (365), purged nightly by the worker. It is the input
   for the next search work (vectors only if the zero-result list turns out to
   be «смысловые» queries).
+- **Traffic statistics** (`traffic/`, `PageView`, `/admin/traffic`
+  «Посещаемость», 05.11 — the owner wanted Metrika-style numbers in our own
+  admin). The browser reports each page shown (`POST /traffic/views`,
+  `plugins/page-views.client.ts` + `utils/page-view.ts`): a **visit** starts
+  after 30 min without a page (Metrika's rule), the visitor id is a random
+  value in localStorage (identifies nobody), the device comes from the
+  User-Agent (`traffic/visitor-agent.ts`, a Mac with touch = iPad), bot
+  agents are dropped, admins and `/admin` are never counted. **Every 404**
+  is a row too, reported by `error.vue` with the page that linked to it
+  (`history.state.back` after a client-side move, `document.referrer` on a
+  load) — the «Страница не найдена» journal. Months/days are Minsk calendar
+  (`traffic-periods.ts`, tested); «this month» is compared with the *same
+  stretch* of last month, never the whole of it. The dashboard shows four
+  tiles from `GET /admin/traffic/summary`. `TRAFFIC_LOG_TTL_DAYS` (730),
+  purged nightly by the worker. Starts empty on 2026-11-05 — Metrika keeps
+  the history before that.
 - **Search understands Russian word forms** (`products/search-fts.ts`, 04.11).
   `rankedMatchIds` has a full-text `UNION` branch beside the trigram ones:
   every word of the term must match in some form (`russian` Snowball
