@@ -16,15 +16,23 @@ const SERIES: Array<{ key: TrafficDevice, color: string }> = [
   { key: 'tablet', color: 'var(--chart-3)' },
 ]
 
-const W = 720
+const plotRef = ref<HTMLElement | null>(null)
+const W = useElementWidth(plotRef)
 const H = 260
 const PAD = { top: 22, right: 8, bottom: 26, left: 44 }
-const plotW = W - PAD.left - PAD.right
+const plotW = computed(() => Math.max(120, W.value - PAD.left - PAD.right))
 const plotH = H - PAD.top - PAD.bottom
 
 const ticks = computed(() => niceTicks(Math.max(0, ...props.months.map(m => m.visits))))
 const top = computed(() => ticks.value[ticks.value.length - 1] || 1)
-const slot = computed(() => plotW / Math.max(1, props.months.length))
+const slot = computed(() => plotW.value / Math.max(1, props.months.length))
+/** Totals above the bars only where they fit; otherwise tooltip and table. */
+const showTotals = computed(() => slot.value >= 40)
+/** Every month labelled where there is room, every second or third on a phone. */
+const labelEvery = computed(() => (slot.value >= 32 ? 1 : slot.value >= 20 ? 2 : 3))
+const showLabel = (i: number) => (props.months.length - 1 - i) % labelEvery.value === 0
+/** On a narrow screen the tooltip sits under the chart instead of over it. */
+const docked = computed(() => W.value < 520)
 const barW = computed(() => Math.min(36, slot.value * 0.56))
 const y = (v: number) => PAD.top + plotH - (v / top.value) * plotH
 
@@ -55,9 +63,13 @@ function segmentPath(x: number, yTop: number, w: number, h: number, rounded: boo
 
 const hovered = ref<number | null>(null)
 const tooltip = computed(() => (hovered.value === null ? null : props.months[hovered.value] ?? null))
-const tooltipLeft = computed(() =>
-  hovered.value === null ? 0 : ((PAD.left + slot.value * (hovered.value + 0.5)) / W) * 100,
-)
+/** Beside the column, never over it: right of it, or left near the edge. */
+const tooltipStyle = computed(() => {
+  if (hovered.value === null || docked.value) return {}
+  const flip = hovered.value >= props.months.length / 2
+  const x = flip ? PAD.left + slot.value * hovered.value : PAD.left + slot.value * (hovered.value + 1)
+  return { left: `${x}px`, transform: flip ? 'translateX(calc(-100% - 4px))' : 'translateX(4px)' }
+})
 </script>
 
 <template>
@@ -67,8 +79,8 @@ const tooltipLeft = computed(() =>
         <span class="key" :style="{ background: s.color }" />{{ DEVICE_LABELS[s.key] }}
       </li>
     </ul>
-    <div class="plot" @pointerleave="hovered = null">
-      <svg :viewBox="`0 0 ${W} ${H}`" role="img" aria-label="Визиты по месяцам за год, по устройствам">
+    <div ref="plotRef" class="plot" @pointerleave="hovered = null">
+      <svg :viewBox="`0 0 ${W} ${H}`" :width="W" :height="H" role="img" aria-label="Визиты по месяцам за год, по устройствам">
         <g class="grid">
           <g v-for="t in ticks" :key="t">
             <line :x1="PAD.left" :x2="W - PAD.right" :y1="y(t)" :y2="y(t)" />
@@ -83,13 +95,13 @@ const tooltipLeft = computed(() =>
             :fill="seg.color"
           />
           <text
-            v-if="bar.month.visits"
+            v-if="bar.month.visits && showTotals"
             class="total"
             :x="bar.x + barW / 2"
             :y="y(bar.month.visits) - 6"
             text-anchor="middle"
           >{{ formatCount(bar.month.visits) }}</text>
-          <text class="axis" :x="bar.x + barW / 2" :y="H - 8" text-anchor="middle">
+          <text v-if="showLabel(i)" class="axis" :x="bar.x + barW / 2" :y="H - 8" text-anchor="middle">
             {{ monthLabel(bar.month.month) }}
           </text>
           <!-- Hit target: the whole column, bigger than the mark. -->
@@ -107,7 +119,7 @@ const tooltipLeft = computed(() =>
           />
         </g>
       </svg>
-      <div v-if="tooltip" class="tooltip" :style="{ left: `${tooltipLeft}%` }">
+      <div v-if="tooltip" class="tooltip" :class="{ docked }" :style="tooltipStyle">
         <div class="tooltip-title">{{ monthTitle(tooltip.month) }}</div>
         <div class="tooltip-row">
           <strong>{{ formatCount(tooltip.visits) }}</strong><span>визитов</span>
@@ -199,7 +211,12 @@ svg {
   box-shadow: var(--shadow-sm);
   font-size: var(--text-sm);
   pointer-events: none;
-  transform: translateX(-50%);
+}
+
+.tooltip.docked {
+  position: static;
+  margin-top: var(--space-2);
+  box-shadow: none;
 }
 
 .tooltip-title {

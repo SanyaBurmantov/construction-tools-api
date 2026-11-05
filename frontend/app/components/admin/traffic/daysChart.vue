@@ -11,10 +11,11 @@ const props = defineProps<{
   previous: { month: string, days: TrafficDay[] }
 }>()
 
-const W = 720
+const plotRef = ref<HTMLElement | null>(null)
+const W = useElementWidth(plotRef)
 const H = 240
 const PAD = { top: 12, right: 12, bottom: 26, left: 44 }
-const plotW = W - PAD.left - PAD.right
+const plotW = computed(() => Math.max(120, W.value - PAD.left - PAD.right))
 const plotH = H - PAD.top - PAD.bottom
 const DAYS = 31
 
@@ -22,7 +23,7 @@ const ticks = computed(() =>
   niceTicks(Math.max(0, ...[...props.current.days, ...props.previous.days].map(d => d.visits ?? 0))),
 )
 const top = computed(() => ticks.value[ticks.value.length - 1] || 1)
-const x = (day: number) => PAD.left + ((day - 1) / (DAYS - 1)) * plotW
+const x = (day: number) => PAD.left + ((day - 1) / (DAYS - 1)) * plotW.value
 const y = (v: number) => PAD.top + plotH - (v / top.value) * plotH
 
 function linePath(days: TrafficDay[]) {
@@ -42,17 +43,19 @@ function linePath(days: TrafficDay[]) {
 const currentPath = computed(() => linePath(props.current.days))
 const previousPath = computed(() => linePath(props.previous.days))
 const lastCurrent = computed(() => [...props.current.days].reverse().find(d => d.visits !== null) ?? null)
-const xTicks = [1, 5, 10, 15, 20, 25, 31]
+const xTicks = computed(() => (plotW.value < 360 ? [1, 10, 20, 31] : [1, 5, 10, 15, 20, 25, 31]))
 
 const hoverDay = ref<number | null>(null)
+/** On a narrow screen the tooltip sits under the chart instead of over it. */
+const docked = computed(() => W.value < 520)
 const svgRef = ref<SVGSVGElement | null>(null)
 
 function onMove(event: PointerEvent) {
   const svg = svgRef.value
   if (!svg) return
   const box = svg.getBoundingClientRect()
-  const px = ((event.clientX - box.left) / box.width) * W
-  const day = Math.round(((px - PAD.left) / plotW) * (DAYS - 1)) + 1
+  const px = event.clientX - box.left
+  const day = Math.round(((px - PAD.left) / plotW.value) * (DAYS - 1)) + 1
   hoverDay.value = Math.min(DAYS, Math.max(1, day))
 }
 
@@ -80,10 +83,12 @@ const readout = computed(() => {
       <li><span class="line-key current" />{{ monthTitle(current.month) }}</li>
       <li><span class="line-key previous" />{{ monthTitle(previous.month) }}</li>
     </ul>
-    <div class="plot">
+    <div ref="plotRef" class="plot">
       <svg
         ref="svgRef"
         :viewBox="`0 0 ${W} ${H}`"
+        :width="W"
+        :height="H"
         role="img"
         :aria-label="`Визиты по дням: ${monthTitle(current.month)} и ${monthTitle(previous.month)}`"
         tabindex="0"
@@ -129,8 +134,8 @@ const readout = computed(() => {
       <div
         v-if="readout"
         class="tooltip"
-        :style="{ left: `${(x(readout.day) / W) * 100}%` }"
-        :class="{ flip: readout.day > 22 }"
+        :style="docked ? {} : { left: `${x(readout.day)}px` }"
+        :class="{ flip: !docked && readout.day > 16, docked }"
       >
         <div class="tooltip-title">{{ readout.day }}-е число</div>
         <div class="tooltip-row">
@@ -257,6 +262,13 @@ svg {
 
 .tooltip.flip {
   transform: translateX(calc(-100% - 12px));
+}
+
+.tooltip.docked {
+  position: static;
+  margin-top: var(--space-2);
+  box-shadow: none;
+  transform: none;
 }
 
 .tooltip-title {
