@@ -35,6 +35,7 @@ function run(offers: Array<{ sourceId: string; sku: string | null }>) {
     prisma,
     {} as PricingService,
     { merge } as unknown as ProductMergeService,
+    { enqueue: jest.fn() } as never,
   );
   const product = (id: string) => ({
     id,

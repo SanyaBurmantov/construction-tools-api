@@ -32,6 +32,13 @@ const earlyClickScript = {
 }
 
 const YANDEX_METRIKA_ID = 113800110
+/**
+ * Yandex Webmaster ownership of gost.by (account that owns the Metrika
+ * counter; host added through the Webmaster API on 2026-11-05). Not a
+ * secret — Webmaster only checks that the page carries it. Removing it
+ * un-verifies the site.
+ */
+const YANDEX_WEBMASTER_VERIFICATION = '7a91085be3663873'
 const isProdBuild = process.env.NODE_ENV === 'production'
 const metrikaHead = isProdBuild
   ? {
@@ -139,6 +146,7 @@ export default defineNuxtConfig({
         { property: 'og:site_name', content: 'Gost.by' },
         { property: 'og:locale', content: 'ru_RU' },
         { name: 'twitter:image', content: '/og-image.png' },
+        { name: 'yandex-verification', content: YANDEX_WEBMASTER_VERIFICATION },
       ],
       ...metrikaHead,
     },

@@ -1091,6 +1091,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `lastmod` в sitemap (`updatedAt` двигает ежедневный парсинг). `seo/indexnow.service.ts` шлёт изменённые адреса
   Яндексу (IndexNow, очередь `IndexNowUrl`, раз в 10 мин в воркере); ключ
   `INDEXNOW_KEY`, файл `/<ключ>.txt` отдаёт фронт (`NUXT_INDEXNOW_KEY`).
+  **Весь каталог тоже идёт в IndexNow** (05.11, из Яндекса было 2 визита
+  против 133 из Google): товар, который `publishIfReady()` только что
+  выставил в продажу, уходит в очередь сразу, а `IndexNowSeedService`
+  (воркер, 05:11) один раз проходит каталог — в первую ночь главные
+  страницы, видимые категории с предками и бренды, дальше по
+  `INDEXNOW_SEED_PER_DAY` (10 000) товаров за ночь по id; курсор
+  `SiteSetting indexnow.seed.cursor`, конец — `indexnow.seed.doneAt`.
+  **Яндекс.Вебмастер**: gost.by добавлен через API 05.11 в аккаунт владельца
+  счётчика Метрики, права подтверждены мета-тегом
+  `YANDEX_WEBMASTER_VERIFICATION` в `nuxt.config.ts` — не удалять.
   **Всё видно и правится в админке** (`/admin/ai/templates`, «ИИ ·
   Шаблоны»): общие правила товаров/категорий и гайды по видам
   (`AiTemplateTextsService`, `SiteSetting ai.text.*` поверх кода; задача

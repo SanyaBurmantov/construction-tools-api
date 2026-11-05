@@ -34,6 +34,7 @@ describe('Selected supplier discount', () => {
       prisma as never,
       { applyCost } as never,
       {} as never,
+      { enqueue: jest.fn() } as never,
     ).recomputeFromOffers('product');
     expect(applyCost).toHaveBeenCalledWith('product', 70, { oldCost: 100 });
     expect(updateStock).toHaveBeenCalledWith({
@@ -58,6 +59,7 @@ describe('Selected supplier discount', () => {
       prisma as never,
       { applyCost } as never,
       {} as never,
+      { enqueue: jest.fn() } as never,
     ).recomputeFromOffers('product');
     expect(applyCost).toHaveBeenCalledWith('product', 70, { oldCost: null });
   });
@@ -76,6 +78,7 @@ describe('Automatic publication', () => {
       prisma as never,
       { applyCost: jest.fn(() => Promise.resolve()) } as never,
       {} as never,
+      { enqueue: jest.fn() } as never,
     );
   }
 
