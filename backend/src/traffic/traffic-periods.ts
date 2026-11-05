@@ -68,3 +68,9 @@ export function change(current: number, previous: number): number | null {
   if (!previous) return null;
   return (current - previous) / previous;
 }
+
+/** The Minsk calendar date of an instant, `YYYY-MM-DD` (what Metrika takes). */
+export function minskDate(instant: Date): string {
+  const m = minsk(instant);
+  return `${m.getUTCFullYear()}-${pad(m.getUTCMonth() + 1)}-${pad(m.getUTCDate())}`;
+}

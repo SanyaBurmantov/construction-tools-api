@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TrafficDevice, TrafficReport } from '~/types/api'
+import type { MetrikaReport, MetrikaStatus, TrafficDevice, TrafficReport } from '~/types/api'
 import {
   DEVICE_LABELS,
   formatChange,
@@ -17,15 +17,44 @@ definePageMeta({ layout: 'admin' })
  * «Страница не найдена» with the page that linked to it.
  */
 const { adminFetch, errorMessage } = useAdminApi()
-const report = ref<TrafficReport | null>(null)
+const own = ref<TrafficReport | null>(null)
+const metrika = ref<MetrikaReport | null>(null)
+const metrikaStatus = ref<MetrikaStatus | null>(null)
 const loading = ref(true)
 const loadError = ref('')
 
-async function load() {
+/**
+ * Two sources, one screen: Yandex Metrika (has the history, the numbers the
+ * owner already knows) and our own counter (since 2026-11-05, every 404 with
+ * its exact referrer). Metrika is the default once it is connected.
+ */
+const source = ref<'metrika' | 'own'>('own')
+const sourceTabs = [
+  { value: 'metrika', label: 'Яндекс.Метрика' },
+  { value: 'own', label: 'Наш счётчик' },
+]
+let sourceChosen = false
+
+async function loadMetrika(refresh = false) {
+  metrikaStatus.value = await adminFetch<MetrikaStatus>('/traffic/metrika/status').catch(() => null)
+  if (!metrikaStatus.value?.configured) {
+    metrika.value = null
+    return
+  }
+  metrika.value = await adminFetch<MetrikaReport>('/traffic/metrika', { params: refresh ? { refresh: 1 } : {} })
+    .catch(error => ({ configured: true, source: 'metrika', counterId: '', error: errorMessage(error, 'Метрика не ответила') }) as MetrikaReport)
+}
+
+async function load(refresh = false) {
   loading.value = true
   loadError.value = ''
   try {
-    report.value = await adminFetch<TrafficReport>('/traffic/report')
+    const [ownReport] = await Promise.all([
+      adminFetch<TrafficReport>('/traffic/report'),
+      loadMetrika(refresh),
+    ])
+    own.value = ownReport
+    if (!sourceChosen && metrikaStatus.value?.configured && !metrikaStatus.value.error) source.value = 'metrika'
   }
   catch (error) {
     loadError.value = errorMessage(error, 'Не удалось загрузить статистику')
@@ -34,7 +63,44 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+onMounted(() => load())
+watch(source, () => { sourceChosen = true })
+
+const metrikaError = computed(() => (metrika.value && 'error' in metrika.value ? metrika.value.error : ''))
+const metrikaWarnings = computed(() => (metrika.value && 'warnings' in metrika.value ? metrika.value.warnings : []))
+/** What the screen draws: the chosen source, when it has a report. */
+const report = computed<TrafficReport | null>(() => {
+  if (source.value === 'own') return own.value
+  const m = metrika.value
+  return m && 'summary' in m ? m : null
+})
+
+const tokenInput = ref('')
+const savingToken = ref(false)
+const tokenError = ref('')
+async function saveToken() {
+  savingToken.value = true
+  tokenError.value = ''
+  try {
+    metrikaStatus.value = await adminFetch<MetrikaStatus>('/traffic/metrika/token', { method: 'PUT', body: { token: tokenInput.value } })
+    tokenInput.value = ''
+    source.value = 'metrika'
+    await loadMetrika(true)
+  }
+  catch (error) {
+    tokenError.value = errorMessage(error, 'Не удалось сохранить токен')
+  }
+  finally {
+    savingToken.value = false
+  }
+}
+const confirmDisconnect = ref(false)
+async function disconnect() {
+  metrikaStatus.value = await adminFetch<MetrikaStatus>('/traffic/metrika/token', { method: 'DELETE' }).catch(() => metrikaStatus.value)
+  metrika.value = null
+  confirmDisconnect.value = false
+  source.value = 'own'
+}
 
 const summary = computed(() => report.value?.summary)
 const currentMonth = computed(() => report.value?.days.current.month ?? '')
@@ -116,14 +182,56 @@ function referrerLabel(referrer: string | null): string {
       title="Посещаемость"
       description="Визиты, телефоны и компьютеры, динамика по месяцам и страницы «не найдено»"
     >
-      <UiButton variant="secondary" size="sm" :loading="loading" @click="load">Обновить</UiButton>
+      <UiButton variant="secondary" size="sm" :loading="loading" @click="load(true)">Обновить</UiButton>
     </AdminPageHead>
 
+    <UiTabs v-model="source" :tabs="sourceTabs" />
+
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
+
+    <template v-if="source === 'metrika' && !loading">
+      <UiCard v-if="!metrikaStatus?.configured" title="Подключить Яндекс.Метрику">
+        <p class="note-top">
+          Нужен OAuth-токен аккаунта, у которого есть доступ к счётчику {{ metrikaStatus?.counterId ?? '113800110' }}.
+          Токен только читает статистику.
+        </p>
+        <ol class="steps">
+          <li>Откройте <a href="https://oauth.yandex.ru/client/new" target="_blank" rel="noopener">oauth.yandex.ru/client/new</a>, платформа «Веб-сервисы», Redirect URI <code>https://oauth.yandex.ru/verification_code</code>.</li>
+          <li>В доступах отметьте «Яндекс.Метрика → Получение статистики, чтение параметров своих и доверенных счётчиков».</li>
+          <li>Откройте <code>https://oauth.yandex.ru/authorize?response_type=token&amp;client_id=&lt;ClientID&gt;</code> и скопируйте токен.</li>
+        </ol>
+        <form class="token-form" @submit.prevent="saveToken">
+          <UiInput v-model="tokenInput" type="password" placeholder="y0_…" autocomplete="off" />
+          <UiButton type="submit" :loading="savingToken" :disabled="!tokenInput.trim()">Подключить</UiButton>
+        </form>
+        <UiAlert v-if="tokenError" tone="danger">{{ tokenError }}</UiAlert>
+      </UiCard>
+      <template v-else>
+        <p class="admin-muted connection">
+          Счётчик {{ metrikaStatus.counterId }}<template v-if="metrikaStatus.counterName"> «{{ metrikaStatus.counterName }}»</template>,
+          токен {{ metrikaStatus.tokenHint }} ·
+          <UiButton variant="link" size="sm" @click="confirmDisconnect = true">Отключить</UiButton>
+        </p>
+        <UiAlert v-if="metrikaStatus.error || metrikaError" tone="danger">
+          Метрика не отдала данные: {{ metrikaStatus.error || metrikaError }}
+        </UiAlert>
+        <UiAlert v-for="w in metrikaWarnings" :key="w" tone="warning">Не загрузилось — {{ w }}</UiAlert>
+      </template>
+    </template>
+
+    <UiConfirm
+      v-model:open="confirmDisconnect"
+      title="Отключить Метрику?"
+      confirm-label="Отключить"
+      @confirm="disconnect"
+    >
+      Токен будет удалён с сайта. Подключить снова можно в любой момент.
+    </UiConfirm>
+
     <UiSkeleton v-if="loading && !report" height="480px" radius="var(--radius-md)" />
 
     <template v-else-if="report && summary">
-      <UiAlert v-if="!summary.last30.views" tone="info">
+      <UiAlert v-if="source === 'own' && !summary.last30.views" tone="info">
         Статистика собирается с 5 ноября 2026: каждый показ страницы реальному посетителю (роботы и
         админы не считаются). Графики заполнятся по мере визитов.
       </UiAlert>
@@ -195,6 +303,7 @@ function referrerLabel(referrer: string | null): string {
 
       <UiCard title="Страница не найдена — что искали, 30 дней">
         <p class="admin-muted note">
+          <template v-if="source === 'metrika'">По Метрике — просмотры страниц с заголовком «Страница не найдена», реферер — самый частый. </template>
           Адрес, на который пришли, и страница со ссылкой. Ссылка с нашего сайта — ошибка у нас;
           с поисковика или чужого сайта — старый адрес, его можно перенаправить.
         </p>
@@ -205,7 +314,7 @@ function referrerLabel(referrer: string | null): string {
             <span v-else class="admin-muted">{{ referrerLabel(null) }}</span>
           </template>
           <template #cell-views="{ row }">{{ formatCount(row.views) }}</template>
-          <template #cell-lastAt="{ row }">{{ formatDateTime(row.lastAt) }}</template>
+          <template #cell-lastAt="{ row }">{{ row.lastAt ? formatDateTime(row.lastAt) : '—' }}</template>
         </UiTable>
       </UiCard>
 
@@ -225,7 +334,7 @@ function referrerLabel(referrer: string | null): string {
         </UiCard>
       </div>
 
-      <UiCard title="Последние «не найдено»">
+      <UiCard v-if="source === 'own'" title="Последние «не найдено»">
         <UiTable :columns="recentColumns" :rows="report.recentNotFound" row-key="id" empty-text="Пока не было.">
           <template #cell-createdAt="{ row }">{{ formatDateTime(row.createdAt) }}</template>
           <template #cell-path="{ row }"><code>{{ row.path }}</code></template>
@@ -287,6 +396,34 @@ function referrerLabel(referrer: string | null): string {
 
 .device-name {
   font-weight: 600;
+}
+
+.note-top {
+  margin: 0 0 var(--space-3);
+}
+
+.steps {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.token-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-width: 560px;
+  margin-bottom: var(--space-3);
+}
+
+.token-form > :first-child {
+  flex: 1 1 260px;
+}
+
+.connection {
+  margin: 0;
+  font-size: var(--text-sm);
 }
 
 .note {

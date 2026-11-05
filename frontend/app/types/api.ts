@@ -437,6 +437,19 @@ export type TrafficReport = {
   sources: Array<{ source: string, visits: number }>
   landings: Array<{ path: string, visits: number }>
   pages: Array<{ path: string, views: number }>
-  notFound: Array<{ path: string, views: number, visitors: number, referrer: string | null, lastAt: string }>
+  notFound: Array<{ path: string, views: number, visitors: number, referrer: string | null, lastAt: string | null }>
   recentNotFound: Array<{ id: string, createdAt: string, path: string, referrer: string | null, device: TrafficDevice, isEntry: boolean }>
+}
+
+/** `/admin/traffic/metrika` — the same report read from Yandex Metrika. */
+export type MetrikaReport =
+  | { configured: false, counterId: string }
+  | { configured: true, source: 'metrika', counterId: string, error: string }
+  | (TrafficReport & { configured: true, source: 'metrika', counterId: string, warnings: string[] })
+export type MetrikaStatus = {
+  configured: boolean
+  counterId: string
+  counterName?: string | null
+  tokenHint?: string
+  error?: string
 }

@@ -859,6 +859,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   tiles from `GET /admin/traffic/summary`. `TRAFFIC_LOG_TTL_DAYS` (730),
   purged nightly by the worker. Starts empty on 2026-11-05 — Metrika keeps
   the history before that.
+  **Yandex Metrika on the same screen** (`traffic/metrika.service.ts`,
+  `metrika-report.ts` pure + tested): switch «Яндекс.Метрика / Наш счётчик»,
+  default Metrika once connected. Counter 113800110 (`METRIKA_COUNTER_ID`),
+  read-only OAuth token pasted on the screen → `SiteSetting metrika.token`
+  (checked against the counter before it is kept, never sent back; env
+  `METRIKA_TOKEN` as fallback). Each block is its own Reporting API request
+  (a refused one becomes a warning, a 401 the whole error), cached 15 min in
+  the API; 404s there = pageviews titled «…не найден…». The dashboard tiles
+  prefer Metrika's summary.
 - **Search understands Russian word forms** (`products/search-fts.ts`, 04.11).
   `rankedMatchIds` has a full-text `UNION` branch beside the trigram ones:
   every word of the term must match in some form (`russian` Snowball
