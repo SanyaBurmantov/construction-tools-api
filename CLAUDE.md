@@ -197,6 +197,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `/catalog/`). `server/middleware/canonical-url.ts` 301s every other form
   (query kept; `/api`, `/_*`, files with an extension untouched), matching the
   canonicals and the sitemap — so write internal links without the slash.
+  **Old addresses of the domain** — an OpenCart workwear shop (2017–2019:
+  `/spetsodezhda`, `/siz`, `/spetsobuv`, `index.php?route=…`) and a Bitrix
+  site (until 2025) lived on gost.by, and visitors still arrive by their links:
+  `server/middleware/0.legacy-urls.ts` (runs first) 301s each old section to
+  our closest category (`utils/legacy-urls.ts`, tested) — they were the
+  «Страница не найдена» views in Metrika.
   **No render-blocking CSS**: `features.inlineStyles: true` inlines every SSR
   style (global `main.scss` included) and `server/plugins/defer-unused-css.ts`
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but
