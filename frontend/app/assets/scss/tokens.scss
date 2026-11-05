@@ -94,6 +94,16 @@
   --info-soft: var(--violet-50);
   --info-soft-text: var(--violet-600);
 
+  /* Charts (admin): categorical slots in fixed order, validated together on
+     white (dataviz validator: CVD ΔE ≥ 9.2, normal vision ≥ 24). Slot 3 is
+     under 3:1 on white — charts using it carry labels or a table. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  /* A comparison series («прошлый месяц») recedes behind the current one. */
+  --chart-muted: var(--gray-400);
+  --chart-grid: var(--gray-200);
+
   /* Sale/discount accent — deliberately distinct from `danger`, which means
      "something went wrong", not "cheap". */
   --sale: var(--red-600);

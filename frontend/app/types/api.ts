@@ -399,3 +399,44 @@ export type Review = {
   isVerifiedPurchase: boolean
   createdAt: string
 }
+
+/** `/admin/traffic` — the site's own visit statistics (backend `traffic/`). */
+export type TrafficDevice = 'mobile' | 'desktop' | 'tablet'
+export type TrafficTotals = {
+  visits: number
+  visitors: number
+  views: number
+  notFound: number
+  devices: Record<TrafficDevice, number>
+}
+export type TrafficSummary = {
+  day: number
+  current: TrafficTotals
+  previousToDate: TrafficTotals
+  previousMonth: TrafficTotals
+  last30: TrafficTotals
+  change: { visits: number | null, visitors: number | null, views: number | null }
+}
+export type TrafficMonth = {
+  month: string
+  visits: number
+  visitors: number
+  views: number
+  notFound: number
+  devices: Record<TrafficDevice, number>
+}
+export type TrafficDay = { day: number, visits: number | null }
+export type TrafficReport = {
+  generatedAt: string
+  summary: TrafficSummary
+  months: TrafficMonth[]
+  days: {
+    current: { month: string, days: TrafficDay[] }
+    previous: { month: string, days: TrafficDay[] }
+  }
+  sources: Array<{ source: string, visits: number }>
+  landings: Array<{ path: string, visits: number }>
+  pages: Array<{ path: string, views: number }>
+  notFound: Array<{ path: string, views: number, visitors: number, referrer: string | null, lastAt: string }>
+  recentNotFound: Array<{ id: string, createdAt: string, path: string, referrer: string | null, device: TrafficDevice, isEntry: boolean }>
+}

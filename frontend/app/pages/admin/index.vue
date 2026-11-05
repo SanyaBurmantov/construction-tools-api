@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { TrafficSummary } from '~/types/api'
+import { formatChange, formatCount, share } from '~/utils/traffic-format'
+
 definePageMeta({ layout: 'admin' })
 
 const { errorMessage } = useAdminApi()
@@ -9,9 +12,17 @@ const { stats, load: loadStats } = useAdminStats()
 const loading = ref(false)
 const loadError = ref('')
 
+// Traffic is a separate, cheap answer: a failure there must not hide sales.
+const { adminFetch } = useAdminApi()
+const traffic = ref<TrafficSummary | null>(null)
+async function loadTraffic() {
+  traffic.value = await adminFetch<TrafficSummary>('/traffic/summary').catch(() => null)
+}
+
 async function load() {
   loading.value = true
   loadError.value = ''
+  void loadTraffic()
   try {
     await loadStats()
   } catch (error) {
@@ -110,6 +121,35 @@ const maxRevenue = computed(() =>
           :value="stats.users"
           :hint="`${stats.admins} с правами админа`"
           to="/admin/users"
+        />
+      </section>
+
+      <section v-if="traffic" class="tiles">
+        <UiStat
+          :label="`Визиты за месяц (1–${traffic.day})`"
+          :value="formatCount(traffic.current.visits)"
+          :tone="traffic.change.visits === null ? 'neutral' : traffic.change.visits >= 0 ? 'success' : 'warning'"
+          :hint="`${formatChange(traffic.change.visits)} к тому же периоду прошлого месяца`"
+          to="/admin/traffic"
+        />
+        <UiStat
+          label="Посетители за месяц"
+          :value="formatCount(traffic.current.visitors)"
+          :hint="`прошлый месяц целиком: ${formatCount(traffic.previousMonth.visitors)}`"
+          to="/admin/traffic"
+        />
+        <UiStat
+          label="С телефона, 30 дней"
+          :value="share(traffic.last30.devices.mobile, traffic.last30.visits)"
+          :hint="`компьютеры ${share(traffic.last30.devices.desktop, traffic.last30.visits)} · планшеты ${share(traffic.last30.devices.tablet, traffic.last30.visits)}`"
+          to="/admin/traffic"
+        />
+        <UiStat
+          label="«Не найдено», 30 дней"
+          :value="formatCount(traffic.last30.notFound)"
+          :tone="traffic.last30.notFound ? 'warning' : 'neutral'"
+          hint="что искали и откуда — в «Посещаемости»"
+          to="/admin/traffic"
         />
       </section>
 
