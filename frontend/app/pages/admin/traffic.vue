@@ -68,6 +68,8 @@ watch(source, () => { sourceChosen = true })
 
 const metrikaError = computed(() => (metrika.value && 'error' in metrika.value ? metrika.value.error : ''))
 const metrikaWarnings = computed(() => (metrika.value && 'warnings' in metrika.value ? metrika.value.warnings : []))
+const metrikaRobots = computed(() => (source.value === 'metrika' && metrika.value && 'robotVisits30' in metrika.value ? metrika.value.robotVisits30 : null))
+const urlListsIncludeRobots = computed(() => source.value === 'metrika')
 /** What the screen draws: the chosen source, when it has a report. */
 const report = computed<TrafficReport | null>(() => {
   if (source.value === 'own') return own.value
@@ -255,6 +257,12 @@ function referrerLabel(referrer: string | null): string {
           :hint="`визитов · ${formatCount(summary.previousMonth.visitors)} посетителей · ${formatCount(summary.previousMonth.views)} просмотров`"
         />
         <UiStat
+          v-if="metrikaRobots !== null"
+          label="Роботы, 30 дней"
+          :value="formatCount(metrikaRobots)"
+          :hint="`визитов — Метрика их распознала, в цифрах выше их нет (людей ${formatCount(summary.last30.visits)})`"
+        />
+        <UiStat
           label="Страница не найдена, 30 дней"
           :value="formatCount(summary.last30.notFound)"
           :tone="summary.last30.notFound ? 'warning' : 'success'"
@@ -303,7 +311,11 @@ function referrerLabel(referrer: string | null): string {
 
       <UiCard title="Страница не найдена — что искали, 30 дней">
         <p class="admin-muted note">
-          <template v-if="source === 'metrika'">По Метрике — просмотры страниц с заголовком «Страница не найдена», реферер — самый частый. </template>
+          <template v-if="source === 'metrika'">
+            По Метрике — просмотры страниц с заголовком «Страница не найдена», <strong>включая роботов</strong>:
+            адреса отдельно для людей Метрика не раскрывает (людей в счётчике выше —
+            {{ formatCount(summary.last30.notFound) }}). Точные адреса и откуда пришли люди — во вкладке «Наш счётчик».
+          </template>
           Адрес, на который пришли, и страница со ссылкой. Ссылка с нашего сайта — ошибка у нас;
           с поисковика или чужого сайта — старый адрес, его можно перенаправить.
         </p>
@@ -324,7 +336,7 @@ function referrerLabel(referrer: string | null): string {
             <template #cell-visits="{ row }">{{ formatCount(row.visits) }}</template>
           </UiTable>
         </UiCard>
-        <UiCard title="Страницы входа, 30 дней">
+        <UiCard :title="urlListsIncludeRobots ? 'Страницы входа, 30 дней (с роботами)' : 'Страницы входа, 30 дней'">
           <UiTable :columns="landingColumns" :rows="report.landings" row-key="path" empty-text="Визитов пока нет.">
             <template #cell-path="{ row }">
               <NuxtLink :to="row.path" target="_blank">{{ row.path }}</NuxtLink>

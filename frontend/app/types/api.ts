@@ -445,7 +445,16 @@ export type TrafficReport = {
 export type MetrikaReport =
   | { configured: false, counterId: string }
   | { configured: true, source: 'metrika', counterId: string, error: string }
-  | (TrafficReport & { configured: true, source: 'metrika', counterId: string, warnings: string[] })
+  | (TrafficReport & {
+    configured: true
+    source: 'metrika'
+    counterId: string
+    warnings: string[]
+    /** Visits Metrika marked as robots over 30 days; left out of every number. */
+    robotVisits30: number
+    /** Address lists cannot be filtered to people (Metrika hides the rows). */
+    urlListsIncludeRobots: boolean
+  })
 export type MetrikaStatus = {
   configured: boolean
   counterId: string

@@ -29,6 +29,18 @@ const COUNTER_KEY = 'metrika.counterId';
 const CACHE_MS = 15 * 60_000;
 /** Pageviews of our «Страница не найдена | Gost.by» (error.vue's title). */
 const NOT_FOUND_FILTER = "ym:pv:title=@'не найден'";
+/**
+ * People only. Metrika marks robots itself (headless Chrome from data
+ * centres — 1 299 of 1 780 visits in the counter's first ten days, and 260 of
+ * the 301 visits that hit a 404). Every number is counted without them.
+ * Lists of addresses cannot be: with this filter Metrika hides every URL row
+ * below its privacy threshold (only the home page survives), so landing
+ * pages, popular pages and the 404 list are read unfiltered and the screen
+ * says so (`urlListsIncludeRobots`).
+ */
+const HUMANS_S = "ym:s:isRobot=='No'";
+const HUMANS_PV = "ym:pv:isRobot=='No'";
+const and = (...filters: string[]) => filters.join(' AND ');
 
 class MetrikaError extends Error {
   constructor(
@@ -204,13 +216,14 @@ export class MetrikaService {
               date2,
               metrics: 'ym:s:visits,ym:s:users,ym:s:pageviews',
               dimensions: 'ym:s:deviceCategory',
+              filters: HUMANS_S,
             }),
             this.get<MetrikaDataResponse>(token, '/stat/v1/data', {
               ...base,
               date1,
               date2,
               metrics: 'ym:pv:pageviews',
-              filters: NOT_FOUND_FILTER,
+              filters: and(NOT_FOUND_FILTER, HUMANS_PV),
             }).catch(() => ({ totals: [0] }) as MetrikaDataResponse),
           ]);
           return {
@@ -244,6 +257,7 @@ export class MetrikaService {
         sources,
         landings,
         pages,
+        robots,
       ] = await Promise.all([
         attempt(
           'по месяцам',
@@ -255,6 +269,7 @@ export class MetrikaService {
               group: 'month',
               metrics: 'ym:s:visits,ym:s:users,ym:s:pageviews',
               dimensions: 'ym:s:deviceCategory',
+              filters: HUMANS_S,
             }),
           {} as MetrikaBytimeResponse,
         ),
@@ -267,7 +282,7 @@ export class MetrikaService {
               date2: today,
               group: 'month',
               metrics: 'ym:pv:pageviews',
-              filters: NOT_FOUND_FILTER,
+              filters: and(NOT_FOUND_FILTER, HUMANS_PV),
             }),
           {} as MetrikaBytimeResponse,
         ),
@@ -280,6 +295,7 @@ export class MetrikaService {
               date2: today,
               group: 'day',
               metrics: 'ym:s:visits',
+              filters: HUMANS_S,
             }),
           {} as MetrikaBytimeResponse,
         ),
@@ -307,6 +323,7 @@ export class MetrikaService {
               date2: today,
               metrics: 'ym:s:visits',
               dimensions: 'ym:s:lastTrafficSource,ym:s:lastSourceEngine',
+              filters: HUMANS_S,
               sort: '-ym:s:visits',
               limit: 50,
             }),
@@ -340,6 +357,18 @@ export class MetrikaService {
             }),
           {} as MetrikaDataResponse,
         ),
+        attempt(
+          'роботы',
+          () =>
+            this.get<MetrikaDataResponse>(token, '/stat/v1/data', {
+              ...base,
+              date1: last30From,
+              date2: today,
+              metrics: 'ym:s:visits',
+              filters: "ym:s:isRobot=='Yes'",
+            }),
+          {} as MetrikaDataResponse,
+        ),
       ]);
 
       const dayVisits = visitsByDay(daily);
@@ -353,6 +382,9 @@ export class MetrikaService {
         counterId,
         generatedAt: now,
         warnings,
+        /** Visits Metrika marked as robots over 30 days — left out of every number. */
+        robotVisits30: Math.round(robots.totals?.[0] ?? 0),
+        urlListsIncludeRobots: true,
         summary: {
           day: todayNumber,
           current,

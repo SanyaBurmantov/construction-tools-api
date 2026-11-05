@@ -867,7 +867,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `METRIKA_TOKEN` as fallback). Each block is its own Reporting API request
   (a refused one becomes a warning, a 401 the whole error), cached 15 min in
   the API; 404s there = pageviews titled «…не найден…». The dashboard tiles
-  prefer Metrika's summary.
+  prefer Metrika's summary. **Every Metrika number is people only**
+  (`isRobot=='No'`): in the counter's first ten days 1 299 of 1 780 visits
+  and 260 of 301 visits to a 404 were robots (headless Chrome, Singapore /
+  China, walking old product URLs). Address lists (landings, pages, 404s)
+  are read *with* robots and labelled so — under the people filter Metrika
+  hides every URL row below its privacy threshold.
 - **Search understands Russian word forms** (`products/search-fts.ts`, 04.11).
   `rankedMatchIds` has a full-text `UNION` branch beside the trigram ones:
   every word of the term must match in some form (`russian` Snowball
