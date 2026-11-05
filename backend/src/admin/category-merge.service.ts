@@ -36,6 +36,20 @@ type MergeCounts = {
   mergedChildren: number;
 };
 
+/**
+ * `copy` is `original` with a collision number: «elektroinstrument-2» of
+ * «elektroinstrument» (a bare `-N` suffix; «-pro» is not one). The check is
+ * only structural, which is safe because merges join same-named categories:
+ * «Шуруп DIN 7981» is never merged into a category called «Шуруп».
+ */
+export function isNumberedCopyOf(copy: string, original: string): boolean {
+  return (
+    copy.length > original.length + 1 &&
+    copy.startsWith(`${original}-`) &&
+    /^\d+$/.test(copy.slice(original.length + 1))
+  );
+}
+
 /** An interactive transaction's default is 5 s; a deep merge moves a lot. */
 const MERGE_TX_OPTIONS = { maxWait: 10_000, timeout: 120_000 };
 
@@ -266,6 +280,27 @@ export class CategoryMergeService {
     // otherwise the next parse recreates the merged-away category.
     await moveCategoryAliases(tx, source, target.id);
     await tx.category.delete({ where: { id: source.id } });
+
+    // The survivor is often the numbered copy («elektroinstrument-2») of the
+    // category merged into it: the duplicates pick the biggest subtree, and
+    // the parser had filled the copy. It takes the clean address back and
+    // leaves its own as a redirect — seven roots, «Электроинструмент» among
+    // them, sat on «-2» addresses with the clean one redirecting to them
+    // (fixed by hand 2026-11-05).
+    if (isNumberedCopyOf(target.slug, source.slug)) {
+      const numbered = target.slug;
+      await tx.categoryRedirect.deleteMany({ where: { slug: source.slug } });
+      await tx.category.update({
+        where: { id: target.id },
+        data: { slug: source.slug },
+      });
+      await tx.categoryRedirect.upsert({
+        where: { slug: numbered },
+        create: { slug: numbered, categoryId: target.id },
+        update: { categoryId: target.id },
+      });
+      target.slug = source.slug;
+    }
   }
 
   /**

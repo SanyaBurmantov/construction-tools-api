@@ -1,5 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { CategoryMergeService } from './category-merge.service';
+import {
+  CategoryMergeService,
+  isNumberedCopyOf,
+} from './category-merge.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Row = {
@@ -68,6 +71,7 @@ function buildService(input: Array<Omit<Row, 'pathKey'>> = categories) {
     categoryRedirect: {
       updateMany: jest.fn(() => Promise.resolve({ count: 2 })),
       upsert: jest.fn(() => Promise.resolve({})),
+      deleteMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
     specification: {
       findMany: jest.fn(() => Promise.resolve([])),
@@ -309,6 +313,61 @@ describe('CategoryMergeService.mergeDuplicates', () => {
     );
     await expect(service.mergeDuplicates('ghost', ['child'])).rejects.toThrow(
       NotFoundException,
+    );
+  });
+});
+
+describe('isNumberedCopyOf', () => {
+  it('knows a collision number from a number in the name', () => {
+    expect(isNumberedCopyOf('elektroinstrument-2', 'elektroinstrument')).toBe(
+      true,
+    );
+    expect(isNumberedCopyOf('kompressory-12', 'kompressory')).toBe(true);
+    expect(isNumberedCopyOf('elektroinstrument', 'elektroinstrument')).toBe(
+      false,
+    );
+    expect(isNumberedCopyOf('elektroinstrument-pro', 'elektroinstrument')).toBe(
+      false,
+    );
+    expect(isNumberedCopyOf('shurup-din-7981', 'shurup')).toBe(false);
+  });
+});
+
+describe('CategoryMergeService: the survivor keeps the clean address', () => {
+  const copies = [
+    ...categories,
+    {
+      id: 'child-2',
+      name: 'Child',
+      parentId: 'root',
+      slug: 'child-2',
+      level: 1,
+      path: ['root', 'child-2'],
+    },
+  ];
+
+  it('gives a numbered survivor the merged category’s clean slug', async () => {
+    const { service, tx } = buildService(copies);
+    await service.merge('child', 'child-2');
+    expect(tx.categoryRedirect.deleteMany).toHaveBeenCalledWith({
+      where: { slug: 'child' },
+    });
+    expect(tx.category.update).toHaveBeenCalledWith({
+      where: { id: 'child-2' },
+      data: { slug: 'child' },
+    });
+    expect(tx.categoryRedirect.upsert).toHaveBeenCalledWith({
+      where: { slug: 'child-2' },
+      create: { slug: 'child-2', categoryId: 'child-2' },
+      update: { categoryId: 'child-2' },
+    });
+  });
+
+  it('leaves a clean survivor alone', async () => {
+    const { service, tx } = buildService(copies);
+    await service.merge('child-2', 'child');
+    expect(tx.category.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { slug: expect.any(String) } }),
     );
   });
 });

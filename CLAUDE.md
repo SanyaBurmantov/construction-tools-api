@@ -402,7 +402,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   by `CategoryDuplicatesCron` (04:47, ≤100 groups, same deep merge with
   aliases and 301s; a group whose copies differ in visibility is left for an
   admin). Not every `-N` slug is a duplicate: «DIN 7981» is a standard's
-  number.
+  number. **A merge keeps the clean address**: the duplicates' survivor is
+  the biggest subtree, often the parser-filled `…-2` copy, so `mergeInto`
+  gives a survivor that is a numbered copy of the merged category
+  (`isNumberedCopyOf`) the clean slug and leaves the `-2` as a redirect —
+  eight roots (Электроинструмент, Сантехника…) had ended up on `-2` with the
+  clean slug redirecting to them (fixed by hand 2026-11-05).
   The parsers' fallback «Неразобранные товары поставщиков»
   (`FALLBACK_CATEGORY_SLUG`) is created `isVisible: false`, so it is in no
   storefront listing; its URL and its products' URLs still work.
