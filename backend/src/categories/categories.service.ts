@@ -3,6 +3,23 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CategoryPage, CategoryTreeNode } from './types/category-tree.type';
 import { FALLBACK_CATEGORY_SLUG } from '../common/constants/catalog';
+import { Prisma } from '@prisma/client';
+import {
+  isPlaceholderImageUrl,
+  PLACEHOLDER_IMAGE_MARKERS,
+} from '../common/utils/product-images';
+
+/**
+ * A real photo, not a supplier's «нет фото» asset (`product-images.ts`): a
+ * tile must never show a placeholder, and ~12% of old products carry one.
+ */
+const REAL_PHOTO_SQL = Prisma.join(
+  PLACEHOLDER_IMAGE_MARKERS.map(
+    (marker) =>
+      Prisma.sql`i."url" NOT ILIKE ${`%${marker.replace(/[\\%_]/g, '\\$&')}%`}`,
+  ),
+  ' AND ',
+);
 
 /** The dearest product with a photo in a category — see `showcaseImages()`. */
 type CategoryShowcase = { price: number; url: string };
@@ -180,7 +197,8 @@ export class CategoriesService {
         WHERE p."status" = 'PUBLISHED'
           AND p."priceValue" IS NOT NULL
           AND EXISTS (
-            SELECT 1 FROM "ProductImage" i WHERE i."productId" = p."id"
+            SELECT 1 FROM "ProductImage" i
+            WHERE i."productId" = p."id" AND ${REAL_PHOTO_SQL}
           )
         ORDER BY p."categoryId", p."priceValue" DESC, p."id"
       `;
@@ -195,6 +213,7 @@ export class CategoriesService {
 
       const firstImage = new Map<string, string>();
       for (const image of images) {
+        if (isPlaceholderImageUrl(image.url)) continue;
         if (!firstImage.has(image.productId)) {
           firstImage.set(image.productId, image.url);
         }

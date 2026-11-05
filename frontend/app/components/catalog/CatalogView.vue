@@ -493,13 +493,27 @@ const activeFiltersCount = computed(() =>
 )
 
 /**
- * `/catalog` with nothing applied is the "browse by category" page, so the
- * categories are the content there, not a shortcut strip above it. Once a
- * filter, a search or a subcategory narrows the view the visitor is looking
- * for products, and the same links go back to being a compact strip.
+ * Subcategories are tiles — artwork (the dearest product with a real photo),
+ * name, count — on `/catalog` and on every category page while nothing is
+ * filtered (owner, 2026-11-05). Once a filter or a search narrows the view the
+ * visitor is looking for products, and the same links shrink to a strip.
  */
 const showCategoryTiles = computed(
-  () => !category.value && !activeFiltersCount.value && categoryLinks.value.length > 0
+  () => !activeFiltersCount.value && categoryLinks.value.length > 0
+)
+/**
+ * On a category page the first rows only, so the products stay near the top
+ * («Электроинструмент» has 48 subcategories; 10 = two rows on a computer). The rest are rendered and
+ * hidden, not left out: every subcategory link stays in the HTML.
+ */
+const TILE_PREVIEW = 10
+const tilesExpanded = ref(false)
+watch(() => category.value?.id, () => {
+  tilesExpanded.value = false
+})
+const tileHidden = (index: number) => Boolean(category.value) && !tilesExpanded.value && index >= TILE_PREVIEW
+const hiddenTiles = computed(() =>
+  category.value && !tilesExpanded.value ? Math.max(0, categoryLinks.value.length - TILE_PREVIEW) : 0
 )
 
 type Chip = { key: string, label: string, remove: () => void }
@@ -749,13 +763,15 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
       </div>
     </header>
 
-    <!-- Browsing the catalogue: at the top level the categories *are* the
-         page, so they get the room. -->
-    <section v-if="showCategoryTiles" class="category-browse" aria-label="Категории каталога">
+    <!-- Browsing: the categories get the room (tiles), as long as nothing is
+         filtered. -->
+    <section v-if="showCategoryTiles" class="category-browse" :aria-label="category ? 'Подкатегории' : 'Категории каталога'">
       <div class="category-grid">
         <UiCategoryCard
-          v-for="item in categoryLinks"
+          v-for="(item, index) in categoryLinks"
+          v-show="!tileHidden(index)"
           :key="item.id"
+          :class="{ 'wide-only': Boolean(category) && !tilesExpanded && index === TILE_PREVIEW - 1 }"
           :name="item.name"
           :to="categoryTo(item.slug)"
           :count="item.count"
@@ -763,6 +779,15 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
           variant="tile"
         />
       </div>
+      <UiButton
+        v-if="hiddenTiles || (category && tilesExpanded)"
+        variant="secondary"
+        size="sm"
+        class="tiles-toggle"
+        @click="tilesExpanded = !tilesExpanded"
+      >
+        {{ tilesExpanded ? 'Свернуть' : `Показать все подкатегории (${categoryLinks.length})` }}
+      </UiButton>
     </section>
 
     <!-- Narrowed view: the same links as a compact strip, so the product grid
@@ -800,7 +825,7 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
       </aside>
 
       <div class="content">
-        <h2 v-if="showCategoryTiles" class="content-title">Все товары каталога</h2>
+        <h2 v-if="showCategoryTiles" class="content-title">{{ category ? 'Все товары раздела' : 'Все товары каталога' }}</h2>
 
         <div class="toolbar">
           <span class="total" aria-live="polite">
@@ -1011,14 +1036,30 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
 }
 
 /* ---- Categories ---- */
+.category-browse {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.category-browse .category-grid {
+  align-self: stretch;
+}
+
 .category-grid {
   display: grid;
   gap: var(--space-3);
   grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
 }
 
-/* Phones: three to a row — one 343px tile per row was a long scroll. */
+/* Phones: three to a row — one 343px tile per row was a long scroll. The
+   preview's tenth tile would sit alone on its row there: nine. */
 @media (max-width: 560px) {
+  .category-grid :deep(.wide-only) {
+    display: none;
+  }
+
   .category-grid {
     gap: var(--space-2);
     grid-template-columns: repeat(3, minmax(0, 1fr));
