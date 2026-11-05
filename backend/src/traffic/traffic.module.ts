@@ -11,5 +11,6 @@ import { TrafficService } from './traffic.service';
 @Module({
   controllers: [TrafficController, TrafficAdminController],
   providers: [TrafficService, MetrikaService, TrafficCleanupCron],
+  exports: [TrafficService, MetrikaService],
 })
 export class TrafficModule {}

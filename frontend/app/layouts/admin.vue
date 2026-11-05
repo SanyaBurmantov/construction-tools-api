@@ -25,6 +25,7 @@ const forbidden = computed(() => Boolean(user.value) && !isAdmin.value)
 
 const nav = computed(() => [
   { label: 'Дашборд', to: '/admin', icon: 'grid', exact: true },
+  { label: 'Планы', to: '/admin/plans', icon: 'flag' },
   { label: 'Заказы', to: '/admin/orders', icon: 'cart', badge: badges.value?.newOrders },
   { label: 'Заявки', to: '/admin/leads', icon: 'log', badge: badges.value?.newLeads },
   { label: 'Товары', to: '/admin/products', icon: 'box' },
@@ -65,6 +66,7 @@ const nav = computed(() => [
 ])
 
 const ICONS: Record<string, string> = {
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
   grid: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
   cart: 'M3 4h2l2.4 10.4A2 2 0 0 0 9.35 16H17a2 2 0 0 0 1.95-1.55L20.5 8H6',
   box: 'M4 8l8-4 8 4v8l-8 4-8-4V8zm0 0l8 4m0 0l8-4m-8 4v8',

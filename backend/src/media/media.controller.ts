@@ -38,8 +38,8 @@ export class MediaAdminController {
 
   /**
    * An admin's picture into our S3, resized (see MediaUploadService).
-   * `kind=banner` for the home slider, anything else for category tiles and
-   * brand logos. Answers the public URL to put into the form's field.
+   * `kind=banner` for the home slider, `kind=screenshot` for a plan's
+   * attachment, anything else for category tiles and brand logos. Answers the public URL to put into the form's field.
    */
   @Post('upload')
   @HttpCode(201)
@@ -54,7 +54,8 @@ export class MediaAdminController {
     @Query('kind') kind?: string,
   ) {
     if (!file?.buffer) throw new BadRequestException('Файл не передан');
-    const uploadKind: UploadKind = kind === 'banner' ? 'banner' : 'image';
+    const uploadKind: UploadKind =
+      kind === 'banner' || kind === 'screenshot' ? kind : 'image';
     return this.uploads.upload(file.buffer, uploadKind);
   }
 }
