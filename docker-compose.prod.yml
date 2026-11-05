@@ -94,14 +94,14 @@ x-backend-environment: &backend-environment
   TH_TOOLS_CATEGORY_MAX_PAGES: ${TH_TOOLS_CATEGORY_MAX_PAGES:-100}
   # Пустой INCLUDE = берём всё, кроме EXCLUDE. Фильтр по цепочке хлебных крошек.
   TH_TOOLS_CATEGORY_INCLUDE_REGEX: ${TH_TOOLS_CATEGORY_INCLUDE_REGEX:-}
-  TH_TOOLS_CATEGORY_EXCLUDE_REGEX: ${TH_TOOLS_CATEGORY_EXCLUDE_REGEX:-косметика|автохими|автоламп|антенн|ароматизатор|брелок|ковры напольные|кресла детские|очки для чтения|помощь водителю|щ[её]тки стеклоочистител|уход за авто|внешний тюнинг|внутрисалонн|велотехник|дача, отдых}
+  TH_TOOLS_CATEGORY_EXCLUDE_REGEX: ${TH_TOOLS_CATEGORY_EXCLUDE_REGEX:-}
   TOOLS_BY_CRON_ENABLED: ${TOOLS_BY_CRON_ENABLED:-true}
   TOOLS_BY_CRON_BATCH_LIMIT: ${TOOLS_BY_CRON_BATCH_LIMIT:-300}
   TOOLS_BY_REQUEST_DELAY_MS: ${TOOLS_BY_REQUEST_DELAY_MS:-2000}
   TOOLS_BY_DISCOVERY_MAX_PAGES: ${TOOLS_BY_DISCOVERY_MAX_PAGES:-2000}
   TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS: ${TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS:-60000}
   TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
-  TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-товары для дома|товары для уборки|посуда|текстиль|игрушк|канцеляр|зоотовар|космет|бытовая химия|продукты питания}
+  TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-}
   DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
   # Terms of sale (backend/src/orders/order-terms.ts), mirrored to the
   # storefront below.

@@ -7,53 +7,21 @@ const withDefaults = (breadcrumbs: string[]) =>
   isAllowedThToolsCategory(breadcrumbs, { exclude: DEFAULT_EXCLUDE_REGEX });
 
 describe('isAllowedThToolsCategory (default rules)', () => {
+  // Owner, 2026-11-05: the shop sells everything the supplier carries. The
+  // old exclude list kept ~5k th-tool.by products out of the catalogue.
   it.each([
     ['Ручной инструмент', 'Металлообработка', 'Шарошки'],
-    ['Ручной инструмент', 'Головки торцевые'],
     ['Электроинструмент', 'Перфораторы'],
     ['Оборудование', 'Сварочное оборудование', 'Сварочные маски'],
-    ['Пневматика', 'Гайковёрты'],
-    ['Специальный инструмент'],
-    ['Компрессоры'],
-    ['Генераторы'],
-    ['Освещение LED'],
+    ['Косметика, уход', 'Мыло'],
+    ['Аксессуары', 'Автохимия и косметика', 'Герметики'],
+    ['Аксессуары', 'Внутрисалонные'],
+    ['Аксессуары', 'Брелоки'],
+    ['Велотехника'],
+    ['Дача, отдых и развлечения', 'Садовый инструмент', 'Топоры'],
+    [],
   ])('keeps %s', (...breadcrumbs) => {
     expect(withDefaults(breadcrumbs)).toBe(true);
-  });
-
-  it.each([
-    ['Косметика, уход', 'Мыло'],
-    ['Косметика, уход', 'Заколки'],
-    ['Аксессуары', 'Автолампы', 'Philips'],
-    ['Аксессуары', 'Автохимия и косметика'],
-    ['Аксессуары', 'Уход за авто'],
-    ['Аксессуары', 'Щётки стеклоочистителей'],
-    ['Аксессуары', 'Ароматизаторы'],
-    ['Аксессуары', 'Антенны'],
-    ['Аксессуары', 'Брелоки'],
-    ['Аксессуары', 'Ковры напольные'],
-    ['Аксессуары', 'Кресла детские'],
-    ['Аксессуары', 'Очки для чтения'],
-    ['Аксессуары', 'Помощь водителю'],
-    ['Аксессуары', 'Внешний тюнинг'],
-    ['Аксессуары', 'Внутрисалонные'],
-    ['Велотехника', 'Насосы'],
-    ['Дача, отдых и развлечения', 'Мангалы'],
-  ])('drops %s', (...breadcrumbs) => {
-    expect(withDefaults(breadcrumbs)).toBe(false);
-  });
-
-  it('keeps the on-topic parts of "Аксессуары"', () => {
-    // Blanket-excluding the section would have dropped exactly the things we
-    // want: measuring tools and protective workwear (welding masks live here).
-    expect(withDefaults(['Аксессуары', 'Измерительные приборы'])).toBe(true);
-    expect(withDefaults(['Аксессуары', 'Спецодежда, защита'])).toBe(true);
-    expect(withDefaults(['Аксессуары', 'Запчасти, крепёж'])).toBe(true);
-    expect(withDefaults(['Аксессуары', 'Электротовары'])).toBe(true);
-  });
-
-  it('handles both "щётки" and "щетки"', () => {
-    expect(withDefaults(['Аксессуары', 'Щетки стеклоочистителей'])).toBe(false);
   });
 });
 

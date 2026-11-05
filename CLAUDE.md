@@ -1468,10 +1468,14 @@ table — that becomes `Product.barcode`, which is the only signal besides
 brand+sku that auto-merges duplicates, so don't drop it. Availability comes from
 `[itemprop="availability"]`, and the gallery serves every photo at three sizes
 (`.750x0` / `.970` / `.0x600`), deduplicated by the size-stripped URL. The
-supplier also carries car accessories, bikes, garden and toiletries;
-`TH_TOOLS_CATEGORY_EXCLUDE_REGEX` drops those while deliberately keeping
-`Аксессуары / Измерительные приборы` and `Аксессуары / Спецодежда, защита`
-(welding masks and PPE live there). The regexes are unit-tested in
+supplier also carries car accessories, bikes, garden and toiletries, and
+**we import all of it** (owner, 2026-11-05: «пускай заказывает человек всё,
+что хочет»). The default exclude regexes of th-tool.by and tools.by are
+empty — in `parser-defaults.ts` *and* in `docker-compose.prod.yml`, whose env
+defaults used to carry a copy; ~7.7k products were kept out and the hidden
+cards answered «Страница не найдена» (migration
+`20261105120000_import_every_category` brought them back). A filter is still
+a runtime setting per source in `/admin/parsing`; regexes are unit-tested in
 `th-tools-category-filter.spec.ts` — a typo there silently empties the catalogue.
 
 ## Conventions
