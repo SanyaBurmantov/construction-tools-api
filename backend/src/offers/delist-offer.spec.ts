@@ -58,7 +58,9 @@ function createService(options: {
   const merge = { syncMatchKeys: jest.fn() } as unknown as ProductMergeService;
 
   return {
-    service: new OffersService(prisma, pricing, merge),
+    service: new OffersService(prisma, pricing, merge, {
+      enqueue: jest.fn(),
+    } as never),
     productUpdates,
     offerUpdates,
   };

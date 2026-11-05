@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { IndexNowService, productPath } from '../seo/indexnow.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -44,6 +45,7 @@ export class OffersService {
     private prisma: PrismaService,
     private pricing: PricingService,
     private merge: ProductMergeService,
+    private indexNow: IndexNowService,
   ) {}
 
   /** Best available supplier cost for a product (see `pickBestOffer`). */
@@ -108,6 +110,19 @@ export class OffersService {
       },
       data: { status: 'PUBLISHED' },
     });
+    if (published.count > 0) {
+      // A page that just went on sale: tell Yandex now rather than wait for
+      // its robot to find it in the sitemap. Never at the cost of publishing.
+      try {
+        const product = await this.prisma.product.findUnique({
+          where: { id: productId },
+          select: { slug: true },
+        });
+        if (product) await this.indexNow.enqueue([productPath(product.slug)]);
+      } catch {
+        /* the sitemap still lists it */
+      }
+    }
     return published.count > 0;
   }
 
