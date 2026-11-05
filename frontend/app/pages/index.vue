@@ -31,19 +31,41 @@ function soft<T>(request: Promise<T>, fallback: T): Promise<T> {
  * the list endpoint also sends full brand/category rows, every image and
  * spec, and the catalogue-wide `facets` the home page never reads.
  */
-function useRail(key: string, params: Record<string, string | number | boolean>) {
+function useRail(
+  key: string,
+  params: Record<string, string | number | boolean>,
+  pick: (list: ProductsResponse['data']) => ProductsResponse['data'] = list => list,
+) {
   return useAsyncData<ProductsResponse>(
     key,
     () => soft($fetch<ProductsResponse>(`${apiBase}/products`, { params: { limit: 8, ...params } }), emptyPage),
     {
       default: () => emptyPage,
-      transform: page => ({ data: page.data.map(toCardProduct), pagination: page.pagination }),
+      transform: page => ({ data: pick(page.data).map(toCardProduct), pagination: page.pagination }),
     }
   )
 }
 
-/** How many brand tiles the home page shows. */
-const HOME_BRAND_COUNT = 14
+/**
+ * A varied row out of a longer list: at most two products of one category,
+ * eight in all. Suppliers add products in batches, so the newest eight were
+ * five flavours of one STARFIX polish.
+ */
+function varied(list: ProductsResponse['data'], size = 8, perCategory = 2) {
+  const seen = new Map<string, number>()
+  const row: ProductsResponse['data'] = []
+  for (const product of list) {
+    const key = product.category?.id ?? product.id
+    if ((seen.get(key) ?? 0) >= perCategory) continue
+    seen.set(key, (seen.get(key) ?? 0) + 1)
+    row.push(product)
+    if (row.length === size) break
+  }
+  return row
+}
+
+/** How many brand tiles the home page shows: two full rows of eight. */
+const HOME_BRAND_COUNT = 16
 
 // Eight independent requests: started together, the render waits for the
 // slowest one instead of their sum.
@@ -56,6 +78,7 @@ const [
   { data: banners },
   { data: tree },
   { data: brands },
+  { data: popularSearches },
 ] = await Promise.all([
   useRail('home-sales', { onSale: true, sortBy: 'createdAt', sortOrder: 'desc' }),
   useRail('home-popular', { inStock: true, sortBy: 'rating', sortOrder: 'desc' }),
@@ -67,7 +90,9 @@ const [
     { default: () => ({ data: [] }), transform: answer => ({ data: answer.data.map(toCardProduct) }) }
   ),
   useHomeCategoryTiles(),
-  useRail('home-newest', { sortBy: 'createdAt', sortOrder: 'desc' }),
+  // Core departments only: since every supplier category is imported, the
+  // newest products were enamel saucepans and a toilet bucket.
+  useRail('home-newest', { sortBy: 'createdAt', sortOrder: 'desc', core: true, inStock: true, limit: 40 }, varied),
   useAsyncData<{ data: Banner[] }>(
     'home-banners',
     // Banners and brands are decoration: they degrade quietly even when they
@@ -87,9 +112,21 @@ const [
     () => $fetch<Brand[]>(`${apiBase}/brands`).catch(() => []),
     {
       default: () => [],
+      // The biggest brands, not the first letters of the alphabet (3TON, 3M,
+      // 5 Energy, A&P… was what the row showed).
       transform: list =>
-        list.slice(0, HOME_BRAND_COUNT).map(({ id, name, slug, logo }) => ({ id, name, slug, logo })),
+        [...list]
+          .sort((a, b) => (b._count?.products ?? 0) - (a._count?.products ?? 0) || a.name.localeCompare(b.name, 'ru'))
+          .slice(0, HOME_BRAND_COUNT)
+          .map(({ id, name, slug, logo, _count }) => ({ id, name, slug, logo, count: _count?.products ?? 0 })),
     }
+  ),
+  // What people search for — «Популярное:» under the search (empty until the
+  // search journal has enough; the category picks stand in).
+  useAsyncData<{ terms: string[] }>(
+    'home-popular-searches',
+    () => $fetch<{ terms: string[] }>(`${apiBase}/search/popular`).catch(() => ({ terms: [] })),
+    { default: () => ({ terms: [] }) }
   ),
 ])
 
@@ -103,12 +140,13 @@ if (unavailable.value) throw apiUnavailableError()
  * `/admin/storefront` (the same order as «Популярное:» under the search), and
  * the automatic grid — categories pinned in `/admin/categories`, then the
  * biggest roots — fills what is left, skipping what the strip already shows.
- * Nine tiles: three full rows on a phone.
+ * Ten tiles: two full rows of five on a computer; on a phone (three to a
+ * row) the tenth is hidden so the last row is full.
  *
  * Tile artwork arrives with both answers: the API falls back to the photo of
  * the dearest product in a category's subtree when no admin set one.
  */
-const HOME_CATEGORY_COUNT = 9
+const HOME_CATEGORY_COUNT = 10
 const topCategories = computed(() => {
   const curated = curatedTiles.value ?? []
   const shown = new Set(curated.map(category => category.id))
@@ -123,8 +161,21 @@ const popularProducts = computed(() =>
     : popular.value.data.filter((product) => product.ratingCount)
 )
 
-/** «Популярное:» under the search: the first tiles, i.e. the header strip's first picks. */
-const heroLinks = computed(() => topCategories.value.slice(0, 4))
+/**
+ * «Популярное:» under the search: frequent real searches once there are
+ * three, else the first tiles (the header strip's first picks).
+ */
+const heroLinks = computed(() => {
+  const terms = popularSearches.value.terms
+  if (terms.length >= 3) {
+    return terms.map(term => ({ key: `q:${term}`, label: term, to: `/catalog?search=${encodeURIComponent(term)}` }))
+  }
+  return topCategories.value.slice(0, 4).map(category => ({
+    key: category.id,
+    label: category.name,
+    to: `/catalog/${category.slug}`,
+  }))
+})
 
 const recentlyViewed = useRecentlyViewed()
 
@@ -219,12 +270,8 @@ useHead({
 
         <div class="hero-links">
           <span>Популярное:</span>
-          <NuxtLink
-            v-for="category in heroLinks"
-            :key="category.id"
-            :to="`/catalog/${category.slug}`"
-          >
-            {{ category.name }}
+          <NuxtLink v-for="link in heroLinks" :key="link.key" :to="link.to">
+            {{ link.label }}
           </NuxtLink>
         </div>
       </div>
@@ -283,8 +330,9 @@ useHead({
 
       <div class="category-grid">
         <UiCategoryCard
-          v-for="category in topCategories"
+          v-for="(category, index) in topCategories"
           :key="category.id"
+          :class="{ 'wide-only': index === 9 }"
           :name="category.name"
           :to="`/catalog/${category.slug}`"
           :count="category.productCount"
@@ -305,11 +353,12 @@ useHead({
       </div>
     </section>
 
-    <!-- Rated by customers -->
+    <!-- Curated in /admin/storefront, else what people actually wanted
+         (orders, carts, search clicks, visits) in the core departments. -->
     <section v-if="popularProducts.length" class="block">
       <header class="block-head">
-        <h2>Выбирают покупатели</h2>
-        <UiButton variant="link" to="/catalog?sort=rating-desc">Смотреть все →</UiButton>
+        <h2>Популярное у организаций</h2>
+        <UiButton variant="link" to="/catalog?inStock=1">Всё в наличии →</UiButton>
       </header>
       <div class="product-grid">
         <ProductCatalogCard
@@ -320,7 +369,9 @@ useHead({
       </div>
     </section>
 
-    <!-- Newest -->
+    <HomeForCompanies />
+
+    <!-- Newest, core departments only -->
     <section v-if="newest.data.length" class="block">
       <header class="block-head">
         <h2>Новинки</h2>
@@ -375,7 +426,8 @@ useHead({
           class="brand-card"
         >
           <img v-if="brand.logo" :src="brand.logo" :alt="brand.name" loading="lazy">
-          <span v-else>{{ brand.name }}</span>
+          <span v-else class="brand-name">{{ brand.name }}</span>
+          <span v-if="brand.count" class="brand-count">{{ pluralize(brand.count, 'product') }}</span>
         </NuxtLink>
       </div>
     </section>
@@ -548,11 +600,16 @@ useHead({
   gap: var(--space-3);
 }
 
-/* Phones: three to a row — one 343px tile per row was a long scroll. */
+/* Phones: three to a row — one 343px tile per row was a long scroll; the
+   tenth tile would sit alone, so it waits for a wider screen. */
 @media (max-width: 560px) {
   .category-grid {
     gap: var(--space-2);
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .category-grid :deep(.wide-only) {
+    display: none;
   }
 }
 
@@ -608,8 +665,11 @@ useHead({
 }
 
 .brand-card {
-  display: grid;
-  height: 68px;
+  display: flex;
+  min-height: 72px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -617,18 +677,38 @@ useHead({
   color: var(--text-default);
   font-size: var(--text-sm);
   font-weight: 700;
-  place-items: center;
+  gap: 2px;
   text-align: center;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+.brand-card:active {
+  transform: scale(0.97);
+}
+
+.brand-name {
+  overflow-wrap: anywhere;
+}
+
+.brand-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
 }
 
 .brand-card:hover {
   border-color: var(--brand);
+  box-shadow: var(--shadow-sm);
   color: var(--brand);
 }
 
 .brand-card img {
   max-width: 100%;
-  max-height: 100%;
+  max-height: 40px;
   object-fit: contain;
 }
 

@@ -47,6 +47,16 @@ export class ProductFilterDto {
   @IsString()
   brandId?: string;
 
+  @ApiProperty({
+    required: false,
+    description:
+      'Только профильные разделы (без хозтоваров, косметики, дачи) — для рядов главной',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === '1' || value === true)
+  @IsBoolean()
+  core?: boolean;
+
   @ApiProperty({ required: false, description: 'Только товары в наличии' })
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === '1' || value === true)

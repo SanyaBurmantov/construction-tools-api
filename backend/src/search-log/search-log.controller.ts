@@ -19,6 +19,12 @@ import { SearchLogService } from './search-log.service';
 export class SearchLogController {
   constructor(private readonly searchLog: SearchLogService) {}
 
+  /** Frequent searches, for «Популярное:» under the home page search. */
+  @Get('popular')
+  async popular() {
+    return { terms: await this.searchLog.popularTerms() };
+  }
+
   @Post('events')
   @HttpCode(204)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })

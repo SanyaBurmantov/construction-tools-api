@@ -442,6 +442,23 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   exactly what the site did before. The header strip is one small SSR fetch
   (`useHeaderCategories()`, shared key with the home page), cached 30 s in
   the API.
+- **Home page** (05.11, `pages/index.vue`): hero → terms → «Каталог»
+  (10 tiles, the tenth hidden on a phone) → «Популярное у организаций» →
+  `HomeForCompanies` (three steps of a purchase by invoice, cart / price
+  list / supply contract, the seller's requisites) → «Новинки» → brands.
+  Since every supplier category is imported, the automatic rows skip the
+  **non-core departments** (`products/core-catalog.ts`
+  `NON_CORE_ROOT_NAMES`: cosmetics, household, home, garden, bikes, car
+  cosmetics, the fallback) — `GET /products?core=1`; «Новинки» are core,
+  in stock, at most two per category out of 40. «Популярное» is the curated
+  list when there is one, else `StorefrontService.autoPopularIds()`
+  (`storefront/auto-popular.ts`, hourly, stale-while-revalidate): orders ×5,
+  cart lines ×3, search clicks ×2, our visitors ×1 — Metrika cannot do it
+  (people-only hides URL rows, with robots it is crawler noise) — then a
+  daily-rotating fill from the biggest core departments, ≤2 per department.
+  Brands are the 16 biggest by product count; «Популярное:» under the search
+  is `GET /search/popular` (terms ≥2 visitors in 30 days) once there are
+  three, else the first tiles.
 - **A listed category always has something in it.** Nothing in the storefront
   may render a category whose count is 0 — it is a link to the "ничего не
   найдено" screen, not a choice. Two layers enforce it: `pruneUnlistable()`
