@@ -493,20 +493,21 @@ const activeFiltersCount = computed(() =>
 )
 
 /**
- * Subcategories are tiles — artwork (the dearest product with a real photo),
- * name, count — on `/catalog` and on every category page while nothing is
- * filtered (owner, 2026-11-05). Once a filter or a search narrows the view the
- * visitor is looking for products, and the same links shrink to a strip.
+ * Subcategories get tiles while nothing is filtered (owner, 2026-11-05): the
+ * shop-window `tile` on `/catalog`, where the categories are the page, and the
+ * `compact` one on a category page, where they sit above the products. Artwork
+ * is the category's typical product with a real photo. Once a filter or a
+ * search narrows the view the same links shrink to a strip.
  */
 const showCategoryTiles = computed(
   () => !activeFiltersCount.value && categoryLinks.value.length > 0
 )
 /**
- * On a category page the first rows only, so the products stay near the top
- * («Электроинструмент» has 48 subcategories; 10 = two rows on a computer). The rest are rendered and
- * hidden, not left out: every subcategory link stays in the HTML.
+ * On a category page the first eight only — two rows on a computer, four on a
+ * phone — so the products stay near the top («Электроинструмент» has 48). The
+ * rest are rendered and hidden, not left out: every link stays in the HTML.
  */
-const TILE_PREVIEW = 10
+const TILE_PREVIEW = 8
 const tilesExpanded = ref(false)
 watch(() => category.value?.id, () => {
   tilesExpanded.value = false
@@ -766,17 +767,16 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
     <!-- Browsing: the categories get the room (tiles), as long as nothing is
          filtered. -->
     <section v-if="showCategoryTiles" class="category-browse" :aria-label="category ? 'Подкатегории' : 'Категории каталога'">
-      <div class="category-grid">
+      <div class="category-grid" :class="{ 'is-compact': category }">
         <UiCategoryCard
           v-for="(item, index) in categoryLinks"
           v-show="!tileHidden(index)"
           :key="item.id"
-          :class="{ 'wide-only': Boolean(category) && !tilesExpanded && index === TILE_PREVIEW - 1 }"
           :name="item.name"
           :to="categoryTo(item.slug)"
           :count="item.count"
           :image="item.image"
-          variant="tile"
+          :variant="category ? 'compact' : 'tile'"
         />
       </div>
       <UiButton
@@ -1053,16 +1053,23 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
   grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr));
 }
 
-/* Phones: three to a row — one 343px tile per row was a long scroll. The
-   preview's tenth tile would sit alone on its row there: nine. */
-@media (max-width: 560px) {
-  .category-grid :deep(.wide-only) {
-    display: none;
-  }
+/* A category page: compact tiles, four to a row on a computer. */
+.category-grid.is-compact {
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+}
 
+/* Phones: three shop-window tiles to a row (one 343px tile per row was a
+   long scroll), compact ones two to a row. */
+@media (max-width: 560px) {
   .category-grid {
     gap: var(--space-2);
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .category-grid.is-compact {
+    gap: var(--space-2);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
