@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { reachGoal } from '~/utils/metrika'
-import type { CatalogProductsResponse, CategoryPage, FacetItem, SpecFacet, CatalogLanding  } from '~/types/api'
+import type { BreadcrumbItem, CatalogProductsResponse, CategoryPage, FacetItem, SpecFacet, CatalogLanding } from '~/types/api'
 import { toCardProduct } from '~/composables/useProductActions'
 
 
@@ -545,17 +545,18 @@ const filterChips = computed<Chip[]>(() => {
 })
 
 const breadcrumbItems = computed(() => {
-  const items: Array<{ label: string, to?: string }> = [{ label: 'Главная', to: '/' }]
+  const items: BreadcrumbItem[] = [{ label: 'Главная', to: '/' }]
   if (!category.value) {
     items.push({ label: 'Каталог' })
     return items
   }
-  items.push({ label: 'Каталог', to: '/catalog' })
+  // `category` opens the crumb's subcategories on hover ('' = the roots).
+  items.push({ label: 'Каталог', to: '/catalog', category: '' })
   for (const ancestor of category.value.ancestors) {
-    items.push({ label: ancestor.name, to: `/catalog/${ancestor.slug}` })
+    items.push({ label: ancestor.name, to: `/catalog/${ancestor.slug}`, category: ancestor.slug })
   }
   if (props.landing) {
-    items.push({ label: category.value.name, to: categoryPath.value })
+    items.push({ label: category.value.name, to: categoryPath.value, category: category.value.slug })
     items.push({ label: props.landing.brand.name })
     return items
   }

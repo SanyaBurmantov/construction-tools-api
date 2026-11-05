@@ -207,6 +207,17 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   combination on `/catalog` and every `?search=` on `/brand` is its own cache
   entry. Cached HTML is served cheaply; runtime
   is light. The build is the memory-heavy step.
+- **Breadcrumbs** (`components/ui/UiBreadcrumbs.vue`, 05.11): crumbs cut
+  with «…» past a width (full name in `title` and the JSON-LD), the trail
+  wraps instead of scrolling, two or more middle levels fold into «…» on a
+  phone. A crumb with `category` (`BreadcrumbItem`: a slug, `''` for
+  «Каталог» = the roots) opens its subcategories on hover/focus — hover
+  devices only, fetched once per category (`useCategoryChildren`, `GET
+  /categories/:slug`). The product page shows the **whole** path:
+  `GET /products/:slug` carries `categoryAncestors` (recursive CTE by
+  `parentId`, root first) — it used to jump from «Каталог» to the leaf.
+  The product's Описание / Характеристики / Отзывы tabs render every panel
+  and hide the inactive ones (`v-show`), so the specs are in the HTML.
 - **One URL per page: lowercase, no trailing slash** (`/catalog`, not
   `/catalog/`). `server/middleware/canonical-url.ts` 301s every other form
   (query kept; `/api`, `/_*`, files with an extension untouched), matching the

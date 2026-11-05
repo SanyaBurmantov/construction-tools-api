@@ -386,7 +386,15 @@ export type ProductDetail = CatalogProduct & {
   /** Ours only (AI task or admin edit); the API nulls a supplier's SEO text. */
   seoTitle?: string | null
   seoDescription?: string | null
+  /** The category's parents, root first (for the breadcrumbs). */
+  categoryAncestors?: Array<{ id: string, name: string, slug: string }>
 }
+
+/**
+ * One breadcrumb. `category` makes it open a list of subcategories on hover:
+ * a category's slug, or `''` for «Каталог» (the roots).
+ */
+export type BreadcrumbItem = { label: string, to?: string, category?: string }
 
 /** A published review as `GET /products/:slug/reviews` returns it (no account link). */
 export type Review = {

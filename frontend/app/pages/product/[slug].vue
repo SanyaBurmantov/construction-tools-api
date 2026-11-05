@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { CatalogProduct } from '~/composables/useProductActions'
-import type { ProductDetail, ProductRecommendations } from '~/types/api'
+import type { BreadcrumbItem, ProductDetail, ProductRecommendations } from '~/types/api'
 import { company } from '~/data/company'
 
 // Slugs are `[a-z0-9-]` (prod has no other), and anything else 404s before
@@ -151,14 +151,21 @@ const {
 
 /* ---- Breadcrumbs ------------------------------------------------------- */
 const breadcrumbs = computed(() => {
-  const crumbs: Array<{ label: string, to?: string }> = [
+  const crumbs: BreadcrumbItem[] = [
     { label: 'Главная', to: '/' },
-    { label: 'Каталог', to: '/catalog' },
+    { label: 'Каталог', to: '/catalog', category: '' },
   ]
+  // The whole path, as on the category page — it used to jump from
+  // «Каталог» straight to the leaf.
+  for (const ancestor of product.value?.categoryAncestors ?? []) {
+    crumbs.push({ label: ancestor.name, to: `/catalog/${ancestor.slug}`, category: ancestor.slug })
+  }
   if (product.value?.category?.name) {
+    const slug = product.value.category.slug
     crumbs.push({
       label: product.value.category.name,
-      to: product.value.category.slug ? `/catalog/${product.value.category.slug}` : undefined,
+      to: slug ? `/catalog/${slug}` : undefined,
+      ...(slug ? { category: slug } : {}),
     })
   }
   crumbs.push({ label: product.value?.name ?? 'Товар' })

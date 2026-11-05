@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   articlePatterns,
   itemCodes,
@@ -251,6 +251,8 @@ function escapeLike(value: string) {
 
 @Injectable()
 export class ProductService {
+  private readonly logger = new Logger(ProductService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -336,9 +338,15 @@ export class ProductService {
 
     const { sourceProducts, ...rest } = product;
     void sourceProducts;
+    const categoryAncestors = await this.categoryAncestors(product.categoryId);
 
     return {
       ...toPublicProduct(rest),
+      /**
+       * The category's parents, root first — the product page's breadcrumbs
+       * used to jump from «Каталог» straight to the leaf.
+       */
+      categoryAncestors,
       // The gallery feeds `og:image` and the product JSON-LD as well as the
       // page, so a supplier's "нет фото" asset would be what we hand Google
       // as the product photo.
@@ -367,6 +375,34 @@ export class ProductService {
           .map((offer) => offer.lastSync)
           .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
     };
+  }
+
+  /** Parents of a category, root first (by `parentId`, never `path`). */
+  private async categoryAncestors(
+    categoryId: string | null,
+  ): Promise<Array<{ id: string; name: string; slug: string }>> {
+    if (!categoryId) return [];
+    try {
+      return await this.prisma.$queryRaw<
+        Array<{ id: string; name: string; slug: string }>
+      >`
+        WITH RECURSIVE up AS (
+          SELECT p.id, p.name, p.slug, p."parentId", 1 AS depth
+          FROM "Category" c JOIN "Category" p ON p.id = c."parentId"
+          WHERE c.id = ${categoryId}
+          UNION ALL
+          SELECT p.id, p.name, p.slug, p."parentId", up.depth + 1
+          FROM "Category" p JOIN up ON p.id = up."parentId"
+          WHERE up.depth < 10
+        )
+        SELECT id, name, slug FROM up ORDER BY depth DESC`;
+    } catch (error) {
+      // Breadcrumbs are decoration: the page renders with the leaf alone.
+      this.logger.warn(
+        `Category ancestors: ${error instanceof Error ? error.message : error}`,
+      );
+      return [];
+    }
   }
 
   /**
