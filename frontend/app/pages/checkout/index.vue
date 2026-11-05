@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cartProducts, ecommerce, reachGoal } from '~/utils/metrika'
 import { useCartStore } from '~/stores/cart'
 import { company } from '~/data/company'
 import { knownUpsellSource, type DeliveryMethod, type Order, type PaymentMethod } from '~/types/api'
@@ -76,6 +77,7 @@ const submitting = ref(false)
 const submitError = ref('')
 
 onMounted(async () => {
+  reachGoal('checkout')
   cart.load()
   // An account is required to order; a guest is sent to the login screen and
   // comes straight back here with the cart intact.
@@ -240,6 +242,10 @@ async function submit() {
       },
     })
     rememberRequisites()
+    // Before the cart is cleared: what was bought, for Metrika's revenue.
+    reachGoal('order', { order_price: cart.totalPrice, currency: 'BYN' })
+    if (byInvoice.value) reachGoal('order_invoice', { order_price: cart.totalPrice, currency: 'BYN' })
+    ecommerce('purchase', cartProducts(cart.items), order.id)
     cart.clear()
     promo.clear()
     // The id never enters the URL — analytics records URLs (utils/private-query.ts).

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cartProducts, ecommerce, reachGoal } from '~/utils/metrika'
 import { useCartStore } from '~/stores/cart'
 import { company } from '~/data/company'
 import { knownUpsellSource, type DeliveryMethod, type Order } from '~/types/api'
@@ -128,6 +129,9 @@ async function submit() {
         idempotencyKey: checkoutAttemptKey(),
       },
     })
+    reachGoal('order', { order_price: cart.totalPrice, currency: 'BYN' })
+    reachGoal('order_invoice', { order_price: cart.totalPrice, currency: 'BYN' })
+    ecommerce('purchase', cartProducts(cart.items), order.id)
     cart.clear()
     promo.clear()
     open.value = false
