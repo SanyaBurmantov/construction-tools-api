@@ -4,6 +4,8 @@ import type { Paginated, Review } from '~/types/api'
 const props = defineProps<{
   slug: string
   productName: string
+  /** Inside the product page's tabs: the tab already says «Отзывы». */
+  inTab?: boolean
 }>()
 
 type ReviewsResponse = Paginated<Review> & {
@@ -126,8 +128,9 @@ async function submit() {
 <template>
   <section id="reviews" class="reviews">
     <header class="reviews-head">
-      <h2>Отзывы<span v-if="summary.count"> · {{ summary.count }}</span></h2>
-      <UiButton variant="secondary" size="sm" @click="formOpen = true">
+      <h2 :class="{ 'sr-only': inTab }">Отзывы<span v-if="summary.count"> · {{ summary.count }}</span></h2>
+      <!-- With no reviews the empty state below carries the same button. -->
+      <UiButton v-if="!inTab || summary.count" variant="secondary" size="sm" @click="formOpen = true">
         Написать отзыв
       </UiButton>
     </header>
@@ -280,6 +283,7 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-4);
 }
 

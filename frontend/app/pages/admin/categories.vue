@@ -85,17 +85,21 @@ const index = computed(() => {
   }
 
   /**
-   * Same order the storefront uses: curated positions first, then biggest,
-   * then alphabetical. Sorting this page by name instead would make the
-   * reorder buttons move rows to places the admin cannot see.
+   * Same order the storefront uses: the most products (the whole branch)
+   * first, then alphabetical.
    */
-  const rank = (node: TreeNode) => (node.sortOrder > 0 ? node.sortOrder : Number.MAX_SAFE_INTEGER)
+  const total = new Map<string, number>()
+  const count = (node: TreeNode): number => {
+    const sum = (node._count?.products ?? 0) + node.children.reduce((acc, child) => acc + count(child), 0)
+    total.set(node.id, sum)
+    return sum
+  }
+  roots.forEach(count)
   const position = new Map<string, { siblings: TreeNode[], index: number }>()
   const sortRec = (nodes: TreeNode[]) => {
     nodes.sort(
       (a, b) =>
-        rank(a) - rank(b)
-        || (b._count?.products ?? 0) - (a._count?.products ?? 0)
+        (total.get(b.id) ?? 0) - (total.get(a.id) ?? 0)
         || a.name.localeCompare(b.name, 'ru')
     )
     nodes.forEach((node, i) => {
@@ -107,10 +111,6 @@ const index = computed(() => {
   return { byId, roots, position }
 })
 
-/** Siblings of a category, in the order this page shows them. */
-function siblingsOf(row: Category): TreeNode[] {
-  return index.value.position.get(row.id)?.siblings ?? []
-}
 
 /**
  * Search is debounced: the tree is re-walked per change, and re-walking it on
@@ -372,43 +372,6 @@ function toggleFeatured(row: Category) {
   )
 }
 
-/**
- * Moving a row renumbers the whole row of siblings from 1 in one request, so
- * two categories can never end up claiming the same position — which is what
- * happens if each row's `sortOrder` is patched on its own and the second call
- * fails.
- */
-async function move(row: Category, direction: -1 | 1) {
-  const siblings = siblingsOf(row)
-  const from = siblings.findIndex((item) => item.id === row.id)
-  const to = from + direction
-  if (from < 0 || to < 0 || to >= siblings.length) return
-
-  const ids = siblings.map((item) => item.id)
-  const [moved] = ids.splice(from, 1)
-  ids.splice(to, 0, moved!)
-
-  await withRowBusy(row.id, () =>
-    run(() => adminFetch('/categories/order', { method: 'PATCH', body: { ids } }), {
-      error: 'Не удалось изменить порядок',
-      after: () => {
-        // Positions are 1-based on the server; mirror that locally.
-        for (const [index, id] of ids.entries()) {
-          const target = categories.value.findIndex(item => item.id === id)
-          if (target >= 0) categories.value[target] = { ...categories.value[target]!, sortOrder: index + 1 }
-        }
-      },
-    }),
-  )
-}
-
-function canMove(row: Category, direction: -1 | 1) {
-  const place = index.value.position.get(row.id)
-  if (!place) return false
-  const to = place.index + direction
-  return to >= 0 && to < place.siblings.length
-}
-
 /* ---- Card artwork ------------------------------------------------------
  * A category tile falls back to the first letter of its name on a grey plate;
  * a picture replaces it. The URL is in the editor modal too, but artwork is
@@ -587,29 +550,9 @@ const mergeOptions = computed(() =>
             · {{ row.children.length }} подкат.</template>
         </span>
 
-        <!-- Order, visibility and pinning sit on the row: they are changed
+        <!-- Visibility and pinning sit on the row: they are changed
              while looking at the tree, not inside the editor. -->
         <div v-if="!isSeo" class="row-display">
-          <button
-            type="button"
-            class="icon-btn"
-            :disabled="!canMove(row, -1) || busyRows.has(row.id)"
-            aria-label="Выше"
-            title="Выше"
-            @click="move(row, -1)"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            class="icon-btn"
-            :disabled="!canMove(row, 1) || busyRows.has(row.id)"
-            aria-label="Ниже"
-            title="Ниже"
-            @click="move(row, 1)"
-          >
-            ↓
-          </button>
           <button
             type="button"
             class="icon-btn"
@@ -708,13 +651,6 @@ const mergeOptions = computed(() =>
           </div>
         </div>
 
-        <UiField
-          label="Позиция в списке"
-          hint="Пусто или 0 — сортировать по числу товаров"
-          for="c-order"
-        >
-          <UiInput id="c-order" v-model="form.sortOrder" type="number" min="0" :disabled="isSeo" />
-        </UiField>
 
         <div class="form-switches">
           <UiCheckbox v-model="form.isVisible" label="Показывать в каталоге" :disabled="isSeo" />

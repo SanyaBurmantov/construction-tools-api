@@ -207,6 +207,17 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   combination on `/catalog` and every `?search=` on `/brand` is its own cache
   entry. Cached HTML is served cheaply; runtime
   is light. The build is the memory-heavy step.
+- **Breadcrumbs** (`components/ui/UiBreadcrumbs.vue`, 05.11): crumbs cut
+  with «…» past a width (full name in `title` and the JSON-LD), the trail
+  wraps instead of scrolling, two or more middle levels fold into «…» on a
+  phone. A crumb with `category` (`BreadcrumbItem`: a slug, `''` for
+  «Каталог» = the roots) opens its subcategories on hover/focus — hover
+  devices only, fetched once per category (`useCategoryChildren`, `GET
+  /categories/:slug`). The product page shows the **whole** path:
+  `GET /products/:slug` carries `categoryAncestors` (recursive CTE by
+  `parentId`, root first) — it used to jump from «Каталог» to the leaf.
+  The product's Описание / Характеристики / Отзывы tabs render every panel
+  and hide the inactive ones (`v-show`), so the specs are in the HTML.
 - **One URL per page: lowercase, no trailing slash** (`/catalog`, not
   `/catalog/`). `server/middleware/canonical-url.ts` 301s every other form
   (query kept; `/api`, `/_*`, files with an extension untouched), matching the
@@ -434,13 +445,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `facets.categories` entirely instead of reporting `0`, so the subcategory
   strip beside the grid stays filter-aware (switch on `onSale` at the top level
   and only categories that actually have a discounted product remain).
-- **Categories are curatable, identity is not.** `Category.sortOrder` /
-  `isVisible` / `isFeatured` are admin presentation settings, editable per row
-  in `/admin/categories` (plus `PATCH /admin/categories/order`, which renumbers
-  a whole row of siblings in one transaction so two can't claim one slot).
-  `sortOrder = 0` means "never placed" and sorts *after* curated rows, which
-  keeps the old biggest-first order for the thousand categories no one has
-  touched; `isVisible: false` hides a branch from the menu, the tree, the
+- **Categories are curatable, identity is not.** `Category.isVisible` /
+  `isFeatured` are admin presentation settings, editable per row
+  in `/admin/categories`. **Order is the product count, biggest first,
+  everywhere** — tree, menu, category page, the catalogue's subcategory
+  strip (by the count under the current filters) and the admin tree (owner,
+  2026-11-05). `sortOrder` stays in the table but orders nothing: the old
+  ↑/↓ buttons renumbered all 42 roots almost alphabetically and put
+  «Косметика, уход» first; the buttons and the field are gone
+  (`PATCH /admin/categories/order` remains for scripts, the normalizer still
+  treats `sortOrder > 0` as «curated» when pruning empties). `isVisible: false` hides a branch from the menu, the tree, the
   facets and search suggestions while leaving its URL working;
   `isFeatured` pins it into the home page grid's automatic part (after the
   header strip's picks). None of this touches `pathKey`,

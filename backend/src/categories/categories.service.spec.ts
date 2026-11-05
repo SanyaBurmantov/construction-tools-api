@@ -189,15 +189,15 @@ describe('CategoriesService.getTree display settings', () => {
   // Default ordering is biggest-first; `sortOrder` is how an admin overrides
   // that without having to game the product counts. 0 means "not placed", so
   // a single pinned category leads and the rest keep their own order.
-  it('puts a curated sortOrder ahead of the product count', async () => {
+  it('orders by product count alone — a stored sortOrder no longer wins', async () => {
     const pinned = rows.map((row) =>
       row.id === 'c3' ? { ...row, sortOrder: 1 } : row,
     );
     const tree = await buildServiceWith(pinned).getTree();
 
     expect(tree[0].children.map((child) => child.slug)).toEqual([
-      'perforatory',
       'dreli',
+      'perforatory',
     ]);
   });
 });

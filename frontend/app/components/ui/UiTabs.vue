@@ -25,9 +25,14 @@ const model = defineModel<string>({ required: true })
 </template>
 
 <style scoped>
+/* The row's bottom line is an inset shadow, so the active tab's underline
+   covers it without hanging 1px below the row: that pixel (it used to be
+   margin-bottom: -1px over a border) made a vertical scrollbar on Windows in
+   this sideways-scrolling row. */
 .ui-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border-subtle);
+  overflow-y: hidden;
+  box-shadow: inset 0 -1px 0 var(--border-subtle);
   gap: var(--space-1);
 }
 
@@ -36,7 +41,6 @@ const model = defineModel<string>({ required: true })
   align-items: center;
   padding: var(--space-3) var(--space-4);
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   color: var(--text-muted);
   font-size: var(--text-sm);
   font-weight: 700;
