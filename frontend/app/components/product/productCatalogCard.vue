@@ -44,8 +44,9 @@ const link = computed(() => `/product/${props.product.slug}`)
 /**
  * The spec preview is three one-line rows of a fixed height, so cards in a
  * row stay level (a long value used to wrap and stretch the whole row). A
- * row cut with «…» opens in full over the card on hover — only when
- * something was actually cut.
+ * row cut with «…» opens in full on hover — only when something was cut:
+ * a panel growing *up* over the photo (the card clips anything below its
+ * edge), name above value at full width, a long text scrolls inside.
  */
 const specsEl = ref<HTMLElement | null>(null)
 const specsOpen = ref(false)
@@ -124,7 +125,7 @@ function openSpecs() {
         @mouseleave="specsOpen = false"
       >
         <dl v-if="specs.length" ref="specsEl" class="specs" :class="{ 'is-open': specsOpen }">
-          <div v-for="spec in specs" :key="spec.name" :title="`${spec.name}: ${spec.value}`">
+          <div v-for="spec in specs" :key="spec.name">
             <dt>{{ spec.name }}</dt>
             <dd>{{ spec.value }}</dd>
           </div>
@@ -366,24 +367,37 @@ function openSpecs() {
   text-align: right;
 }
 
-/* Opened over the price, never pushing it: the slot keeps its height. */
+/* Opened upward over the title and photo; the slot keeps its height, so the
+   price and the button never move. */
 .specs.is-open {
   z-index: 3;
+  top: auto;
+  bottom: 0;
+  max-height: 260px;
   margin: 0 calc(-1 * var(--space-2));
-  padding: var(--space-2);
-  border-top-color: transparent;
-  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
+  gap: var(--space-2);
+  scrollbar-width: thin;
+}
+
+.specs.is-open > div {
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.45;
 }
 
 .specs.is-open dt,
 .specs.is-open dd {
+  max-width: none;
   overflow: visible;
+  text-align: left;
   white-space: normal;
-}
-
-.specs.is-open dd {
-  max-width: 65%;
+  overflow-wrap: anywhere;
 }
 
 .footer {
