@@ -194,7 +194,7 @@ describe('stripVarDump', () => {
   // PHP's byte counts, Cyrillic is two bytes a letter.
   const dump =
     'Подробная информация array(2) { [0]=> array(3) { ["ID"]=> int(35566) ' +
-    '["NAME"]=> string(12) "Краска" ["CODE"]=> string(7) "a}b{c\"d" } ' +
+    '["NAME"]=> string(12) "Краска" ["CODE"]=> string(7) "a}b{c"d" } ' +
     '[1]=> array(1) { ["ACTIVE"]=> string(1) "Y" } } ';
 
   it('cuts the dump and keeps the text after it', () => {
