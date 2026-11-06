@@ -78,16 +78,24 @@ const id = (part: string) => `${props.idPrefix ?? 'cat-img'}-${part}`
     <div v-if="mode === 'own'" class="admin-input-upload">
       <UiInput :id="id('url')" v-model="ownUrl" placeholder="https://…" />
       <AdminImageUpload @uploaded="ownUrl = $event" />
-      <UiButton
-        v-if="ownUrl.trim()"
-        variant="ghost"
-        icon-only
-        aria-label="Удалить картинку"
-        title="Удалить картинку"
-        @click="ownUrl = ''; mode = 'auto'"
-      >
-        <UiIcon name="trash" :size="18" :stroke-width="1.8" />
+    </div>
+
+    <!-- Plain to see, not an icon: removing the picture is one click. -->
+    <div v-if="mode !== 'auto'" class="remove-row">
+      <UiButton variant="secondary" size="sm" class="remove" @click="ownUrl = ''; mode = 'auto'">
+        <template #leading><UiIcon name="trash" :size="16" :stroke-width="1.8" /></template>
+        {{ mode === 'own' ? 'Удалить картинку' : 'Вернуть автоматическую' }}
       </UiButton>
+      <span class="remove-hint">
+        Плитка снова возьмёт фото типичного товара
+      </span>
+    </div>
+    <div v-else-if="autoImage" class="remove-row">
+      <UiButton variant="secondary" size="sm" class="remove" @click="mode = 'none'">
+        <template #leading><UiIcon name="trash" :size="16" :stroke-width="1.8" /></template>
+        Убрать картинку
+      </UiButton>
+      <span class="remove-hint">Плитка останется с буквой названия</span>
     </div>
 
     <div class="preview">
@@ -106,6 +114,23 @@ const id = (part: string) => `${props.idPrefix ?? 'cat-img'}-${part}`
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.remove-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.remove {
+  gap: var(--space-1);
+  color: var(--danger);
+}
+
+.remove-hint {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .preview {

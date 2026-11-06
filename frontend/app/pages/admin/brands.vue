@@ -256,22 +256,24 @@ const mergeOptions = computed(() =>
           <div class="admin-input-upload">
             <UiInput id="b-logo" v-model="form.logo" placeholder="https://…" />
             <AdminImageUpload @uploaded="form.logo = $event" />
-            <UiButton
-              v-if="form.logo.trim()"
-              variant="ghost"
-              icon-only
-              aria-label="Удалить логотип"
-              title="Удалить логотип"
-              @click="form.logo = ''"
-            >
-              <UiIcon name="trash" :size="18" :stroke-width="1.8" />
-            </UiButton>
           </div>
         </UiField>
 
-        <div class="logo-preview" :class="{ 'is-empty': !form.logo.trim() }">
-          <img v-if="form.logo.trim()" :src="form.logo.trim()" :alt="form.name" loading="lazy">
-          <span v-else aria-hidden="true">{{ (form.name || '?').charAt(0) }}</span>
+        <div class="logo-row">
+          <div class="logo-preview" :class="{ 'is-empty': !form.logo.trim() }">
+            <img v-if="form.logo.trim()" :src="form.logo.trim()" :alt="form.name" loading="lazy">
+            <span v-else aria-hidden="true">{{ (form.name || '?').charAt(0) }}</span>
+          </div>
+          <UiButton
+            v-if="form.logo.trim()"
+            variant="secondary"
+            size="sm"
+            class="logo-remove"
+            @click="form.logo = ''"
+          >
+            <template #leading><UiIcon name="trash" :size="16" :stroke-width="1.8" /></template>
+            Удалить логотип
+          </UiButton>
         </div>
 
         <UiField label="Страна" for="b-country">
@@ -433,6 +435,18 @@ const mergeOptions = computed(() =>
 
 .merge-text {
   margin-bottom: var(--space-4);
+}
+
+.logo-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.logo-remove {
+  gap: var(--space-1);
+  color: var(--danger);
 }
 
 /* The logo as the brand tiles show it: contained in a fixed box. */

@@ -297,7 +297,7 @@ onBeforeUnmount(() => document.removeEventListener('paste', onPaste))
           <span class="attachments-title">Скриншоты</span>
           <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden @change="onPick">
           <UiButton variant="secondary" size="sm" :loading="uploading > 0" @click="fileInput?.click()">
-            <UiIcon name="upload" :size="16" />
+            <template #leading><UiIcon name="upload" :size="16" /></template>
             Прикрепить
           </UiButton>
         </div>
