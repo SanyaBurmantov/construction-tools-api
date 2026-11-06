@@ -25,6 +25,9 @@ function soft<T>(request: Promise<T>, fallback: T): Promise<T> {
   })
 }
 
+/** Products per home rail: two full rows of five on a computer (owner, 2026-11-06). */
+const HOME_RAIL_SIZE = 10
+
 /**
  * One product rail. Whatever `useAsyncData` returns is serialised into the
  * cached HTML's `__NUXT_DATA__`, so each rail keeps only what a card renders:
@@ -38,7 +41,7 @@ function useRail(
 ) {
   return useAsyncData<ProductsResponse>(
     key,
-    () => soft($fetch<ProductsResponse>(`${apiBase}/products`, { params: { limit: 8, ...params } }), emptyPage),
+    () => soft($fetch<ProductsResponse>(`${apiBase}/products`, { params: { limit: HOME_RAIL_SIZE, ...params } }), emptyPage),
     {
       default: () => emptyPage,
       transform: page => ({ data: pick(page.data).map(toCardProduct), pagination: page.pagination }),
@@ -48,10 +51,10 @@ function useRail(
 
 /**
  * A varied row out of a longer list: at most two products of one category,
- * eight in all. Suppliers add products in batches, so the newest eight were
+ * ten in all. Suppliers add products in batches, so the newest eight were
  * five flavours of one STARFIX polish.
  */
-function varied(list: ProductsResponse['data'], size = 8, perCategory = 2) {
+function varied(list: ProductsResponse['data'], size = HOME_RAIL_SIZE, perCategory = 2) {
   const seen = new Map<string, number>()
   const row: ProductsResponse['data'] = []
   for (const product of list) {
@@ -251,7 +254,6 @@ useHead({
         <p class="hero-sub">
           95 000+ позиций с ежедневным обновлением цен. Счёт на оплату — сразу
           на сайте, безналичный расчёт, договор поставки, доставка по Беларуси.
-          Частных покупателей тоже ждём.
         </p>
 
         <form class="hero-search" role="search" @submit.prevent="submitSearch">
