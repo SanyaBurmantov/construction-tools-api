@@ -1,3 +1,4 @@
+import { CATEGORY_NO_IMAGE } from './category-image';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -147,7 +148,11 @@ export class CategoriesService {
       description: category.description,
       // The node carries the inherited artwork; the row only has what an admin
       // typed in.
-      image: node?.image ?? category.image,
+      image: node
+        ? node.image
+        : category.image === CATEGORY_NO_IMAGE
+          ? null
+          : category.image,
       level: category.level,
       seoTitle: category.seoTitle,
       seoDescription: category.seoDescription,
@@ -344,7 +349,10 @@ export class CategoriesService {
           weight = child.productCount;
         }
       }
-      if (!node.image && best) node.image = best.url;
+      // «Без картинки» chosen by an admin: the tile keeps its letter plate,
+      // while the rolled-up photo still travels up to the parent.
+      if (node.image === CATEGORY_NO_IMAGE) node.image = null;
+      else if (!node.image && best) node.image = best.url;
       return best;
     };
     roots.forEach(inherit);

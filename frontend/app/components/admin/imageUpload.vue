@@ -51,7 +51,7 @@ async function onPick(event: Event) {
       @change="onPick"
     >
     <UiButton variant="secondary" :loading="busy" @click="input?.click()">
-      <UiIcon name="upload" :size="16" />
+      <template #leading><UiIcon name="upload" :size="16" /></template>
       Загрузить
     </UiButton>
   </span>

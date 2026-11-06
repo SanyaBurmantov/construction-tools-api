@@ -1,3 +1,4 @@
+import { PRODUCT_PAGE_WHERE } from '../products/product-page-visibility';
 import {
   BadRequestException,
   Injectable,
@@ -47,6 +48,16 @@ export class ReviewsService {
   private async getPublishedProduct(slug: string) {
     const product = await this.prisma.product.findFirst({
       where: { slug, status: 'PUBLISHED' },
+      select: { id: true },
+    });
+    if (!product) throw new NotFoundException('Товар не найден');
+    return product;
+  }
+
+  /** Reading reviews also works on a «нет в наличии» page. */
+  private async getPageProduct(slug: string) {
+    const product = await this.prisma.product.findFirst({
+      where: { slug, ...PRODUCT_PAGE_WHERE },
       select: { id: true },
     });
     if (!product) throw new NotFoundException('Товар не найден');
@@ -184,7 +195,7 @@ export class ReviewsService {
   }
 
   async listForProduct(slug: string, query: ReviewQueryDto) {
-    const product = await this.getPublishedProduct(slug);
+    const product = await this.getPageProduct(slug);
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 50);
     const where: Prisma.ReviewWhereInput = {

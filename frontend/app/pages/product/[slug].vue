@@ -386,7 +386,39 @@ useHead(() => {
             </button>
           </dl>
 
-          <div class="buy-box">
+          <!-- No supplier carries it right now: the page stays (search engines
+               keep it, a visitor from a link sees the product), with a request
+               to the manager and the alternatives below instead of a price. -->
+          <div v-if="product.unavailable" class="buy-box">
+            <p class="unavailable-badge">Нет в наличии</p>
+            <p class="unavailable-text">
+              Сейчас этого товара нет у наших поставщиков. Оставьте заявку —
+              менеджер уточнит срок поставки или подберёт аналог.
+            </p>
+            <ClientOnly>
+              <ProductAskManager
+                :product-id="product.id"
+                :product-name="product.name"
+                :in-stock="false"
+                prominent
+              />
+            </ClientOnly>
+            <a href="#similar" class="unavailable-similar">Похожие товары в наличии ↓</a>
+            <div class="secondary-actions">
+              <button
+                type="button"
+                class="text-action"
+                :class="{ 'is-on': isFavourite }"
+                :aria-pressed="isFavourite"
+                @click="toggleWishlist"
+              >
+                <UiIcon name="heart" :filled="isFavourite" />
+                {{ isFavourite ? 'В избранном' : 'В избранное' }}
+              </button>
+            </div>
+          </div>
+
+          <div v-else class="buy-box">
             <div class="price-row">
               <UiPrice
                 :value="product.priceValue"
@@ -503,6 +535,7 @@ useHead(() => {
       </section>
 
       <ProductRecommendations
+        id="similar"
         :key="product.id"
         :slug="product.slug"
         :initial="recommendations"
@@ -928,5 +961,29 @@ useHead(() => {
   .buy-actions {
     flex-wrap: wrap;
   }
+}
+
+/* ---- «Нет в наличии» ---- */
+.unavailable-badge {
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.unavailable-text {
+  margin: 0;
+  color: var(--text-default);
+  line-height: 1.5;
+}
+
+.unavailable-similar {
+  color: var(--text-link);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 </style>

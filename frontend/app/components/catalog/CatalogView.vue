@@ -980,6 +980,7 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
 .catalog-head .intro {
   display: -webkit-box;
   overflow: hidden;
+  overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -993,22 +994,47 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
   font-weight: 600;
 }
 
+/* A card the width of the product column; the text inside keeps a readable
+   line and wraps even an unbroken string (a pasted link, a run of
+   characters) instead of pushing past the content area (owner, 2026-11-06). */
 .category-about {
-  max-width: 80ch;
+  min-width: 0;
   margin-top: var(--space-8);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  line-height: 1.6;
+  padding: var(--space-6) var(--space-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  color: var(--text-default);
+  font-size: var(--text-base);
+  line-height: 1.65;
+}
+
+.category-about h2,
+.category-about p {
+  max-width: 75ch;
+  overflow-wrap: anywhere;
 }
 
 .category-about h2 {
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-4);
   color: var(--text-strong);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
+}
+
+.category-about p {
+  margin: 0;
+  white-space: pre-line;
 }
 
 .category-about p + p {
   margin-top: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .category-about {
+    padding: var(--space-4);
+    font-size: var(--text-sm);
+  }
 }
 
 /* ---- Categories ---- */

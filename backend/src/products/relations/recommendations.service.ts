@@ -1,3 +1,4 @@
+import { PRODUCT_PAGE_WHERE } from '../product-page-visibility';
 import {
   Injectable,
   NotFoundException,
@@ -198,8 +199,9 @@ export class RecommendationsService {
   }
 
   private async compute(slug: string, query: RecommendationsQueryDto) {
+    // A «нет в наличии» page needs its alternatives most of all.
     const product = await this.prisma.product.findFirst({
-      where: { slug, status: 'PUBLISHED' },
+      where: { slug, ...PRODUCT_PAGE_WHERE },
       select: SIMILARITY_SELECT,
     });
     if (!product) throw new NotFoundException('Товар не найден');

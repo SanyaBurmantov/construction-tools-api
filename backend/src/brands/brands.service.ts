@@ -35,6 +35,7 @@ export class BrandsService {
         id: true,
         name: true,
         slug: true,
+        logo: true,
         description: true,
         seoTitle: true,
         seoDescription: true,

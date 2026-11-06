@@ -379,6 +379,8 @@ function toggleFeatured(row: Category) {
  * visibility and order: a thumbnail on every row that opens one small dialog,
  * with the real storefront tile as the preview.
  */
+/** `image: 'none'` — «Без картинки» (backend categories/category-image.ts). */
+const CATEGORY_NO_IMAGE = 'none'
 const imaging = ref<Category | null>(null)
 const imageDraft = ref('')
 const imageError = ref('')
@@ -402,12 +404,16 @@ function imageUrlLooksValid(value: string) {
 async function saveImage(value: string | null) {
   const row = imaging.value
   if (!row) return
-  if (value && !imageUrlLooksValid(value)) {
+  if (value && value !== CATEGORY_NO_IMAGE && !imageUrlLooksValid(value)) {
     imageError.value = 'Ссылка должна начинаться с https:// или с /'
     return
   }
   imageError.value = ''
-  await patchDisplay(row, { image: value }, value ? 'Картинка сохранена' : 'Картинка убрана')
+  await patchDisplay(
+    row,
+    { image: value },
+    value === CATEGORY_NO_IMAGE ? 'Плитка без картинки' : value ? 'Картинка сохранена' : 'Картинка — автоматически'
+  )
   // `patchDisplay` reports its own failure as a toast; close either way, the
   // row below shows what actually got saved.
   imaging.value = null
@@ -525,12 +531,12 @@ const mergeOptions = computed(() =>
         <button
           type="button"
           class="row-thumb"
-          :class="{ 'has-image': row.image }"
-          :title="row.image ? 'Изменить картинку' : 'Добавить картинку'"
+          :class="{ 'has-image': row.image && row.image !== CATEGORY_NO_IMAGE }"
+          :title="row.image === CATEGORY_NO_IMAGE ? 'Без картинки — изменить' : row.image ? 'Изменить картинку' : 'Картинка автоматически — изменить'"
           :disabled="busyRows.has(row.id)"
           @click="openImage(row)"
         >
-          <img v-if="row.image" :src="row.image" alt="" loading="lazy">
+          <img v-if="row.image && row.image !== CATEGORY_NO_IMAGE" :src="row.image" alt="" loading="lazy">
           <span v-else class="row-thumb-plate" aria-hidden="true">{{ initialOf(row.name) }}</span>
           <span class="sr-only">Картинка категории «{{ row.name }}»</span>
         </button>
@@ -633,24 +639,14 @@ const mergeOptions = computed(() =>
           <UiTextarea id="c-desc" v-model="form.description" :rows="3" />
         </UiField>
 
-        <UiField
-          label="Картинка категории"
-          hint="Ссылка или файл (уйдёт в наше хранилище). Без картинки плитка берёт фото самого дорогого товара категории, а если фото нет ни у кого — букву названия"
-          for="c-image"
-        >
-          <div class="admin-input-upload">
-            <UiInput id="c-image" v-model="form.image" placeholder="https://…" />
-            <AdminImageUpload @uploaded="form.image = $event" />
-          </div>
-        </UiField>
-
-        <div v-if="form.image" class="form-preview">
-          <span class="form-preview-label">Так выглядит плитка в каталоге</span>
-          <div class="tile-preview">
-            <UiCategoryCard :name="form.name || 'Категория'" to="#" :image="form.image" :count="0" />
-          </div>
-        </div>
-
+        <AdminCategoryImageField
+          :key="editing?.id ?? 'new'"
+          v-model="form.image"
+          :name="form.name"
+          :slug="editing?.slug"
+          :count="editing?._count?.products"
+          id-prefix="c-image"
+        />
 
         <div class="form-switches">
           <UiCheckbox v-model="form.isVisible" label="Показывать в каталоге" :disabled="isSeo" />
@@ -684,44 +680,17 @@ const mergeOptions = computed(() =>
       <div class="image-dialog">
         <UiAlert v-if="imageError" tone="danger">{{ imageError }}</UiAlert>
 
-        <!-- The real storefront tile, so there is no guessing how the picture
-             will crop — and it shows the letter plate when the field is empty,
-             which is exactly what the catalogue will do. -->
-        <div class="tile-preview">
-          <UiCategoryCard
-            :name="imaging?.name ?? ''"
-            to="#"
-            :image="imageDraft.trim() || null"
-            :count="imaging?._count?.products ?? 0"
-          />
-        </div>
-
-        <UiField
-          label="Картинка"
-          hint="Ссылка https://…, путь на нашем сайте или файл. Пусто — фото самого дорогого товара категории"
-          for="c-thumb"
-        >
-          <div class="admin-input-upload">
-            <UiInput
-              id="c-thumb"
-              v-model="imageDraft"
-              placeholder="https://…/category.jpg"
-              @keyup.enter="saveImage(imageDraft.trim() || null)"
-            />
-            <AdminImageUpload @uploaded="imageDraft = $event" />
-          </div>
-        </UiField>
+        <AdminCategoryImageField
+          :key="imaging?.id ?? 'none'"
+          v-model="imageDraft"
+          :name="imaging?.name ?? ''"
+          :slug="imaging?.slug"
+          :count="imaging?._count?.products"
+          id-prefix="c-thumb"
+        />
       </div>
 
       <template #footer>
-        <UiButton
-          v-if="imaging?.image"
-          variant="ghost"
-          :disabled="imageBusy"
-          @click="saveImage(null)"
-        >
-          Убрать картинку
-        </UiButton>
         <UiButton variant="ghost" @click="imaging = null">Отмена</UiButton>
         <UiButton :loading="imageBusy" @click="saveImage(imageDraft.trim() || null)">
           Сохранить
@@ -876,12 +845,6 @@ const mergeOptions = computed(() =>
 }
 
 /* The preview is the storefront tile itself — shown, not clickable. */
-.tile-preview {
-  width: 220px;
-  max-width: 100%;
-  margin-inline: auto;
-  pointer-events: none;
-}
 
 .image-dialog {
   display: flex;
@@ -889,16 +852,7 @@ const mergeOptions = computed(() =>
   gap: var(--space-4);
 }
 
-.form-preview {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
 
-.form-preview-label {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
 
 .row-main {
   display: flex;

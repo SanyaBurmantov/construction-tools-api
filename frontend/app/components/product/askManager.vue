@@ -9,6 +9,8 @@ const props = defineProps<{
   productId: string
   productName: string
   inStock: boolean
+  /** A full button instead of the quiet text link (the «нет в наличии» page). */
+  prominent?: boolean
 }>()
 
 const open = ref(false)
@@ -78,7 +80,10 @@ async function send() {
 
 <template>
   <span class="ask-manager">
-  <button type="button" class="ask" @click="start">
+  <UiButton v-if="prominent" size="lg" block @click="start">
+    Узнать срок поставки или подобрать аналог
+  </UiButton>
+  <button v-else type="button" class="ask" @click="start">
     <UiIcon name="alert" :stroke-width="1.8" />
     {{ inStock ? 'Уточнить наличие и срок' : 'Подобрать аналог' }}
   </button>
