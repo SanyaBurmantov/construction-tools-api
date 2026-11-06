@@ -169,7 +169,9 @@ useHead({
     </UiEmpty>
 
     <div v-else-if="products.length" class="table-scroll scroll-x">
-      <table class="compare-table">
+      <!-- Fixed layout: every product column the same width whatever its
+           name, and a scroll instead of squeezing on a narrow screen. -->
+      <table class="compare-table" :style="{ minWidth: `${200 + products.length * 240}px` }">
         <thead>
           <tr>
             <th class="label-col">Характеристика</th>
@@ -179,40 +181,37 @@ useHead({
                   type="button"
                   class="remove"
                   :aria-label="`Убрать ${product.name} из сравнения`"
+                  title="Убрать из сравнения"
                   @click="compare.remove(product.id)"
                 >
-                  <UiIcon name="close" :stroke-width="1.8" />
+                  <UiIcon name="trash" :stroke-width="1.8" />
                 </button>
 
                 <NuxtLink :to="`/product/${product.slug}`" class="thumb">
-                  <img
-                    v-if="product.images?.length"
-                    :src="mediaSrc(product.images[0]!.url, 160, 2)"
-                    :alt="product.name"
-                    loading="lazy"
-                  >
-                  <span v-else class="thumb-empty" aria-hidden="true" />
+                  <ProductThumb :src="product.images?.[0]?.url" :alt="product.name" :width="200" :height="140" />
                 </NuxtLink>
 
                 <NuxtLink :to="`/product/${product.slug}`" class="product-name">
                   {{ product.name }}
                 </NuxtLink>
 
-                <UiPrice
-                  :value="product.priceValue"
-                  :old-price="product.oldPrice"
-                  :currency="product.priceCurrency"
-                  size="sm"
-                />
+                <div class="buy-row">
+                  <UiPrice
+                    :value="product.priceValue"
+                    :old-price="product.oldPrice"
+                    :currency="product.priceCurrency"
+                    size="sm"
+                  />
 
-                <UiButton
-                  v-if="product.priceValue"
-                  size="sm"
-                  block
-                  @click="addToCart(product)"
-                >
-                  В корзину
-                </UiButton>
+                  <UiButton
+                    v-if="product.priceValue"
+                    size="sm"
+                    class="buy"
+                    @click="addToCart(product)"
+                  >
+                    В корзину
+                  </UiButton>
+                </div>
               </div>
             </th>
           </tr>
@@ -289,6 +288,7 @@ useHead({
 
 .compare-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
@@ -303,64 +303,73 @@ useHead({
 }
 
 .product-col {
-  min-width: 220px;
+  min-width: 240px;
 }
 
 .product-head {
   position: relative;
   display: flex;
+  height: 100%;
   flex-direction: column;
   align-items: flex-start;
   padding: var(--space-4);
-  gap: var(--space-2);
+  gap: var(--space-3);
   text-align: left;
 }
 
+/* Always visible, not a hover-only cross (owner, 2026-11-06). */
 .remove {
   position: absolute;
-  top: var(--space-2);
-  right: var(--space-2);
+  z-index: 1;
+  top: var(--space-3);
+  right: var(--space-3);
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
-  color: var(--text-subtle);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-xs);
+  color: var(--text-muted);
   place-items: center;
+  transition:
+    color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    background var(--duration-base) var(--ease-out);
 }
 
-.remove:hover {
-  background: var(--surface-active);
+.remove:hover,
+.remove:focus-visible {
+  border-color: var(--danger);
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
 .remove svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .thumb {
   display: block;
   width: 100%;
-  height: 120px;
+  height: 140px;
+  padding: 0 var(--space-8);
 }
 
-.thumb img {
+.thumb :deep(img) {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.thumb-empty {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-}
 
 .product-name {
   display: -webkit-box;
+  /* Three lines held even for a short name, so prices and buttons line up. */
+  min-height: calc(3 * 1.45em);
   overflow: hidden;
+  line-height: 1.45;
   color: var(--text-strong);
   font-size: var(--text-sm);
   font-weight: 700;
@@ -370,6 +379,21 @@ useHead({
 
 .product-name:hover {
   color: var(--text-link);
+}
+
+.buy-row {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  gap: var(--space-2);
+}
+
+.buy {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 thead th {

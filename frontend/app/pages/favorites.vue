@@ -68,9 +68,17 @@ useHead({
     <ul v-else class="product-grid">
       <li v-for="item in wishlist.items" :key="item.productId" class="fav-card">
         <NuxtLink :to="`/product/${item.slug}`" class="image">
-          <img v-if="item.image" :src="mediaSrc(item.image, 240, 2)" :alt="item.name" loading="lazy">
-          <span v-else class="placeholder" aria-hidden="true" />
+          <ProductThumb :src="item.image" :alt="item.name" :width="240" :height="180" />
         </NuxtLink>
+        <button
+          type="button"
+          class="remove"
+          :aria-label="`Убрать ${item.name} из избранного`"
+          title="Убрать из избранного"
+          @click="wishlist.remove(item.productId)"
+        >
+          <UiIcon name="trash" :size="16" :stroke-width="1.8" />
+        </button>
 
         <div class="body">
           <NuxtLink :to="`/product/${item.slug}`" class="name">{{ item.name }}</NuxtLink>
@@ -92,15 +100,6 @@ useHead({
             </UiButton>
             <UiButton v-else size="sm" variant="secondary" block :to="`/product/${item.slug}`">
               Подробнее
-            </UiButton>
-            <UiButton
-              variant="ghost"
-              size="sm"
-              icon-only
-              :aria-label="`Убрать ${item.name} из избранного`"
-              @click="wishlist.remove(item.productId)"
-            >
-              <UiIcon name="close" :size="16" :stroke-width="1.8" />
             </UiButton>
           </div>
         </div>
@@ -136,32 +135,60 @@ useHead({
 }
 
 .fav-card {
+  position: relative;
   display: flex;
   overflow: hidden;
   flex-direction: column;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-card);
+  transition:
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+.fav-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
 }
 
 .image {
-  display: block;
+  display: grid;
   aspect-ratio: 4 / 3;
   padding: var(--space-4);
+  place-items: center;
 }
 
-.image img {
+.image :deep(img) {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.placeholder {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
+/* Always visible, the same control as in the comparison. */
+.remove {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: grid;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-xs);
+  color: var(--text-muted);
+  place-items: center;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.remove:hover,
+.remove:focus-visible {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .body {
@@ -175,12 +202,14 @@ useHead({
 
 .name {
   display: -webkit-box;
+  /* Three lines held even for a short name, so prices and buttons line up. */
+  min-height: calc(3 * 1.4em);
   overflow: hidden;
   color: var(--text-strong);
   font-weight: 700;
-  line-height: var(--leading-snug);
+  line-height: 1.4;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .name:hover {

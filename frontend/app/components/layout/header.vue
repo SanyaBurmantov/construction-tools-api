@@ -81,23 +81,25 @@ const listActions = computed(() => [
 
 /* ---- Search + live suggestions ---------------------------------------- */
 /**
- * The catalogue's `?search=` is the box's text: a shared link
- * (/catalog?search=дрель) opened with the right results and an empty box, so
- * the visitor could not see — or refine — what was searched. Set on the
- * server too, so the word is there in the first paint. Anywhere else the box
- * keeps what was typed (a product opened from the results keeps its query).
+ * The box shows a query only where its results are on screen: the
+ * catalogue's `?search=` is the box's text (a shared /catalog?search=дрель
+ * opens with the word in it — set on the server too, so it is there in the
+ * first paint). Any other page clears it: a query left in the box after the
+ * visitor had moved on to a product or the home page read as if a search
+ * were still applied (owner, 2026-11-06). «Назад» to the results brings the
+ * word back with them.
  */
-function routeSearch(): string | null {
-  if (route.path !== '/catalog' && !route.path.startsWith('/catalog/')) return null
+function routeSearch(): string {
+  const onCatalog = route.path === '/catalog' || route.path.startsWith('/catalog/')
   const value = route.query.search
-  return typeof value === 'string' ? value : ''
+  return onCatalog && typeof value === 'string' ? value : ''
 }
-const search = ref(routeSearch() ?? '')
+const search = ref(routeSearch())
 /** The box was filled from the address, not typed: no suggestions panel. */
 let fromRoute = false
 watch(() => [route.path, route.query.search], () => {
   const value = routeSearch()
-  if (value === null || value === search.value) return
+  if (value === search.value) return
   fromRoute = true
   search.value = value
 })

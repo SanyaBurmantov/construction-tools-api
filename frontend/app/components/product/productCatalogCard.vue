@@ -81,7 +81,7 @@ function openSpecs() {
       <div class="quick-actions">
         <button
           type="button"
-          class="icon-action"
+          class="icon-action is-heart"
           :class="{ 'is-on': isFavourite }"
           :aria-pressed="isFavourite"
           :aria-label="isFavourite ? 'Убрать из избранного' : 'В избранное'"
@@ -234,6 +234,9 @@ function openSpecs() {
   gap: var(--space-1);
 }
 
+/* The buttons appear on hover, but one that is switched on — in favourites,
+   in the comparison — stays visible, so a marked product is seen as marked
+   (owner, 2026-11-06: favourites «теряется»). */
 .quick-actions {
   position: absolute;
   top: var(--space-3);
@@ -241,18 +244,25 @@ function openSpecs() {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  opacity: 0;
-  transition: opacity var(--duration-base) var(--ease-out);
 }
 
-.product-card:hover .quick-actions,
-.quick-actions:focus-within {
+.quick-actions .icon-action {
+  opacity: 0;
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.product-card:hover .icon-action,
+.quick-actions:focus-within .icon-action,
+.quick-actions .icon-action.is-on {
   opacity: 1;
 }
 
 /* Touch devices have no hover, so the actions must always be reachable. */
 @media (hover: none) {
-  .quick-actions {
+  .quick-actions .icon-action {
     opacity: 1;
   }
 }
@@ -276,6 +286,13 @@ function openSpecs() {
 .icon-action.is-on {
   border-color: var(--brand);
   color: var(--brand);
+}
+
+/* Favourites read as a red heart everywhere on the web. */
+.icon-action.is-heart:hover,
+.icon-action.is-heart.is-on {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* ---- Body ---- */

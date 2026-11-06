@@ -22,7 +22,6 @@ const props = defineProps<{
    * is a different thing to say than "this is a leaf".
    */
   categoryHasChildren: boolean
-  parentLink: { to: RouteLocationRaw, label: string } | null
   categoryTo: CategoryTo
   inStock: boolean
   onSale: boolean
@@ -97,11 +96,10 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       <UiButton variant="link" size="sm" @click="emit('clear')">Сбросить</UiButton>
     </header>
 
-    <section class="group">
+    <!-- The way up is the breadcrumbs (owner, 2026-11-06: «← Раздел» here
+         and beside the price list repeated them); a leaf has no section. -->
+    <section v-if="categoryLinks.length || categoryHasChildren || !category" class="group">
       <h3>Категории</h3>
-      <NuxtLink v-if="parentLink" :to="parentLink.to" class="parent">
-        ← {{ parentLink.label }}
-      </NuxtLink>
       <div v-if="categoryLinks.length" class="links">
         <NuxtLink
           v-for="item in visibleItems(categoryLinks, 'categories')"
@@ -116,7 +114,6 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
       <p v-else-if="categoryHasChildren" class="empty">
         Нет подкатегорий с товарами по текущим фильтрам.
       </p>
-      <p v-else-if="category" class="empty">Это конечная категория.</p>
       <button
         v-if="categoryLinks.length > VALUES_COLLAPSED"
         type="button"
@@ -300,15 +297,6 @@ const priceMax = defineModel<string>('priceMax', { default: '' })
   background: var(--brand-soft);
   color: var(--brand-soft-text);
   font-size: 11px;
-}
-
-.parent {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.parent:hover {
-  color: var(--text-link);
 }
 
 .links,
