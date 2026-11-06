@@ -1,4 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  PRODUCT_PAGE_WHERE,
+  productPageState,
+} from './product-page-visibility';
 import { nonCoreCategoryIds } from './core-catalog';
 import {
   articlePatterns,
@@ -287,8 +291,8 @@ export class ProductService {
   }
 
   async getProductBySlug(slug: string) {
-    const product = await this.prisma.product.findFirst({
-      where: { slug, status: 'PUBLISHED' },
+    const found = await this.prisma.product.findFirst({
+      where: { slug, ...PRODUCT_PAGE_WHERE },
       include: {
         brand: true,
         category: PUBLIC_CATEGORY_SELECT,
@@ -303,6 +307,17 @@ export class ProductService {
         },
       },
     });
+
+    // A product the system hid (no supplier carries it now) keeps its page as
+    // «нет в наличии» for a while; past that, or hidden by an admin, it is
+    // not found (product-page-visibility.ts).
+    const lastSeen =
+      found?.sourceProducts
+        .map((offer) => offer.lastSync)
+        .filter((date): date is Date => date instanceof Date)
+        .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+    const pageState = found ? productPageState(found, lastSeen) : 'gone';
+    const product = pageState === 'gone' ? null : found;
 
     if (!product) {
       // The slug may belong to a product that was merged into another; tell the
@@ -342,8 +357,15 @@ export class ProductService {
     void sourceProducts;
     const categoryAncestors = await this.categoryAncestors(product.categoryId);
 
+    const unavailable = pageState === 'unavailable';
     return {
       ...toPublicProduct(rest),
+      // Off sale: no price (the last one is stale), and a flag the page turns
+      // into «нет в наличии» with a request form instead of the buy box.
+      ...(unavailable
+        ? { priceValue: null, oldPrice: null, stockStatus: 'out_of_stock' }
+        : {}),
+      unavailable,
       /**
        * The category's parents, root first — the product page's breadcrumbs
        * used to jump from «Каталог» straight to the leaf.
@@ -372,10 +394,11 @@ export class ProductService {
        * offer sync. Shown as «Цена обновлена …» and the base of the
        * JSON-LD `priceValidUntil`. Null for a product with no offer.
        */
-      priceCheckedAt:
-        priced
-          .map((offer) => offer.lastSync)
-          .sort((a, b) => b.getTime() - a.getTime())[0] ?? null,
+      priceCheckedAt: unavailable
+        ? null
+        : (priced
+            .map((offer) => offer.lastSync)
+            .sort((a, b) => b.getTime() - a.getTime())[0] ?? null),
     };
   }
 

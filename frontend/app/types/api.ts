@@ -388,6 +388,11 @@ export type ProductDetail = CatalogProduct & {
   seoDescription?: string | null
   /** The category's parents, root first (for the breadcrumbs). */
   categoryAncestors?: Array<{ id: string, name: string, slug: string }>
+  /**
+   * No supplier carries it right now: the page stays up as «нет в наличии»,
+   * without a price (backend products/product-page-visibility.ts).
+   */
+  unavailable?: boolean
 }
 
 /**
