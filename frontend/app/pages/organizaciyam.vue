@@ -217,18 +217,31 @@ const tools = [
   gap: var(--space-8);
 }
 
+/* The home page hero's look (white card, soft brand gradient), so the two
+   B2B entry points read as one site (2026-11-06). */
 .hero {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-6);
+  padding: var(--space-8);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--surface-sunken);
+  background: linear-gradient(135deg, var(--brand-soft), var(--surface-card) 65%);
 }
 
 .hero h1 {
   margin: 0;
-  font-size: var(--text-2xl);
+  font-size: var(--text-3xl);
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: var(--space-5);
+  }
+
+  .hero h1 {
+    font-size: var(--text-2xl);
+  }
 }
 
 .hero-lead {
