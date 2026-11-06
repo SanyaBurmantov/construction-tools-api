@@ -4,6 +4,7 @@ import { company } from '~/data/company'
 // заглушки вида «[...]» в футер не выводим — там им не место
 const unp = company.unp.startsWith('[') ? '' : company.unp
 const currentYear = new Date().getFullYear()
+const { openSettings } = useCookieConsent()
 </script>
 
 <template>
@@ -53,6 +54,8 @@ const currentYear = new Date().getFullYear()
     <div class="container footer-bottom">
       <span>© {{ currentYear }} {{ company.name }}{{ unp ? `, УНП ${unp}` : '' }}</span>
       <span>Цены и наличие обновляются ежедневно.</span>
+      <button type="button" class="footer-cookie" @click="openSettings">Настройки cookie</button>
+      <StorefrontConsumerAppeals compact class="footer-disclaimer" />
       <span class="footer-disclaimer">
         Информация на сайте, включая цены и наличие товаров, носит ознакомительный
         характер и не является публичной офертой.
@@ -141,5 +144,14 @@ const currentYear = new Date().getFullYear()
 .footer-disclaimer {
   flex-basis: 100%;
   font-size: 12px;
+}
+.footer-cookie {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 </style>

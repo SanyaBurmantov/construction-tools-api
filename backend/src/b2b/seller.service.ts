@@ -34,7 +34,7 @@ export type Seller = {
  * made-up account number or the wrong VAT line is worse than none.
  */
 export const SELLER_DEFAULTS: Seller = {
-  name: 'ООО «Мультитул»',
+  name: 'ООО «МультиТул»',
   unp: '391807521',
   legalAddress: 'г. Витебск, пр-т Фрунзе, 39а-18',
   bankAccount: '',

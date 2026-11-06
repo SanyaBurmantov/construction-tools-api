@@ -8,10 +8,10 @@ const toast = useAppToast()
 const { formatPrice } = useFormatPrice()
 const cartValidation = useCartValidation()
 const { ensureAuthenticated } = useCheckoutAuth()
-const { isAuthenticated, user } = useAuth()
+const { isAuthenticated } = useAuth()
 const { terms } = useOrderTerms()
-/** Under the individual minimum only an organisation (paying by invoice) may order. */
-const belowMinimum = computed(() => !cart.isEmpty && cart.totalPrice < terms.minIndividual)
+/** Organisations and ИП only (2026-11-06): their minimum is the only one. */
+const belowMinimum = computed(() => !cart.isEmpty && cart.totalPrice < terms.minCompany)
 
 const goingToCheckout = ref(false)
 
@@ -127,15 +127,8 @@ useHead({
         <div class="aside">
         <CartOrderSummary title="Итого" total-label="К оплате">
           <UiAlert v-if="belowMinimum" tone="warning">
-            <template v-if="user?.customerType === 'COMPANY'">
-              Для организаций минимальная сумма заказа —
-              {{ formatPrice(terms.minCompany, 'BYN') }} по безналичному расчёту.
-            </template>
-            <template v-else>
-              Минимальная сумма заказа — {{ formatPrice(terms.minIndividual, 'BYN') }}.
-              Организации заказывают по безналичному расчёту от
-              {{ formatPrice(terms.minCompany, 'BYN') }}.
-            </template>
+            Минимальная сумма заказа — {{ formatPrice(terms.minCompany, 'BYN') }}
+            по безналичному расчёту.
           </UiAlert>
           <p class="note">
             Доставка: курьер — {{ formatPrice(terms.courier, 'BYN') }}, почта —
@@ -146,6 +139,7 @@ useHead({
           <UiButton size="lg" block :loading="goingToCheckout" @click="goToCheckout">
             Оформить заказ
           </UiButton>
+          <StorefrontRetailNote />
           <p class="note auth-note">
             <template v-if="isAuthenticated">
               Корзина сохранена в аккаунте — она откроется и на другом устройстве.

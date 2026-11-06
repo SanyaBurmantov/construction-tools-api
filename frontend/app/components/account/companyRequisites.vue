@@ -20,6 +20,28 @@ const props = withDefaults(
 
 const id = (name: string) => `${props.idPrefix}-${name}`
 
+/**
+ * The tax registry fills the name and address from the УНП
+ * (`useUnpLookup`). Only blank fields — or what the registry itself filled a
+ * moment ago — are overwritten, so a name typed by hand is kept.
+ */
+const unp = computed(() => model.value.taxId)
+const { state: unpState, problem: unpProblem, hint: unpHint } = useUnpLookup(unp)
+const filledFromRegistry = { companyName: '', legalAddress: '' }
+watch(unpState, (current) => {
+  if (current.status !== 'found' || !current.payer.active) return
+  const fill = (key: 'companyName' | 'legalAddress', value: string | null) => {
+    if (!value) return
+    const now = model.value[key].trim()
+    if (!now || now === filledFromRegistry[key]) {
+      model.value[key] = value
+      filledFromRegistry[key] = value
+    }
+  }
+  fill('companyName', current.payer.shortName)
+  fill('legalAddress', current.payer.address)
+})
+
 const taxIdError = computed(() =>
   model.value.taxId.trim().length >= 9 && !isValidUnp(model.value.taxId)
     ? 'Контрольная цифра УНП не сходится — проверьте номер'
@@ -40,12 +62,18 @@ const bicError = computed(() =>
 <template>
   <div class="requisites">
     <div class="grid">
-      <UiField label="Название организации" required :for="id('company')">
-        <UiInput :id="id('company')" v-model="model.companyName" placeholder="ООО «Ромашка»" autocomplete="organization" />
+      <UiField
+        label="УНП"
+        :required="requireTaxId"
+        :for="id('tax')"
+        :error="taxIdError || unpProblem"
+        :hint="unpHint || 'Название и адрес подставим из реестра МНС'"
+      >
+        <UiInput :id="id('tax')" v-model="model.taxId" placeholder="123456789" inputmode="numeric" />
       </UiField>
 
-      <UiField label="УНП" :required="requireTaxId" :for="id('tax')" :error="taxIdError">
-        <UiInput :id="id('tax')" v-model="model.taxId" placeholder="123456789" inputmode="numeric" />
+      <UiField label="Название организации или ИП" required :for="id('company')">
+        <UiInput :id="id('company')" v-model="model.companyName" placeholder="ООО «Ромашка»" autocomplete="organization" />
       </UiField>
     </div>
 

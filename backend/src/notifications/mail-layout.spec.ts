@@ -36,7 +36,7 @@ describe('mailLayout', () => {
   });
 
   it('puts the seller in the footer, a blank field keeping the default', () => {
-    expect(html).toContain('ООО «Мультитул»');
+    expect(html).toContain('ООО «МультиТул»');
     expect(html).toContain('УНП 391807521');
     expect(html).toContain('href="tel:+375290000000"');
     expect(html).toContain('mailto:support@gost.by');

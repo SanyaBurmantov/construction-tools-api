@@ -27,6 +27,7 @@ import {
   verifyPassword,
 } from './password.util';
 import { EmailVerificationService } from './email-verification.service';
+import { PayerRegistryService } from '../requisites/payer-registry.service';
 
 /** Fields safe to return — `passwordHash` is never selected. */
 export const USER_SELECT = {
@@ -80,6 +81,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private emailVerification: EmailVerificationService,
+    private payerRegistry: PayerRegistryService,
   ) {}
 
   private ttlMs(): number {
@@ -149,7 +151,15 @@ export class AuthService {
     const login = this.cleanLogin(dto.login);
     const passwordIssue = passwordProblem(dto.password);
     if (passwordIssue) throw new BadRequestException(passwordIssue);
+    // The storefront sells to organisations and ИП only (owner, 2026-11-06):
+    // an account is a company with a УНП the tax registry knows.
+    if (dto.customerType !== CustomerType.COMPANY) {
+      throw new BadRequestException(
+        'Сайт работает только с организациями и ИП. Розничные покупки — в магазине или по телефону',
+      );
+    }
     this.assertCompanyComplete(dto.customerType, dto.companyName);
+    await this.payerRegistry.assertBillable(dto.taxId);
     // The confirmation letter needs an address: the e-mail field, or the
     // login itself when that is an e-mail.
     const email =
@@ -431,9 +441,23 @@ export class AuthService {
   async updateProfile(userId: string, dto: UpdateProfileDto) {
     const current = await this.getProfile(userId);
     const customerType = dto.customerType ?? current.customerType;
+    // A customer cannot turn a company account into a private one: the site
+    // sells to organisations only. Staff accounts keep whatever they had.
+    if (
+      current.role === UserRole.CUSTOMER &&
+      dto.customerType === CustomerType.INDIVIDUAL &&
+      current.customerType !== CustomerType.INDIVIDUAL
+    ) {
+      throw new BadRequestException(
+        'Сайт работает только с организациями и ИП',
+      );
+    }
     const companyName =
       dto.companyName === undefined ? current.companyName : dto.companyName;
     this.assertCompanyComplete(customerType, companyName);
+    if (dto.taxId?.trim() && dto.taxId.trim() !== current.taxId) {
+      await this.payerRegistry.assertBillable(dto.taxId);
+    }
 
     const email =
       dto.email === undefined

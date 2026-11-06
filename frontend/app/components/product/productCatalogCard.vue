@@ -40,6 +40,22 @@ const specs = computed(() =>
   props.compact ? [] : (props.product.productSpecs?.slice(0, 3) ?? [])
 )
 const link = computed(() => `/product/${props.product.slug}`)
+
+/**
+ * The spec preview is three one-line rows of a fixed height, so cards in a
+ * row stay level (a long value used to wrap and stretch the whole row). A
+ * row cut with «…» opens in full over the card on hover — only when
+ * something was actually cut.
+ */
+const specsEl = ref<HTMLElement | null>(null)
+const specsOpen = ref(false)
+function openSpecs() {
+  const el = specsEl.value
+  if (!el) return
+  specsOpen.value = [...el.querySelectorAll<HTMLElement>('dt, dd')].some(
+    cell => cell.scrollWidth > cell.clientWidth + 1
+  )
+}
 </script>
 
 <template>
@@ -101,12 +117,19 @@ const link = computed(() => `/product/${props.product.slug}`)
 
       <span v-if="product.sku" class="sku">Арт. {{ product.sku }}</span>
 
-      <dl v-if="specs.length" class="specs">
-        <div v-for="spec in specs" :key="spec.name">
-          <dt>{{ spec.name }}</dt>
-          <dd>{{ spec.value }}</dd>
-        </div>
-      </dl>
+      <div
+        v-if="!compact"
+        class="specs-slot"
+        @mouseenter="openSpecs"
+        @mouseleave="specsOpen = false"
+      >
+        <dl v-if="specs.length" ref="specsEl" class="specs" :class="{ 'is-open': specsOpen }">
+          <div v-for="spec in specs" :key="spec.name" :title="`${spec.name}: ${spec.value}`">
+            <dt>{{ spec.name }}</dt>
+            <dd>{{ spec.value }}</dd>
+          </div>
+        </dl>
+      </div>
 
       <div class="footer">
         <div class="price-block">
@@ -293,13 +316,24 @@ const link = computed(() => `/product/${props.product.slug}`)
   font-size: var(--text-xs);
 }
 
+.specs-slot {
+  position: relative;
+  /* Three rows of 18px, two gaps, the padding: the same on every card. */
+  height: calc(3 * 18px + 2 * var(--space-1) + 2 * var(--space-2));
+  flex-shrink: 0;
+}
+
 .specs {
+  position: absolute;
+  z-index: 1;
+  inset: 0 0 auto;
   display: flex;
   flex-direction: column;
   padding: var(--space-2) 0;
   margin: 0;
   border-top: 1px dashed var(--border-subtle);
   gap: var(--space-1);
+  background: var(--surface-card);
 }
 
 .specs > div {
@@ -307,20 +341,49 @@ const link = computed(() => `/product/${props.product.slug}`)
   justify-content: space-between;
   gap: var(--space-3);
   font-size: var(--text-xs);
+  line-height: 18px;
 }
 
-.specs dt {
+.specs dt,
+.specs dd {
+  min-width: 0;
   overflow: hidden;
-  color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.specs dt {
+  flex: 0 1 auto;
+  color: var(--text-muted);
+}
+
 .specs dd {
+  flex: 0 1 auto;
+  max-width: 60%;
   margin: 0;
   color: var(--text-default);
   font-weight: 600;
   text-align: right;
+}
+
+/* Opened over the price, never pushing it: the slot keeps its height. */
+.specs.is-open {
+  z-index: 3;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-2);
+  border-top-color: transparent;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+}
+
+.specs.is-open dt,
+.specs.is-open dd {
+  overflow: visible;
+  white-space: normal;
+}
+
+.specs.is-open dd {
+  max-width: 65%;
 }
 
 .footer {
@@ -416,7 +479,7 @@ const link = computed(() => `/product/${props.product.slug}`)
     font-size: var(--text-sm);
   }
 
-  .specs {
+  .specs-slot {
     display: none;
   }
 

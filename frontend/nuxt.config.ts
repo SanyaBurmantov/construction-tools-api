@@ -13,6 +13,12 @@ import { fileURLToPath } from 'node:url'
  * (`plugins/metrika-admin.client.ts`), иначе его засчитал бы уже запущенный
  * на витрине счётчик через History API.
  *
+ * Только с согласия посетителя (cookie-баннер, `composables/useCookieConsent.ts`):
+ * сниппет лишь объявляет `window.__gostMetrika()` и вызывает его, когда в
+ * localStorage `cookie-consent` уже лежит `choice: 'all'`; иначе его вызовет
+ * «Принять все» в баннере. Аналитические cookie без согласия — риск по Закону
+ * № 99-З, поэтому `<noscript>`-пиксель убран: без JS согласие не спросить.
+ *
  * Секреты из адреса (`?token=` подтверждения e-mail, `?id=` заказа) в первом
  * хите заменяются на «-», а страницы сразу убирают их из адресной строки
  * (`utils/private-query.ts`) — иначе вебвизор хранил бы ссылку на чужой
@@ -46,13 +52,7 @@ const metrikaHead = isProdBuild
         earlyClickScript,
         {
           key: 'yandex-metrika',
-          innerHTML: `if(!/^\\/admin(\\/|$)/.test(location.pathname))(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href.replace(/([?&](?:token|id)=)[^&#]*/g,'$1-'),accurateTrackBounce:true,trackLinks:true});`,
-        },
-      ],
-      noscript: [
-        {
-          key: 'yandex-metrika-noscript',
-          innerHTML: `<div><img src="https://mc.yandex.ru/watch/${YANDEX_METRIKA_ID}" style="position:absolute; left:-9999px;" alt="" /></div>`,
+          innerHTML: `window.__gostMetrika=function(){if(window.ym||/^\\/admin(\\/|$)/.test(location.pathname))return;(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href.replace(/([?&](?:token|id)=)[^&#]*/g,'$1-'),accurateTrackBounce:true,trackLinks:true});};try{var c=JSON.parse(localStorage.getItem('cookie-consent')||'null');if(c&&c.choice==='all')window.__gostMetrika();}catch(e){}`,
         },
       ],
     }

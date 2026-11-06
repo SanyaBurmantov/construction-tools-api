@@ -848,9 +848,12 @@ useSeoMeta({ title: 'Личный кабинет | Gost.by', robots: 'noindex,no
           <form class="form" novalidate @submit.prevent="saveProfile">
             <UiAlert v-if="profileError" tone="danger">{{ profileError }}</UiAlert>
 
+            <!-- Организации и ИП only (2026-11-06): a company account cannot
+                 turn private; an older private account can still switch. -->
             <UiField
+              v-if="user?.customerType !== 'COMPANY'"
               label="Тип покупателя"
-              hint="Для юридического лица нужны название организации и УНП"
+              hint="Заказы оформляются только на организацию или ИП — нужны название и УНП"
               for="acc-type"
             >
               <UiSelect

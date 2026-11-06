@@ -1,3 +1,5 @@
+import { PayerRegistryService } from '../requisites/payer-registry.service';
+import type { PayerLookup } from '../requisites/payer-registry';
 import {
   BadRequestException,
   ConflictException,
@@ -59,8 +61,27 @@ function buildService(options: { user?: UserRow | null } = {}) {
     issue: issueMock,
   } as unknown as EmailVerificationService;
 
+  // The tax registry answers «found, active» unless a test says otherwise.
+  const registryLookup = jest.fn(
+    (): Promise<PayerLookup> =>
+      Promise.resolve({
+        status: 'found',
+        payer: {
+          unp: '391807521',
+          name: 'ООО «Ромашка»',
+          shortName: 'ООО «Ромашка»',
+          address: null,
+          state: 'Действующий',
+          active: true,
+        },
+      }),
+  );
+  const payerRegistry = new PayerRegistryService();
+  jest.spyOn(payerRegistry, 'lookup').mockImplementation(registryLookup);
+
   return {
-    service: new AuthService(prisma, emailVerification),
+    service: new AuthService(prisma, emailVerification, payerRegistry),
+    registryLookup,
     prisma,
     issueMock,
     userUpdate,
@@ -71,10 +92,13 @@ function buildService(options: { user?: UserRow | null } = {}) {
   };
 }
 
+// The site registers organisations and ИП only (2026-11-06).
 const baseRegistration = {
   login: 'Ivanov ',
   password: 'super-secret-1',
-  customerType: CustomerType.INDIVIDUAL,
+  customerType: CustomerType.COMPANY,
+  companyName: 'ООО «Ромашка»',
+  taxId: '391807521',
   email: 'ivan@mail.by',
 };
 
@@ -128,9 +152,39 @@ describe('AuthService.register', () => {
     await expect(
       service.register({
         ...baseRegistration,
-        customerType: CustomerType.COMPANY,
+        companyName: undefined,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses a private person: organisations and ИП only', async () => {
+    const { service, userCreate } = buildService();
+    await expect(
+      service.register({
+        ...baseRegistration,
+        customerType: CustomerType.INDIVIDUAL,
+      }),
+    ).rejects.toThrow(/только с организациями и ИП/);
+    expect(userCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a missing or unknown УНП, lets a registry outage through', async () => {
+    const missing = buildService();
+    await expect(
+      missing.service.register({ ...baseRegistration, taxId: undefined }),
+    ).rejects.toThrow(/Укажите УНП/);
+
+    const unknown = buildService();
+    unknown.registryLookup.mockResolvedValueOnce({ status: 'not_found' });
+    await expect(unknown.service.register(baseRegistration)).rejects.toThrow(
+      /не найден в реестре/,
+    );
+    expect(unknown.userCreate).not.toHaveBeenCalled();
+
+    const outage = buildService();
+    outage.registryLookup.mockResolvedValueOnce({ status: 'unavailable' });
+    await outage.service.register(baseRegistration);
+    expect(outage.userCreate).toHaveBeenCalled();
   });
 
   it('accepts a legal entity that gave its name', async () => {
@@ -139,7 +193,7 @@ describe('AuthService.register', () => {
       ...baseRegistration,
       customerType: CustomerType.COMPANY,
       companyName: 'ООО Ромашка',
-      taxId: '123456789',
+      taxId: '391807521',
     });
     const data = userCreate.mock.calls[0][0].data as Record<string, string>;
     expect(data.customerType).toBe(CustomerType.COMPANY);
@@ -334,7 +388,11 @@ describe('AuthService.resolveSession', () => {
       },
     } as unknown as PrismaService;
     return {
-      service: new AuthService(prisma, {} as EmailVerificationService),
+      service: new AuthService(
+        prisma,
+        {} as EmailVerificationService,
+        {} as PayerRegistryService,
+      ),
       deleteMock,
     };
   }

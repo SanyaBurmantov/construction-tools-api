@@ -14,11 +14,14 @@ const cartValidation = useCartValidation()
 
 // The terms of sale (useOrderTerms): the same env values the API charges by.
 const { terms, minimumFor, deliveryFor } = useOrderTerms()
-/** An organisation buys: paying by invoice, or a company account. */
-const isCompany = computed(() => byInvoice.value || user.value?.customerType === 'COMPANY')
+/**
+ * Organisations and ИП only, by invoice (owner, 2026-11-06): every order has
+ * a payer, so the organisation's minimum and free delivery always apply.
+ */
+const COMPANY = true
 const goodsTotal = computed(() => Math.max(0, cart.totalPrice - promo.discount.value))
 const freeForCompanyHint = computed(() =>
-  isCompany.value && goodsTotal.value >= terms.freeDeliveryCompanyFrom
+  goodsTotal.value >= terms.freeDeliveryCompanyFrom
     ? ` · бесплатно для организаций от ${terms.freeDeliveryCompanyFrom} BYN`
     : '',
 )
@@ -32,25 +35,19 @@ const deliveryOptions = computed(() => [
   {
     value: 'COURIER' as const,
     label: DELIVERY_LABEL.COURIER,
-    cost: deliveryFor('COURIER', isCompany.value, goodsTotal.value),
+    cost: deliveryFor('COURIER', COMPANY, goodsTotal.value),
     hint: `По адресу, в течение 1–2 дней${freeForCompanyHint.value}`,
   },
   {
     value: 'POST' as const,
     label: DELIVERY_LABEL.POST,
-    cost: deliveryFor('POST', isCompany.value, goodsTotal.value),
+    cost: deliveryFor('POST', COMPANY, goodsTotal.value),
     hint: `Белпочта, по всей стране${freeForCompanyHint.value}`,
   },
 ])
 /** Under the minimum the API refuses the order; say so before the button. */
-const orderMinimum = computed(() => minimumFor(isCompany.value))
+const orderMinimum = computed(() => minimumFor(COMPANY))
 const belowMinimum = computed(() => !cart.isEmpty && cart.totalPrice < orderMinimum.value)
-
-const paymentOptions = [
-  { value: 'CASH' as const, label: PAYMENT_LABEL.CASH, hint: 'При получении' },
-  { value: 'CARD' as const, label: PAYMENT_LABEL.CARD, hint: 'При получении' },
-  { value: 'INVOICE' as const, label: PAYMENT_LABEL.INVOICE, hint: 'Для юридических лиц' },
-]
 
 const form = reactive({
   customerName: '',
@@ -59,10 +56,10 @@ const form = reactive({
   comment: '',
   deliveryMethod: 'PICKUP' as DeliveryMethod,
   deliveryAddress: '',
-  paymentMethod: 'CASH' as PaymentMethod,
+  paymentMethod: 'INVOICE' as PaymentMethod,
 })
 
-/** Who the invoice is made out to — asked for only when paying by invoice. */
+/** Who the invoice is made out to — every order has one. */
 const payer = reactive<CompanyRequisitesModel>({
   companyName: '',
   taxId: '',
@@ -71,7 +68,6 @@ const payer = reactive<CompanyRequisitesModel>({
   bankName: '',
   bankBic: '',
 })
-const byInvoice = computed(() => form.paymentMethod === 'INVOICE')
 
 const submitting = ref(false)
 const submitError = ref('')
@@ -100,8 +96,6 @@ function prefillFromAccount() {
   if (!form.customerPhone.trim()) form.customerPhone = account.phone || ''
   if (!form.customerEmail.trim()) form.customerEmail = account.email || ''
   if (account.customerType === 'COMPANY') {
-    // A company pays by invoice; it can still pick cash for a small pickup.
-    form.paymentMethod = 'INVOICE'
     if (!payer.companyName.trim()) payer.companyName = account.companyName || ''
     if (!payer.taxId.trim()) payer.taxId = account.taxId || ''
     if (!payer.legalAddress.trim()) payer.legalAddress = account.legalAddress || ''
@@ -119,7 +113,7 @@ function prefillFromAccount() {
  */
 function rememberRequisites() {
   const account = user.value
-  if (!account || account.customerType !== 'COMPANY' || !byInvoice.value) return
+  if (!account || account.customerType !== 'COMPANY') return
   const patch: Record<string, string> = {}
   const fill = (key: keyof CompanyRequisitesModel, stored: string | null) => {
     const typed = payer[key].trim()
@@ -170,15 +164,13 @@ const errors = computed<Record<string, string>>(() => {
   if (needsAddress.value && form.deliveryAddress.trim().length < 3) {
     result.deliveryAddress = 'Для выбранной доставки нужен адрес'
   }
-  if (byInvoice.value) {
-    if (payer.companyName.trim().length < 2) {
-      result.payer = 'Для оплаты по счёту укажите название организации'
-    } else if (!payer.taxId.trim()) {
-      result.payer = 'Для оплаты по счёту укажите УНП организации'
-    } else {
-      const problem = requisitesProblem(payer)
-      if (problem) result.payer = problem
-    }
+  if (payer.companyName.trim().length < 2) {
+    result.payer = 'Укажите организацию или ИП, на которую выставить счёт'
+  } else if (!payer.taxId.trim()) {
+    result.payer = 'Укажите УНП организации или ИП'
+  } else {
+    const problem = requisitesProblem(payer)
+    if (problem) result.payer = problem
   }
   return result
 })
@@ -222,16 +214,12 @@ async function submit() {
         deliveryMethod: form.deliveryMethod,
         deliveryAddress: needsAddress.value ? form.deliveryAddress.trim() : undefined,
         paymentMethod: form.paymentMethod,
-        ...(byInvoice.value
-          ? {
-              payerName: payer.companyName.trim(),
-              payerTaxId: payer.taxId.trim(),
-              payerAddress: payer.legalAddress.trim() || undefined,
-              payerAccount: payer.bankAccount.trim() || undefined,
-              payerBankName: payer.bankName.trim() || undefined,
-              payerBankBic: payer.bankBic.trim() || undefined,
-            }
-          : {}),
+        payerName: payer.companyName.trim(),
+        payerTaxId: payer.taxId.trim(),
+        payerAddress: payer.legalAddress.trim() || undefined,
+        payerAccount: payer.bankAccount.trim() || undefined,
+        payerBankName: payer.bankName.trim() || undefined,
+        payerBankBic: payer.bankBic.trim() || undefined,
         promoCode: promo.appliedCode.value || undefined,
         attribution: getAttribution(),
         // Same key on a retry → the order already created, not a second one.
@@ -244,7 +232,7 @@ async function submit() {
     rememberRequisites()
     // Before the cart is cleared: what was bought, for Metrika's revenue.
     reachGoal('order', { order_price: cart.totalPrice, currency: 'BYN' })
-    if (byInvoice.value) reachGoal('order_invoice', { order_price: cart.totalPrice, currency: 'BYN' })
+    reachGoal('order_invoice', { order_price: cart.totalPrice, currency: 'BYN' })
     ecommerce('purchase', cartProducts(cart.items), order.id)
     cart.clear()
     promo.clear()
@@ -311,7 +299,7 @@ useHead({
           <UiCard title="Контактные данные">
             <div class="field-grid">
               <UiField
-                :label="byInvoice ? 'Контактное лицо' : 'Имя'"
+                label="Контактное лицо"
                 required
                 :error="visibleError('customerName')"
                 for="co-name"
@@ -397,15 +385,13 @@ useHead({
           </UiCard>
 
           <UiCard title="Оплата">
-            <UiRadioCards
-              v-model="form.paymentMethod"
-              :options="paymentOptions"
-              legend="Способ оплаты"
-              hide-legend
-            />
+            <p class="payer-note">
+              {{ PAYMENT_LABEL.INVOICE }}. Менеджер подтвердит заказ, выставит счёт на
+              организацию и пришлёт его на e-mail.
+            </p>
           </UiCard>
 
-          <UiCard v-if="byInvoice" title="Плательщик">
+          <UiCard title="Плательщик">
             <p class="payer-note">
               На эту организацию выставим счёт. Реквизиты банка можно не заполнять —
               тогда менеджер уточнит их при подтверждении заказа.
@@ -450,14 +436,7 @@ useHead({
             Уберите недоступные товары, чтобы продолжить.
           </UiAlert>
           <UiAlert v-else-if="belowMinimum" tone="warning">
-            <template v-if="isCompany">
-              Минимальная сумма заказа для организаций — {{ formatPrice(orderMinimum, 'BYN') }}.
-            </template>
-            <template v-else>
-              Минимальная сумма заказа — {{ formatPrice(orderMinimum, 'BYN') }}.
-              Организации заказывают по безналичному расчёту от
-              {{ formatPrice(terms.minCompany, 'BYN') }} — выберите оплату по счёту.
-            </template>
+            Минимальная сумма заказа — {{ formatPrice(orderMinimum, 'BYN') }}.
           </UiAlert>
           <UiAlert
             v-else-if="submitAttempted && Object.keys(errors).length"
