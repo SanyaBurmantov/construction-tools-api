@@ -1,4 +1,5 @@
 import {
+  stripVarDump,
   cleanProductTexts,
   sanitizeSupplierText,
   sanitizeSupplierTitle,
@@ -185,5 +186,58 @@ describe('cleanProductTexts', () => {
     expect(
       cleanProductTexts({ name: 'Ключ', descriptionFull: DUKON_FULL }),
     ).toEqual({});
+  });
+});
+
+describe('stripVarDump', () => {
+  // The shape dukon.by prints (2026-11-06), shortened; string lengths are
+  // PHP's byte counts, Cyrillic is two bytes a letter.
+  const dump =
+    'Подробная информация array(2) { [0]=> array(3) { ["ID"]=> int(35566) ' +
+    '["NAME"]=> string(12) "Краска" ["CODE"]=> string(7) "a}b{c\"d" } ' +
+    '[1]=> array(1) { ["ACTIVE"]=> string(1) "Y" } } ';
+
+  it('cuts the dump and keeps the text after it', () => {
+    expect(stripVarDump(`${dump}Краска в аэрозоле, чёрная матовая.`)).toBe(
+      'Краска в аэрозоле, чёрная матовая.',
+    );
+  });
+
+  it('keeps text before the dump too', () => {
+    expect(stripVarDump(`Эмаль 3 л. ${dump}Сохнет за 20 минут.`)).toBe(
+      'Эмаль 3 л. Сохнет за 20 минут.',
+    );
+  });
+
+  it('goes through sanitizeSupplierText for every parser', () => {
+    expect(sanitizeSupplierText(`${dump}Описание: Лак акриловый.`)).toBe(
+      'Лак акриловый.',
+    );
+  });
+
+  it('leaves ordinary text alone, arrows included', () => {
+    const text = 'Переходник 1/2" => 3/8", сталь CrV.';
+    expect(stripVarDump(text)).toBe(text);
+  });
+
+  it('drops a dump cut short, and the short text falls back to the full one', () => {
+    const cut = dump.slice(0, 90);
+    expect(stripVarDump(cut)).toBe('');
+    expect(
+      cleanProductTexts({
+        name: 'Краска',
+        descriptionShort: cut,
+        descriptionFull: `${dump}Краска в аэрозоле, чёрная матовая.`,
+      }),
+    ).toEqual({
+      descriptionShort: 'Краска в аэрозоле, чёрная матовая.',
+      descriptionFull: 'Краска в аэрозоле, чёрная матовая.',
+    });
+  });
+
+  it('cuts an unbalanced dump up to its last brace', () => {
+    expect(
+      stripVarDump('array(1) { ["A"]=> array(1) { ["B"]=> int(1) } Текст'),
+    ).toBe('Текст');
   });
 });
