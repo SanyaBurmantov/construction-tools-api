@@ -2,6 +2,22 @@
 import type { CatalogProduct } from '~/composables/useProductActions'
 import type { BreadcrumbItem, ProductDetail, ProductRecommendations } from '~/types/api'
 import { company } from '~/data/company'
+import { copyText } from '~/utils/clipboard'
+
+/** «Арт. … ⧉» beside the brand: one click puts the article on the clipboard. */
+const skuToast = useAppToast()
+const skuCopied = ref(false)
+async function copySku() {
+  const sku = product.value?.sku
+  if (!sku) return
+  if (await copyText(sku)) {
+    skuCopied.value = true
+    skuToast.success(`Артикул ${sku} скопирован`)
+    setTimeout(() => { skuCopied.value = false }, 2000)
+  } else {
+    skuToast.error('Не удалось скопировать — выделите артикул вручную')
+  }
+}
 
 // Slugs are `[a-z0-9-]` (prod has no other), and anything else 404s before
 // a fetch: `/product/..%2Fprice-list.xlsx` used to send SSR — unthrottled,
@@ -332,13 +348,28 @@ useHead(() => {
         <!-- Summary + buy box -->
         <section class="summary">
           <div class="summary-head">
-            <NuxtLink
-              v-if="product.brand?.name"
-              :to="product.brand.slug ? `/brand/${product.brand.slug}` : '/brand'"
-              class="brand"
-            >
-              {{ product.brand.name }}
-            </NuxtLink>
+            <!-- Brand on the left, the article on the right — a purchaser
+                 copies it into a request or a 1C order in one click. -->
+            <div class="head-row">
+              <NuxtLink
+                v-if="product.brand?.name"
+                :to="product.brand.slug ? `/brand/${product.brand.slug}` : '/brand'"
+                class="brand"
+              >
+                {{ product.brand.name }}
+              </NuxtLink>
+              <button
+                v-if="product.sku"
+                type="button"
+                class="sku-copy"
+                :title="`Скопировать артикул ${product.sku}`"
+                @click="copySku"
+              >
+                <span class="sku-label">Арт.</span>
+                <span class="sku-value">{{ product.sku }}</span>
+                <UiIcon :name="skuCopied ? 'check' : 'copy'" :size="15" :stroke-width="2" />
+              </button>
+            </div>
 
             <h1>{{ product.name }}</h1>
 
@@ -351,7 +382,6 @@ useHead(() => {
                 show-value
               />
               <a v-if="product.ratingCount" href="#reviews" class="meta-link" @click.prevent="openTab('reviews')">К отзывам</a>
-              <span v-if="product.sku" class="meta-item">Арт. {{ product.sku }}</span>
               <span v-if="product.model" class="meta-item">Модель: {{ product.model }}</span>
             </div>
           </div>
@@ -599,6 +629,47 @@ useHead(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.sku-copy {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  margin-left: auto;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-muted);
+  cursor: copy;
+  font-size: var(--text-sm);
+  gap: var(--space-1);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.sku-copy:hover,
+.sku-copy:focus-visible {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.sku-value {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
 }
 
 .brand {

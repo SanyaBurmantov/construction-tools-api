@@ -244,6 +244,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   turns the remaining `<link rel=stylesheet>` — CSS of components imported but
   not rendered (`<ClientOnly>`, `v-if`) — into `preload`; Vite's import helper
   attaches it on the client. Keep component styles `scoped` for that to hold.
+  **«Поделиться» on every page** (header, `composables/useShare.ts`): the
+  system share sheet on a touch device, a menu (Telegram, Viber, WhatsApp,
+  VK, mail, copy link) elsewhere; channel links carry
+  `utm_source=<channel>&utm_medium=share`, the copied link is clean. The
+  product page puts the article beside the brand, copied on click
+  (`utils/clipboard.ts`).
   **A press before hydration is not lost**: an inline script first in
   `<head>` (`earlyClickScript`, nuxt.config.ts) catches clicks on
   `[data-early-click="<key>"]` while the page is still server HTML, dims the
@@ -1106,6 +1112,12 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `firstTrafficSource`. Shown in Telegram, the shop letter, the admin order
   and leads; the dashboard sums orders, revenue and leads per source over 90
   days. Reporting only — nothing trusts it.
+- **A product no supplier carries keeps its page** (2026-11-06,
+  `products/product-page-visibility.ts`): HIDDEN by the system (not an
+  admin) and seen at a supplier within 180 days → `GET /products/:slug`
+  answers it with `unavailable: true` and no price; the page shows «Нет в
+  наличии», a request to the manager and the similar items. Still out of
+  listings, search and the sitemap; admin-hidden/archived/draft still 404.
 - **Checkout requires an account, browsing does not.** `POST /orders` runs
   under `OptionalAuthGuard`: with a session it stamps `Order.userId` (that
   link is the **only** thing that puts an order in «История заказов» — orders
@@ -1342,7 +1354,9 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   too: socket drive, metric thread (bolt ↔ nut/washer, same material
   first), anchor hole ↔ masonry bit, screw recess ↔ bit.
   **Size variants** (`relations/variants.ts`, `ProductFamily`): brand + the
-  name with sizes masked is one line; the buy box switches between its
+  name with sizes masked is one line — the card's own `sku` is taken out of
+  the name first (`withoutArticle`: «GARWIN 122405-M10*1,25 Метчик …»,
+  «… Thorvik FS21213» carry a per-size article); the buy box switches between its
   sizes (each stays its own page). Standards, models, long codes and power
   tools are deliberately not sizes — see the module before loosening it.
   The family is read from the supplier's name when AI rewrote ours
@@ -1585,6 +1599,12 @@ supplier URL. Product JSON-LD carries `gtin*` from the barcode,
 `priceValidUntil` = last offer sync (`priceCheckedAt`) + 7 days, shipping and
 return policy. A category's `seoDescription` equal to its name counts as
 empty and the template is used until an AI task writes one.
+
+**dukon.by's PHP var_dump never reaches our text either**: its product page
+prints a `var_dump` of the catalogue record (up to 2.5 MB, 1 480 cards
+showed it until 2026-11-06); `stripVarDump` in `supplier-text.ts` cuts it by
+its own grammar (brace depth, `string(N)` skipped by byte length) for every
+parser, and the boot cleanup picks old rows up.
 
 **Supplier sales boilerplate never reaches our product text.** dukon.by's meta
 description is a template — «Купить … в Минске с гарантией и доставкой … ☎ +375
