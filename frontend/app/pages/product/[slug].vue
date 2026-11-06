@@ -416,6 +416,7 @@ useHead(() => {
                 {{ inCart ? 'Добавить ещё' : 'В корзину' }}
               </UiButton>
             </div>
+            <StorefrontRetailNote v-if="canBuy" />
             <UiAlert v-else tone="warning">
               Цена уточняется — свяжитесь с нами, чтобы оформить заказ.
             </UiAlert>
@@ -468,7 +469,7 @@ useHead(() => {
               </div>
               <div>
                 <dt>Оплата</dt>
-                <dd>наличными, картой или по счёту для организаций</dd>
+                <dd>по счёту — для организаций и ИП</dd>
               </div>
               <div>
                 <dt>Самовывоз</dt>

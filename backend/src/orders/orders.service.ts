@@ -6,7 +6,12 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { CustomerType, OrderStatus, Prisma } from '@prisma/client';
+import {
+  CustomerType,
+  OrderStatus,
+  PaymentMethod,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {
@@ -15,6 +20,7 @@ import {
 } from './dto/admin-order-query.dto';
 import { PromoService } from '../promo/promo.service';
 import { resolvePayer } from './order-payer';
+import { PayerRegistryService } from '../requisites/payer-registry.service';
 import { deliveryCostFor, orderMinimum, orderTerms } from './order-terms';
 import { attributionColumns } from '../attribution/traffic-source';
 import { OrderNotificationsService } from './order-notifications.service';
@@ -58,6 +64,7 @@ export class OrdersService {
     private promo: PromoService,
     private serverCart: ServerCartService,
     @Optional() private notifications?: OrderNotificationsService,
+    @Optional() private payerRegistry?: PayerRegistryService,
   ) {}
 
   /**
@@ -157,7 +164,15 @@ export class OrdersService {
           select: PAYER_ACCOUNT_SELECT,
         })
       : null;
+    // Organisations and ИП only, by invoice (owner, 2026-11-06): a manager
+    // makes the invoice out to the payer, whose УНП the tax registry knows.
+    if (dto.paymentMethod !== PaymentMethod.INVOICE) {
+      throw new BadRequestException(
+        'Сайт работает только с организациями и ИП — оплата по счёту. Розничные покупки — в магазине или по телефону',
+      );
+    }
     const payer = resolvePayer(dto, account);
+    await this.payerRegistry?.assertBillable(payer.payerTaxId);
 
     // Prices are re-parsed from suppliers daily, so a cart restored from
     // localStorage can be stale. When the client tells us what the customer

@@ -10,6 +10,7 @@
     <LayoutCompareBar />
     <LayoutMobileNav />
     <LayoutFooter />
+    <LayoutCookieConsent />
     <UiToaster />
   </div>
 </template>

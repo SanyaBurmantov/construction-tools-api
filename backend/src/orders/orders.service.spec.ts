@@ -13,6 +13,7 @@ import {
 } from './order-notifications.service';
 import { PromoCode, PromoCodeType } from '@prisma/client';
 import type { PayerAccount } from './order-payer';
+import { PayerRegistryService } from '../requisites/payer-registry.service';
 
 function buildPromoCode(overrides: Partial<PromoCode> = {}): PromoCode {
   return {
@@ -52,6 +53,7 @@ function buildService(
   account?: PayerAccount,
   /** Orders to the customer's address in the last 24 h, this one included. */
   recentOrdersToAddress = 1,
+  payerRegistry?: PayerRegistryService,
 ) {
   const created: Array<Record<string, unknown>> = [];
   const createMock = jest.fn((args: { data: unknown }) => {
@@ -164,7 +166,13 @@ function buildService(
   const notifications = new OrderNotificationsService(prisma, telegram, mail);
 
   return {
-    service: new OrdersService(prisma, promo, serverCart, notifications),
+    service: new OrdersService(
+      prisma,
+      promo,
+      serverCart,
+      notifications,
+      payerRegistry,
+    ),
     outbox,
     createMock,
     mailMock,
@@ -191,11 +199,19 @@ async function settle() {
     await new Promise((resolve) => setImmediate(resolve));
 }
 
+// The site sells to organisations and ИП by invoice only (2026-11-06).
 const baseCustomer = {
   customerName: 'Иван',
   customerPhone: '+375290000000',
-  paymentMethod: 'CASH' as const,
+  paymentMethod: 'INVOICE' as const,
+  payerName: 'ООО «Ромашка»',
+  payerTaxId: '391807521',
 };
+const {
+  payerName: _payerName,
+  payerTaxId: _payerTaxId,
+  ...noPayer
+} = baseCustomer;
 
 // The order minimums have their own tests below; everything else here is
 // about other rules and orders a 50-rouble drill.
@@ -285,27 +301,73 @@ describe('OrdersService.createOrder', () => {
     expect(data.total).toBe(70);
   });
 
-  it('refuses an individual’s order under 200 BYN, before anything is written', async () => {
-    delete process.env.ORDER_MIN_INDIVIDUAL;
+  it('refuses a cash or card order: organisations pay by invoice', async () => {
     const { service, createMock } = buildService([
       {
         id: 'p1',
         name: 'Дрель',
         slug: 'drel',
         status: 'PUBLISHED',
-        priceValue: 199,
+        priceValue: 250,
         priceCurrency: 'BYN',
         images: [],
       },
     ]);
-    await expect(
-      service.createOrder({
-        ...baseCustomer,
-        deliveryMethod: 'PICKUP',
-        items: [{ productId: 'p1', quantity: 1 }],
-      }),
-    ).rejects.toThrow(/Минимальная сумма заказа — 200 BYN/);
+    for (const paymentMethod of ['CASH', 'CARD'] as const) {
+      await expect(
+        service.createOrder({
+          ...noPayer,
+          paymentMethod,
+          deliveryMethod: 'PICKUP',
+          items: [{ productId: 'p1', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/только с организациями и ИП/);
+    }
     expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a УНП the payer registry rules out, but not a registry outage', async () => {
+    const drill = {
+      id: 'p1',
+      name: 'Дрель',
+      slug: 'drel',
+      status: 'PUBLISHED',
+      priceValue: 100,
+      priceCurrency: 'BYN',
+      images: [],
+    };
+    const order = {
+      ...baseCustomer,
+      deliveryMethod: 'PICKUP' as const,
+      items: [{ productId: 'p1', quantity: 1 }],
+    };
+    const registry = (status: 'not_found' | 'unavailable') => {
+      const service = new PayerRegistryService();
+      jest.spyOn(service, 'lookup').mockResolvedValue({ status });
+      return service;
+    };
+
+    const unknown = buildService(
+      [drill],
+      undefined,
+      undefined,
+      1,
+      registry('not_found'),
+    );
+    await expect(unknown.service.createOrder(order)).rejects.toThrow(
+      /не найден в реестре/,
+    );
+    expect(unknown.createMock).not.toHaveBeenCalled();
+
+    const outage = buildService(
+      [drill],
+      undefined,
+      undefined,
+      1,
+      registry('unavailable'),
+    );
+    await outage.service.createOrder(order);
+    expect(outage.createMock).toHaveBeenCalled();
   });
 
   it('collapses duplicate productIds into one summed line', async () => {
@@ -887,8 +949,7 @@ describe('OrdersService.createOrder — payer', () => {
 
     await service.createOrder(
       {
-        ...baseCustomer,
-        paymentMethod: 'INVOICE',
+        ...noPayer,
         deliveryMethod: 'PICKUP',
         items: [{ productId: 'p1', quantity: 1 }],
       },
@@ -944,8 +1005,7 @@ describe('OrdersService.createOrder — payer', () => {
     const { service, createMock } = buildService([drill]);
     await expect(
       service.createOrder({
-        ...baseCustomer,
-        paymentMethod: 'INVOICE',
+        ...noPayer,
         deliveryMethod: 'PICKUP',
         items: [{ productId: 'p1', quantity: 1 }],
       }),

@@ -16,6 +16,8 @@ usePageSeo({ title: 'Контакты', description, path: '/contacts' })
 
     <StorefrontCompanyRequisites variant="contacts" />
 
+    <h2 id="obrashcheniya">Обращения покупателей</h2>
+    <StorefrontConsumerAppeals />
     <h2>Реквизиты продавца</h2>
     <StorefrontCompanyRequisites variant="legal" />
 

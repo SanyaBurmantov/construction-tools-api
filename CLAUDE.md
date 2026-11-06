@@ -443,7 +443,7 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   (`useHeaderCategories()`, shared key with the home page), cached 30 s in
   the API.
 - **Home page** (05.11, `pages/index.vue`): hero → terms → «Каталог»
-  (10 tiles, the tenth hidden on a phone) → «Популярное у организаций» →
+  (12 tiles: 6 × 2 on a computer, 4 × 3 on a tablet, 3 × 4 on a phone) → «Популярное у организаций» →
   `HomeForCompanies` (three steps of a purchase by invoice, cart / price
   list / supply contract, the seller's requisites) → «Новинки» → brands.
   Since every supplier category is imported, the automatic rows skip the
@@ -517,6 +517,18 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   code **server-side**, and snapshots product name/slug/image/price into
   `OrderItem`. Admin manages orders via `GET /admin/orders`,
   `GET /admin/orders/:id`, `PATCH /admin/orders/:id/status`.
+  **Organisations and ИП only** (owner, 2026-11-06 — «временно», until the
+  owner says otherwise): `POST /auth/register` refuses anything but a COMPANY
+  with a УНП, a customer cannot switch a company account to INDIVIDUAL, and
+  `POST /orders` takes `INVOICE` only (CASH/CARD → 400). Every УНП is checked
+  against the tax ministry's public payer registry
+  (`requisites/`, `grp.nalog.gov.by/api/grp-public/data`, covers ИП too;
+  `GET /requisites/unp/:unp` fills the name and address in the forms via
+  `useUnpLookup`): unknown or liquidated → 400, registry down → let through.
+  The «В корзину» buttons stay for everyone, with `StorefrontRetailNote`
+  under them (retail = the shop or the phone). `/usloviya` and `/garantiya`
+  are written for business buyers (ГК, not the consumer law) and wait for the
+  lawyer (task in `/admin/plans`). Reverting is one commit.
   **Terms of sale** (owner, 2026-11-02; `orders/order-terms.ts`, pure and
   tested): an individual orders from 200 BYN, an organisation — an order with
   a payer, i.e. by invoice or from a company account — from 50 BYN; courier
@@ -901,7 +913,13 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   99% ≤ 1 s, checkout 99% ≤ 2 s, whole API 95% ≤ 1 s, 5xx budgets) and
   shown met/missed on the same screen.
 - **Metrika goals and e-commerce** (`utils/metrika.ts`, 05.11 — ads learn
-  from orders, not clicks). The storefront fires «JavaScript-событие» goals:
+  from orders, not clicks). **Metrika loads only after consent** (06.11,
+  Закон № 99-З): the head snippet only defines `window.__gostMetrika()` and
+  calls it when localStorage `cookie-consent` holds `choice: 'all'`; the
+  banner (`LayoutCookieConsent`, `useCookieConsent`) calls it on «Принять
+  все», «Настройки cookie» in the footer reopens it, a later refusal wipes
+  `_ym*` and reloads. No `<noscript>` pixel. Without consent `window.ym` does
+  not exist and goals are skipped — expect fewer visits than before 06.11. The storefront fires «JavaScript-событие» goals:
   `order` / `order_invoice` (with `order_price`), `lead`, `quote`,
   `price_list`, `register` / `register_company`, `checkout`, `add_to_cart`,
   `phone_click` / `messenger_click` (one delegated listener,

@@ -5,17 +5,12 @@ const { register, errorMessage } = useAuth()
 const { redirect, reason, otherLink: loginLink, leaveIfSignedIn } = useAuthRedirect('/login')
 const toast = useAppToast()
 
-const customerTypes = [
-  { value: 'INDIVIDUAL' as const, label: CUSTOMER_TYPE_LABEL.INDIVIDUAL, hint: 'Покупки для себя' },
-  {
-    value: 'COMPANY' as const,
-    label: CUSTOMER_TYPE_LABEL.COMPANY,
-    hint: 'Счёт на организацию, оплата по счёту',
-  },
-]
-
+/**
+ * Organisations and ИП only (owner, 2026-11-06): every account is a COMPANY
+ * with a УНП the tax registry knows — the API refuses anything else.
+ */
 const form = reactive({
-  customerType: 'INDIVIDUAL' as CustomerType,
+  customerType: 'COMPANY' as CustomerType,
   login: '',
   password: '',
   passwordConfirm: '',
@@ -26,7 +21,18 @@ const form = reactive({
   taxId: '',
 })
 
-const isCompany = computed(() => form.customerType === 'COMPANY')
+const unp = computed(() => form.taxId)
+const { state: unpState, problem: unpProblem, hint: unpHint } = useUnpLookup(unp)
+// The registry's name goes into a blank field, or replaces its own earlier pick.
+let filledName = ''
+watch(unpState, (current) => {
+  if (current.status !== 'found' || !current.payer.active) return
+  const now = form.companyName.trim()
+  if (!now || now === filledName) {
+    form.companyName = current.payer.shortName
+    filledName = current.payer.shortName
+  }
+})
 // Отдельное явное согласие по Закону № 99-З; проверяется только на клиенте.
 const personalDataConsent = ref(false)
 const submitting = ref(false)
@@ -36,7 +42,8 @@ onMounted(leaveIfSignedIn)
 
 /** Shown under the field as soon as nine characters are typed. */
 const taxIdError = computed(() =>
-  form.taxId.trim().length >= 9 ? requisitesProblem({ taxId: form.taxId }) : ''
+  (form.taxId.trim().length >= 9 ? requisitesProblem({ taxId: form.taxId }) : '')
+  || unpProblem.value
 )
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -48,9 +55,11 @@ function validate() {
     return 'Логин может содержать латинские буквы, цифры и символы . _ - + @'
   if (form.password.length < 8) return 'Пароль должен быть не короче 8 символов'
   if (form.password !== form.passwordConfirm) return 'Пароли не совпадают'
-  if (isCompany.value && !form.companyName.trim())
-    return 'Для юридического лица укажите название организации'
-  if (isCompany.value && taxIdError.value) return taxIdError.value
+  if (!form.taxId.trim()) return 'Укажите УНП организации или ИП'
+  if (!/^\d{9}$/.test(form.taxId.replace(/\s/g, '')))
+    return 'УНП организации или ИП — 9 цифр'
+  if (taxIdError.value) return taxIdError.value
+  if (!form.companyName.trim()) return 'Укажите название организации или ИП'
   if (!form.email.trim() && !EMAIL_RE.test(form.login.trim()))
     return 'Укажите e-mail — на него придёт письмо для подтверждения регистрации'
   if (form.email.trim() && !EMAIL_RE.test(form.email.trim()))
@@ -73,8 +82,8 @@ async function submit() {
       name: form.name.trim() || undefined,
       email: form.email.trim() || undefined,
       phone: form.phone.trim() || undefined,
-      companyName: isCompany.value ? form.companyName.trim() : undefined,
-      taxId: isCompany.value ? form.taxId.trim() || undefined : undefined,
+      companyName: form.companyName.trim(),
+      taxId: form.taxId.trim(),
     })
     toast.success(
       created.email
@@ -100,11 +109,26 @@ useSeoMeta({ title: 'Регистрация | Gost.by', robots: 'noindex,nofollo
         <UiAlert v-if="reason" tone="info">{{ reason }}</UiAlert>
         <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
 
-        <UiRadioCards
-          v-model="form.customerType"
-          :options="customerTypes"
-          legend="Тип покупателя"
-        />
+        <p class="b2b-note">
+          Регистрация — для организаций и ИП: заказы оформляются по счёту.
+          Розничные покупки — в магазине или по телефону.
+        </p>
+
+        <div class="grid">
+          <UiField
+            label="УНП"
+            required
+            for="reg-tax"
+            :error="taxIdError"
+            :hint="unpHint || 'Название подставим из реестра МНС'"
+          >
+            <UiInput id="reg-tax" v-model="form.taxId" placeholder="123456789" inputmode="numeric" />
+          </UiField>
+
+          <UiField label="Организация или ИП" required for="reg-company">
+            <UiInput id="reg-company" v-model="form.companyName" placeholder="ООО «Ромашка»" autocomplete="organization" />
+          </UiField>
+        </div>
 
         <UiField
           label="Логин"
@@ -138,7 +162,7 @@ useSeoMeta({ title: 'Регистрация | Gost.by', robots: 'noindex,nofollo
         </div>
 
         <UiField
-          :label="isCompany ? 'Контактное лицо' : 'Имя'"
+          label="Контактное лицо"
           for="reg-name"
         >
           <UiInput id="reg-name" v-model="form.name" autocomplete="name" />
@@ -159,20 +183,6 @@ useSeoMeta({ title: 'Регистрация | Gost.by', robots: 'noindex,nofollo
           </UiField>
         </div>
 
-        <template v-if="isCompany">
-          <UiField label="Название организации" required for="reg-company">
-            <UiInput id="reg-company" v-model="form.companyName" placeholder="ООО «Ромашка»" />
-          </UiField>
-
-          <UiField
-            label="УНП"
-            for="reg-tax"
-            hint="Нужен для счёта на оплату — можно указать и позже, в кабинете"
-            :error="taxIdError"
-          >
-            <UiInput id="reg-tax" v-model="form.taxId" placeholder="123456789" inputmode="numeric" />
-          </UiField>
-        </template>
 
         <UiCheckbox v-model="personalDataConsent" class="consent">
           Даю согласие на обработку персональных данных в соответствии с
@@ -211,6 +221,12 @@ useSeoMeta({ title: 'Регистрация | Gost.by', robots: 'noindex,nofollo
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
+}
+
+.b2b-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 
 .form .consent {
