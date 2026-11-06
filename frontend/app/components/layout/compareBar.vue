@@ -30,7 +30,7 @@ const visible = computed(() => compare.count > 0 && route.path !== '/compare')
               :aria-label="`Убрать ${item.name} из сравнения`"
               @click.prevent="compare.remove(item.productId)"
             >
-              <UiIcon name="close" :size="11" :stroke-width="2.4" />
+              <UiIcon name="trash" :size="11" :stroke-width="2.2" />
             </button>
           </NuxtLink>
 

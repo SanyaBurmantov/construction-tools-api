@@ -378,14 +378,6 @@ const categoryLinks = computed(() => {
 })
 
 
-const parentLink = computed(() => {
-  if (!category.value) return null
-  const parent = category.value.ancestors.at(-1)
-  return parent
-    ? { to: categoryTo(parent.slug), label: parent.name }
-    : { to: categoryTo(null), label: 'Все категории' }
-})
-
 // brand search inside the facet
 const brandQuery = ref('')
 const visibleBrands = computed(() => {
@@ -587,7 +579,6 @@ const filterProps = computed(() => ({
   category: category.value,
   categoryLinks: categoryLinks.value,
   categoryHasChildren: Boolean(category.value?.children.length),
-  parentLink: parentLink.value,
   inStock: inStock.value,
   onSale: onSale.value,
   priceRange: priceRange.value,
@@ -758,9 +749,6 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
         <a :href="priceListUrl({ categorySlug: category?.slug })" class="price-link" rel="nofollow" download @click="reachGoal('price_list')">
           Прайс-лист{{ category ? ' раздела' : '' }} (Excel)
         </a>
-        <NuxtLink v-if="parentLink" :to="parentLink.to" class="up-link">
-          ← {{ parentLink.label }}
-        </NuxtLink>
       </div>
     </header>
 
@@ -1021,18 +1009,6 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
 
 .category-about p + p {
   margin-top: var(--space-3);
-}
-
-/* Second way out of a category, for visitors who never look at the sidebar
-   or the breadcrumbs. */
-.up-link {
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-}
-
-.up-link:hover {
-  color: var(--text-link);
 }
 
 /* ---- Categories ---- */

@@ -189,7 +189,8 @@ useSeoMeta({ title: 'Регистрация | Gost.by', robots: 'noindex,nofollo
           <NuxtLink to="/privacy" target="_blank">Политикой обработки персональных данных</NuxtLink>
         </UiCheckbox>
 
-        <UiButton type="submit" size="lg" block :loading="submitting">
+        <!-- Disabled until the consent box is ticked (owner, 2026-11-06). -->
+        <UiButton type="submit" size="lg" block :loading="submitting" :disabled="!personalDataConsent">
           Зарегистрироваться
         </UiButton>
 
