@@ -236,8 +236,18 @@ function toggleMobileCategory(id: string) {
   expandedMobile.value = next
 }
 
+const {
+  menuOpen: shareMenu,
+  share,
+  copyLink,
+  channels: shareChannels,
+  close: closeShare,
+} = useShare()
+const shareBox = ref<HTMLElement | null>(null)
+
 // Any navigation closes whatever is open.
 watch(() => route.fullPath, () => {
+  closeShare()
   mobileNavOpen.value = false
   catalogOpen.value = false
   expandedMobile.value = new Set()
@@ -247,6 +257,7 @@ watch(() => route.fullPath, () => {
 /** A click outside closes the search suggestions and the catalogue menu. */
 function onDocumentClick(event: MouseEvent) {
   const target = event.target as Node
+  if (shareBox.value && !shareBox.value.contains(target)) closeShare()
   if (searchForm.value && !searchForm.value.contains(target)) closeSuggest()
   // The trigger toggles the menu itself; counting it as "outside" would
   // reopen-then-close it on the same click.
@@ -265,6 +276,7 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
   catalogOpen.value = false
   closeSuggest()
+  closeShare()
 }
 
 /* ---- Compact header ----------------------------------------------------
@@ -473,6 +485,43 @@ onBeforeUnmount(() => {
         </div>
 
         <nav class="actions" aria-label="Аккаунт, избранное, сравнение и корзина">
+          <!-- «Поделиться» on every page: the system sheet on a phone, a menu
+               of messengers on a computer (composables/useShare.ts). -->
+          <div ref="shareBox" class="share-box">
+            <button
+              type="button"
+              class="action"
+              :class="{ 'is-active': shareMenu }"
+              aria-label="Поделиться"
+              title="Поделиться ссылкой на эту страницу"
+              aria-haspopup="menu"
+              :aria-expanded="shareMenu"
+              @click="share"
+            >
+              <UiIcon name="share" />
+              <span class="action-label">Поделиться</span>
+            </button>
+            <div v-if="shareMenu" class="share-menu" role="menu">
+              <a
+                v-for="channel in shareChannels"
+                :key="channel.id"
+                :href="channel.href"
+                target="_blank"
+                rel="noopener"
+                role="menuitem"
+                class="share-item"
+                @click="closeShare"
+              >
+                {{ channel.label }}
+              </a>
+              <button type="button" role="menuitem" class="share-item is-copy" @click="copyLink">
+                <UiIcon name="copy" :size="16" />
+                Скопировать ссылку
+              </button>
+              <p class="share-hint">Instagram и другие — вставьте скопированную ссылку</p>
+            </div>
+          </div>
+
           <!-- The server renders the guest link in its place: an empty slot
                that fills in after hydration pushed the icons onto another
                row on phones (CLS 0.25 on the home page). -->
@@ -1366,6 +1415,58 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
+/* ---- Share ---- */
+.share-box {
+  position: relative;
+}
+
+.share-menu {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: flex;
+  width: 240px;
+  flex-direction: column;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.share-item {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-default);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  gap: var(--space-2);
+  text-align: left;
+  text-decoration: none;
+}
+
+.share-item:hover,
+.share-item:focus-visible {
+  background: var(--surface-hover);
+  color: var(--brand);
+}
+
+.share-item.is-copy {
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  padding-top: var(--space-3);
+}
+
+.share-hint {
+  margin: var(--space-1) var(--space-3) var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 1080px) {
   .action-label {
@@ -1424,6 +1525,22 @@ onBeforeUnmount(() => {
 @media (max-width: 480px) {
   .search-submit {
     display: none;
+  }
+
+  /* Four icons (share, compare, favourites, cart) beside the burger and the
+     logo on a 360–390px phone: without this they fell onto a row of their
+     own once «Поделиться» joined them. */
+  .mainbar-inner {
+    gap: var(--space-2);
+  }
+
+  .actions {
+    gap: 0;
+  }
+
+  .action {
+    min-width: 40px;
+    padding: var(--space-2) var(--space-1);
   }
 }
 </style>

@@ -8,7 +8,7 @@ import { parsePack } from './packs';
  * tools are left out (their numbers are models and watts, not sizes), and a
  * standard's number («DIN 933») is part of the name, not a size.
  */
-export const VARIANT_RULE_VERSION = 3;
+export const VARIANT_RULE_VERSION = 4;
 /**
  * Listings read per family: STARFIX sells every bolt size in several packs,
  * so DIN 933 is ~470 cards for ~150 sizes. The size count is what is capped.
@@ -28,8 +28,9 @@ const SIZE = new RegExp(
     String.raw`\d+(?:\s\d+)?\/\d+\s?(?:"|''|”|″|дюйм)?`,
     // М10, PH2, PZ1, T25, TX25, SW10, H5
     String.raw`(?:[МM]|PH|PZ|РН|TORX|TX|T|Т|SW|HEX|H)\s?-?${NUMBER}`,
-    // Ø6, 6 мм, 25 зуб.
-    String.raw`[Øø]?\s?${NUMBER}\s?${UNIT}`,
+    // Ø6, 6 мм, 25 зуб. — the space belongs to «Ø 6», never before a bare
+    // number: « 13 мм» after «1/2"DR» was read with the space and dropped.
+    String.raw`(?:[Øø]\s?)?${NUMBER}\s?${UNIT}`,
     // a bare size: «Заглушка ВК 110»; five digits and more are codes
     String.raw`\d{1,4}(?:[.,]\d+)?(?!\d)`,
   ]
@@ -53,6 +54,29 @@ export type VariantName = {
 };
 
 const clean = (value: string) => value.replace(/\s+/g, ' ').trim();
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The name without the product's own article (owner, 2026-11-06). Suppliers
+ * put a per-size article into the name — «GARWIN INDUSTRIAL 122405-M10*1,25
+ * Метчик машинный М10х1,25 …», «Головка торцевая … 13 мм Thorvik FS21213»,
+ * «… Ombra 112308 (1/2"DR, 8 мм)» — and that code, different on every size,
+ * kept each size its own «family». Only the product's own `sku`, as a whole
+ * token, is removed; a code that is not this card's article stays a model.
+ */
+export function withoutArticle(name: string, sku?: string | null): string {
+  const article = sku?.trim();
+  // A short or letters-only «article» could be a word of the name.
+  if (!article || article.length < 4 || !/\d/.test(article)) return name;
+  const token = new RegExp(
+    `(^|[\\s(,;])${escapeRegExp(article)}(?=$|[\\s),;])`,
+    'giu',
+  );
+  const stripped = clean(name.replace(token, '$1').replace(/\(\s*\)/g, ' '));
+  return stripped.length >= 3 ? stripped : name;
+}
 // «3.5х32мм» and «3.5х32 мм» are one size: one space before a unit.
 const sizeValue = (value: string) =>
   clean(value).replace(/(\d)\s?(мм|mm|см|cm|кг|мл|мкм)(?![\p{L}])/gu, '$1 $2');
@@ -61,7 +85,7 @@ const sizeValue = (value: string) =>
 export function variantName(name: string): VariantName | null {
   if (POWER_TOOL.test(name)) return null;
   const pack = parsePack(name);
-  const text = pack
+  const glued = pack
     ? name.replace(
         /\(\s*(?:к-т|компл\.?|упак\.?|уп\.?)?\s*\d+(?:[.,]\d+)?\s*(?:шт|кг)(?![а-яё])[^()\d]*\)/iu,
         ' ',
@@ -70,6 +94,8 @@ export function variantName(name: string): VariantName | null {
   const values: string[] = [];
   let template = '';
   let last = 0;
+  // «1/2''6гр.13мм L-38мм» (Yato): the size glued to «6гр.» was never read.
+  const text = glued.replace(/(\d\s?гр\.?)(?=\d)/giu, '$1 ');
   for (const match of text.matchAll(SIZE)) {
     const start = match.index;
     const before = text.slice(0, start);
@@ -119,6 +145,8 @@ export const NO_LINE = /^[-—–]$/;
  */
 export function productFamily(product: {
   name: string;
+  /** The card's own article — taken out of the name (`withoutArticle`). */
+  sku?: string | null;
   /** The owning offer's name, used when the shown name was rewritten by AI. */
   sourceName?: string | null;
   aiLockedFields?: string[];
@@ -126,10 +154,12 @@ export function productFamily(product: {
   brandId: string | null;
   categoryId: string;
 }): { familyKey: string | null; keyName: string } {
-  const keyName =
+  const keyName = withoutArticle(
     product.aiLockedFields?.includes('name') && product.sourceName
       ? product.sourceName
-      : product.name;
+      : product.name,
+    product.sku,
+  );
   const line = product.variantLine?.trim();
   if (line && NO_LINE.test(line)) return { familyKey: null, keyName };
   if (line)

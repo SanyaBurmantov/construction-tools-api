@@ -238,6 +238,8 @@ export class CompatibilityRefreshService {
       select: {
         id: true,
         name: true,
+        // variants.ts takes the card's own article out of the name.
+        sku: true,
         brandId: true,
         categoryId: true,
         aiLockedFields: true,

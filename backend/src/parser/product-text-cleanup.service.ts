@@ -87,6 +87,9 @@ export class ProductTextCleanupService
             OR "descriptionFull" ~ '^\\s*(Файлы\\s|Описание)'
             OR "descriptionShort" ~ '^\\s*(Файлы\\s|Описание)'
             OR "seoDescription" ~ '^\\s*(Файлы\\s|Описание)'
+            -- dukon.by's PHP var_dump in front of the text (stripVarDump).
+            OR "descriptionFull" LIKE '%=> string(%'
+            OR "descriptionShort" LIKE '%=> string(%'
           )
         ORDER BY id
         LIMIT ${CHUNK}

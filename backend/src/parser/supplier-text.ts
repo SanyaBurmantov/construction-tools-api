@@ -91,6 +91,68 @@ export function stripTabHeaders(text: string): string {
   return current;
 }
 
+/**
+ * dukon.by prints a PHP `var_dump` of its catalogue record into the product
+ * page — «Подробная информация array(2) { [0]=> array(95) { ["ID"]=> int(…)
+ * ["CODE"]=> string(35) "…" … } }» — up to 2.5 MB in front of the real text,
+ * and ~1 500 of our cards showed it (found 2026-11-06). The dump is cut by
+ * its own grammar: braces count depth, and a `string(N) "…"` is skipped by
+ * its byte length, so braces or quotes inside a value cannot end it early.
+ * An unbalanced dump is cut up to its last closing brace, or to the end
+ * when it has none.
+ */
+const DUMP_START = /(?:Подробная информация\s*)?array\(\d+\)\s*\{/u;
+
+function dumpEnd(bytes: Buffer, open: number): number | null {
+  let depth = 0;
+  let i = open;
+  const STRING = Buffer.from('string(');
+  while (i < bytes.length) {
+    if (bytes[i] === 0x73 && bytes.subarray(i, i + 7).equals(STRING)) {
+      let j = i + 7;
+      let length = 0;
+      while (j < bytes.length && bytes[j] >= 0x30 && bytes[j] <= 0x39) {
+        length = length * 10 + (bytes[j] - 0x30);
+        j++;
+      }
+      // `string(N) "` … N bytes … `"`
+      if (bytes[j] === 0x29 && bytes[j + 1] === 0x20 && bytes[j + 2] === 0x22) {
+        i = j + 3 + length + 1;
+        continue;
+      }
+    }
+    if (bytes[i] === 0x7b) depth++;
+    else if (bytes[i] === 0x7d && --depth === 0) return i + 1;
+    i++;
+  }
+  return null;
+}
+
+export function stripVarDump(text: string): string {
+  if (!text.includes('=>')) return text;
+  let current = text;
+  for (let guard = 0; guard < 20; guard++) {
+    const match = DUMP_START.exec(current);
+    if (!match) break;
+    const before = current.slice(0, match.index);
+    const bytes = Buffer.from(current, 'utf8');
+    const openChar = match.index + match[0].length - 1;
+    const openByte = Buffer.byteLength(current.slice(0, openChar), 'utf8');
+    const endByte = dumpEnd(bytes, openByte);
+    // Unbalanced: a dump cut short (the short description is the start of
+    // the full one) has nothing worth keeping after it.
+    const lastBrace = current.lastIndexOf('}');
+    const after =
+      endByte !== null
+        ? bytes.subarray(endByte).toString('utf8')
+        : lastBrace > match.index
+          ? current.slice(lastBrace + 1)
+          : '';
+    current = `${before.trimEnd()} ${after.trimStart()}`.trim();
+  }
+  return current;
+}
+
 function isMarketing(sentence: string) {
   if (MARKETING_SENTENCE.some((re) => re.test(sentence))) return true;
   return BUY.test(sentence) && SUPPLIER_CITY.test(sentence);
@@ -102,6 +164,7 @@ function isMarketing(sentence: string) {
  */
 export function sanitizeSupplierText(text: string | null | undefined): string {
   if (!text) return '';
+  text = stripVarDump(text);
   text = stripTabHeaders(text);
   if (!ANY_MARKER.test(text)) return text;
 

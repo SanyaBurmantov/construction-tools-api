@@ -926,15 +926,16 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
           :href-for="pageHref"
           @change="setPage"
         />
-
-        <!-- The category text lives under the grid: three paragraphs above it
-             pushed the products off the first screen. -->
-        <section v-if="showAbout" id="category-about" class="category-about">
-          <h2>{{ landing ? landing.h1 : `О разделе «${category?.name}»` }}</h2>
-          <p v-for="(paragraph, index) in descriptionAll" :key="index">{{ paragraph }}</p>
-        </section>
       </div>
     </div>
+
+    <!-- The category text lives under the grid (three paragraphs above it
+         pushed the products off the first screen), across the whole page —
+         under the filters too, not squeezed beside them (owner, 2026-11-06). -->
+    <section v-if="showAbout" id="category-about" class="category-about">
+      <h2>{{ landing ? landing.h1 : `О разделе «${category?.name}»` }}</h2>
+      <p v-for="(paragraph, index) in descriptionAll" :key="index">{{ paragraph }}</p>
+    </section>
   </div>
 </template>
 
@@ -994,12 +995,12 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
   font-weight: 600;
 }
 
-/* A card the width of the product column; the text inside keeps a readable
-   line and wraps even an unbroken string (a pasted link, a run of
+/* A card the width of the page, under the filters and the grid; the text
+   inside keeps a readable line and wraps even an unbroken string (a pasted link, a run of
    characters) instead of pushing past the content area (owner, 2026-11-06). */
 .category-about {
   min-width: 0;
-  margin-top: var(--space-8);
+  margin-top: var(--space-4);
   padding: var(--space-6) var(--space-8);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -1091,8 +1092,9 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
   grid-template-columns: 260px minmax(0, 1fr);
 }
 
+/* As tall as its filters, not the product grid: stretched to the grid it was
+   a long empty white box beside the cards (owner, 2026-11-06). */
 .filters-desktop {
-  height: 100%;
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
