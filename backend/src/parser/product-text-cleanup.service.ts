@@ -67,17 +67,11 @@ export class ProductTextCleanupService
     for (;;) {
       // Same markers as supplier-text.ts's gate, spelled for Postgres. Both
       // cases are listed because ~* does not fold Cyrillic under a C locale.
-      const rows = await this.prisma.$queryRaw<
-        Array<{
-          id: string;
-          name: string;
-          descriptionShort: string | null;
-          descriptionFull: string | null;
-          seoTitle: string | null;
-          seoDescription: string | null;
-        }>
-      >`
-        SELECT id, name, "descriptionShort", "descriptionFull", "seoTitle", "seoDescription"
+      // Ids only: a matching row may carry dukon.by's var_dump — up to
+      // 2.5 MB of text — and 500 of them at once ran the worker out of heap
+      // on every boot (2026-11-06). The texts are read one product at a time.
+      const ids = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
         FROM "Product"
         WHERE id > ${afterId}
           AND (
@@ -94,17 +88,25 @@ export class ProductTextCleanupService
         ORDER BY id
         LIMIT ${CHUNK}
       `;
-      if (!rows.length) break;
-      scanned += rows.length;
-      afterId = rows[rows.length - 1].id;
+      if (!ids.length) break;
+      scanned += ids.length;
+      afterId = ids[ids.length - 1].id;
 
-      for (const row of rows) {
+      for (const { id } of ids) {
+        const row = await this.prisma.product.findUnique({
+          where: { id },
+          select: {
+            name: true,
+            descriptionShort: true,
+            descriptionFull: true,
+            seoTitle: true,
+            seoDescription: true,
+          },
+        });
+        if (!row) continue;
         const patch = cleanProductTexts(row);
         if (!Object.keys(patch).length) continue;
-        await this.prisma.product.update({
-          where: { id: row.id },
-          data: patch,
-        });
+        await this.prisma.product.update({ where: { id }, data: patch });
         updated++;
       }
     }
