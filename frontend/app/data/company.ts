@@ -11,7 +11,7 @@ export const company = {
   unp: '391807521',
   legalAddress: 'г. Витебск, пр-т Фрунзе, 39а-18',
   storeAddress: 'г. Витебск, пр-т Фрунзе, 39а, к. 17',
-  workingHours: 'Пн–Пт; суббота и воскресенье — выходной',
+  workingHours: 'Пн–Пт 9:00–18:00; суббота и воскресенье — выходной',
   phone: '+375 (29) 813-57-97',
   phoneHref: 'tel:+375298135797',
   email: 'dm.krep@mail.ru',
