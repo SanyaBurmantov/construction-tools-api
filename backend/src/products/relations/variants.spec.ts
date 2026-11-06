@@ -3,6 +3,7 @@ import {
   productFamily,
   variantName,
   variantOptions,
+  withoutArticle,
 } from './variants';
 
 const member = (
@@ -171,6 +172,83 @@ describe('size variants', () => {
       ['12', true],
       ['Pro 18 В', false],
     ]);
+  });
+
+  // Real names (2026-11-06): a per-size article in the name kept every size
+  // its own family, so taps and sockets had no size switch.
+  it("takes the card's own article out of the name before reading sizes", () => {
+    const taps = [
+      [
+        '122405-M10*0,75',
+        'GARWIN INDUSTRIAL 122405-M10*0,75 Метчик машинный М10х0,75 HSS-E, DIN 374, 6H, форма В, тип N',
+      ],
+      [
+        '122405-M10*1,25',
+        'GARWIN INDUSTRIAL 122405-M10*1,25 Метчик машинный М10х1,25 HSS-E, DIN 374, 6H, форма В, тип N',
+      ],
+      [
+        '122405-M12*1,25',
+        'GARWIN INDUSTRIAL 122405-M12*1,25 Метчик машинный М12х1,25 HSS-E, DIN 374, 6H, форма В, тип N',
+      ],
+    ].map(([sku, name]) =>
+      productFamily({ name, sku, brandId: 'g', categoryId: 'c' }),
+    );
+    expect(new Set(taps.map((tap) => tap.familyKey)).size).toBe(1);
+    expect(taps[1].familyKey).not.toBeNull();
+    expect(taps[1].keyName).toBe(
+      'GARWIN INDUSTRIAL Метчик машинный М10х1,25 HSS-E, DIN 374, 6H, форма В, тип N',
+    );
+    expect(
+      labels(
+        'p1',
+        taps.map((tap) => tap.keyName),
+      ),
+    ).toEqual(['М10х0,75', 'М10х1,25*', 'М12х1,25']);
+
+    const thorvik = [
+      ['FS21213', 'Головка торцевая 12-гранная 1/2"DR 13 мм Thorvik FS21213'],
+      ['FS21217', 'Головка торцевая 12-гранная 1/2"DR 17 мм Thorvik FS21217'],
+    ].map(([sku, name]) =>
+      productFamily({ name, sku, brandId: 't', categoryId: 'c' }),
+    );
+    expect(thorvik[0].familyKey).toBe(thorvik[1].familyKey);
+    expect(
+      labels(
+        'p0',
+        thorvik.map((s) => s.keyName),
+      ),
+    ).toEqual(['13 мм*', '17 мм']);
+
+    const ombra = [
+      ['112308', 'Головка торцевая 12-гранная Ombra 112308 (1/2"DR, 8 мм)'],
+      ['112310', 'Головка торцевая 12-гранная Ombra 112310 (1/2"DR, 10 мм)'],
+    ].map(([sku, name]) =>
+      productFamily({ name, sku, brandId: 'o', categoryId: 'c' }),
+    );
+    expect(ombra[0].familyKey).toBe(ombra[1].familyKey);
+    expect(
+      labels(
+        'p1',
+        ombra.map((s) => s.keyName),
+      ),
+    ).toEqual(['8 мм', '10 мм*']);
+  });
+
+  it('reads a size glued to «6гр.» (Yato)', () => {
+    expect(
+      labels('p0', [
+        "Головка торцевая 1/2''6гр.13мм L-38мм",
+        "Головка торцевая 1/2''6гр.17мм L-38мм",
+      ]),
+    ).toEqual(['13 мм*', '17 мм']);
+  });
+
+  it('leaves a name alone when the article is not a whole token of it', () => {
+    expect(withoutArticle('Болт DIN 933 M8x20', 'M8x2')).toBe(
+      'Болт DIN 933 M8x20',
+    );
+    expect(withoutArticle('Ключ 10 мм', 'ABC')).toBe('Ключ 10 мм');
+    expect(withoutArticle('Ключ 12345 10 мм', null)).toBe('Ключ 12345 10 мм');
   });
 
   it('keys a family by brand, or by category when there is none', () => {
