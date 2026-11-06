@@ -1604,7 +1604,12 @@ empty and the template is used until an AI task writes one.
 prints a `var_dump` of the catalogue record (up to 2.5 MB, 1 480 cards
 showed it until 2026-11-06); `stripVarDump` in `supplier-text.ts` cuts it by
 its own grammar (brace depth, `string(N)` skipped by byte length) for every
-parser, and the boot cleanup picks old rows up.
+parser, and the boot cleanup picks old rows up. **A batch pass never loads
+text columns in bulk**: the first version selected 500 rows with their
+descriptions — dumps of up to 2.5 MB each — and the worker ran out of heap a
+minute after every start (crash loop 11:45–13:24 on 2026-11-06; parsing and
+outbox sweeps stood still, no order was affected). Select ids, then read one
+row at a time.
 
 **Supplier sales boilerplate never reaches our product text.** dukon.by's meta
 description is a template — «Купить … в Минске с гарантией и доставкой … ☎ +375
