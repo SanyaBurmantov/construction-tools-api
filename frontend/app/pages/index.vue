@@ -140,13 +140,14 @@ if (unavailable.value) throw apiUnavailableError()
  * `/admin/storefront` (the same order as «Популярное:» under the search), and
  * the automatic grid — categories pinned in `/admin/categories`, then the
  * biggest roots — fills what is left, skipping what the strip already shows.
- * Ten tiles: two full rows of five on a computer; on a phone (three to a
- * row) the tenth is hidden so the last row is full.
+ * Twelve tiles (owner, 2026-11-06): every row is full at every width —
+ * two rows of six on a computer, three of four on a tablet, four of three
+ * on a phone.
  *
  * Tile artwork arrives with both answers: the API falls back to the photo of
  * the dearest product in a category's subtree when no admin set one.
  */
-const HOME_CATEGORY_COUNT = 10
+const HOME_CATEGORY_COUNT = 12
 const topCategories = computed(() => {
   const curated = curatedTiles.value ?? []
   const shown = new Set(curated.map(category => category.id))
@@ -226,7 +227,7 @@ useHead({
           addressCountry: 'BY',
         },
         areaServed: { '@type': 'Country', name: 'Беларусь' },
-        paymentAccepted: 'Наличные, банковская карта, безналичный расчёт по счёту',
+        paymentAccepted: 'Безналичный расчёт по счёту',
         currenciesAccepted: 'BYN',
         potentialAction: {
           '@type': 'SearchAction',
@@ -311,8 +312,8 @@ useHead({
       </article>
       <article>
         <h3>Частным покупателям</h3>
-        <p>Наличными или картой при получении, 14 дней на возврат товара надлежащего качества.</p>
-        <NuxtLink to="/delivery">Оплата и возврат →</NuxtLink>
+        <p>На сайте заказывают организации и ИП. Розничные покупки — в магазине в Витебске или по телефону.</p>
+        <NuxtLink to="/contacts">Контакты магазина →</NuxtLink>
       </article>
       <article>
         <h3>Наличие</h3>
@@ -330,9 +331,8 @@ useHead({
 
       <div class="category-grid">
         <UiCategoryCard
-          v-for="(category, index) in topCategories"
+          v-for="category in topCategories"
           :key="category.id"
-          :class="{ 'wide-only': index === 9 }"
           :name="category.name"
           :to="`/catalog/${category.slug}`"
           :count="category.productCount"
@@ -596,20 +596,23 @@ useHead({
 /* ---- Categories ---- */
 .category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--space-3);
 }
 
-/* Phones: three to a row — one 343px tile per row was a long scroll; the
-   tenth tile would sit alone, so it waits for a wider screen. */
+/* Twelve tiles divide by 6, 4 and 3 — explicit columns keep every row full
+   (auto-fill gave five on a laptop and a half-empty last row). */
+@media (max-width: 1100px) {
+  .category-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Phones: three to a row — one 343px tile per row was a long scroll. */
 @media (max-width: 560px) {
   .category-grid {
     gap: var(--space-2);
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .category-grid :deep(.wide-only) {
-    display: none;
   }
 }
 

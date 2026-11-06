@@ -96,6 +96,9 @@ const imageSize = computed(() =>
 </template>
 
 <style scoped>
+/* Variant selectors carry `.category`: a bare `.is-compact:hover` also
+   matched the catalogue's `.category-grid.is-compact`, and hovering the
+   grid zoomed every picture in it (2026-11-06). */
 /* A soft plate for photos: shot on white, they melt into it (multiply) and
    read as one series whatever their own background. */
 .category {
@@ -192,7 +195,7 @@ const imageSize = computed(() =>
 }
 
 /* ---- tile: the shop window ---- */
-.is-tile {
+.category.is-tile {
   flex-direction: column;
   padding: var(--space-2);
   border-color: transparent;
@@ -201,31 +204,31 @@ const imageSize = computed(() =>
   gap: var(--space-2);
 }
 
-.is-tile:hover {
+.category.is-tile:hover {
   border-color: transparent;
   box-shadow: var(--shadow-md), 0 12px 24px -10px rgb(16 24 40 / 18%);
   transform: translateY(-3px);
 }
 
-.is-tile:active {
+.category.is-tile:active {
   transform: translateY(-1px) scale(0.98);
 }
 
-.is-tile .media {
+.category.is-tile .media {
   aspect-ratio: 4 / 3;
   border-radius: var(--radius-md);
 }
 
-.is-tile .media :deep(img) {
+.category.is-tile .media :deep(img) {
   width: 78%;
   height: 78%;
 }
 
-.is-tile:hover .media :deep(img) {
+.category.is-tile:hover .media :deep(img) {
   transform: scale(1.06);
 }
 
-.is-tile .plate {
+.category.is-tile .plate {
   font-size: var(--text-3xl);
 }
 
@@ -244,12 +247,12 @@ const imageSize = computed(() =>
   line-height: 18px;
 }
 
-.is-tile .body {
+.category.is-tile .body {
   min-width: 0;
   padding: 0 var(--space-2) var(--space-2);
 }
 
-.is-tile .name {
+.category.is-tile .name {
   display: -webkit-box;
   min-height: calc(2em * var(--leading-snug));
   -webkit-box-orient: vertical;
@@ -262,20 +265,20 @@ const imageSize = computed(() =>
 
 /* Phones: three tiles to a row (~105px each). */
 @media (max-width: 560px) {
-  .is-tile {
+  .category.is-tile {
     padding: 6px;
     gap: 6px;
   }
 
-  .is-tile .plate {
+  .category.is-tile .plate {
     font-size: var(--text-2xl);
   }
 
-  .is-tile .body {
+  .category.is-tile .body {
     padding: 0 2px 4px;
   }
 
-  .is-tile .name {
+  .category.is-tile .name {
     font-size: var(--text-xs);
     hyphens: auto;
   }
@@ -291,18 +294,18 @@ const imageSize = computed(() =>
 
 @media (hover: none) {
   /* No lift on touch: it stuck after a tap. The press stays. */
-  .is-tile:hover {
+  .category.is-tile:hover {
     box-shadow: var(--shadow-sm);
     transform: none;
   }
 
-  .is-tile:hover .media :deep(img) {
+  .category.is-tile:hover .media :deep(img) {
     transform: none;
   }
 }
 
 /* ---- compact: subcategories above the products ---- */
-.is-compact {
+.category.is-compact {
   min-width: 0;
   align-items: center;
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
@@ -310,37 +313,37 @@ const imageSize = computed(() =>
   gap: var(--space-3);
 }
 
-.is-compact:hover {
+.category.is-compact:hover {
   border-color: color-mix(in srgb, var(--brand) 45%, var(--border-subtle));
   box-shadow: var(--shadow-md);
 }
 
-.is-compact .media {
+.category.is-compact .media {
   width: 64px;
   height: 64px;
   flex-shrink: 0;
   border-radius: 10px;
 }
 
-.is-compact .media :deep(img) {
+.category.is-compact .media :deep(img) {
   width: 84%;
   height: 84%;
 }
 
-.is-compact:hover .media :deep(img) {
+.category.is-compact:hover .media :deep(img) {
   transform: scale(1.08);
 }
 
-.is-compact .plate {
+.category.is-compact .plate {
   font-size: var(--text-xl, 22px);
 }
 
-.is-compact .body {
+.category.is-compact .body {
   min-width: 0;
   flex: 1;
 }
 
-.is-compact .name {
+.category.is-compact .name {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   font-size: var(--text-sm);
@@ -350,12 +353,12 @@ const imageSize = computed(() =>
 }
 
 @media (max-width: 560px) {
-  .is-compact {
+  .category.is-compact {
     padding: 6px var(--space-2) 6px 6px;
     gap: var(--space-2);
   }
 
-  .is-compact .media {
+  .category.is-compact .media {
     width: 40px;
     height: 40px;
     border-radius: var(--radius-sm);
@@ -363,43 +366,43 @@ const imageSize = computed(() =>
 
   /* «Аккумуляторная» has to fit a ~115px column: a size it fits at, real
      hyphenation where the browser has it, a break only as the last resort. */
-  .is-compact .name {
+  .category.is-compact .name {
     font-size: 12.5px;
     hyphens: auto;
     overflow-wrap: break-word;
   }
 
-  .is-compact .chevron {
+  .category.is-compact .chevron {
     display: none;
   }
 }
 
 /* ---- row ---- */
-.is-row {
+.category.is-row {
   align-items: center;
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
   gap: var(--space-3);
 }
 
-.is-row .media {
+.category.is-row .media {
   width: 44px;
   height: 44px;
   flex-shrink: 0;
   border-radius: var(--radius-sm);
 }
 
-.is-row .plate {
+.category.is-row .plate {
   font-size: var(--text-lg);
 }
 
-.is-row .body {
+.category.is-row .body {
   min-width: 0;
   flex: 1;
 }
 
 /* ---- chip ---- */
-.is-chip {
+.category.is-chip {
   align-items: center;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-full);
@@ -408,7 +411,7 @@ const imageSize = computed(() =>
   white-space: nowrap;
 }
 
-.is-chip .name {
+.category.is-chip .name {
   font-weight: 600;
 }
 
@@ -421,7 +424,7 @@ const imageSize = computed(() =>
   font-variant-numeric: tabular-nums;
 }
 
-.is-chip:hover .badge {
+.category.is-chip:hover .badge {
   background: var(--brand-soft);
   color: var(--brand-soft-text);
 }
@@ -435,8 +438,8 @@ const imageSize = computed(() =>
 
   .category:hover,
   .category:active,
-  .is-tile:hover .media :deep(img),
-  .is-compact:hover .media :deep(img),
+  .category.is-tile:hover .media :deep(img),
+  .category.is-compact:hover .media :deep(img),
   .category:hover .chevron {
     transform: none;
   }
