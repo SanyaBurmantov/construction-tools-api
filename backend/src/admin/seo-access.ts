@@ -30,7 +30,7 @@ export const SEO_EDITABLE_FIELDS = {
     'variantLabel',
   ],
   category: ['name', 'description', 'image', 'seoTitle', 'seoDescription'],
-  brand: ['description', 'country', 'seoTitle', 'seoDescription'],
+  brand: ['description', 'country', 'logo', 'seoTitle', 'seoDescription'],
 } as const;
 
 export type SeoEntity = keyof typeof SEO_EDITABLE_FIELDS;

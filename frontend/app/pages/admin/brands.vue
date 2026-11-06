@@ -48,6 +48,7 @@ const formError = ref('')
 const blankForm = () => ({
   name: '',
   slug: '',
+  logo: '',
   description: '',
   country: '',
   seoTitle: '',
@@ -67,6 +68,7 @@ function openEdit(brand: AdminBrand) {
   Object.assign(form, {
     name: brand.name,
     slug: brand.slug,
+    logo: brand.logo ?? '',
     description: brand.description ?? '',
     country: brand.country ?? '',
     seoTitle: brand.seoTitle ?? '',
@@ -98,6 +100,7 @@ async function save() {
     // JSON and read as «no change», so a description could never be removed.
     description: textOrNull(form.description),
     country: textOrNull(form.country),
+    logo: textOrNull(form.logo),
     // Blank — the API falls back to the name, as it always has.
     seoTitle: form.seoTitle.trim(),
     seoDescription: form.seoDescription.trim(),
@@ -244,6 +247,32 @@ const mergeOptions = computed(() =>
         >
           <UiInput id="b-slug" v-model="form.slug" :disabled="isSeo" />
         </UiField>
+
+        <UiField
+          label="Логотип"
+          hint="Ссылка или файл (уйдёт в наше хранилище). Виден на плитках брендов, на главной и на странице бренда"
+          for="b-logo"
+        >
+          <div class="admin-input-upload">
+            <UiInput id="b-logo" v-model="form.logo" placeholder="https://…" />
+            <AdminImageUpload @uploaded="form.logo = $event" />
+            <UiButton
+              v-if="form.logo.trim()"
+              variant="ghost"
+              icon-only
+              aria-label="Удалить логотип"
+              title="Удалить логотип"
+              @click="form.logo = ''"
+            >
+              <UiIcon name="trash" :size="18" :stroke-width="1.8" />
+            </UiButton>
+          </div>
+        </UiField>
+
+        <div class="logo-preview" :class="{ 'is-empty': !form.logo.trim() }">
+          <img v-if="form.logo.trim()" :src="form.logo.trim()" :alt="form.name" loading="lazy">
+          <span v-else aria-hidden="true">{{ (form.name || '?').charAt(0) }}</span>
+        </div>
 
         <UiField label="Страна" for="b-country">
           <UiInput id="b-country" v-model="form.country" placeholder="Тайвань" />
@@ -404,5 +433,30 @@ const mergeOptions = computed(() =>
 
 .merge-text {
   margin-bottom: var(--space-4);
+}
+
+/* The logo as the brand tiles show it: contained in a fixed box. */
+.logo-preview {
+  display: grid;
+  width: 160px;
+  height: 80px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  place-items: center;
+}
+
+.logo-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.logo-preview.is-empty {
+  background: var(--surface-sunken);
+  color: var(--text-subtle);
+  font-size: var(--text-2xl);
+  font-weight: 700;
 }
 </style>

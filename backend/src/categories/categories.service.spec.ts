@@ -1,3 +1,4 @@
+import { CATEGORY_NO_IMAGE } from './category-image';
 import { NotFoundException } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -304,6 +305,17 @@ describe('CategoriesService category artwork', () => {
     );
     const tree = await buildServiceWith(curated).getTree();
     expect(tree[0].image).toBe('https://cdn/by-hand.jpg');
+  });
+
+  // «Без картинки»: no borrowed photo on that tile, but the parent still
+  // inherits through it.
+  it('leaves a category marked «без картинки» on its letter plate', async () => {
+    const plain = rows.map((row) =>
+      row.id === 'c1' ? { ...row, image: CATEGORY_NO_IMAGE } : row,
+    );
+    const tree = await buildServiceWith(plain).getTree();
+    expect(tree[0].image).toBeNull();
+    expect(tree[0].children[0].image).toBe('https://cdn/drill.jpg');
   });
 
   // Artwork is decoration; the menu is not. A failing artwork query leaves

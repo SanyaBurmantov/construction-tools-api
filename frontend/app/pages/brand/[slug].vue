@@ -90,6 +90,7 @@ useHead(() => ({ link: [{ rel: 'canonical', href: canonical.value }] }))
     />
 
     <StorefrontPageHero eyebrow="Бренд" :title="brand?.name" :stats="heroStats">
+      <img v-if="brand?.logo" :src="brand.logo" :alt="`Логотип ${brand.name}`" class="brand-logo">
       <p>Выберите категорию, чтобы открыть каталог с товарами этого бренда.</p>
       <div class="hero-actions">
         <UiButton :to="allProductsLink" size="sm">Все товары бренда</UiButton>
@@ -166,5 +167,12 @@ useHead(() => ({ link: [{ rel: 'canonical', href: canonical.value }] }))
      minmax() floor overflows rather than collapsing to one column. */
   grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: var(--space-3);
+}
+
+.brand-logo {
+  display: block;
+  max-width: 180px;
+  max-height: 64px;
+  object-fit: contain;
 }
 </style>

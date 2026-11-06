@@ -17,6 +17,15 @@ export class AdminCreateBrandDto {
   country?: string | null;
 
   /**
+   * Logo: a link or an upload into our bucket (`/admin/media/upload`); shown
+   * on the brand tiles and the brand page. `null` on an update removes it.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  logo?: string | null;
+
+  /**
    * The brand page's own title and description. The admin form always sent
    * them and the DTO did not declare them, so with `forbidNonWhitelisted`
    * every brand save in /admin/brands answered 400. Blank — the name (and
