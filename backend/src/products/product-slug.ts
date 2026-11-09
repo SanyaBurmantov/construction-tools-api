@@ -20,6 +20,31 @@ export function slugFromName(name: string) {
 }
 
 /**
+ * A slug that keeps a product's code (article) whole however long the name.
+ *
+ * `slugFromName(name + ' ' + sku)` cut the code off with the tail of a long
+ * name, so every article of one series got the same slug: 50 STARFIX clips
+ * («Клипса для крепления внутренней обшивки а/м Nissan, Пежо, Рено…») used up
+ * `-2` … `-51` and the offer splitter could not part the rest (2026-11-09).
+ * The name is cut to leave room, the code goes at the end.
+ */
+export function slugFromNameAndCode(name: string, code?: string | null) {
+  const tail = generateSlug(code ?? '').slice(0, MAX_PRODUCT_SLUG_LENGTH / 2);
+  const head = generateSlug(name);
+  if (!tail || head.endsWith(`-${tail}`) || head === tail) {
+    return slugFromName(name);
+  }
+  const room = MAX_PRODUCT_SLUG_LENGTH - tail.length - 1;
+  let cut = head.slice(0, room);
+  if (head.length > room) {
+    const dash = cut.lastIndexOf('-');
+    if (dash > room / 2) cut = cut.slice(0, dash);
+  }
+  cut = cut.replace(/-+$/, '');
+  return cut ? `${cut}-${tail}` : tail;
+}
+
+/**
  * Whether an AI rename may move a product to a slug built from its new name.
  *
  * Only an address no search engine has been given yet. Every product that has
