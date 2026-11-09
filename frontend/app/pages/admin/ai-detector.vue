@@ -63,13 +63,13 @@ const historyLimit = 20
 const historyLoading = ref(false)
 
 async function loadStatus() {
-  status.value = await adminFetch<Status>('/admin/ai-detector/status').catch(() => null)
+  status.value = await adminFetch<Status>('/ai-detector/status').catch(() => null)
 }
 
 async function loadHistory() {
   historyLoading.value = true
   try {
-    const page = await adminFetch<{ items: CheckRow[], total: number }>('/admin/ai-detector/checks', {
+    const page = await adminFetch<{ items: CheckRow[], total: number }>('/ai-detector/checks', {
       params: { page: historyPage.value, limit: historyLimit },
     })
     history.value = page.items
@@ -95,7 +95,7 @@ const canCheck = computed(() =>
 async function check() {
   const body = mode.value === 'text' ? { text: text.value } : { url: url.value.trim() }
   const checked = await run(
-    () => adminFetch<Check>('/admin/ai-detector/check', { method: 'POST', body }),
+    () => adminFetch<Check>('/ai-detector/check', { method: 'POST', body }),
     { error: 'Проверка не удалась', key: 'check' },
   )
   if (checked) {
@@ -106,7 +106,7 @@ async function check() {
 }
 
 async function open(id: string) {
-  const check = await run(() => adminFetch<Check>(`/admin/ai-detector/checks/${id}`), {
+  const check = await run(() => adminFetch<Check>(`/ai-detector/checks/${id}`), {
     error: 'Не удалось открыть проверку',
     key: `open-${id}`,
   })
@@ -124,7 +124,7 @@ function editAgain() {
 }
 
 async function remove(id: string) {
-  await run(() => adminFetch(`/admin/ai-detector/checks/${id}`, { method: 'DELETE' }), {
+  await run(() => adminFetch(`/ai-detector/checks/${id}`, { method: 'DELETE' }), {
     error: 'Не удалось удалить',
     success: 'Удалено',
     key: `del-${id}`,
