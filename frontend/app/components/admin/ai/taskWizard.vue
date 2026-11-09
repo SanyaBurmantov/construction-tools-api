@@ -404,6 +404,7 @@ const RULES_LABEL: Record<AiEntity, string> = {
             Ответила модель: {{ preview.model }}
             <template v-if="preview.template"> · вид: {{ preview.template }}</template>
             <template v-if="preview.usage"> · токенов: {{ preview.usage.promptTokens }} + {{ preview.usage.completionTokens }}</template>
+            <template v-if="preview.repairs"> · модель исправила поля после проверки</template>
           </p>
           <p v-if="!Object.keys(preview.changes).length && !Object.keys(preview.rejected).length" class="note">Модель ничего не изменила бы.</p>
           <div v-for="(change, key) in preview.changes" :key="key" class="diff-row">
@@ -411,7 +412,6 @@ const RULES_LABEL: Record<AiEntity, string> = {
             <del>{{ change.old || '—' }}</del>
             <ins>{{ change.new }}</ins>
             <span v-if="aiQualityLine(preview.quality?.[String(key)])" class="note">{{ aiQualityLine(preview.quality?.[String(key)]) }}</span>
-            <span v-if="preview.warnings?.[String(key)]" class="note">⚠ {{ preview.warnings[String(key)] }}</span>
           </div>
           <div v-for="(item, key) in preview.rejected" :key="`r-${key}`" class="diff-row">
             <strong>{{ fieldLabel(String(key)) }} — не будет записано</strong>

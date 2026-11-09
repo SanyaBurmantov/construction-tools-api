@@ -440,14 +440,14 @@ const entityTabs = computed(() => (['PRODUCT', 'CATEGORY', 'BRAND'] as AiEntity[
         </div>
 
         <div v-if="preview" class="result">
-          <p>Модель: <code>{{ preview.model }}</code><template v-if="preview.usage"> · токены: {{ preview.usage.promptTokens }} → {{ preview.usage.completionTokens }} (из кеша {{ preview.usage.cacheHitTokens }})</template></p>
+          <p>Модель: <code>{{ preview.model }}</code><template v-if="preview.usage"> · токены: {{ preview.usage.promptTokens }} → {{ preview.usage.completionTokens }} (из кеша {{ preview.usage.cacheHitTokens }})</template><template v-if="preview.repairs"> · модель исправила поля после проверки</template></p>
           <UiTable
             :columns="[{ key: 'field', label: 'Поле' }, { key: 'old', label: 'Было' }, { key: 'new', label: 'Станет' }]"
             :rows="Object.entries(preview.changes).map(([key, change]) => ({ id: key, field: fieldLabel('PRODUCT', key), old: change.old ?? '—', new: change.new }))"
           />
           <ul v-if="Object.keys(preview.quality ?? {}).length" class="muted">
             <li v-for="(q, key) in preview.quality" :key="`q-${key}`">
-              {{ fieldLabel('PRODUCT', String(key)) }}: {{ aiQualityLine(q) }}<template v-if="preview.warnings?.[String(key)]"> · {{ preview.warnings[String(key)] }}</template>
+              {{ fieldLabel('PRODUCT', String(key)) }}: {{ aiQualityLine(q) }}
             </li>
           </ul>
           <div v-if="Object.keys(preview.rejected).length" class="rejected">

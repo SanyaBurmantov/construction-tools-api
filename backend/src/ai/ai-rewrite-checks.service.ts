@@ -35,9 +35,11 @@ export class AiRewriteChecksService {
 
   async check(inputs: RewriteInput[]): Promise<Map<string, RewriteVerdict>> {
     const figures = new Map<string, Record<string, FieldQuality>>();
+    const copied = new Map<string, Record<string, string[]>>();
     const texts: Array<{ entityId: string; field: string; text: string }> = [];
     for (const input of inputs) {
       const own: Record<string, FieldQuality> = {};
+      const pieces: Record<string, string[]> = {};
       for (const field of UNIQUENESS_FIELDS) {
         const text = input.proposed[field];
         if (!text) continue;
@@ -48,13 +50,8 @@ export class AiRewriteChecksService {
               input.entity === AiEntity.PRODUCT ? input.entityId : null,
             previous: input.previous,
           });
-          const top = result.others[0];
-          own[field] = {
-            uniqueness: result.percent,
-            overlap: top
-              ? { title: top.title, url: top.url, share: top.share }
-              : null,
-          };
+          own[field] = { uniqueness: result.percent };
+          if (result.copied.length) pieces[field] = result.copied;
         } catch (error) {
           this.logger.warn(
             `uniqueness of ${input.entityId}: ${(error as Error).message}`,
@@ -63,6 +60,7 @@ export class AiRewriteChecksService {
         }
       }
       figures.set(input.entityId, own);
+      copied.set(input.entityId, pieces);
     }
 
     if (texts.length && this.detector.configured) {
@@ -80,7 +78,10 @@ export class AiRewriteChecksService {
     }
 
     return new Map(
-      [...figures].map(([id, quality]) => [id, rewriteVerdict(quality)]),
+      [...figures].map(([id, quality]) => [
+        id,
+        rewriteVerdict(quality, copied.get(id)),
+      ]),
     );
   }
 }

@@ -24,6 +24,8 @@ const SUPPLIER_HITS = 15;
 const SEARCH_TIMEOUT_MS = 8_000;
 const SIBLINGS = 15;
 const SOURCE_TEXT_CHARS = 20_000;
+/** Copied pieces a repair request quotes back to the model. */
+const COPIED_PIECES = 3;
 
 const PRODUCT_DOC = Prisma.raw(PRODUCT_DESCRIPTION_DOC_SQL);
 const SOURCE_DOC = Prisma.raw(SOURCE_DESCRIPTION_DOC_SQL);
@@ -224,11 +226,10 @@ export class UniquenessService {
 
   /**
    * For an AI rewrite before it is written (`ai/ai-rewrite-checks.service.ts`):
-   * `percent` — uniqueness against the text it replaces and the product's
-   * supplier texts (did the model rewrite at all?); `others` — other products
-   * and supplier texts in the catalogue that share the new text. No
-   * competitors: they carry the supplier's text, which `percent` already
-   * covers, and a task must not send a search to every shop for each card.
+   * how much of the new text is not in the texts it replaces and the
+   * product's supplier texts — did the model rewrite at all — and the longest
+   * pieces it copied, which the repair request quotes back. Nothing wider: the
+   * siblings travel in the brief, and competitors carry the supplier's text.
    */
   async forRewrite(
     text: string,
@@ -236,7 +237,7 @@ export class UniquenessService {
       productId?: string | null;
       previous: Array<string | null | undefined>;
     },
-  ): Promise<{ percent: number | null; others: UniquenessMatch[] }> {
+  ): Promise<{ percent: number | null; copied: string[] }> {
     const offers = options.productId
       ? await this.supplierTexts(options.productId)
       : [];
@@ -253,26 +254,13 @@ export class UniquenessService {
         })),
       ...offers.map(supplierSource),
     ];
-    const { percent } = uniqueness(text, own);
-    if (!options.productId) return { percent, others: [] };
-    const queries = searchQueries(text, SEARCH_QUERIES);
-    if (!queries.length) return { percent, others: [] };
-    const hits = await this.indexHits(
-      queries,
-      [options.productId],
-      offers.map((o) => o.id),
-    ).catch((error: Error) => {
-      this.logger.warn(
-        `rewrite check: catalogue search failed: ${error.message}`,
-      );
-      return null;
-    });
-    if (!hits) return { percent, others: [] };
-    const result = uniqueness(text, [
-      ...hits.products.map((p) => productSource(p, 'catalogue')),
-      ...hits.offers.map(supplierSource),
-    ]);
-    return { percent, others: result.sources };
+    const result = uniqueness(text, own);
+    const copied = result.spans
+      .map((span) => text.slice(span.start, span.end))
+      .sort((a, b) => b.length - a.length)
+      .slice(0, COPIED_PIECES)
+      .map((piece) => (piece.length > 140 ? `${piece.slice(0, 140)}…` : piece));
+    return { percent: result.percent, copied };
   }
 
   /** The product behind one of our own `/product/<slug>` addresses. */
