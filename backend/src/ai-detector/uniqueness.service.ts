@@ -14,8 +14,9 @@ export const MAX_COMPARE_URLS = 5;
 /** How many phrases the catalogue is searched by: each costs ~0.6 s of one core. */
 const SEARCH_PHRASES = 4;
 /** Only this much of each stored text is searched (a copy starts early). */
-const SEARCH_PREFIX_CHARS = 6000;
-const SEARCH_TIMEOUT = '10s';
+const SEARCH_PREFIX_CHARS = 3000;
+/** A full pass measured 3.7 s on an idle box, over 7 s beside a parse batch. */
+const SEARCH_TIMEOUT_MS = 12_000;
 const CATALOGUE_HITS = 20;
 const SIBLINGS = 15;
 const SOURCE_TEXT_CHARS = 20_000;
@@ -216,11 +217,12 @@ export class UniquenessService {
     const notIn = exclude.length
       ? Prisma.sql`AND id NOT IN (${Prisma.join(exclude)})`
       : Prisma.empty;
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        `SET LOCAL statement_timeout = '${SEARCH_TIMEOUT}'`,
-      );
-      return tx.$queryRaw<ProductText[]>`
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(
+          `SET LOCAL statement_timeout = ${SEARCH_TIMEOUT_MS}`,
+        );
+        return tx.$queryRaw<ProductText[]>`
         SELECT id, slug, name,
                left("descriptionFull", ${SOURCE_TEXT_CHARS}::int) AS "full",
                left("descriptionShort", ${SOURCE_TEXT_CHARS}::int) AS "short"
@@ -229,7 +231,10 @@ export class UniquenessService {
           AND (left("descriptionFull", ${SEARCH_PREFIX_CHARS}::int) LIKE ANY(${patterns})
             OR left("descriptionShort", ${SEARCH_PREFIX_CHARS}::int) LIKE ANY(${patterns}))
         LIMIT ${CATALOGUE_HITS}::int`;
-    });
+        // Prisma's default 5 s would close the transaction under the query.
+      },
+      { timeout: SEARCH_TIMEOUT_MS + 3_000, maxWait: 5_000 },
+    );
   }
 }
 

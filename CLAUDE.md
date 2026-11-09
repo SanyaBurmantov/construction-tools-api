@@ -1337,7 +1337,7 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   ответе `report.uniqueness`): шинглы по 4 значимых слова, как text.ru;
   сравнение с текстом поставщика и похожими товарами (если проверяется наш
   `/product/<slug>`), со всем каталогом по 4 дословным фразам (`LIKE`, не
-  `ILIKE`: на кириллице 8 с против ~2,5 с, `statement_timeout` 10 с) и со
+  `ILIKE`: на кириллице 8 с против ~2,5 с, `statement_timeout` 12 с, транзакция Prisma 15 с — по умолчанию 5 с) и со
   страницами из `compareUrls`. Бесплатно, без поисковика; поставщик и его
   адрес скрыты от роли SEO при выдаче (`uniquenessForSeo`).
 - **Product page recommendations** (`products/relations/`,
