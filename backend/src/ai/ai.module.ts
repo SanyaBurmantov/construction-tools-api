@@ -1,3 +1,5 @@
+import { AiDetectorModule } from '../ai-detector/ai-detector.module';
+import { AiRewriteChecksService } from './ai-rewrite-checks.service';
 import { Module } from '@nestjs/common';
 import { AdminModule } from '../admin/admin.module';
 import { AiController } from './ai.controller';
@@ -19,10 +21,11 @@ import {
  * DeepSeek / OpenRouter model, on a schedule, with a per-item diff and rollback.
  */
 @Module({
-  imports: [AdminModule, SeoModule, OffersModule],
+  imports: [AdminModule, SeoModule, OffersModule, AiDetectorModule],
   controllers: [AiController, AiAssistController, LandingsController],
   providers: [
     AiService,
+    AiRewriteChecksService,
     AiClient,
     AiRunnerCron,
     AiTemplateTextsService,

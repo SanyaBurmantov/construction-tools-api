@@ -410,6 +410,8 @@ const RULES_LABEL: Record<AiEntity, string> = {
             <strong>{{ fieldLabel(String(key)) }}</strong>
             <del>{{ change.old || '—' }}</del>
             <ins>{{ change.new }}</ins>
+            <span v-if="aiQualityLine(preview.quality?.[String(key)])" class="note">{{ aiQualityLine(preview.quality?.[String(key)]) }}</span>
+            <span v-if="preview.warnings?.[String(key)]" class="note">⚠ {{ preview.warnings[String(key)] }}</span>
           </div>
           <div v-for="(item, key) in preview.rejected" :key="`r-${key}`" class="diff-row">
             <strong>{{ fieldLabel(String(key)) }} — не будет записано</strong>

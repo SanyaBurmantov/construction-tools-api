@@ -20,6 +20,6 @@ import { DetectorClient } from './detector.client';
     CompetitorsService,
     AiDetectorCleanupCron,
   ],
-  exports: [AiDetectorService, DetectorClient],
+  exports: [AiDetectorService, DetectorClient, UniquenessService],
 })
 export class AiDetectorModule {}

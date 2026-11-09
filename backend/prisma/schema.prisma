@@ -1247,6 +1247,10 @@ model AiTaskItem {
   /// `{ key: note }` — written, but worth a look (a text near-identical to a
   /// sibling variant's).
   warnings   Json?
+  /// `{ field: { uniqueness, ai, overlap } }` — figures of each rewritten
+  /// text: % unique against the old and the supplier's text, the detector's
+  /// probability, the other product sharing most of it (ai-rewrite-checks.ts).
+  quality    Json?
   /// `{ field: 'applied' | 'dismissed' }` — what an admin did with a field
   /// the checks refused («ИИ-тексты → Отклонённое»).
   resolved   Json?

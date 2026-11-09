@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   AiEntity,
@@ -46,6 +47,8 @@ import {
 import { AiClient, AiRateLimitError, AiUsage } from './ai.client';
 import { AiTemplateTextsService } from './ai-template-texts.service';
 import { AI_CHECKS } from './ai-validate';
+import { AiRewriteChecksService } from './ai-rewrite-checks.service';
+import type { RewriteVerdict } from './ai-rewrite-checks';
 import { AI_PRESETS, FIELD_GUIDE } from './ai-scaffolds';
 import { PromptParts, quotedPhrases } from './ai-phrases';
 import { VERIFY_SYSTEM_PROMPT } from './ai-verify';
@@ -131,6 +134,8 @@ export class AiService {
     private readonly client: AiClient,
     private readonly indexNow: IndexNowService,
     private readonly texts: AiTemplateTextsService,
+    // Optional so the unit tests build the service without the catalogue.
+    @Optional() private readonly rewriteChecks?: AiRewriteChecksService,
   ) {}
 
   /* ---- Status ---------------------------------------------------------- */
@@ -1321,14 +1326,26 @@ export class AiService {
         contexts,
         phrases,
       );
+      const checked = (
+        await this.checkRewrites(
+          dto.entity,
+          fields,
+          new Map([[dto.id, record]]),
+          contexts,
+          phrases,
+        )
+      ).get(dto.id);
       const rejected: Rejections = {
         ...validateAnswer(
           { ...context.validation, allowed: phrases },
           newValues(changes),
         ),
         ...pickKeys(verdicts.get(dto.id) ?? {}, Object.keys(changes)),
+        ...pickKeys(checked?.rejected ?? {}, Object.keys(changes)),
       };
       return {
+        quality: checked?.quality ?? {},
+        warnings: checked?.warnings ?? {},
         model: answer.model,
         template: template?.label ?? null,
         // What a task would write: the rejected fields stay as they are.
@@ -1497,6 +1514,16 @@ export class AiService {
       return 'error';
     }
 
+    // Uniqueness and the detector's figure, outside the per-item transactions
+    // (they read the catalogue and call the detector container).
+    const checks = await this.checkRewrites(
+      task.entity,
+      fields,
+      records,
+      contexts,
+      phrases,
+    );
+
     const announce: Array<string | null> = [];
     for (const item of items) {
       const record = records.get(item.entityId);
@@ -1529,9 +1556,23 @@ export class AiService {
               verdicts.get(item.entityId) ?? {},
               Object.keys(proposed),
             ),
+            ...pickKeys(
+              checks.get(item.entityId)?.rejected ?? {},
+              Object.keys(proposed),
+            ),
           };
           const changes = withoutKeys(proposed, Object.keys(rejected));
-          const warnings = await this.nearDuplicates(tx, task.id, changes);
+          const warnings = mergeNotes(
+            await this.nearDuplicates(tx, task.id, changes),
+            pickKeys(
+              checks.get(item.entityId)?.warnings ?? {},
+              Object.keys(changes),
+            ),
+          );
+          const quality = pickKeys(
+            checks.get(item.entityId)?.quality ?? {},
+            Object.keys(proposed),
+          );
           const paths = await this.applyChanges(
             task.entity,
             item.entityId,
@@ -1558,6 +1599,9 @@ export class AiService {
                 : Prisma.DbNull,
               warnings: Object.keys(warnings).length
                 ? (warnings as Prisma.InputJsonValue)
+                : Prisma.DbNull,
+              quality: Object.keys(quality).length
+                ? (quality as Prisma.InputJsonValue)
                 : Prisma.DbNull,
               error: null,
             },
@@ -1641,6 +1685,46 @@ export class AiService {
       );
     }
     return verdicts;
+  }
+
+  /**
+   * Uniqueness and detector figures for the descriptions in a batch's
+   * answers (`ai-rewrite-checks.ts`). Never throws: without the checks
+   * service (unit tests) or on its failure the batch is written as before.
+   */
+  private async checkRewrites(
+    entity: AiEntity,
+    fields: ReturnType<typeof fieldDefs>,
+    records: Map<string, Record<string, unknown>>,
+    contexts: Map<string, EntityContext>,
+    phrases: string[],
+  ): Promise<Map<string, RewriteVerdict>> {
+    if (!this.rewriteChecks) return new Map();
+    const inputs = [...records].flatMap(([entityId, record]) => {
+      const context = contexts.get(entityId);
+      if (!context) return [];
+      const proposed = newValues(
+        diffAnswer(fields, context.current, record, phrases),
+      );
+      return [
+        {
+          entityId,
+          entity,
+          proposed: Object.fromEntries(
+            Object.entries(proposed).filter(([, v]) => typeof v === 'string'),
+          ) as Record<string, string>,
+          previous: Object.values(context.current).filter(
+            (v): v is string => typeof v === 'string',
+          ),
+        },
+      ];
+    });
+    try {
+      return await this.rewriteChecks.check(inputs);
+    } catch (error) {
+      this.logger.warn(`rewrite checks failed: ${(error as Error).message}`);
+      return new Map();
+    }
   }
 
   /**
@@ -2087,6 +2171,15 @@ type EntityContext = {
   /** What the answer is checked against (`ai-validate.ts`). */
   validation: ValidationInput;
 };
+
+/** Two `{ field: note }` sets, notes on one field joined. */
+function mergeNotes(a: Record<string, string>, b: Record<string, string>) {
+  const out = { ...a };
+  for (const [key, note] of Object.entries(b)) {
+    out[key] = out[key] ? `${out[key]}; ${note}` : note;
+  }
+  return out;
+}
 
 function newValues(changes: Record<string, FieldChange>) {
   return Object.fromEntries(

@@ -53,6 +53,9 @@ x-backend-environment: &backend-environment
   AI_MIN_BALANCE: ${AI_MIN_BALANCE:-}
   # Вторая проверка смысла (название и краткое описание). false = выключить.
   AI_VERIFY: ${AI_VERIFY:-true}
+  # Уникальность рерайта против прежнего текста и текста поставщика, %: ниже —
+  # описание не записывается («Отклонённое»). 0 = выключить.
+  AI_MIN_UNIQUENESS: ${AI_MIN_UNIQUENESS:-50}
   DEEPSEEK_THINKING: ${DEEPSEEK_THINKING:-disabled}
   # ИИ-детектор (контейнер detector, профиль compose «detector»). Пока профиль
   # выключен, экран «ИИ-детектор» пишет «недоступен» — остальное не зависит.

@@ -222,6 +222,59 @@ export class UniquenessService {
     return options.url && title ? competitorQuery(title) : null;
   }
 
+  /**
+   * For an AI rewrite before it is written (`ai/ai-rewrite-checks.service.ts`):
+   * `percent` — uniqueness against the text it replaces and the product's
+   * supplier texts (did the model rewrite at all?); `others` — other products
+   * and supplier texts in the catalogue that share the new text. No
+   * competitors: they carry the supplier's text, which `percent` already
+   * covers, and a task must not send a search to every shop for each card.
+   */
+  async forRewrite(
+    text: string,
+    options: {
+      productId?: string | null;
+      previous: Array<string | null | undefined>;
+    },
+  ): Promise<{ percent: number | null; others: UniquenessMatch[] }> {
+    const offers = options.productId
+      ? await this.supplierTexts(options.productId)
+      : [];
+    const own: Array<UniquenessSource<Meta>> = [
+      ...options.previous
+        .filter((t): t is string => Boolean(t && t.trim()))
+        .map((t) => ({
+          text: t,
+          meta: {
+            kind: 'supplier' as const,
+            title: 'прежний текст',
+            url: null,
+          },
+        })),
+      ...offers.map(supplierSource),
+    ];
+    const { percent } = uniqueness(text, own);
+    if (!options.productId) return { percent, others: [] };
+    const queries = searchQueries(text, SEARCH_QUERIES);
+    if (!queries.length) return { percent, others: [] };
+    const hits = await this.indexHits(
+      queries,
+      [options.productId],
+      offers.map((o) => o.id),
+    ).catch((error: Error) => {
+      this.logger.warn(
+        `rewrite check: catalogue search failed: ${error.message}`,
+      );
+      return null;
+    });
+    if (!hits) return { percent, others: [] };
+    const result = uniqueness(text, [
+      ...hits.products.map((p) => productSource(p, 'catalogue')),
+      ...hits.offers.map(supplierSource),
+    ]);
+    return { percent, others: result.sources };
+  }
+
   /** The product behind one of our own `/product/<slug>` addresses. */
   private async ourProduct(raw: string): Promise<OwnProduct | null> {
     let url: URL;
