@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AiDetectorController } from './ai-detector.controller';
 import { AiDetectorCleanupCron } from './ai-detector.cron';
 import { AiDetectorService } from './ai-detector.service';
+import { UniquenessService } from './uniqueness.service';
 import { DetectorClient } from './detector.client';
 
 /**
@@ -11,7 +12,12 @@ import { DetectorClient } from './detector.client';
  */
 @Module({
   controllers: [AiDetectorController],
-  providers: [AiDetectorService, DetectorClient, AiDetectorCleanupCron],
+  providers: [
+    AiDetectorService,
+    DetectorClient,
+    UniquenessService,
+    AiDetectorCleanupCron,
+  ],
   exports: [AiDetectorService, DetectorClient],
 })
 export class AiDetectorModule {}

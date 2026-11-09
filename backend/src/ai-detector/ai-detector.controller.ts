@@ -13,7 +13,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../admin/admin.guard';
-import { SeoAccess } from '../admin/seo-access';
+import { isSeoRequest, SeoAccess } from '../admin/seo-access';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { AiDetectorService } from './ai-detector.service';
 import { DetectorCheckDto, DetectorListQueryDto } from './ai-detector.dto';
@@ -35,7 +35,11 @@ export class AiDetectorController {
   // One check is up to a few CPU-seconds on the box's spare core.
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   check(@Body() dto: DetectorCheckDto, @Req() req: AuthenticatedRequest) {
-    return this.detector.check(dto, req.authUser?.login ?? null);
+    return this.detector.check(
+      dto,
+      req.authUser?.login ?? null,
+      isSeoRequest(req),
+    );
   }
 
   @Get('checks')
@@ -44,8 +48,11 @@ export class AiDetectorController {
   }
 
   @Get('checks/:id')
-  get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.detector.get(id);
+  get(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.detector.get(id, isSeoRequest(req));
   }
 
   @Delete('checks/:id')
