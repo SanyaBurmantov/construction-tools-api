@@ -55,7 +55,12 @@ export class AiDetectorService {
    * our catalogue, the product's supplier text and any pages named.
    */
   async check(
-    input: { text?: string; url?: string; compareUrls?: string[] },
+    input: {
+      text?: string;
+      url?: string;
+      compareUrls?: string[];
+      productName?: string;
+    },
     createdBy: string | null,
     seo = false,
   ) {
@@ -89,7 +94,12 @@ export class AiDetectorService {
       this.detector.analyze(text),
       // Uniqueness is a second opinion; its failure must not lose the first.
       this.uniqueness
-        .check(text, { url, compareUrls })
+        .check(text, {
+          url,
+          compareUrls,
+          productName: input.productName,
+          pageTitle: title,
+        })
         .catch((error: Error): UniquenessReport | null => {
           this.logger.warn(`uniqueness failed: ${error.message}`);
           return null;

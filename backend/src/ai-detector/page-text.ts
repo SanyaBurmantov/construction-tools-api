@@ -134,3 +134,18 @@ export function extractPageText(html: string): PageText {
   }
   return { title, text: readable($('body')), picked: 'вся страница' };
 }
+
+/**
+ * Everything a reader can read on the page, menus and footers aside — for
+ * comparing with a competitor's card, where the copied text may sit in any
+ * block (shingles only count what matches, so the rest costs nothing).
+ */
+export function extractWholeText(html: string): PageText {
+  const $ = cheerio.load(html);
+  const title =
+    clean($('meta[property="og:title"]').attr('content') ?? '') ||
+    clean($('title').first().text()) ||
+    null;
+  $(NOISE).remove();
+  return { title, text: readable($('body')), picked: 'вся страница' };
+}

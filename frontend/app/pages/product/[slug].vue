@@ -388,7 +388,7 @@ useHead(() => {
 
           <!-- Supplier texts run long: four lines, the rest one tap away. -->
           <div v-if="product.descriptionShort" class="short-description" :class="{ 'is-open': shortOpen }">
-            <p>{{ product.descriptionShort }}</p>
+            <p>{{ typograf(product.descriptionShort) }}</p>
             <button
               v-if="product.descriptionShort.length > 260"
               type="button"
@@ -547,7 +547,7 @@ useHead(() => {
         <UiTabs v-model="tab" :tabs="detailTabs" />
 
         <div v-if="hasDescription" v-show="tab === 'description'" class="description">
-          <p>{{ product.descriptionFull || product.descriptionShort }}</p>
+          <p>{{ typograf(product.descriptionFull || product.descriptionShort) }}</p>
         </div>
 
         <div v-if="specs.length" v-show="tab === 'specs'" class="specs-table">

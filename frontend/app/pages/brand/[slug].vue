@@ -62,7 +62,7 @@ const pageTitle = computed(() =>
 )
 /** The brand text, paragraph by paragraph, under the categories. */
 const brandText = computed(() =>
-  (brand.value?.description ?? '').split(/\n+/).map(line => line.trim()).filter(Boolean)
+  (brand.value?.description ?? '').split(/\n+/).map(line => typograf(line.trim())).filter(Boolean)
 )
 const canonical = computed(() => absoluteUrl(`/brand/${slug.value}`))
 

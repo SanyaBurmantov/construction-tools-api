@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -13,10 +14,15 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../admin/admin.guard';
-import { isSeoRequest, SeoAccess } from '../admin/seo-access';
+import { AdminOnly, isSeoRequest, SeoAccess } from '../admin/seo-access';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { AiDetectorService } from './ai-detector.service';
-import { DetectorCheckDto, DetectorListQueryDto } from './ai-detector.dto';
+import {
+  CompetitorsDto,
+  DetectorCheckDto,
+  DetectorListQueryDto,
+} from './ai-detector.dto';
+import { CompetitorsService } from './competitors.service';
 
 /** «ИИ-детектор»: admins and the SEO specialist check a text or a page. */
 @ApiTags('Admin AI detector')
@@ -24,7 +30,22 @@ import { DetectorCheckDto, DetectorListQueryDto } from './ai-detector.dto';
 @SeoAccess()
 @Controller('admin/ai-detector')
 export class AiDetectorController {
-  constructor(private readonly detector: AiDetectorService) {}
+  constructor(
+    private readonly detector: AiDetectorService,
+    private readonly competitors: CompetitorsService,
+  ) {}
+
+  /** Competitors' site searches the uniqueness check asks. */
+  @Get('competitors')
+  competitorList() {
+    return this.competitors.settings();
+  }
+
+  @Put('competitors')
+  @AdminOnly()
+  saveCompetitors(@Body() dto: CompetitorsDto) {
+    return this.competitors.save(dto.text);
+  }
 
   @Get('status')
   status() {

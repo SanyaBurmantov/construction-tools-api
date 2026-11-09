@@ -38,6 +38,19 @@ export class DetectorCheckDto {
   @IsString({ each: true })
   @MaxLength(2000, { each: true })
   compareUrls?: string[];
+
+  /** The product, for the competitors' site search when the text was pasted. */
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  productName?: string;
+}
+
+export class CompetitorsDto {
+  @IsString()
+  @MaxLength(5000)
+  text!: string;
 }
 
 export class DetectorListQueryDto {
