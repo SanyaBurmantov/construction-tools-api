@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { fetchWithTimeout } from '../common/utils/fetch-with-timeout';
-import { extractPageText, type PageText } from './page-text';
+import { extractPageText, extractWholeText, type PageText } from './page-text';
 import { assertPublicUrl, UnsafeUrlError } from './safe-url';
 
 const MAX_PAGE_BYTES = 5 * 1024 * 1024;
@@ -14,7 +14,26 @@ const PAGE_USER_AGENT =
  * send the server to `backend:8000` or `db`. Errors are 400s worded for the
  * person who typed the address.
  */
-export async function fetchReadablePage(raw: string): Promise<PageText> {
+export async function fetchReadablePage(
+  raw: string,
+  options: { whole?: boolean } = {},
+): Promise<PageText> {
+  const page = await fetchPublicPage(raw);
+  if (/text\/plain/i.test(page.type)) {
+    return { title: null, text: page.body.trim(), picked: 'текстовый файл' };
+  }
+  return options.whole
+    ? extractWholeText(page.body)
+    : extractPageText(page.body);
+}
+
+/**
+ * The body of a public page, redirects vetted hop by hop. `url` is where it
+ * ended up (relative links on it resolve against that).
+ */
+export async function fetchPublicPage(
+  raw: string,
+): Promise<{ body: string; type: string; url: string }> {
   let current = raw;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     let url: URL;
@@ -60,10 +79,7 @@ export async function fetchReadablePage(raw: string): Promise<PageText> {
     if (type && !/html|xml|text\/plain/i.test(type)) {
       throw new BadRequestException('По адресу не веб-страница');
     }
-    const body = await res.text();
-    return /text\/plain/i.test(type)
-      ? { title: null, text: body.trim(), picked: 'текстовый файл' }
-      : extractPageText(body);
+    return { body: await res.text(), type, url: url.toString() };
   }
   throw new BadRequestException('Слишком много перенаправлений');
 }

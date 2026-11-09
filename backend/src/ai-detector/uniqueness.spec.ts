@@ -1,4 +1,4 @@
-import { containsPattern, searchPhrases, uniqueness } from './uniqueness';
+import { searchQueries, uniqueness } from './uniqueness';
 
 const supplier =
   'Аккумуляторный перфоратор предназначен для сверления отверстий в бетоне, кирпиче и камне. ' +
@@ -59,25 +59,26 @@ describe('uniqueness', () => {
   });
 });
 
-describe('searchPhrases', () => {
-  it('takes verbatim five-word runs, spread over the text', () => {
-    const phrases = searchPhrases(supplier.repeat(3), 4);
-    expect(phrases).toHaveLength(4);
-    for (const p of phrases) {
-      expect(supplier.repeat(3)).toContain(p);
-      expect(p.split(' ')).toHaveLength(5);
-    }
-  });
-
-  it('skips runs of short function words', () => {
-    expect(searchPhrases('и в на по за до и в на по за до')).toEqual([]);
+describe('changed endings', () => {
+  it('a copy with other case endings is still a copy', () => {
+    const edited =
+      'Аккумуляторные перфораторы предназначены для сверления отверстия в бетонах, кирпичах и камне.';
+    const result = uniqueness(edited, [{ text: supplier, meta: { id: 's' } }]);
+    expect(result.percent).toBeLessThan(50);
   });
 });
 
-describe('containsPattern', () => {
-  it('escapes LIKE wildcards', () => {
-    expect(containsPattern('100% _хлопок_ a\\b')).toBe(
-      '%100\\% \\_хлопок\\_ a\\\\b%',
-    );
+describe('searchQueries', () => {
+  it('takes runs of five content words, spread over the text', () => {
+    const queries = searchQueries(supplier.repeat(4), 4);
+    expect(queries).toHaveLength(4);
+    for (const q of queries) {
+      expect(q.split(' ')).toHaveLength(5);
+      expect(q).not.toMatch(/\b(и|в|для)\b/);
+    }
+  });
+
+  it('a text too short for one run gives none', () => {
+    expect(searchQueries('Дрель ударная')).toEqual([]);
   });
 });

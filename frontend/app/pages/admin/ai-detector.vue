@@ -27,7 +27,7 @@ type Report = {
   uniqueness?: Uniqueness | null
 }
 type UniquenessMatch = {
-  kind: 'supplier' | 'sibling' | 'catalogue' | 'page'
+  kind: 'supplier' | 'sibling' | 'catalogue' | 'competitor' | 'page'
   title: string
   url: string | null
   supplier?: string
@@ -59,7 +59,7 @@ type Check = {
 type CheckRow = Omit<Check, 'text' | 'report'>
 type Status = { configured: boolean, ok: boolean, model?: string, error?: string }
 
-const { adminFetch } = useAdminApi()
+const { adminFetch, isSeo } = useAdminApi()
 const { run, busy } = useAdminAction()
 
 const status = ref<Status | null>(null)
@@ -67,6 +67,10 @@ const mode = ref<'text' | 'url'>('text')
 const text = ref('')
 const url = ref('')
 const compareUrls = ref('')
+const productName = ref('')
+/** The competitors' site searches, one `name address-with-{q}` per line. */
+const competitorsText = ref('')
+const competitorsDefaults = ref('')
 const result = ref<Check | null>(null)
 const highlight = ref<'ai' | 'copy'>('ai')
 
@@ -80,6 +84,25 @@ const historyTotal = ref(0)
 const historyPage = ref(1)
 const historyLimit = 20
 const historyLoading = ref(false)
+
+async function loadCompetitors() {
+  const settings = await adminFetch<{ text: string, defaults: string }>('/ai-detector/competitors').catch(() => null)
+  if (settings) {
+    competitorsText.value = settings.text
+    competitorsDefaults.value = settings.defaults
+  }
+}
+
+async function saveCompetitors() {
+  const saved = await run(
+    () => adminFetch<{ text: string, defaults: string }>('/ai-detector/competitors', {
+      method: 'PUT',
+      body: { text: competitorsText.value },
+    }),
+    { success: 'Список конкурентов сохранён', error: 'Не сохранилось', key: 'competitors' },
+  )
+  if (saved) competitorsText.value = saved.text
+}
 
 async function loadStatus() {
   status.value = await adminFetch<Status>('/ai-detector/status').catch(() => null)
@@ -105,6 +128,7 @@ async function loadHistory() {
 onMounted(() => {
   loadStatus()
   loadHistory()
+  loadCompetitors()
 })
 
 const canCheck = computed(() =>
@@ -116,6 +140,7 @@ async function check() {
   const body = {
     ...(mode.value === 'text' ? { text: text.value } : { url: url.value.trim() }),
     ...(compare.length ? { compareUrls: compare } : {}),
+    ...(productName.value.trim() ? { productName: productName.value.trim() } : {}),
   }
   const checked = await run(
     () => adminFetch<Check>('/ai-detector/check', { method: 'POST', body }),
@@ -251,6 +276,7 @@ const MATCH_KINDS: Record<UniquenessMatch['kind'], string> = {
   supplier: 'текст поставщика',
   sibling: 'похожий товар',
   catalogue: 'наш каталог',
+  competitor: 'у конкурента',
   page: 'страница',
 }
 
@@ -324,6 +350,13 @@ function setHistoryPage(page: number) {
           type="url"
           placeholder="https://… — страница сайта, свой или чужой"
           autocomplete="off"
+        />
+        <UiInput
+          v-model="productName"
+          autocomplete="off"
+          :placeholder="mode === 'text'
+            ? 'Название товара — найти его у конкурентов (например, WORTEX CRH 1810)'
+            : 'Название товара для поиска у конкурентов — нашу карточку можно не подписывать'"
         />
         <details class="compare" :open="!!compareUrls">
           <summary>Сравнить со страницами конкурентов или поставщика</summary>
@@ -416,8 +449,8 @@ function setHistoryPage(page: number) {
       <UiCard v-if="uniq">
         <h2 class="section-title">Где уже есть этот текст</h2>
         <p class="admin-muted section-note">
-          Сравнивали с: {{ uniq.scope.join(', ') || 'ничем — ни каталога, ни адресов' }}.
-          Это не проверка по всему интернету: чужие сайты — только те, что указаны в поле сравнения.
+          Сравнивали с: {{ uniq.scope.join('; ') || 'ничем — ни каталога, ни адресов' }}.
+          Конкурентов ищем поиском их сайтов (список ниже), не поисковиком: кого нет в списке, того не видно.
         </p>
         <UiAlert v-for="warning in uniq.warnings" :key="warning" tone="info">{{ warning }}</UiAlert>
         <UiEmpty v-if="!uniq.matches.length" title="Совпадений не нашлось" />
@@ -472,6 +505,19 @@ function setHistoryPage(page: number) {
       </div>
     </template>
 
+    <details class="compare competitors">
+      <summary>Сайты конкурентов, где ищем товар</summary>
+      <p class="admin-muted section-note">
+        По строке на сайт: название и адрес поиска, где <code>{q}</code> — место для названия товара.
+        Агрегатор (shop.by) хорош тем, что из его выдачи открываются карточки самих магазинов.
+        Пустой список — вернуть стандартный.
+      </p>
+      <UiTextarea v-model="competitorsText" :rows="4" :disabled="isSeo" :placeholder="competitorsDefaults" />
+      <div v-if="!isSeo" class="check-actions">
+        <UiButton variant="secondary" :loading="busy === 'competitors'" @click="saveCompetitors">Сохранить список</UiButton>
+      </div>
+    </details>
+
     <details class="about">
       <summary>Как это работает и чему верить</summary>
       <ul>
@@ -498,8 +544,10 @@ function setHistoryPage(page: number) {
           <b>Уникальность</b> считается как в text.ru и Advego — по «шинглам», кускам из 4 значимых слов подряд
           (регистр, ё и знаки препинания не важны): доля слов, которые не входят ни в один совпавший кусок.
           Сравнение — с текстом поставщика этого товара и похожими товарами (если проверяется наша страница
-          товара), со всем нашим каталогом по дословным фразам и со страницами из поля сравнения. Поисковики
-          из одинаковых карточек разных магазинов показывают одну — текст поставщика есть у всех, кто им торгует.
+          товара), со всем нашим каталогом и текстами поставщиков (по индексу: окончания слов не важны —
+          «высокую» и «высокой» одно слово), с карточками этого товара у конкурентов (поиск их сайтов) и со
+          страницами из поля сравнения. Поисковики из одинаковых карточек разных магазинов показывают одну —
+          текст поставщика есть у всех, кто им торгует.
         </li>
         <li>Текст проверяется на нашем сервере и никуда не отправляется. История хранится год.</li>
       </ul>

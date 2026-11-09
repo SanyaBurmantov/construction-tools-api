@@ -689,7 +689,7 @@ useHead(() => ({
 const descriptionAll = computed(() =>
   (landing.value ? landing.value.description : category.value?.description ?? '')
     .split(/\n\s*\n|\n/)
-    .map(paragraph => paragraph.trim())
+    .map(paragraph => typograf(paragraph.trim()))
     .filter(Boolean)
 )
 const descriptionIntro = computed(() => descriptionAll.value[0] ?? '')

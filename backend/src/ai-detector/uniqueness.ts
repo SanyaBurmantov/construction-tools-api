@@ -9,6 +9,8 @@
  * so the page can slice the text with them directly.
  */
 
+import { stemRu } from './stem-ru';
+
 /** Shingle length in content words. 4 is the usual middle: 3 flags common
  * turns of phrase («для сверления отверстий в»), 5 misses a lightly edited copy. */
 export const SHINGLE_WORDS = 4;
@@ -25,13 +27,17 @@ const STOP_WORDS = new Set(
   ).split(' '),
 );
 
-export type Word = { norm: string; start: number; end: number };
+/** `norm` is the lower-cased word, `stem` what shingles compare: «высокую» and
+ * «высокой» are one word, so changing endings does not make a copy unique. */
+export type Word = { norm: string; stem: string; start: number; end: number };
 
 export function words(text: string): Word[] {
   const out: Word[] = [];
   for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const norm = m[0].toLowerCase().replace(/ё/g, 'е');
     out.push({
-      norm: m[0].toLowerCase().replace(/ё/g, 'е'),
+      norm,
+      stem: stemRu(norm),
       start: m.index,
       end: m.index + m[0].length,
     });
@@ -49,7 +55,7 @@ function shingleKeys(content: Word[]): string[] {
     keys.push(
       content
         .slice(i, i + SHINGLE_WORDS)
-        .map((w) => w.norm)
+        .map((w) => w.stem)
         .join(' '),
     );
   }
@@ -139,50 +145,33 @@ function close(span: { start: number; end: number; sources: Set<number> }) {
 }
 
 /**
- * Phrases to look the text up by: runs of five words written with single
- * spaces, as they appear in the text (so a verbatim copy elsewhere contains
- * them byte for byte), longer words preferred (rarer), spread over the text.
+ * Word runs to look the text up by in the full-text indexes: windows of five
+ * content words, the longest words preferred (rarer), one per stretch of the
+ * text so a copy of any part is found. Punctuation, case and endings do not
+ * matter to the index, so these need not be verbatim.
  */
-export function searchPhrases(text: string, max = 6): string[] {
-  const candidates: Array<{ phrase: string; at: number; score: number }> = [];
-  for (const run of text.matchAll(/[\p{L}\p{N}]+(?: [\p{L}\p{N}]+){4,}/gu)) {
-    const parts = run[0].split(' ');
-    let offset = run.index;
-    for (let i = 0; i + 5 <= parts.length; i += 5) {
-      const chunk = parts.slice(i, i + 5);
-      const phrase = chunk.join(' ');
-      const content = chunk.filter(
-        (w) => w.length > 1 && !STOP_WORDS.has(w.toLowerCase()),
-      );
-      if (phrase.length >= 28 && content.length >= 3) {
-        candidates.push({
-          phrase,
-          at: offset,
-          score: content.reduce((sum, w) => sum + w.length, 0),
-        });
-      }
-      offset += phrase.length + 1;
-    }
+export function searchQueries(text: string, max = 12): string[] {
+  const content = contentWords(words(text)).filter(
+    (w) => w.norm.length > 2 && !/^\d+$/.test(w.norm),
+  );
+  const size = 5;
+  const windows: Array<{ query: string; score: number }> = [];
+  for (let i = 0; i + size <= content.length; i += 2) {
+    const run = content.slice(i, i + size);
+    windows.push({
+      query: run.map((w) => w.norm).join(' '),
+      score: run.reduce((sum, w) => sum + w.norm.length, 0),
+    });
   }
-  if (candidates.length <= max) return candidates.map((c) => c.phrase);
-  // One per stretch of the text, the best-scoring in each.
+  if (windows.length <= max) return windows.map((w) => w.query);
   const out: string[] = [];
-  const size = candidates.length / max;
+  const bucket = windows.length / max;
   for (let b = 0; b < max; b++) {
-    const bucket = candidates.slice(
-      Math.floor(b * size),
-      Math.floor((b + 1) * size),
+    const part = windows.slice(
+      Math.floor(b * bucket),
+      Math.floor((b + 1) * bucket),
     );
-    const best = bucket.reduce(
-      (a, c) => (c.score > a.score ? c : a),
-      bucket[0],
-    );
-    out.push(best.phrase);
+    out.push(part.reduce((a, c) => (c.score > a.score ? c : a), part[0]).query);
   }
   return out;
-}
-
-/** A `LIKE` pattern matching `phrase` anywhere, with its wildcards escaped. */
-export function containsPattern(phrase: string) {
-  return `%${phrase.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }

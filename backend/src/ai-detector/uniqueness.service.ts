@@ -1,27 +1,39 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { competitorQuery, type CompetitorQuery } from './competitors';
+import { CompetitorsService } from './competitors.service';
+import { ourHosts } from './our-hosts';
 import { fetchReadablePage } from './page-fetch';
+import { searchQueries, uniqueness, type UniquenessSource } from './uniqueness';
 import {
-  containsPattern,
-  searchPhrases,
-  uniqueness,
-  type UniquenessSource,
-} from './uniqueness';
+  PRODUCT_DESCRIPTION_DOC_SQL,
+  SOURCE_DESCRIPTION_DOC_SQL,
+} from './uniqueness-sql';
 
 export const MAX_COMPARE_URLS = 5;
 
-/** How many phrases the catalogue is searched by: each costs ~0.6 s of one core. */
-const SEARCH_PHRASES = 4;
-/** Only this much of each stored text is searched (a copy starts early). */
-const SEARCH_PREFIX_CHARS = 3000;
-/** A full pass measured 3.7 s on an idle box, over 7 s beside a parse batch. */
-const SEARCH_TIMEOUT_MS = 12_000;
-const CATALOGUE_HITS = 20;
+/** Word runs the indexes are asked for, spread over the text. */
+const SEARCH_QUERIES = 12;
+/** Rows one run may bring: a supplier's template phrase sits in thousands. */
+const ROWS_PER_QUERY = 300;
+/** Candidates whose texts are read and shingled, most runs matched first. */
+const CATALOGUE_HITS = 25;
+const SUPPLIER_HITS = 15;
+/** Index lookups take milliseconds; this only guards a pathological text. */
+const SEARCH_TIMEOUT_MS = 8_000;
 const SIBLINGS = 15;
 const SOURCE_TEXT_CHARS = 20_000;
 
-export type UniquenessKind = 'supplier' | 'sibling' | 'catalogue' | 'page';
+const PRODUCT_DOC = Prisma.raw(PRODUCT_DESCRIPTION_DOC_SQL);
+const SOURCE_DOC = Prisma.raw(SOURCE_DESCRIPTION_DOC_SQL);
+
+export type UniquenessKind =
+  | 'supplier'
+  | 'sibling'
+  | 'catalogue'
+  | 'competitor'
+  | 'page';
 
 export type UniquenessMatch = {
   kind: UniquenessKind;
@@ -51,6 +63,7 @@ type ProductText = {
   full: string | null;
   short: string | null;
 };
+type OwnProduct = ProductText & { categoryId: string; brand: string | null };
 
 /**
  * «Уникальность»: how much of a text already exists in our catalogue, in the
@@ -64,31 +77,38 @@ type ProductText = {
 export class UniquenessService {
   private readonly logger = new Logger(UniquenessService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly competitors: CompetitorsService,
+  ) {}
 
+  /**
+   * `productName` names the product for the competitors' search when the
+   * text was pasted; our own product page names itself, and an outside page
+   * is searched by its title.
+   */
   async check(
     text: string,
-    options: { url?: string | null; compareUrls?: string[] } = {},
+    options: {
+      url?: string | null;
+      compareUrls?: string[];
+      productName?: string | null;
+      pageTitle?: string | null;
+    } = {},
   ): Promise<UniquenessReport> {
     const warnings: string[] = [];
     const scope: string[] = [];
     const sources: Array<UniquenessSource<Meta>> = [];
-    const seen = new Set<string>();
+    const seenProducts = new Set<string>();
+    const seenOffers = new Set<string>();
 
     const own = options.url ? await this.ourProduct(options.url) : null;
     if (own) {
-      seen.add(own.id);
+      seenProducts.add(own.id);
       const offers = await this.supplierTexts(own.id);
       for (const offer of offers) {
-        sources.push({
-          text: `${offer.name}\n${offer.description ?? ''}`,
-          meta: {
-            kind: 'supplier',
-            title: `Текст поставщика: ${offer.name}`,
-            url: offer.url,
-            supplier: offer.source,
-          },
-        });
+        seenOffers.add(offer.id);
+        sources.push(supplierSource(offer));
       }
       scope.push(
         offers.length
@@ -97,40 +117,78 @@ export class UniquenessService {
       );
       const siblings = await this.siblings(own);
       for (const p of siblings) {
-        seen.add(p.id);
+        seenProducts.add(p.id);
         sources.push(productSource(p, 'sibling'));
       }
       scope.push(`похожие товары той же категории (${siblings.length})`);
     }
 
-    const phrases = searchPhrases(text, SEARCH_PHRASES);
-    if (phrases.length) {
-      try {
-        const hits = await this.catalogueHits(phrases, [...seen]);
-        for (const p of hits) {
-          seen.add(p.id);
-          sources.push(productSource(p, 'catalogue'));
-        }
-        scope.push('весь наш каталог (по дословным фразам)');
-      } catch (error) {
-        this.logger.warn(
-          `catalogue search failed: ${(error as Error).message}`,
-        );
-        warnings.push('Поиск по каталогу не успел — проверено без него.');
-      }
+    const query = this.competitorQueryFor(options, own);
+    const queries = searchQueries(text, SEARCH_QUERIES);
+    const [catalogue, rivals, pages] = await Promise.all([
+      queries.length
+        ? this.indexHits(queries, [...seenProducts], [...seenOffers]).catch(
+            (error: Error) => {
+              this.logger.warn(`catalogue search failed: ${error.message}`);
+              return null;
+            },
+          )
+        : Promise.resolve({ products: [], offers: [] }),
+      query ? this.competitors.search(query) : Promise.resolve(null),
+      Promise.all(
+        (options.compareUrls ?? []).slice(0, MAX_COMPARE_URLS).map((url) =>
+          fetchReadablePage(url, { whole: true }).then(
+            (page) => ({ url, page }),
+            (error: Error) => ({ url, error }),
+          ),
+        ),
+      ),
+    ]);
+
+    if (catalogue) {
+      for (const p of catalogue.products)
+        sources.push(productSource(p, 'catalogue'));
+      for (const o of catalogue.offers) sources.push(supplierSource(o));
+      scope.push('весь наш каталог и тексты поставщиков');
+    } else if (queries.length) {
+      warnings.push('Поиск по каталогу не успел — проверено без него.');
     }
 
-    for (const url of (options.compareUrls ?? []).slice(0, MAX_COMPARE_URLS)) {
-      try {
-        const page = await fetchReadablePage(url);
+    if (rivals) {
+      for (const page of rivals.pages) {
         sources.push({
           text: page.text,
-          meta: { kind: 'page', title: page.title || url, url },
+          meta: {
+            kind: 'competitor',
+            title: `${page.competitor}: ${page.title ?? page.url}`,
+            url: page.url,
+          },
         });
-        scope.push(`страница ${hostOf(url)}`);
-      } catch (error) {
-        warnings.push(`${url}: ${(error as Error).message}`);
       }
+      scope.push(
+        `конкуренты по запросу «${query!.query}» — ${rivals.notes.join(', ')}`,
+      );
+      warnings.push(...rivals.warnings);
+    } else {
+      scope.push(
+        'у конкурентов не искали: укажите название товара или проверяйте ссылку на карточку',
+      );
+    }
+
+    for (const result of pages) {
+      if ('error' in result) {
+        warnings.push(`${result.url}: ${result.error.message}`);
+        continue;
+      }
+      sources.push({
+        text: result.page.text,
+        meta: {
+          kind: 'page',
+          title: result.page.title || result.url,
+          url: result.url,
+        },
+      });
+      scope.push(`страница ${hostOf(result.url)}`);
     }
 
     const result = uniqueness(text, sources);
@@ -147,8 +205,25 @@ export class UniquenessService {
     };
   }
 
+  private competitorQueryFor(
+    options: {
+      url?: string | null;
+      productName?: string | null;
+      pageTitle?: string | null;
+    },
+    own: OwnProduct | null,
+  ): CompetitorQuery | null {
+    const typed = options.productName?.trim();
+    if (typed) return competitorQuery(typed);
+    if (own) return competitorQuery(own.name, own.brand);
+    // An outside page (a supplier's or someone's card) — by its title, minus
+    // the site name after a separator.
+    const title = options.pageTitle?.split(/\s+[|—–-]\s+/)[0]?.trim();
+    return options.url && title ? competitorQuery(title) : null;
+  }
+
   /** The product behind one of our own `/product/<slug>` addresses. */
-  private async ourProduct(raw: string): Promise<ProductText | null> {
+  private async ourProduct(raw: string): Promise<OwnProduct | null> {
     let url: URL;
     try {
       url = new URL(raw);
@@ -163,28 +238,19 @@ export class UniquenessService {
       where: { slug: decoded },
       select: { productId: true },
     });
-    const rows = await this.prisma.$queryRaw<
-      Array<ProductText & { categoryId: string }>
-    >`
-      SELECT id, slug, name, "categoryId",
-             left("descriptionFull", ${SOURCE_TEXT_CHARS}::int) AS "full",
-             left("descriptionShort", ${SOURCE_TEXT_CHARS}::int) AS "short"
-      FROM "Product"
-      WHERE ${redirect ? Prisma.sql`id = ${redirect.productId}` : Prisma.sql`slug = ${decoded}`}
+    const rows = await this.prisma.$queryRaw<OwnProduct[]>`
+      SELECT p.id, p.slug, p.name, p."categoryId", b.name AS brand,
+             left(p."descriptionFull", ${SOURCE_TEXT_CHARS}::int) AS "full",
+             left(p."descriptionShort", ${SOURCE_TEXT_CHARS}::int) AS "short"
+      FROM "Product" p LEFT JOIN "Brand" b ON b.id = p."brandId"
+      WHERE ${redirect ? Prisma.sql`p.id = ${redirect.productId}` : Prisma.sql`p.slug = ${decoded}`}
       LIMIT 1`;
     return rows[0] ?? null;
   }
 
   private supplierTexts(productId: string) {
-    return this.prisma.$queryRaw<
-      Array<{
-        name: string;
-        url: string;
-        description: string | null;
-        source: string;
-      }>
-    >`
-      SELECT sp.name, sp.url, s.name AS source,
+    return this.prisma.$queryRaw<OfferText[]>`
+      SELECT sp.id, sp.name, sp.url, s.name AS source,
              left(sp.description, ${SOURCE_TEXT_CHARS}::int) AS description
       FROM "SourceProduct" sp JOIN "Source" s ON s.id = sp."sourceId"
       WHERE sp."productId" = ${productId}
@@ -192,8 +258,8 @@ export class UniquenessService {
   }
 
   /** Same category, similar name — a product line written from one template. */
-  private async siblings(product: ProductText) {
-    const own = product as ProductText & { categoryId?: string };
+  private async siblings(own: OwnProduct) {
+    const product = own;
     if (!own.categoryId) return [];
     return this.prisma.$queryRaw<ProductText[]>`
       SELECT id, slug, name,
@@ -207,35 +273,88 @@ export class UniquenessService {
   }
 
   /**
-   * Products whose texts contain one of the phrases verbatim. Case-sensitive
-   * `LIKE` on purpose: `ILIKE` on Cyrillic measured 8 s against 4 s on prod
-   * (104k descriptions, no index can serve `%…%` cheaply), and a copy keeps
-   * the case it was written in. Bounded by a statement timeout.
+   * Products and supplier offers whose descriptions hold most of the word
+   * runs, through the full-text indexes (`uniqueness-sql.ts`). A run matches
+   * when all its words occur in the first 4000 characters, in any form and
+   * order — a loose net on purpose: the shingles decide what is a copy.
+   * Without phrase operators GIN answers exactly (no recheck), so a run is
+   * milliseconds even when thousands of rows hold it.
    */
-  private catalogueHits(phrases: string[], exclude: string[]) {
-    const patterns = phrases.map(containsPattern);
-    const notIn = exclude.length
-      ? Prisma.sql`AND id NOT IN (${Prisma.join(exclude)})`
-      : Prisma.empty;
+  private indexHits(
+    queries: string[],
+    excludeProducts: string[],
+    excludeOffers: string[],
+  ) {
+    const runs = (table: 'Product' | 'SourceProduct') =>
+      Prisma.join(
+        queries.map((q, i) =>
+          table === 'Product'
+            ? Prisma.sql`(SELECT id, ${i}::int AS run FROM "Product" WHERE ${PRODUCT_DOC} @@ plainto_tsquery('russian', ${q}) AND status = 'PUBLISHED' LIMIT ${ROWS_PER_QUERY}::int)`
+            : Prisma.sql`(SELECT id, ${i}::int AS run FROM "SourceProduct" WHERE ${SOURCE_DOC} @@ plainto_tsquery('russian', ${q}) LIMIT ${ROWS_PER_QUERY}::int)`,
+        ),
+        ' UNION ALL ',
+      );
+    const notIn = (ids: string[]) =>
+      ids.length
+        ? Prisma.sql`WHERE id NOT IN (${Prisma.join(ids)})`
+        : Prisma.empty;
+    // One hit is a shared turn of phrase; two runs out of a short text is enough.
+    const minRuns = Math.min(2, queries.length);
     return this.prisma.$transaction(
       async (tx) => {
         await tx.$executeRawUnsafe(
           `SET LOCAL statement_timeout = ${SEARCH_TIMEOUT_MS}`,
         );
-        return tx.$queryRaw<ProductText[]>`
-        SELECT id, slug, name,
-               left("descriptionFull", ${SOURCE_TEXT_CHARS}::int) AS "full",
-               left("descriptionShort", ${SOURCE_TEXT_CHARS}::int) AS "short"
-        FROM "Product"
-        WHERE status = 'PUBLISHED' ${notIn}
-          AND (left("descriptionFull", ${SEARCH_PREFIX_CHARS}::int) LIKE ANY(${patterns})
-            OR left("descriptionShort", ${SEARCH_PREFIX_CHARS}::int) LIKE ANY(${patterns}))
-        LIMIT ${CATALOGUE_HITS}::int`;
-        // Prisma's default 5 s would close the transaction under the query.
+        const products = await tx.$queryRaw<ProductText[]>`
+          WITH hits AS (
+            SELECT id, count(DISTINCT run) AS n FROM (${runs('Product')}) r
+            ${notIn(excludeProducts)}
+            GROUP BY id HAVING count(DISTINCT run) >= ${minRuns}::int
+            ORDER BY n DESC LIMIT ${CATALOGUE_HITS}::int
+          )
+          SELECT p.id, p.slug, p.name,
+                 left(p."descriptionFull", ${SOURCE_TEXT_CHARS}::int) AS "full",
+                 left(p."descriptionShort", ${SOURCE_TEXT_CHARS}::int) AS "short"
+          FROM hits JOIN "Product" p ON p.id = hits.id
+          ORDER BY hits.n DESC`;
+        const offers = await tx.$queryRaw<OfferText[]>`
+          WITH hits AS (
+            SELECT id, count(DISTINCT run) AS n FROM (${runs('SourceProduct')}) r
+            ${notIn(excludeOffers)}
+            GROUP BY id HAVING count(DISTINCT run) >= ${minRuns}::int
+            ORDER BY n DESC LIMIT ${SUPPLIER_HITS}::int
+          )
+          SELECT sp.id, sp.name, sp.url, s.name AS source,
+                 left(sp.description, ${SOURCE_TEXT_CHARS}::int) AS description
+          FROM hits JOIN "SourceProduct" sp ON sp.id = hits.id
+          JOIN "Source" s ON s.id = sp."sourceId"
+          ORDER BY hits.n DESC`;
+        return { products, offers };
       },
+      // Prisma's default 5 s would close the transaction under a slow query.
       { timeout: SEARCH_TIMEOUT_MS + 3_000, maxWait: 5_000 },
     );
   }
+}
+
+type OfferText = {
+  id: string;
+  name: string;
+  url: string;
+  description: string | null;
+  source: string;
+};
+
+function supplierSource(offer: OfferText): UniquenessSource<Meta> {
+  return {
+    text: `${offer.name}\n${offer.description ?? ''}`,
+    meta: {
+      kind: 'supplier',
+      title: `Текст поставщика: ${offer.name}`,
+      url: offer.url,
+      supplier: offer.source,
+    },
+  };
 }
 
 function productSource(
@@ -246,21 +365,6 @@ function productSource(
     text: [p.short, p.full].filter(Boolean).join('\n'),
     meta: { kind, title: p.name, url: `/product/${p.slug}` },
   };
-}
-
-/** Our storefront's hosts: gost.by and whatever PUBLIC_ORIGIN names. */
-function ourHosts() {
-  const hosts = new Set(['gost.by', 'www.gost.by']);
-  for (const origin of [process.env.PUBLIC_ORIGIN, process.env.CORS_ORIGIN]) {
-    for (const part of (origin ?? '').split(',')) {
-      try {
-        hosts.add(new URL(part.trim()).hostname.toLowerCase());
-      } catch {
-        /* not a URL */
-      }
-    }
-  }
-  return hosts;
 }
 
 function hostOf(url: string) {

@@ -1,4 +1,7 @@
+import type { CompetitorSearchResult } from './competitors.service';
 import { UniquenessService, uniquenessForSeo } from './uniqueness.service';
+
+const noCompetitors = { search: jest.fn(() => Promise.resolve(null)) };
 
 const supplierText =
   'Аккумуляторный перфоратор предназначен для сверления отверстий в бетоне, кирпиче и камне. ' +
@@ -9,11 +12,15 @@ function build(rows: {
   supplier?: unknown[];
   siblings?: unknown[];
   catalogue?: unknown[];
+  offers?: unknown[];
 }) {
   const queryRaw = jest.fn();
   const tx = {
     $executeRawUnsafe: jest.fn(() => Promise.resolve(0)),
-    $queryRaw: jest.fn(() => Promise.resolve(rows.catalogue ?? [])),
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValueOnce(rows.catalogue ?? [])
+      .mockResolvedValueOnce(rows.offers ?? []),
   };
   const prisma = {
     productRedirect: { findUnique: jest.fn(() => Promise.resolve(null)) },
@@ -25,24 +32,40 @@ function build(rows: {
     .mockResolvedValueOnce(rows.product ?? [])
     .mockResolvedValueOnce(rows.supplier ?? [])
     .mockResolvedValueOnce(rows.siblings ?? []);
-  return { service: new UniquenessService(prisma as never), prisma, tx };
+  const competitors = {
+    search: jest.fn(() =>
+      Promise.resolve<CompetitorSearchResult>({
+        pages: [],
+        notes: ['21vek.by: товар не найден'],
+        warnings: [],
+      }),
+    ),
+  };
+  return {
+    service: new UniquenessService(prisma as never, competitors as never),
+    prisma,
+    tx,
+    competitors,
+  };
 }
 
 describe('UniquenessService', () => {
   it('our product page: compares with its supplier text and leaves the product itself out', async () => {
-    const { service, tx } = build({
+    const { service, tx, competitors } = build({
       product: [
         {
           id: 'p1',
           slug: 'perforator',
           name: 'Перфоратор',
           categoryId: 'c1',
+          brand: 'WORTEX',
           full: supplierText,
           short: null,
         },
       ],
       supplier: [
         {
+          id: 'o1',
           name: 'Перфоратор X',
           url: 'https://th-tool.by/perforator/',
           source: 'th-tool.by',
@@ -67,14 +90,47 @@ describe('UniquenessService', () => {
     expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(
       expect.stringMatching(/statement_timeout/),
     );
+    // The competitors are asked for the product by its own name.
+    expect(competitors.search).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'Перфоратор' }),
+    );
+  });
+
+  it('competitor cards are compared and named', async () => {
+    const { service, competitors } = build({});
+    competitors.search.mockResolvedValueOnce({
+      pages: [
+        {
+          competitor: '21vek.by',
+          url: 'https://www.21vek.by/hammer_drills/x.html',
+          title: 'Перфоратор X',
+          text: `Меню Каталог ${supplierText} Отзывы`,
+        },
+      ],
+      notes: ['21vek.by: карточек 1'],
+      warnings: [],
+    });
+    const report = await service.check(supplierText, {
+      productName: 'Перфоратор WORTEX CRH 1810',
+    });
+    expect(report.percent).toBe(0);
+    expect(report.matches[0]).toMatchObject({
+      kind: 'competitor',
+      title: '21vek.by: Перфоратор X',
+      share: 100,
+    });
+    expect(report.scope.join(' ')).toMatch(
+      /конкуренты по запросу «WORTEX CRH 1810»/,
+    );
   });
 
   it('pasted text: finds a copy in the catalogue by phrase', async () => {
     const queryRaw = jest.fn();
     const tx = {
       $executeRawUnsafe: jest.fn(() => Promise.resolve(0)),
-      $queryRaw: jest.fn(() =>
-        Promise.resolve([
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([
           {
             id: 'p2',
             slug: 'drel',
@@ -82,18 +138,21 @@ describe('UniquenessService', () => {
             full: supplierText,
             short: null,
           },
-        ]),
-      ),
+        ])
+        .mockResolvedValueOnce([]),
     };
     const prisma = {
       productRedirect: { findUnique: jest.fn() },
       $queryRaw: queryRaw,
       $transaction: jest.fn((cb: (t: typeof tx) => unknown) => cb(tx)),
     };
-    const report = await new UniquenessService(prisma as never).check(
-      supplierText,
-    );
+    const report = await new UniquenessService(
+      prisma as never,
+      noCompetitors as never,
+    ).check(supplierText);
     expect(queryRaw).not.toHaveBeenCalled();
+    expect(noCompetitors.search).not.toHaveBeenCalled();
+    expect(report.scope.join(' ')).toMatch(/у конкурентов не искали/);
     expect(report.matches).toEqual([
       { kind: 'catalogue', title: 'Дрель', url: '/product/drel', share: 100 },
     ]);
@@ -109,9 +168,10 @@ describe('UniquenessService', () => {
         ),
       ),
     };
-    const report = await new UniquenessService(prisma as never).check(
-      supplierText,
-    );
+    const report = await new UniquenessService(
+      prisma as never,
+      noCompetitors as never,
+    ).check(supplierText);
     expect(report.percent).toBe(100);
     expect(report.warnings.join(' ')).toMatch(/не успел/);
   });
