@@ -1331,6 +1331,15 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   Шаблонный текст поставщика (th-tool.by) модель оценила в 99,9% «ИИ»: до
   калибровки на парах пилота (текст поставщика / DeepSeek) цифры по
   карточкам — ориентир. Подробности и выводы исследования — `detector/README.md`.
+  Калибровка 09.11 (1 152 пары пилота): текст поставщика от DeepSeek он не
+  отличает (AUC ≈ 0,5) — инструмент «как увидит внешний детектор», не фильтр.
+  **Уникальность** (`uniqueness.ts` чистый + `uniqueness.service.ts`, в том же
+  ответе `report.uniqueness`): шинглы по 4 значимых слова, как text.ru;
+  сравнение с текстом поставщика и похожими товарами (если проверяется наш
+  `/product/<slug>`), со всем каталогом по 4 дословным фразам (`LIKE`, не
+  `ILIKE`: на кириллице 8 с против ~2,5 с, `statement_timeout` 10 с) и со
+  страницами из `compareUrls`. Бесплатно, без поисковика; поставщик и его
+  адрес скрыты от роли SEO при выдаче (`uniquenessForSeo`).
 - **Product page recommendations** (`products/relations/`,
   `GET /products/:slug/recommendations`, details in `feature.md`). «Похожие»
   are computed per request: **the same kind of item only** (`productKind`),

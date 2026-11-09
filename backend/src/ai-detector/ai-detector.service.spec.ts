@@ -27,8 +27,24 @@ function build() {
   );
   const prisma = { aiDetectorCheck: { create } };
   const client = { analyze: jest.fn(() => Promise.resolve(report())) };
-  const service = new AiDetectorService(prisma as never, client as never);
-  return { service, create, client };
+  const uniqueness = {
+    check: jest.fn(() =>
+      Promise.resolve({
+        percent: 100,
+        contentWords: 10,
+        matches: [],
+        spans: [],
+        scope: [],
+        warnings: [],
+      }),
+    ),
+  };
+  const service = new AiDetectorService(
+    prisma as never,
+    client as never,
+    uniqueness as never,
+  );
+  return { service, create, client, uniqueness };
 }
 
 const html = (body: string) =>

@@ -24,6 +24,23 @@ type Report = {
   markers: Array<{ kind: string, label: string, start: number, end: number, text: string }>
   markerSummary: Array<{ kind: string, label: string, count: number, per100Words: number, examples: string[] }>
   rhythm: { words: number, sentences: number, avgSentenceWords: number, burstiness: number | null, lexicalVariety: number | null }
+  uniqueness?: Uniqueness | null
+}
+type UniquenessMatch = {
+  kind: 'supplier' | 'sibling' | 'catalogue' | 'page'
+  title: string
+  url: string | null
+  supplier?: string
+  share: number
+}
+/** Offsets here are JavaScript string indices, unlike the detector's code points. */
+type Uniqueness = {
+  percent: number | null
+  contentWords: number
+  matches: UniquenessMatch[]
+  spans: Array<{ start: number, end: number, sources: number[] }>
+  scope: string[]
+  warnings: string[]
 }
 type Check = {
   id: string
@@ -49,7 +66,9 @@ const status = ref<Status | null>(null)
 const mode = ref<'text' | 'url'>('text')
 const text = ref('')
 const url = ref('')
+const compareUrls = ref('')
 const result = ref<Check | null>(null)
+const highlight = ref<'ai' | 'copy'>('ai')
 
 const modeTabs = [
   { value: 'text', label: 'Текст' },
@@ -93,13 +112,18 @@ const canCheck = computed(() =>
 )
 
 async function check() {
-  const body = mode.value === 'text' ? { text: text.value } : { url: url.value.trim() }
+  const compare = compareUrls.value.split(/\s+/).map(u => u.trim()).filter(u => /^https?:\/\//i.test(u)).slice(0, 5)
+  const body = {
+    ...(mode.value === 'text' ? { text: text.value } : { url: url.value.trim() }),
+    ...(compare.length ? { compareUrls: compare } : {}),
+  }
   const checked = await run(
     () => adminFetch<Check>('/ai-detector/check', { method: 'POST', body }),
     { error: 'Проверка не удалась', key: 'check' },
   )
   if (checked) {
     result.value = checked
+    highlight.value = 'ai'
     historyPage.value = 1
     loadHistory()
   }
@@ -171,7 +195,13 @@ function offsetMapper(source: string) {
   return (i: number) => map[Math.min(i, map.length - 1)] ?? unit
 }
 
-type Segment = { text: string, level: string | null, marker: string | null, fragment: number | null }
+type Segment = {
+  text: string
+  level: string | null
+  marker: string | null
+  fragment: number | null
+  copy: number[] | null
+}
 
 /** The checked text cut at every fragment and marker boundary. */
 const segments = computed<Segment[]>(() => {
@@ -183,7 +213,9 @@ const segments = computed<Segment[]>(() => {
     ? check.report.fragments.map((f, i) => ({ start: at(f.start), end: at(f.end), key: f.verdict.key, i }))
     : [{ start: 0, end: source.length, key: check.report.verdict.key, i: -1 }]
   const markers = check.report.markers.map(m => ({ start: at(m.start), end: at(m.end), label: m.label }))
+  const copies = check.report.uniqueness?.spans ?? []
   const cuts = new Set<number>([0, source.length])
+  for (const c of copies) cuts.add(c.start).add(c.end)
   for (const f of fragments) cuts.add(f.start).add(f.end)
   for (const m of markers) cuts.add(m.start).add(m.end)
   const points = [...cuts].sort((a, b) => a - b)
@@ -194,15 +226,53 @@ const segments = computed<Segment[]>(() => {
     if (end <= start) continue
     const fragment = fragments.find(f => start >= f.start && end <= f.end)
     const marker = markers.find(m => start >= m.start && end <= m.end)
+    const copy = copies.find(c => start >= c.start && end <= c.end)
     out.push({
       text: source.slice(start, end),
       level: fragment && (fragment.key === 'ai' || fragment.key === 'likely-ai') ? fragment.key : null,
       marker: marker?.label ?? null,
       fragment: fragment && fragment.i >= 0 ? fragment.i : null,
+      copy: copy?.sources ?? null,
     })
   }
   return out
 })
+
+const uniq = computed(() => result.value?.report.uniqueness ?? null)
+
+function uniqTone(percent: number | null): 'danger' | 'warning' | 'neutral' | 'success' {
+  if (percent === null) return 'neutral'
+  if (percent >= 80) return 'success'
+  if (percent >= 50) return 'warning'
+  return 'danger'
+}
+
+const MATCH_KINDS: Record<UniquenessMatch['kind'], string> = {
+  supplier: 'текст поставщика',
+  sibling: 'похожий товар',
+  catalogue: 'наш каталог',
+  page: 'страница',
+}
+
+const highlightTabs = [
+  { value: 'ai', label: 'Похоже на ИИ' },
+  { value: 'copy', label: 'Совпадения' },
+]
+
+function segClass(seg: Segment) {
+  if (highlight.value === 'copy') return seg.copy ? ['is-copy'] : []
+  return [seg.level ? `lvl-${seg.level}` : '', seg.marker ? 'has-marker' : '']
+}
+
+function segTitle(seg: Segment) {
+  if (highlight.value === 'copy') {
+    const matches = uniq.value?.matches ?? []
+    return seg.copy?.map(i => matches[i]?.title).filter(Boolean).join(' · ') || undefined
+  }
+  return seg.marker
+    ? `${seg.marker}${fragmentTitle(seg.fragment) ? ' · ' + fragmentTitle(seg.fragment) : ''}`
+    : fragmentTitle(seg.fragment)
+}
 
 const fragmentTitle = (i: number | null) => {
   const f = i === null ? null : result.value?.report.fragments[i]
@@ -255,6 +325,14 @@ function setHistoryPage(page: number) {
           placeholder="https://… — страница сайта, свой или чужой"
           autocomplete="off"
         />
+        <details class="compare" :open="!!compareUrls">
+          <summary>Сравнить со страницами конкурентов или поставщика</summary>
+          <UiTextarea
+            v-model="compareUrls"
+            :rows="3"
+            placeholder="До 5 адресов, по одному в строке — уникальность посчитается и против них"
+          />
+        </details>
         <div class="check-actions">
           <UiButton type="submit" :loading="busy === 'check'" :disabled="!canCheck">Проверить</UiButton>
           <span class="admin-muted hint">
@@ -267,6 +345,13 @@ function setHistoryPage(page: number) {
 
     <template v-if="result">
       <div class="stats">
+        <UiStat
+          v-if="uniq"
+          label="Уникальность"
+          :value="uniq.percent === null ? '—' : `${uniq.percent}%`"
+          :tone="uniqTone(uniq.percent)"
+          :hint="uniq.matches.length ? `совпадения: ${uniq.matches.length}` : 'совпадений не нашлось'"
+        />
         <UiStat
           label="Похоже на нейросеть"
           :value="pct(result.probability)"
@@ -308,20 +393,42 @@ function setHistoryPage(page: number) {
           <UiButton variant="secondary" size="sm" @click="editAgain">Править и проверить снова</UiButton>
         </div>
 
-        <div class="legend">
+        <UiTabs v-if="uniq" v-model="highlight" :tabs="highlightTabs" />
+        <div v-if="highlight === 'ai'" class="legend">
           <span><mark class="seg lvl-ai">так</mark> фрагмент похож на нейросеть</span>
           <span><mark class="seg lvl-likely-ai">так</mark> скорее нейросеть</span>
           <span><span class="seg has-marker">так</span> штамп — наведите, чтобы увидеть какой</span>
+        </div>
+        <div v-else class="legend">
+          <span><mark class="seg is-copy">так</mark> этот кусок уже есть в другом тексте — наведите, чтобы увидеть где</span>
         </div>
         <div class="checked-text">
           <span
             v-for="(seg, k) in segments"
             :key="k"
             class="seg"
-            :class="[seg.level ? `lvl-${seg.level}` : '', seg.marker ? 'has-marker' : '']"
-            :title="seg.marker ? `${seg.marker}${fragmentTitle(seg.fragment) ? ' · ' + fragmentTitle(seg.fragment) : ''}` : fragmentTitle(seg.fragment)"
+            :class="segClass(seg)"
+            :title="segTitle(seg)"
           >{{ seg.text }}</span>
         </div>
+      </UiCard>
+
+      <UiCard v-if="uniq">
+        <h2 class="section-title">Где уже есть этот текст</h2>
+        <p class="admin-muted section-note">
+          Сравнивали с: {{ uniq.scope.join(', ') || 'ничем — ни каталога, ни адресов' }}.
+          Это не проверка по всему интернету: чужие сайты — только те, что указаны в поле сравнения.
+        </p>
+        <UiAlert v-for="warning in uniq.warnings" :key="warning" tone="info">{{ warning }}</UiAlert>
+        <UiEmpty v-if="!uniq.matches.length" title="Совпадений не нашлось" />
+        <ul v-else class="match-list">
+          <li v-for="(match, i) in uniq.matches" :key="i">
+            <strong class="match-share">{{ match.share }}%</strong>
+            <span class="admin-muted">{{ MATCH_KINDS[match.kind] }}<template v-if="match.supplier"> · {{ match.supplier }}</template></span>
+            <a v-if="match.url" :href="match.url" target="_blank" rel="noopener noreferrer">{{ match.title }}</a>
+            <span v-else>{{ match.title }}</span>
+          </li>
+        </ul>
       </UiCard>
 
       <div class="columns">
@@ -386,6 +493,13 @@ function setHistoryPage(page: number) {
         <li>
           Поисковики, по их собственным словам, оценивают пользу текста, а не способ его написания. Детектор
           полезен как зеркало: где текст ровный, общий и в штампах — там его и стоит переписать фактами.
+        </li>
+        <li>
+          <b>Уникальность</b> считается как в text.ru и Advego — по «шинглам», кускам из 4 значимых слов подряд
+          (регистр, ё и знаки препинания не важны): доля слов, которые не входят ни в один совпавший кусок.
+          Сравнение — с текстом поставщика этого товара и похожими товарами (если проверяется наша страница
+          товара), со всем нашим каталогом по дословным фразам и со страницами из поля сравнения. Поисковики
+          из одинаковых карточек разных магазинов показывают одну — текст поставщика есть у всех, кто им торгует.
         </li>
         <li>Текст проверяется на нашем сервере и никуда не отправляется. История хранится год.</li>
       </ul>
@@ -505,6 +619,41 @@ function setHistoryPage(page: number) {
 
 .seg.lvl-likely-ai {
   background: var(--warning-soft);
+}
+
+.seg.is-copy {
+  background: var(--info-soft);
+  border-radius: 2px;
+}
+
+.compare {
+  margin-top: var(--space-2);
+
+  summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
+  }
+}
+
+.match-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: baseline;
+  }
+}
+
+.match-share {
+  min-width: 3.5em;
+  font-variant-numeric: tabular-nums;
 }
 
 .seg.has-marker {

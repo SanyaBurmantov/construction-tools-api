@@ -6,19 +6,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { fetchWithTimeout } from '../common/utils/fetch-with-timeout';
 import { PrismaService } from '../prisma/prisma.service';
 import { DetectorClient, type DetectorReport } from './detector.client';
 import { MAX_TEXT_CHARS } from './limits';
-import { extractPageText } from './page-text';
-import { assertPublicUrl, UnsafeUrlError } from './safe-url';
+import { fetchReadablePage } from './page-fetch';
+import {
+  UniquenessService,
+  uniquenessForSeo,
+  type UniquenessReport,
+} from './uniqueness.service';
 
 const MIN_TEXT_CHARS = 20;
-const MAX_PAGE_BYTES = 5 * 1024 * 1024;
-const MAX_REDIRECTS = 3;
 const DEFAULT_TTL_DAYS = 365;
-const PAGE_USER_AGENT =
-  'Mozilla/5.0 (compatible; GostByTextCheck/1.0; +https://gost.by)';
 
 const LIST_SELECT = {
   id: true,
@@ -40,6 +39,7 @@ export class AiDetectorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly detector: DetectorClient,
+    private readonly uniqueness: UniquenessService,
   ) {}
 
   async status() {
@@ -49,17 +49,22 @@ export class AiDetectorService {
     };
   }
 
-  /** Checks pasted text, or the readable text of a page, and keeps the result. */
+  /**
+   * Checks pasted text, or the readable text of a page, and keeps the result:
+   * the detector's opinion and, beside it, how unique the text is against
+   * our catalogue, the product's supplier text and any pages named.
+   */
   async check(
-    input: { text?: string; url?: string },
+    input: { text?: string; url?: string; compareUrls?: string[] },
     createdBy: string | null,
+    seo = false,
   ) {
     const url = input.url?.trim();
     let text = input.text?.trim() ?? '';
     let title: string | null = null;
     let picked: string | null = null;
     if (url) {
-      const page = await this.fetchPage(url);
+      const page = await fetchReadablePage(url);
       text = page.text;
       title = page.title;
       picked = page.picked;
@@ -77,7 +82,19 @@ export class AiDetectorService {
       truncated = true;
     }
 
-    const report = await this.detector.analyze(text);
+    const compareUrls = (input.compareUrls ?? [])
+      .map((u) => u.trim())
+      .filter(Boolean);
+    const [report, uniqueness] = await Promise.all([
+      this.detector.analyze(text),
+      // Uniqueness is a second opinion; its failure must not lose the first.
+      this.uniqueness
+        .check(text, { url, compareUrls })
+        .catch((error: Error): UniquenessReport | null => {
+          this.logger.warn(`uniqueness failed: ${error.message}`);
+          return null;
+        }),
+    ]);
     if (truncated) {
       report.warnings.push(
         `Проверены первые ${MAX_TEXT_CHARS.toLocaleString('ru-RU')} символов.`,
@@ -95,10 +112,14 @@ export class AiDetectorService {
         verdict: report.verdict.key,
         words: report.words,
         model: report.model,
-        report: { ...report, picked } as unknown as Prisma.InputJsonValue,
+        report: {
+          ...report,
+          picked,
+          uniqueness,
+        } as unknown as Prisma.InputJsonValue,
       },
     });
-    return this.present(row);
+    return this.present(row, seo);
   }
 
   async list(page = 1, limit = 20, search?: string) {
@@ -127,10 +148,10 @@ export class AiDetectorService {
     return { items, total, page: Math.max(page, 1), limit: take };
   }
 
-  async get(id: string) {
+  async get(id: string, seo = false) {
     const row = await this.prisma.aiDetectorCheck.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Проверка не найдена');
-    return this.present(row);
+    return this.present(row, seo);
   }
 
   async remove(id: string) {
@@ -149,66 +170,26 @@ export class AiDetectorService {
       );
   }
 
-  private present(row: Prisma.AiDetectorCheckGetPayload<object>) {
+  /**
+   * The stored check as the screen gets it. An admin's check names the
+   * supplier; the SEO role reads the same history, so that is stripped on
+   * the way out, not on the way in.
+   */
+  private present(row: Prisma.AiDetectorCheckGetPayload<object>, seo: boolean) {
     const { textHash: _hash, report, ...rest } = row;
+    const stored = report as unknown as DetectorReport & {
+      picked?: string | null;
+      uniqueness?: UniquenessReport | null;
+    };
     return {
       ...rest,
-      report: report as unknown as DetectorReport & { picked?: string | null },
+      report: {
+        ...stored,
+        uniqueness:
+          stored.uniqueness && seo
+            ? uniquenessForSeo(stored.uniqueness)
+            : (stored.uniqueness ?? null),
+      },
     };
-  }
-
-  /** Fetches a public page, following redirects by hand so each hop is vetted. */
-  private async fetchPage(raw: string) {
-    let current = raw;
-    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      let url: URL;
-      try {
-        url = await assertPublicUrl(current);
-      } catch (error) {
-        if (error instanceof UnsafeUrlError)
-          throw new BadRequestException(error.message);
-        throw error;
-      }
-      let res: Response;
-      try {
-        res = await fetchWithTimeout(
-          url.toString(),
-          {
-            redirect: 'manual',
-            headers: {
-              'User-Agent': PAGE_USER_AGENT,
-              Accept: 'text/html,application/xhtml+xml',
-              'Accept-Language': 'ru,en;q=0.5',
-            },
-          },
-          { timeoutMs: 15_000, retries: 1, maxBytes: MAX_PAGE_BYTES },
-        );
-      } catch (error) {
-        const message = (error as Error).message;
-        throw new BadRequestException(
-          /too large|maxBytes|exceeds/i.test(message)
-            ? 'Страница больше 5 МБ'
-            : 'Страница не открылась (нет ответа)',
-        );
-      }
-      if (res.status >= 300 && res.status < 400) {
-        const location = res.headers.get('location');
-        if (!location) break;
-        current = new URL(location, url).toString();
-        continue;
-      }
-      if (!res.ok) {
-        throw new BadRequestException(`Страница ответила ${res.status}`);
-      }
-      const type = res.headers.get('content-type') ?? '';
-      if (type && !/html|xml|text\/plain/i.test(type)) {
-        throw new BadRequestException('По адресу не веб-страница');
-      }
-      const body = await res.text();
-      return /text\/plain/i.test(type)
-        ? { title: null, text: body.trim(), picked: 'текстовый файл' }
-        : extractPageText(body);
-    }
-    throw new BadRequestException('Слишком много перенаправлений');
   }
 }

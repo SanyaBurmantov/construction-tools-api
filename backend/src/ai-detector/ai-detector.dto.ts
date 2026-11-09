@@ -1,5 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsInt,
   IsOptional,
   IsString,
@@ -10,6 +12,7 @@ import {
 } from 'class-validator';
 import { emptyToUndefined } from '../common/dto/empty-to-undefined';
 import { MAX_TEXT_CHARS } from './limits';
+import { MAX_COMPARE_URLS } from './uniqueness.service';
 
 /** Either `text` or `url`; when both come, the page wins. */
 export class DetectorCheckDto {
@@ -25,6 +28,16 @@ export class DetectorCheckDto {
   @IsString()
   @MaxLength(2000)
   url?: string;
+
+  /** Pages to compare the text with (a competitor's card, the supplier's page). */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_COMPARE_URLS, {
+    message: `Не больше ${MAX_COMPARE_URLS} адресов для сравнения`,
+  })
+  @IsString({ each: true })
+  @MaxLength(2000, { each: true })
+  compareUrls?: string[];
 }
 
 export class DetectorListQueryDto {
