@@ -77,6 +77,7 @@ import {
   redirectOldSlug,
   isProductSlugFree,
   slugFromName,
+  aiMayMoveProductUrl,
 } from '../products/product-slug';
 import {
   brandPath,
@@ -1684,9 +1685,9 @@ export class AiService {
 
   /**
    * Writes the accepted changes; returns the storefront paths to announce.
-   * A new product name also moves the URL (`slugFromName`), with a 301 left
-   * on the old one; the move is recorded in `changes.slug`, so reverting the
-   * item moves it back.
+   * A new name moves a never-published product's URL (`slugFromName`,
+   * `aiMayMoveProductUrl`), with a 301 left on the old one; the move is
+   * recorded in `changes.slug`, so reverting the item moves it back.
    */
   private async applyChanges(
     entity: AiEntity,
@@ -1704,14 +1705,9 @@ export class AiService {
     if (entity === AiEntity.PRODUCT) {
       const oldSlug = String(current.slug);
       let newSlug = oldSlug;
-      // The URL moves once. After an AI rename (or an admin's hand-set slug)
-      // it is ours; a later rewrite of the name keeps it, or every re-run of
-      // a task would leave the page at yet another address.
-      const urlIsOurs = [
-        ...((current.aiLockedFields as string[]) ?? []),
-        ...((current.lockedFields as string[]) ?? []),
-      ].includes('slug');
-      if (changes.name && !urlIsOurs) {
+      // Only a never-published product's URL follows the new name, and only
+      // once (see aiMayMoveProductUrl): a public address keeps its indexing.
+      if (changes.name && aiMayMoveProductUrl(current)) {
         const base = slugFromName(changes.name.new);
         const free =
           base && base !== oldSlug ? await freeProductSlug(db, base, id) : null;
@@ -1821,7 +1817,12 @@ export class AiService {
     if (entity === AiEntity.PRODUCT) {
       return db.product.findUnique({
         where: { id },
-        select: { ...select, aiLockedFields: true, lockedFields: true },
+        select: {
+          ...select,
+          aiLockedFields: true,
+          lockedFields: true,
+          status: true,
+        },
       }) as Promise<Record<string, unknown> | null>;
     }
     if (entity === AiEntity.CATEGORY) {
