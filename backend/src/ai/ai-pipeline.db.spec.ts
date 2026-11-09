@@ -183,6 +183,8 @@ describeDb('AI pipeline on a real database', () => {
       {
         name: 'Аккум. перфоратор BOSCH GBH 18V-45 C в чем.',
         slug: OLD_BOSCH_SLUG,
+        // Never published, so its URL may follow the new name.
+        status: 'DRAFT',
         sku: '611913120',
         categoryId: perf.id,
         brandId: bosch.id,
@@ -321,6 +323,12 @@ describeDb('AI pipeline on a real database', () => {
       'Анкер забиваемый STARFIX M10x12x40 мм, 4 шт. в зип-пакете',
     );
     expect(a4.aiLockedFields).not.toContain('seoDescription'); // no «безнал»
+    // Published, so search engines know its address: renamed, not moved.
+    expect(a4.slug).toBe('anker-4');
+    expect(a4.aiLockedFields).not.toContain('slug');
+    expect(
+      await prisma.productRedirect.count({ where: { productId: ids.a4 } }),
+    ).toBe(0);
 
     const a50 = await prisma.product.findUniqueOrThrow({
       where: { id: ids.a50 },
@@ -342,7 +350,7 @@ describeDb('AI pipeline on a real database', () => {
     ).toBeGreaterThanOrEqual(4000);
   });
 
-  it('moves the URL with the name and leaves a 301', async () => {
+  it('moves a draft’s URL with the name and leaves a 301', async () => {
     const bosch = await prisma.product.findUniqueOrThrow({
       where: { id: ids.bosch },
     });

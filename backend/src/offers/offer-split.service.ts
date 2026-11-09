@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OffersService } from './offers.service';
 import { planSplit, type SplitGroup } from './offer-split';
-import { slugFromName } from '../products/product-slug';
+import { slugFromNameAndCode } from '../products/product-slug';
 import { queueTable } from '../parser/queue-table';
 
 const MAX_SLUG_ATTEMPTS = 50;
@@ -89,7 +89,7 @@ export class OfferSplitService {
     origin: { categoryId: string; priceCurrency: string | null },
   ) {
     const first = group.offers[0];
-    const base = slugFromName(`${first.name} ${first.sku ?? ''}`) || 'product';
+    const base = slugFromNameAndCode(first.name, first.sku) || 'product';
     for (let attempt = 0; attempt <= MAX_SLUG_ATTEMPTS; attempt++) {
       const slug = attempt === 0 ? base : `${base}-${attempt + 1}`;
       const redirect = await this.prisma.productRedirect.findUnique({

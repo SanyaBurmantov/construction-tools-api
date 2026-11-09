@@ -1188,10 +1188,16 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   `AI_MIN_BALANCE` («36.4» или «36.4 CNY») останавливает раннер ниже порога
   баланса одной валюты (DeepSeek отдаёт CNY и USD рядом — не складывать);
   баланс не прочитался — тоже стоп.
-  **Новое название = новый адрес**: slug строится из него
-  (`products/product-slug.ts`, ≤ 90 символов), со старого — 301
-  (`ProductRedirect`, тот же помощник, что у админки), в `changes.slug` —
-  откат возвращает адрес. Парсер slug существующего товара не пишет.
+  **Новое название — новый адрес только у черновика**
+  (`aiMayMoveProductUrl`, 09.11): товар, который хоть раз был на сайте, уже
+  в sitemap и отправлен в IndexNow, а переезд обнуляет индексацию на недели
+  даже с 301 (пилот 29.10: из 157 переехавших через неделю в индексе 27,
+  у оставшихся на месте ~44%). Узнать «в индексе ли» для 100k адресов нельзя
+  (Search Console — 2 000 проверок в день), поэтому «был в продаже» =
+  «известен поисковикам»: меняется только название. У `DRAFT` slug строится
+  из нового названия (`products/product-slug.ts`, ≤ 90 символов), со старого
+  — 301 (`ProductRedirect`), в `changes.slug` — откат возвращает адрес.
+  Парсер slug существующего товара не пишет.
   **Адрес двигается один раз**: `slug` в `aiLockedFields`/`lockedFields`
   значит «адрес уже наш» (после ИИ или ручной правки в админке) — повторный
   прогон меняет название, но не URL.
@@ -1309,6 +1315,22 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   уверен (пока товар там) — выбор из кандидатов ИИ или всего дерева,
   «Спросить ИИ ещё раз» удаляет предложение. Редактор товара открывается
   ссылкой `/admin/products?edit=<id>`.
+- **ИИ-детектор** (09.11, `detector/` — отдельный Python-контейнер,
+  `backend/src/ai-detector/`, `/admin/ai-detector`, открыт роли SEO). Русский
+  классификатор ModernBERT (LLMTrace, ONNX int8 на CPU: 125 МБ в простое,
+  ~330 МБ в пике) за JSON API `detector:8100`; backend сам скачивает
+  страницу по URL (`safe-url.ts`: только публичные адреса, каждый редирект
+  проверяется заново — иначе админ-инструмент читал бы `backend:8000` и
+  `db`), вынимает основной текст (`page-text.ts`) и хранит историю
+  (`AiDetectorCheck`, 365 дней). Ответ: вероятность, фрагменты по 40–150
+  слов, штампы и ритм (объяснения, не вердикт). **Контейнер выключен
+  профилем compose** (`COMPOSE_PROFILES=detector`): автовыкатка делает
+  `up -d --no-build`, и образ, который нельзя скачать, откатил бы весь
+  релиз. Образ версионируется отдельно (`detector/VERSION` =
+  `DETECTOR_IMAGE_TAG` по умолчанию, CI сверяет; `.github/workflows/detector.yml`).
+  Шаблонный текст поставщика (th-tool.by) модель оценила в 99,9% «ИИ»: до
+  калибровки на парах пилота (текст поставщика / DeepSeek) цифры по
+  карточкам — ориентир. Подробности и выводы исследования — `detector/README.md`.
 - **Product page recommendations** (`products/relations/`,
   `GET /products/:slug/recommendations`, details in `feature.md`). «Похожие»
   are computed per request: **the same kind of item only** (`productKind`),
@@ -1604,7 +1626,12 @@ empty and the template is used until an AI task writes one.
 prints a `var_dump` of the catalogue record (up to 2.5 MB, 1 480 cards
 showed it until 2026-11-06); `stripVarDump` in `supplier-text.ts` cuts it by
 its own grammar (brace depth, `string(N)` skipped by byte length) for every
-parser, and the boot cleanup picks old rows up.
+parser, and the boot cleanup picks old rows up. **A batch pass never loads
+text columns in bulk**: the first version selected 500 rows with their
+descriptions — dumps of up to 2.5 MB each — and the worker ran out of heap a
+minute after every start (crash loop 11:45–13:24 on 2026-11-06; parsing and
+outbox sweeps stood still, no order was affected). Select ids, then read one
+row at a time.
 
 **Supplier sales boilerplate never reaches our product text.** dukon.by's meta
 description is a template — «Купить … в Минске с гарантией и доставкой … ☎ +375

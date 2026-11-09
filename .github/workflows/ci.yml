@@ -16,6 +16,27 @@ jobs:
           DB_PASSWORD: ci-validation-only
           ADMIN_TOKEN: ci-validation-only
 
+  # The AI-text detector container (detector/): its pure tests, and that the
+  # image tag prod pulls is the version in detector/VERSION — the tag is the
+  # only thing that makes the server fetch a new detector image.
+  detector:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: detector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -t .
+      - name: Compose pulls the version in detector/VERSION
+        run: |
+          version=$(cat VERSION)
+          grep -q "construction-tools-detector:\${DETECTOR_IMAGE_TAG:-$version}" ../docker-compose.prod.yml \
+            || { echo "docker-compose.prod.yml must default DETECTOR_IMAGE_TAG to $version"; exit 1; }
+
   backend:
     runs-on: ubuntu-latest
     defaults:
@@ -123,7 +144,7 @@ jobs:
   images:
     name: images-${{ github.ref_name }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
-    needs: [image, production-config, backend, frontend]
+    needs: [image, production-config, backend, frontend, detector]
     runs-on: ubuntu-latest
     steps:
       - run: echo "Images for ${{ github.sha }} are in ghcr.io"

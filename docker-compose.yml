@@ -45,6 +45,8 @@ services:
       LIST_TTL_DAYS: ${LIST_TTL_DAYS:-365}
       ADMIN_LOG_TTL_DAYS: ${ADMIN_LOG_TTL_DAYS:-180}
       ERROR_LOG_TTL_DAYS: ${ERROR_LOG_TTL_DAYS:-30}
+      # «ИИ-детектор»: `docker compose --profile detector up` starts it.
+      DETECTOR_URL: ${DETECTOR_URL:-http://detector:8100}
     depends_on:
       db:
         condition: service_healthy
@@ -81,6 +83,19 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
     command: npm run dev
+
+  # The AI-text detector (detector/README.md). Opt-in: the first build
+  # downloads the model (~40 MB) — `docker compose --profile detector up`.
+  detector:
+    profiles: [detector]
+    build:
+      context: ./detector
+      target: production
+    container_name: construction-tools-detector
+    ports:
+      - "8100:8100"
+    networks:
+      - app-network
 
 volumes:
   postgres_data:
