@@ -387,6 +387,7 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
               <span class="diff-label">{{ fieldLabel(detail.entity, String(key)) }}</span>
               <del>{{ change.old || '—' }}</del>
               <ins>{{ change.new }}</ins>
+              <span v-if="aiQualityLine(item.quality?.[String(key)])" class="quality">{{ aiQualityLine(item.quality?.[String(key)]) }}</span>
             </div>
           </li>
         </ul>
@@ -538,6 +539,12 @@ const isBusy = (task: AiTask, path: string) => busy.value === `${task.id}:${path
 
 .ok {
   color: var(--success-soft-text);
+}
+
+.quality {
+  grid-column: 2 / -1;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
 }
 
 .bad,

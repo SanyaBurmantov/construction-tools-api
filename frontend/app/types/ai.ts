@@ -131,8 +131,19 @@ export type AiTaskItem = {
   rejected: Record<string, string> | null
   /** Written, but worth a look (a near-copy of a sibling variant's text). */
   warnings: Record<string, string> | null
+  /** Per rewritten description: uniqueness and the detector's figure. */
+  quality: Record<string, AiFieldQuality> | null
   error: string | null
   updatedAt: string
+}
+
+/** `ai/ai-rewrite-checks.ts`: figures of one rewritten text. */
+export type AiFieldQuality = {
+  /** % not found in the old text or the supplier's. */
+  uniqueness?: number | null
+  /** The detector's «written by a model» probability, 0–1. */
+  ai?: number | null
+  overlap?: { title: string, url: string | null, share: number } | null
 }
 
 /** `POST /ai/preview`: what a task would write, and what the checks refuse. */
@@ -141,6 +152,8 @@ export type AiPreview = {
   template: string | null
   changes: Record<string, AiFieldChange>
   rejected: Record<string, { reason: string, value: string }>
+  quality?: Record<string, AiFieldQuality>
+  warnings?: Record<string, string>
   usage?: { promptTokens: number, completionTokens: number, cacheHitTokens: number }
   /** The quoted phrases that pass the checks verbatim. */
   phrases?: string[]
