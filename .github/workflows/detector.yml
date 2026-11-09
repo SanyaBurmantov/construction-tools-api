@@ -1,0 +1,54 @@
+# The AI-text detector image (detector/), versioned on its own: the model
+# (~40 MB) does not change with every commit, so it is not rebuilt and pulled
+# with every release like backend/frontend. Bump detector/VERSION together
+# with DETECTOR_IMAGE_TAG's default in docker-compose.prod.yml (the ci.yml
+# `detector` job checks they match); the server pulls a tag it does not have
+# on the next `compose up` once the `detector` profile is on.
+name: detector-image
+
+on:
+  push:
+    branches: [master, prod]
+    paths: ['detector/**', '.github/workflows/detector.yml']
+  workflow_dispatch:
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "version=$(cat detector/VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      # The unit tests run inside the image's `test` stage first.
+      - uses: docker/build-push-action@v6
+        with:
+          context: detector
+          target: test
+          push: false
+          cache-from: type=gha,scope=detector
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: detector
+          target: production
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/construction-tools-detector:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/construction-tools-detector:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=detector
+          cache-to: type=gha,mode=max,scope=detector

@@ -54,6 +54,10 @@ x-backend-environment: &backend-environment
   # Вторая проверка смысла (название и краткое описание). false = выключить.
   AI_VERIFY: ${AI_VERIFY:-true}
   DEEPSEEK_THINKING: ${DEEPSEEK_THINKING:-disabled}
+  # ИИ-детектор (контейнер detector, профиль compose «detector»). Пока профиль
+  # выключен, экран «ИИ-детектор» пишет «недоступен» — остальное не зависит.
+  DETECTOR_URL: ${DETECTOR_URL:-http://detector:8100}
+  DETECTOR_TOKEN: ${DETECTOR_TOKEN:-}
   # IndexNow: изменённые страницы сразу сообщаются Яндексу. Пусто = выключено.
   # Тот же ключ уходит фронту как NUXT_INDEXNOW_KEY (файл /<ключ>.txt).
   INDEXNOW_KEY: ${INDEXNOW_KEY:-}
@@ -338,6 +342,39 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - app-network
+
+  # ИИ-детектор: русский классификатор текста (ONNX на CPU) за JSON API на
+  # :8100, только внутри app-network; зовёт его backend (/admin/ai-detector).
+  # Off by default — its **profile** must be switched on (COMPOSE_PROFILES=
+  # detector in .env.prod): auto-deploy runs `up -d --no-build`, and a service
+  # whose image cannot be pulled would fail the whole release and roll it
+  # back. The image is versioned on its own (detector/VERSION, built by
+  # .github/workflows/detector.yml) because the model does not change with
+  # every commit; `build:` is the fallback.
+  # Measured: idle ~125 MB, peak ~330 MB on a 3 000-word text (int8, 1 024
+  # tokens, one thread).
+  detector:
+    profiles: [detector]
+    build:
+      context: ./detector
+      target: production
+    image: ${IMAGE_REGISTRY:-ghcr.io/sanyaburmantov}/construction-tools-detector:${DETECTOR_IMAGE_TAG:-0.1.0}
+    container_name: construction-tools-detector
+    init: true
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${DETECTOR_MEM_LIMIT:-448m}
+    mem_reservation: 96m
+    # Like the worker: one core at most and half the weight, so a long text
+    # never slows the storefront or Postgres.
+    cpus: ${DETECTOR_CPUS:-1.0}
+    cpu_shares: 512
+    environment:
+      DETECTOR_TOKEN: ${DETECTOR_TOKEN:-}
+      DETECTOR_MAX_TOKENS: ${DETECTOR_MAX_TOKENS:-1024}
+      DETECTOR_THREADS: ${DETECTOR_THREADS:-1}
     networks:
       - app-network
 

@@ -37,6 +37,7 @@ import { AiModule } from './ai/ai.module';
 import { B2bModule } from './b2b/b2b.module';
 import { RequisitesModule } from './requisites/requisites.module';
 import { MediaModule } from './media/media.module';
+import { AiDetectorModule } from './ai-detector/ai-detector.module';
 import { ParserRuntimeStatusService } from './parser/parser-runtime-status.service';
 import { runsBackgroundJobs } from './common/utils/process-role';
 
@@ -85,6 +86,7 @@ import { runsBackgroundJobs } from './common/utils/process-role';
     AdminModule,
     CatalogNormalizerModule,
     AiModule,
+    AiDetectorModule,
     MediaModule,
   ],
   controllers: [AppController],
