@@ -1,0 +1,14 @@
+{
+  "why": "Pinned by Hugging Face revision and sha256: a model that changes under the same name would silently change every score. Bump revision and hashes together, then recalibrate on our own texts (README: «Калибровка»).",
+  "modernbert": {
+    "repo": "toiletsandpaper/russian-ai-text-detector-modernbert",
+    "revision": "00141fe7ab18291ef0c4ab75bc00c0797e590a8b",
+    "license": "Apache-2.0 (base deepvk/RuModernBERT-small, trained on iitolstykh/LLMTrace_classification)",
+    "files": {
+      "inference.json": "2322f77b0ba98dc5b637be8dfd3f9f8fe88fc5739b22b4014f002502553bda61",
+      "tokenizer.json": "c166ae391d765915521dce27bf940cc9c7bff5050260f652f9327a7df1b9cd56",
+      "model_int8.onnx": "06800075624f73b19205af03632239be9d16ce6ea99c88111f3003f9c06d1657",
+      "model.onnx": "7cdbb41854bba7b29bf6912c8059ca2fd9da707968a306fa3fea3496b3999be3"
+    }
+  }
+}

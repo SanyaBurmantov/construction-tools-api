@@ -27,7 +27,7 @@ const forbidden = computed(() => Boolean(user.value) && !canUseAdmin.value)
  * The SEO specialist's screens (backend `admin/seo-access.ts` decides what the
  * API answers; this only keeps the menu and the pages honest about it).
  */
-const SEO_PATHS = ['/admin/plans', '/admin/products', '/admin/categories', '/admin/brands', '/admin/traffic', '/admin/search', '/admin/ai', '/admin/docs']
+const SEO_PATHS = ['/admin/plans', '/admin/products', '/admin/categories', '/admin/brands', '/admin/traffic', '/admin/search', '/admin/ai', '/admin/ai-detector', '/admin/docs']
 const seoAllowed = (path: string) => SEO_PATHS.some(prefix => path === prefix || path.startsWith(`${prefix}/`))
 
 const allNav = computed(() => [
@@ -69,6 +69,7 @@ const allNav = computed(() => [
   },
   { label: 'Парсинг', to: '/admin/parsing', icon: 'refresh' },
   { label: 'ИИ-тексты', to: '/admin/ai', icon: 'spark' },
+  { label: 'ИИ-детектор', to: '/admin/ai-detector', icon: 'search' },
   { label: 'Документация', to: '/admin/docs', icon: 'book' },
 ])
 const nav = computed(() => (isSeo.value ? allNav.value.filter(item => seoAllowed(item.to)) : allNav.value))
@@ -297,7 +298,7 @@ useHead({
             :key="item.to"
             :to="item.to"
             class="nav-item"
-            :class="{ 'is-active': item.exact ? route.path === item.to : route.path.startsWith(item.to) }"
+            :class="{ 'is-active': item.exact ? route.path === item.to : route.path === item.to || route.path.startsWith(`${item.to}/`) }"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path :d="ICONS[item.icon]" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />

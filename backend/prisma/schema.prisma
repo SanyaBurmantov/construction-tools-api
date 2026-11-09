@@ -1588,3 +1588,33 @@ model PlanItem {
   @@index([kind, status])
   @@index([goalId])
 }
+
+/// One run of the AI-text detector (`ai-detector/`, «ИИ-детектор» in the
+/// admin): what was checked, by whom, and the detector's full report, so the
+/// SEO specialist can come back to a result and compare before / after a
+/// rewrite. The text itself is kept (≤ 100 000 characters) because the
+/// report's fragments and markers are offsets into it.
+model AiDetectorCheck {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+  /// Account login of whoever ran it; null for the x-admin-token path.
+  createdBy   String?
+  /// `text` (pasted) or `url` (fetched by the server).
+  source      String
+  url         String?
+  title       String?
+  text        String
+  /// sha256 of the text: the same text checked twice is easy to spot.
+  textHash    String
+  probability Float
+  /// Band key from the detector: ai | likely-ai | unclear | likely-human | human.
+  verdict     String
+  words       Int
+  /// Which model answered (models.json name) — scores of two models are not comparable.
+  model       String
+  /// The detector's report minus the text: fragments, markers, rhythm, warnings.
+  report      Json
+
+  @@index([createdAt])
+  @@index([textHash])
+}

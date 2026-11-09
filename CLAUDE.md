@@ -1315,6 +1315,22 @@ Dev stack: `docker compose up` (root). Prod: see the `deploy-prod` skill.
   уверен (пока товар там) — выбор из кандидатов ИИ или всего дерева,
   «Спросить ИИ ещё раз» удаляет предложение. Редактор товара открывается
   ссылкой `/admin/products?edit=<id>`.
+- **ИИ-детектор** (09.11, `detector/` — отдельный Python-контейнер,
+  `backend/src/ai-detector/`, `/admin/ai-detector`, открыт роли SEO). Русский
+  классификатор ModernBERT (LLMTrace, ONNX int8 на CPU: 125 МБ в простое,
+  ~330 МБ в пике) за JSON API `detector:8100`; backend сам скачивает
+  страницу по URL (`safe-url.ts`: только публичные адреса, каждый редирект
+  проверяется заново — иначе админ-инструмент читал бы `backend:8000` и
+  `db`), вынимает основной текст (`page-text.ts`) и хранит историю
+  (`AiDetectorCheck`, 365 дней). Ответ: вероятность, фрагменты по 40–150
+  слов, штампы и ритм (объяснения, не вердикт). **Контейнер выключен
+  профилем compose** (`COMPOSE_PROFILES=detector`): автовыкатка делает
+  `up -d --no-build`, и образ, который нельзя скачать, откатил бы весь
+  релиз. Образ версионируется отдельно (`detector/VERSION` =
+  `DETECTOR_IMAGE_TAG` по умолчанию, CI сверяет; `.github/workflows/detector.yml`).
+  Шаблонный текст поставщика (th-tool.by) модель оценила в 99,9% «ИИ»: до
+  калибровки на парах пилота (текст поставщика / DeepSeek) цифры по
+  карточкам — ориентир. Подробности и выводы исследования — `detector/README.md`.
 - **Product page recommendations** (`products/relations/`,
   `GET /products/:slug/recommendations`, details in `feature.md`). «Похожие»
   are computed per request: **the same kind of item only** (`productKind`),
