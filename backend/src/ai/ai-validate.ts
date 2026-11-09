@@ -421,38 +421,6 @@ function checkName(
 }
 
 /**
- * How alike two texts are, 0…1: Jaccard over three-word shingles with the
- * numbers masked out. Masked, because the variants of one line (a 10 mm and
- * a 12 mm bit, 4 or 50 anchors a pack) differ *only* in numbers — and a page
- * that differs from its sibling only in numbers is the near-duplicate a
- * search engine folds into one result.
- */
-export function textSimilarity(a: string, b: string) {
-  const shingles = (text: string) => {
-    const words = text
-      .toLowerCase()
-      .replace(/ё/g, 'е')
-      .replace(/\d+(?:[.,]\d+)?/g, '#')
-      .split(/[^a-zа-я#]+/i)
-      .filter(Boolean);
-    const set = new Set<string>();
-    for (let i = 0; i + 2 < words.length; i++) {
-      set.add(`${words[i]} ${words[i + 1]} ${words[i + 2]}`);
-    }
-    return set;
-  };
-  const left = shingles(a);
-  const right = shingles(b);
-  if (!left.size || !right.size) return 0;
-  let shared = 0;
-  for (const shingle of left) if (right.has(shingle)) shared++;
-  return shared / (left.size + right.size - shared);
-}
-
-/** Over this, a description is flagged as a near-copy of a sibling's. */
-export const NEAR_DUPLICATE_SIMILARITY = 0.7;
-
-/**
  * Every code check an AI answer goes through before a field is written, in
  * words — the admin's «Шаблоны и проверки» tab lists them, so a refused field
  * is never a mystery. Keep in step with checkField / checkName above.
@@ -553,13 +521,13 @@ export const AI_CHECKS: Array<{ id: string; title: string; detail: string }> = [
     id: 'similar',
     title: 'Похожие описания',
     detail:
-      'Описание почти как у уже записанного в этой задаче (варианты линейки) — помечается предупреждением.',
+      'Описание, которое другое, уже записанное в этой задаче, покрывает на 60% и больше (те же шинглы, что у уникальности), помечается предупреждением. Варианты линейки модель различает заранее: в данных у неё есть «line» — чем этот вариант отличается от соседей.',
   },
   {
     id: 'uniqueness',
     title: 'Уникальность',
     detail:
-      'Полное и краткое описание сравниваются шинглами (как text.ru, по основам слов) с прежним текстом и текстом поставщика: ниже 50% — не записывается (почти пересказ поставщика, у конкурентов тот же текст). Совпадение с другим товаром каталога от 50% — предупреждение. Порог — AI_MIN_UNIQUENESS (0 = выключить).',
+      'Полное и краткое описание сравниваются шинглами (как text.ru, по основам слов) с прежним текстом и текстом поставщика. Текст поставщика модель получает как источник фактов («sourceDescription»), а не как черновик. Ниже 50% — модель один раз переписывает поле с цитатой скопированных кусков; не помогло — поле не записывается. Порог — AI_MIN_UNIQUENESS (0 = выключить).',
   },
   {
     id: 'detector',

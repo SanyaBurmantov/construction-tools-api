@@ -200,6 +200,7 @@ describe('AiService: the admin’s quoted phrase reaches the card', () => {
         updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
         groupBy: jest.fn(() => Promise.resolve([])),
       },
+      productFamily: { findMany: jest.fn(() => Promise.resolve([])) },
       product: {
         findMany: jest.fn(() => Promise.resolve([product])),
         findUnique: jest.fn(() => Promise.resolve(product)),
@@ -424,5 +425,163 @@ describe('AiService: «Отклонённое»', () => {
         resolved: { seoTitle: 'dismissed' },
       }).service.dismissRejected('i1', 'seoTitle'),
     ).rejects.toThrow('Уже разобрано');
+  });
+});
+
+describe('AiService.checkAndRepair', () => {
+  const context = {
+    current: { descriptionFull: 'Старый текст поставщика про ключи.' },
+    prompt: { id: 'p1' },
+    kind: { name: 'Ключи', categoryPath: '' },
+    validation: {
+      entity: AiEntity.PRODUCT,
+      oldName: 'Ключи',
+      source: 'Ключи набор 10 инструментов',
+    },
+  };
+  const fields = [
+    { key: 'descriptionFull', label: 'Полное описание', hint: '' },
+  ];
+
+  function build(firstVerdict: Record<string, string>) {
+    const chat = jest.fn(() =>
+      Promise.resolve({
+        content: JSON.stringify({
+          items: [
+            {
+              id: 'p1',
+              descriptionFull:
+                'Свой новый текст про набор ключей: десять инструментов в одном наборе закрывают типовые размеры крепежа, поэтому в мастерской и на выезде не придётся искать недостающий ключ. Набор удобно хранить и переносить.',
+            },
+          ],
+        }),
+        usage: { promptTokens: 1, completionTokens: 1, cacheHitTokens: 0 },
+        model: 'm',
+      }),
+    );
+    const check = jest
+      .fn()
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            'p1',
+            {
+              quality: { descriptionFull: { uniqueness: 20 } },
+              rejected: firstVerdict,
+              copied: { descriptionFull: ['текст поставщика про ключи'] },
+            },
+          ],
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            'p1',
+            {
+              quality: { descriptionFull: { uniqueness: 90 } },
+              rejected: {},
+              copied: {},
+            },
+          ],
+        ]),
+      );
+    const service = new AiService(
+      { aiTask: { update: jest.fn(() => Promise.resolve({})) } } as never,
+      { chat } as never,
+      {} as never,
+      {} as never,
+      { check } as never,
+    );
+    return { service, chat, check };
+  }
+
+  it('asks again for a failed field, with the reason and the copied piece, and re-checks it', async () => {
+    const { service, chat, check } = build({
+      descriptionFull: 'уникальность 20%',
+    });
+    const result = await (
+      service as never as {
+        checkAndRepair: (p: unknown) => Promise<{
+          records: Map<string, Record<string, unknown>>;
+          checks: Map<
+            string,
+            { quality: Record<string, { uniqueness: number }> }
+          >;
+          repairs: number;
+        }>;
+      }
+    ).checkAndRepair({
+      model: 'm',
+      taskId: 't1',
+      entity: AiEntity.PRODUCT,
+      fields,
+      messages: [
+        { role: 'system', content: 's' },
+        { role: 'user', content: 'u' },
+      ],
+      answer:
+        '{"items":[{"id":"p1","descriptionFull":"Старый текст поставщика про ключи."}]}',
+      records: new Map([
+        [
+          'p1',
+          { id: 'p1', descriptionFull: 'Старый текст поставщика про ключи!' },
+        ],
+      ]),
+      contexts: new Map([['p1', context]]),
+      phrases: [],
+    });
+    expect(result.repairs).toBe(1);
+    expect(result.records.get('p1')!.descriptionFull).toBe(
+      'Свой новый текст про набор ключей: десять инструментов в одном наборе закрывают типовые размеры крепежа, поэтому в мастерской и на выезде не придётся искать недостающий ключ. Набор удобно хранить и переносить.',
+    );
+    expect(result.checks.get('p1')!.quality.descriptionFull.uniqueness).toBe(
+      90,
+    );
+    const sent = (
+      chat.mock.calls[0] as unknown as [
+        string,
+        Array<{ role: string; content: string }>,
+      ]
+    )[1];
+    expect(sent.map((m) => m.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'user',
+    ]);
+    expect(sent[3].content).toMatch(
+      /уникальность 20%.*«текст поставщика про ключи»/s,
+    );
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it('nothing failed — no second request', async () => {
+    const { service, chat } = build({});
+    const result = await (
+      service as never as {
+        checkAndRepair: (p: unknown) => Promise<{ repairs: number }>;
+      }
+    ).checkAndRepair({
+      model: 'm',
+      taskId: null,
+      entity: AiEntity.PRODUCT,
+      fields,
+      messages: [],
+      answer: '',
+      records: new Map([
+        [
+          'p1',
+          {
+            id: 'p1',
+            descriptionFull:
+              'Свой новый текст про набор ключей: десять инструментов в одном наборе закрывают типовые размеры крепежа, поэтому в мастерской и на выезде не придётся искать недостающий ключ. Набор удобно хранить и переносить.',
+          },
+        ],
+      ]),
+      contexts: new Map([['p1', context]]),
+      phrases: [],
+    });
+    expect(result.repairs).toBe(0);
+    expect(chat).not.toHaveBeenCalled();
   });
 });

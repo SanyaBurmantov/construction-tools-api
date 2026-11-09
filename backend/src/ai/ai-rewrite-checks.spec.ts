@@ -15,29 +15,28 @@ const rewritten =
   'куда прямой ключ не пролезает. Материал — хром-ванадиевая сталь, которая держит усилие без деформации.';
 
 describe('rewriteVerdict', () => {
-  it('refuses a description below the threshold, warns on another product', () => {
+  it('refuses a description below the threshold and keeps the copied pieces', () => {
     const v = rewriteVerdict(
       {
         descriptionFull: { uniqueness: 14, ai: 0.98 },
-        descriptionShort: {
-          uniqueness: 90,
-          overlap: { title: 'Ключи 8х9', url: '/product/k', share: 70 },
-        },
+        descriptionShort: { uniqueness: 90 },
       },
+      { descriptionFull: ['состоит из 10 инструментов'] },
       50,
     );
     expect(v.rejected.descriptionFull).toMatch(/уникальность 14%.*от 50%/);
     expect(v.rejected.descriptionShort).toBeUndefined();
-    expect(v.warnings.descriptionShort).toBe('совпадает с «Ключи 8х9» на 70%');
+    expect(v.copied.descriptionFull).toEqual(['состоит из 10 инструментов']);
     expect(v.quality.descriptionFull.ai).toBe(0.98);
   });
 
   it('0 turns the gate off; no figure, no verdict', () => {
     expect(
-      rewriteVerdict({ descriptionFull: { uniqueness: 5 } }, 0).rejected,
+      rewriteVerdict({ descriptionFull: { uniqueness: 5 } }, {}, 0).rejected,
     ).toEqual({});
     expect(
-      rewriteVerdict({ descriptionFull: { uniqueness: null } }, 50).rejected,
+      rewriteVerdict({ descriptionFull: { uniqueness: null } }, {}, 50)
+        .rejected,
     ).toEqual({});
   });
 
@@ -100,6 +99,9 @@ describe('AiRewriteChecksService', () => {
       },
     ]);
     expect(result.get('p1')!.rejected.descriptionFull).toMatch(/уникальность/);
+    expect(result.get('p1')!.copied.descriptionFull?.[0]).toMatch(
+      /изогнуты на 75 градусов/,
+    );
     expect(result.get('p1')!.quality.descriptionFull.ai).toBe(0.991);
     expect(result.get('p2')!.rejected).toEqual({});
     expect(

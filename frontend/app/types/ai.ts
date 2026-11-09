@@ -143,7 +143,6 @@ export type AiFieldQuality = {
   uniqueness?: number | null
   /** The detector's «written by a model» probability, 0–1. */
   ai?: number | null
-  overlap?: { title: string, url: string | null, share: number } | null
 }
 
 /** `POST /ai/preview`: what a task would write, and what the checks refuse. */
@@ -153,7 +152,8 @@ export type AiPreview = {
   changes: Record<string, AiFieldChange>
   rejected: Record<string, { reason: string, value: string }>
   quality?: Record<string, AiFieldQuality>
-  warnings?: Record<string, string>
+  /** Records the model rewrote once after a failed check. */
+  repairs?: number
   usage?: { promptTokens: number, completionTokens: number, cacheHitTokens: number }
   /** The quoted phrases that pass the checks verbatim. */
   phrases?: string[]

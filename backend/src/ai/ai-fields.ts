@@ -1,3 +1,4 @@
+import { BRIEF_FORMAT_LINES } from './ai-brief';
 import {
   sanitizeSupplierText,
   sanitizeSupplierTitle,
@@ -120,7 +121,10 @@ export function isKnownField(entity: AiEntity, key: string) {
   return AI_FIELDS[entity].some((field) => field.key === key);
 }
 
-export type ChatMessage = { role: 'system' | 'user'; content: string };
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};
 
 /**
  * The fixed part of every request: who the model is, which fields to return
@@ -144,6 +148,7 @@ export function formatBlock(entity: AiEntity, fields: AiFieldDef[]): string {
     `- Только перечисленные поля. Если поле менять не нужно — верни текущее значение.`,
     `- Пиши по-русски. Не выдумывай характеристики, которых нет во входных данных.`,
     `- Не упоминай поставщиков и их контакты.`,
+    ...BRIEF_FORMAT_LINES,
   ].join('\n');
 }
 

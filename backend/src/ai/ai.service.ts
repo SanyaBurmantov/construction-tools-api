@@ -27,7 +27,16 @@ import {
   isKnownField,
   parseAnswer,
   truncate,
+  type ChatMessage,
 } from './ai-fields';
+import {
+  lineInfo,
+  repairMessage,
+  repairNotes,
+  SOURCE_KEYS,
+  type RepairNote,
+} from './ai-brief';
+import { uniqueness } from '../ai-detector/uniqueness';
 import {
   AiBrandFilterDto,
   AiBrandQueryDto,
@@ -62,13 +71,7 @@ import {
   productTemplate,
   templateKeywords,
 } from './ai-templates';
-import {
-  NEAR_DUPLICATE_SIMILARITY,
-  Rejections,
-  textSimilarity,
-  validateAnswer,
-  ValidationInput,
-} from './ai-validate';
+import { Rejections, validateAnswer, ValidationInput } from './ai-validate';
 import {
   buildVerifyMessages,
   parseVerifyAnswer,
@@ -95,6 +98,8 @@ const SPEC_LIMIT = 25;
 const DESCRIPTION_CONTEXT_CHARS = 2500;
 /** How many of a task's written items a new description is compared with. */
 const NEAR_DUPLICATE_LOOKBACK = 300;
+/** A description another one in the task covers this much of is flagged. */
+const NEAR_DUPLICATE_SHARE = 0.6;
 
 export type BatchOutcome = 'done' | 'progress' | 'rate-limited' | 'error';
 
@@ -1315,9 +1320,21 @@ export class AiService {
     try {
       const answer = await this.client.chat(model, messages);
       const parsed = parseAnswer(answer.content);
-      const record = parsed.get(dto.id) ?? [...parsed.values()][0] ?? {};
+      const first = parsed.get(dto.id) ?? [...parsed.values()][0] ?? {};
+      // Exactly what a task does: checks, one repair, the meaning check.
+      const repaired = await this.checkAndRepair({
+        model,
+        taskId: null,
+        entity: dto.entity,
+        fields,
+        messages,
+        answer: answer.content,
+        records: new Map([[dto.id, first]]),
+        contexts,
+        phrases,
+      });
+      const record = repaired.records.get(dto.id) ?? first;
       const changes = diffAnswer(fields, context.current, record, phrases);
-      // The same two checks a task runs, so the preview shows what it would write.
       const verdicts = await this.secondOpinion(
         model,
         null,
@@ -1326,15 +1343,7 @@ export class AiService {
         contexts,
         phrases,
       );
-      const checked = (
-        await this.checkRewrites(
-          dto.entity,
-          fields,
-          new Map([[dto.id, record]]),
-          contexts,
-          phrases,
-        )
-      ).get(dto.id);
+      const checked = repaired.checks.get(dto.id);
       const rejected: Rejections = {
         ...validateAnswer(
           { ...context.validation, allowed: phrases },
@@ -1345,7 +1354,7 @@ export class AiService {
       };
       return {
         quality: checked?.quality ?? {},
-        warnings: checked?.warnings ?? {},
+        repairs: repaired.repairs,
         model: answer.model,
         template: template?.label ?? null,
         // What a task would write: the rejected fields stay as they are.
@@ -1356,7 +1365,17 @@ export class AiService {
             { reason, value: changes[key].new },
           ]),
         ),
-        usage: answer.usage,
+        // The repair request is part of what this preview cost.
+        usage: repaired.usage
+          ? {
+              promptTokens:
+                answer.usage.promptTokens + repaired.usage.promptTokens,
+              completionTokens:
+                answer.usage.completionTokens + repaired.usage.completionTokens,
+              cacheHitTokens:
+                answer.usage.cacheHitTokens + repaired.usage.cacheHitTokens,
+            }
+          : answer.usage,
         phrases,
         raw: answer.content,
       };
@@ -1466,6 +1485,7 @@ export class AiService {
     const phrases = quotedPhrases(task.promptParts as PromptParts | null);
     let records: Map<string, Record<string, unknown>>;
     let verdicts: Map<string, Rejections>;
+    let checks: Map<string, RewriteVerdict>;
     try {
       const answer = await this.client.chat(task.model, messages);
       // Billed whether or not the answer parses.
@@ -1482,6 +1502,19 @@ export class AiService {
         const record = answers.get(item.entityId) ?? lone;
         if (record) records.set(item.entityId, record);
       }
+      // A field that fails is asked again once, with the reason, before it
+      // is refused (`ai-brief.ts`); then the meaning check sees the final text.
+      ({ records, checks } = await this.checkAndRepair({
+        model: task.model,
+        taskId: task.id,
+        entity: task.entity,
+        fields,
+        messages,
+        answer: answer.content,
+        records,
+        contexts,
+        phrases,
+      }));
       verdicts = await this.secondOpinion(
         task.model,
         task.id,
@@ -1516,14 +1549,6 @@ export class AiService {
 
     // Uniqueness and the detector's figure, outside the per-item transactions
     // (they read the catalogue and call the detector container).
-    const checks = await this.checkRewrites(
-      task.entity,
-      fields,
-      records,
-      contexts,
-      phrases,
-    );
-
     const announce: Array<string | null> = [];
     for (const item of items) {
       const record = records.get(item.entityId);
@@ -1562,13 +1587,7 @@ export class AiService {
             ),
           };
           const changes = withoutKeys(proposed, Object.keys(rejected));
-          const warnings = mergeNotes(
-            await this.nearDuplicates(tx, task.id, changes),
-            pickKeys(
-              checks.get(item.entityId)?.warnings ?? {},
-              Object.keys(changes),
-            ),
-          );
+          const warnings = await this.nearDuplicates(tx, task.id, changes);
           const quality = pickKeys(
             checks.get(item.entityId)?.quality ?? {},
             Object.keys(proposed),
@@ -1688,6 +1707,93 @@ export class AiService {
   }
 
   /**
+   * The code checks and the rewrite checks on a batch's answers; the fields
+   * that fail are asked again once in the same conversation (the reason and
+   * the copied pieces quoted, `ai-brief.ts`), and the repaired ones checked
+   * again. The meaning check (`secondOpinion`) runs after, on the final text.
+   * A failed repair request keeps the first answers — they are then refused
+   * as before, never lost.
+   */
+  private async checkAndRepair(params: {
+    model: string;
+    taskId: string | null;
+    entity: AiEntity;
+    fields: ReturnType<typeof fieldDefs>;
+    messages: ChatMessage[];
+    answer: string;
+    records: Map<string, Record<string, unknown>>;
+    contexts: Map<string, EntityContext>;
+    phrases: string[];
+  }): Promise<{
+    records: Map<string, Record<string, unknown>>;
+    checks: Map<string, RewriteVerdict>;
+    repairs: number;
+    /** The repair request's tokens (a task bills them itself). */
+    usage?: AiUsage;
+  }> {
+    const { fields, contexts, phrases } = params;
+    const records = new Map(params.records);
+    const checks = await this.checkRewrites(
+      params.entity,
+      fields,
+      records,
+      contexts,
+      phrases,
+    );
+    const notes: RepairNote[] = [];
+    for (const [id, record] of records) {
+      const context = contexts.get(id);
+      if (!context) continue;
+      const proposed = newValues(
+        diffAnswer(fields, context.current, record, phrases),
+      );
+      const rejected: Rejections = {
+        ...validateAnswer(
+          { ...context.validation, allowed: phrases },
+          proposed,
+        ),
+        ...pickKeys(checks.get(id)?.rejected ?? {}, Object.keys(proposed)),
+      };
+      notes.push(...repairNotes(id, rejected, checks.get(id)?.copied));
+    }
+    if (!notes.length) return { records, checks, repairs: 0 };
+
+    try {
+      const second = await this.client.chat(params.model, [
+        ...params.messages,
+        { role: 'assistant', content: params.answer },
+        { role: 'user', content: repairMessage(notes) },
+      ]);
+      if (params.taskId) await this.addUsage(params.taskId, second.usage);
+      const answers = parseAnswer(second.content);
+      const touched = new Map<string, Record<string, unknown>>();
+      for (const note of notes) {
+        const value = answers.get(note.id)?.[note.field];
+        if (typeof value !== 'string' || !value.trim()) continue;
+        const record = { ...(touched.get(note.id) ?? records.get(note.id)!) };
+        record[note.field] = value;
+        touched.set(note.id, record);
+      }
+      for (const [id, record] of touched) records.set(id, record);
+      if (touched.size) {
+        const again = await this.checkRewrites(
+          params.entity,
+          fields,
+          touched,
+          contexts,
+          phrases,
+        );
+        for (const [id, verdict] of again) checks.set(id, verdict);
+      }
+      return { records, checks, repairs: touched.size, usage: second.usage };
+    } catch (error) {
+      if (error instanceof AiRateLimitError) throw error;
+      this.logger.warn(`repair request failed: ${(error as Error).message}`);
+      return { records, checks, repairs: 0 };
+    }
+  }
+
+  /**
    * Uniqueness and detector figures for the descriptions in a batch's
    * answers (`ai-rewrite-checks.ts`). Never throws: without the checks
    * service (unit tests) or on its failure the batch is written as before.
@@ -1756,10 +1862,16 @@ export class AiService {
           key
         ];
         if (!other) continue;
-        const score = textSimilarity(changes[key].new, other.new);
+        // The same shingles as the uniqueness figure: the share of this text
+        // the other one covers.
+        const score =
+          (100 -
+            (uniqueness(changes[key].new, [{ text: other.new, meta: null }])
+              .percent ?? 100)) /
+          100;
         if (score > best.score) best = { score, name: sibling.entityName };
       }
-      if (best.score >= NEAR_DUPLICATE_SIMILARITY) {
+      if (best.score >= NEAR_DUPLICATE_SHARE) {
         warnings[key] =
           `почти как у «${best.name}» (${Math.round(best.score * 100)}%)`;
       }
@@ -1948,6 +2060,7 @@ export class AiService {
           },
         },
       });
+      const lines = await this.productLines(products.map((p) => p.id));
       for (const product of products) {
         const category = [
           product.category.parent?.parent?.name,
@@ -1995,9 +2108,11 @@ export class AiService {
             sku: product.sku,
             model: product.model,
             // No price and no stock: the rules forbid both in the text, and
-            // a model shown them writes them anyway.
-            descriptionShort: product.descriptionShort,
-            descriptionFull: shownDescription,
+            // a model shown them writes them anyway. The prose it may rewrite
+            // travels as a source, not under the field's name (`ai-brief.ts`).
+            [SOURCE_KEYS.descriptionShort]: product.descriptionShort,
+            [SOURCE_KEYS.descriptionFull]: shownDescription,
+            ...(lines.get(product.id) ? { line: lines.get(product.id) } : {}),
             seoTitle: product.seoTitle,
             seoDescription: product.seoDescription,
             specs: Object.fromEntries(
@@ -2061,7 +2176,7 @@ export class AiService {
           id: category.id,
           name: category.name,
           parents,
-          description: shown,
+          [SOURCE_KEYS.description]: shown,
           seoTitle: category.seoTitle,
           seoDescription: category.seoDescription,
           productCount: category._count.products,
@@ -2071,6 +2186,46 @@ export class AiService {
       });
     }
     return map;
+  }
+
+  /**
+   * Each product's place in its size line (`ai-brief.ts lineInfo`): its
+   * family's published siblings, by the name sizes are read from.
+   */
+  private async productLines(ids: string[]) {
+    const out = new Map<string, ReturnType<typeof lineInfo>>();
+    const own = await this.prisma.productFamily.findMany({
+      where: { productId: { in: ids }, familyKey: { not: null } },
+      select: {
+        productId: true,
+        familyKey: true,
+        keyName: true,
+        product: { select: { name: true } },
+      },
+    });
+    if (!own.length) return out;
+    const siblings = await this.prisma.productFamily.findMany({
+      where: {
+        familyKey: { in: [...new Set(own.map((f) => f.familyKey!))] },
+        product: { status: 'PUBLISHED' },
+      },
+      select: {
+        productId: true,
+        familyKey: true,
+        keyName: true,
+        product: { select: { name: true } },
+      },
+      take: 500,
+    });
+    for (const f of own) {
+      const names = siblings
+        .filter(
+          (s) => s.familyKey === f.familyKey && s.productId !== f.productId,
+        )
+        .map((s) => s.keyName || s.product.name);
+      out.set(f.productId, lineInfo(f.keyName || f.product.name, names));
+    }
+    return out;
   }
 
   /**
@@ -2151,7 +2306,7 @@ export class AiService {
           id: brand.id,
           name: brand.name,
           country: brand.country,
-          description: shown,
+          [SOURCE_KEYS.description]: shown,
           seoTitle: own(brand.seoTitle),
           seoDescription: own(brand.seoDescription),
           productCount: total,
@@ -2171,15 +2326,6 @@ type EntityContext = {
   /** What the answer is checked against (`ai-validate.ts`). */
   validation: ValidationInput;
 };
-
-/** Two `{ field: note }` sets, notes on one field joined. */
-function mergeNotes(a: Record<string, string>, b: Record<string, string>) {
-  const out = { ...a };
-  for (const [key, note] of Object.entries(b)) {
-    out[key] = out[key] ? `${out[key]}; ${note}` : note;
-  }
-  return out;
-}
 
 function newValues(changes: Record<string, FieldChange>) {
   return Object.fromEntries(

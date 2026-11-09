@@ -20,8 +20,6 @@ export const UNIQUENESS_FIELDS = [
 
 /** Below this a rewritten description is not written. `AI_MIN_UNIQUENESS=0` turns it off. */
 export const DEFAULT_MIN_UNIQUENESS = 50;
-/** Another product's text sharing this much of the new one is worth a look. */
-export const OTHERS_WARNING_SHARE = 50;
 
 export function minUniqueness(env = process.env.AI_MIN_UNIQUENESS): number {
   const value = Number(env?.trim());
@@ -36,31 +34,26 @@ export type FieldQuality = {
   uniqueness?: number | null;
   /** The detector's «written by a model» probability, 0–1. A figure, not a verdict. */
   ai?: number | null;
-  /** The other product / supplier text sharing most of it. */
-  overlap?: { title: string; url: string | null; share: number } | null;
 };
 
 export type RewriteVerdict = {
   quality: Record<string, FieldQuality>;
   rejected: Rejections;
-  warnings: Record<string, string>;
+  /** Pieces copied from the old/supplier text, per field (for the repair request). */
+  copied: Record<string, string[]>;
 };
 
 export function rewriteVerdict(
   figures: Record<string, FieldQuality>,
+  copied: Record<string, string[]> = {},
   min = minUniqueness(),
 ): RewriteVerdict {
   const rejected: Rejections = {};
-  const warnings: Record<string, string> = {};
   for (const [field, q] of Object.entries(figures)) {
     if (min > 0 && q.uniqueness != null && q.uniqueness < min) {
       rejected[field] =
         `уникальность ${q.uniqueness}% — почти прежний текст или текст поставщика (нужно от ${min}%)`;
     }
-    if (q.overlap && q.overlap.share >= OTHERS_WARNING_SHARE) {
-      warnings[field] =
-        `совпадает с «${q.overlap.title}» на ${q.overlap.share}%`;
-    }
   }
-  return { quality: figures, rejected, warnings };
+  return { quality: figures, rejected, copied };
 }
