@@ -115,7 +115,19 @@ in `PROD_SSH_PASS` from the owner — never commit it).
    same apply. The fields stay locked after a rollback — unlock in the admin
    if the supplier's updates should flow again.
 
-7. **Clean up** `/tmp/cep-*` on the host and in the container
+7. **Mark the texts as AI-written** — always, right after apply, on the same file:
+   ```sh
+   cat $SK/mark-ai.js | $SK/prod.sh 'cat > /tmp/cep-mark-ai.js && docker cp -q /tmp/cep-mark-ai.js construction-tools-api:/tmp/cep-mark-ai.js && \
+     docker exec construction-tools-api node /tmp/cep-mark-ai.js /tmp/cep-apply.json'
+   ```
+   It adds `descriptionShort`/`descriptionFull` to `Product.aiLockedFields`
+   («изменено ИИ»): «Карточек с ИИ-текстами» in /admin/plans counts the card,
+   the assistant's autopilot and the «ИИ не писал поле» filter skip it — the
+   admin PATCH alone left only `lockedFields`, which AI tasks do not respect,
+   so DeepSeek would have rewritten Claude's text. A rollback leaves the mark;
+   remove it from `aiLockedFields` too if the supplier text should flow again.
+
+8. **Clean up** `/tmp/cep-*` on the host and in the container
    (`docker exec -u root construction-tools-api rm -f /tmp/cep-*`), report:
    written / not written (why), uniqueness and detector medians, the slugs of
    two or three examples to look at.
