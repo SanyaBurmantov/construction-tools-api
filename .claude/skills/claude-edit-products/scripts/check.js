@@ -9,7 +9,8 @@ const { validateAnswer } = require('/backend/dist/ai/ai-validate.js');
 const { uniqueness } = require('/backend/dist/ai-detector/uniqueness.js');
 const MIN_UNIQUE = 50;      // hard: the site refuses below it
 const HUMANIZE_AT = 0.8;    // detector probability that asks for a rewrite pass
-const STOCK = /предназначен|обеспечива|позволя|идеально|отлично подход|незаменим|широк(ий|ого) (спектр|диапазон)|высокое качество|надежн|надёжн|долговечн|удобств|эффективн|оптимальн|благодаря|является|данн(ый|ая|ое|ого)|вариант|линейк/i;
+// Word starts only: «карданный» is not «данный» (\b does not work for Cyrillic in JS).
+const STOCK = /(?<![\p{L}])(?:предназначен|обеспечива|позволя|идеально|отлично подход|незаменим|широк(?:ий|ого) (?:спектр|диапазон)|высокое качество|надежн|надёжн|долговечн|удобств|эффективн|оптимальн|благодаря|является|данн(?:ый|ая|ое|ого)(?![\p{L}])|вариант|линейк)/iu;
 
 const cards = new Map(JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).map((c) => [c.id, c]));
 const texts = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
