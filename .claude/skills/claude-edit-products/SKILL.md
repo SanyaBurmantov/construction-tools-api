@@ -40,8 +40,24 @@ to the apply step is read-only.
 ## Steps
 
 Paths: `SK=.claude/skills/claude-edit-products/scripts`, work dir = the
-session scratchpad (`$W`). Prod access: `$SK/prod.sh` (SSH key, or the password
-in `PROD_SSH_PASS` from the owner — never commit it).
+session scratchpad (`$W`). **Every prod step goes through one wrapper**,
+`$SK/cep.sh` (export / check / apply / mark / cleanup), so one permission
+rule covers the run: `Bash(.claude/skills/claude-edit-products/scripts/cep.sh *)`
+(and the absolute-path form) in `.claude/settings.local.json`. Prod access:
+an SSH key, or the password in `PROD_SSH_PASS` from the user's own settings
+env — never the repo.
+
+**Short form of the whole run:**
+```sh
+$SK/cep.sh export 100 '' $(date +%F) $W/cards.json   # 1, read-only
+#   2–3: brief + one writer subagent → $W/texts.json
+$SK/cep.sh check $W/cards.json $W/texts.json > $W/report.json   # 4, read-only
+#   5: humanize pass → re-check → $W/final.json (best passing version per field)
+$SK/cep.sh apply $W/final.json   # 6, writes (owner's «да»)
+$SK/cep.sh mark  $W/final.json   # 7, «изменено ИИ»
+$SK/cep.sh cleanup               # 8
+```
+The longer per-step commands below are what the wrapper runs.
 
 1. **Export** (read-only):
    ```sh
