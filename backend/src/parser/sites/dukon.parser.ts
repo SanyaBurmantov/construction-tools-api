@@ -1,3 +1,4 @@
+import { SupplierConnectionService } from '../connection/supplier-connection.service';
 import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
@@ -44,7 +45,6 @@ import {
 } from './dukon.parse';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
 import { ParserLogService } from '../parser-log.service';
@@ -104,8 +104,17 @@ export class DukonParserService extends SupplierQueueParser {
     categoryTree: CategoryTreeService,
     settings: ParserSettingsService,
     identity: ProductIdentityService,
+    connection: SupplierConnectionService,
   ) {
-    super(prisma, parserLogService, offers, categoryTree, settings, identity);
+    super(
+      prisma,
+      parserLogService,
+      offers,
+      categoryTree,
+      settings,
+      identity,
+      connection,
+    );
   }
 
   protected isSkippedError(error: unknown) {
@@ -372,7 +381,7 @@ export class DukonParserService extends SupplierQueueParser {
 
   async parseProductUrl(url: string) {
     url = this.canonicalUrl(url);
-    const res = await fetchWithTimeout(url, {
+    const res = await this.fetchSupplier(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
     if (!res.ok) throw new ParserHttpError(res.status, url);
@@ -517,7 +526,7 @@ export class DukonParserService extends SupplierQueueParser {
   }
 
   async previewProductUrl(url: string) {
-    const res = await fetchWithTimeout(url, {
+    const res = await this.fetchSupplier(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
     if (!res.ok) throw new ParserHttpError(res.status, url);
@@ -862,7 +871,7 @@ export class DukonParserService extends SupplierQueueParser {
   }
 
   private async fetchText(url: string) {
-    const res = await fetchWithTimeout(url, {
+    const res = await this.fetchSupplier(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
     if (!res.ok) throw new ParserHttpError(res.status, url);

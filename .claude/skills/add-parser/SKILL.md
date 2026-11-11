@@ -74,6 +74,7 @@ Export `parse<Code>(html: string): TParsedProduct` (`{ name, price?, images, des
 - `processSitemapUrl(url)` — increment `attempts`/`lastTriedAt`, call `parseProductUrl`,
   mark `DONE`; on a `Skipped<Code>Error` mark `SKIPPED` (no ParserError), else `FAILED`
   + `parserLogService.addError`.
+- **Every request to the supplier goes through `this.fetchSupplier(url, init, opts)`** (base class → `SupplierConnectionService`), never `fetchWithTimeout` or `fetch` directly: that is what picks direct or proxy and counts the answer towards the «блокирует» state on `/admin/parsing`. Add the supplier's `host` to `PARSER_SOURCES` — URLs are matched to a source by host.
 - `parseProductUrl(url)` — fetch, `parse<Code>`, guard empty name + anti-bot pages,
   `upsertSource` → categories → brand → **upsert `Product`** → `saveSpecifications` →
   **`saveSourceProduct`**.

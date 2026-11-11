@@ -1,3 +1,4 @@
+import { PROXY_MODES } from '../connection/supplier-connection';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -6,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -70,6 +72,11 @@ export class ParserSourceSettingsDto {
   @IsOptional()
   @IsString()
   categoryExcludeRegex?: string;
+
+  /** off | auto | always — when this source goes through the proxy. */
+  @IsOptional()
+  @IsIn(PROXY_MODES)
+  proxyMode?: (typeof PROXY_MODES)[number];
 }
 
 export const CATEGORY_QUEUE_STATUSES = [
@@ -121,4 +128,17 @@ export class CategoryQueueProcessDto {
   @Min(1)
   @Max(50)
   limit?: number;
+}
+
+export class ParserProxyDto {
+  /** http(s)://user:password@host:port; '' or null removes it. Redacted in the audit log. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  proxyUrl?: string | null;
+
+  /** Supplier photos through the proxy too (traffic: ~65 KB a photo). */
+  @IsOptional()
+  @IsBoolean()
+  images?: boolean;
 }

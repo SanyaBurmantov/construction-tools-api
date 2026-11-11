@@ -1,3 +1,4 @@
+import { directConnection } from './connection/direct-connection.testing';
 import { ParserWatchdogCron } from './parser-watchdog.cron';
 
 function setup() {
@@ -25,6 +26,7 @@ function setup() {
     } as never,
     { requeueRecoverable: jest.fn().mockResolvedValue({ total: 0 }) } as never,
     { notifyParserProblem } as never,
+    directConnection(),
   );
   return { cron, health, freshness, notifyParserProblem, isSourceCronEnabled };
 }
@@ -87,5 +89,44 @@ describe('ParserWatchdogCron price freshness', () => {
         reason: 'Успешного запуска не было более 2 ч',
       }),
     );
+  });
+});
+
+describe('ParserWatchdogCron supplier connection', () => {
+  it('alerts once when a supplier moves to the proxy, once when it is fully blocked, again after recovery', async () => {
+    const { cron, health, notifyParserProblem } = setup();
+    health.priceFreshness = [];
+    const connection = (
+      cron as unknown as { connection: { routeFor: jest.Mock } }
+    ).connection;
+    let state = { route: 'DIRECT', usable: true };
+    connection.routeFor = jest.fn((code: string) =>
+      Promise.resolve({
+        mode: 'auto',
+        proxyConfigured: true,
+        snapshot: {},
+        ...(code === 'dukon' ? state : { route: 'DIRECT', usable: true }),
+      }),
+    );
+    const keys = () =>
+      notifyParserProblem.mock.calls.map(([p]) => (p as { key: string }).key);
+
+    await cron.watch();
+    expect(notifyParserProblem).not.toHaveBeenCalled();
+
+    state = { route: 'PROXY', usable: true };
+    await cron.watch();
+    await cron.watch();
+    expect(keys()).toEqual(['dukon-connection-proxy']);
+
+    state = { route: 'PROXY', usable: false };
+    await cron.watch();
+    expect(keys()).toEqual(['dukon-connection-proxy', 'dukon-connection-down']);
+
+    state = { route: 'DIRECT', usable: true };
+    await cron.watch();
+    state = { route: 'PROXY', usable: false };
+    await cron.watch();
+    expect(keys()).toHaveLength(3);
   });
 });

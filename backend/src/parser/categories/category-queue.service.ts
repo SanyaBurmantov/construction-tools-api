@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
+import { SupplierConnectionService } from '../connection/supplier-connection.service';
 import { SitemapsService } from '../sitemaps/sitemaps.service';
 import { ParserLogService } from '../parser-log.service';
 import { ParserHttpError } from '../parser-http.error';
@@ -35,6 +35,7 @@ export class CategoryQueueService {
     private readonly sitemaps: SitemapsService,
     private readonly parserLog: ParserLogService,
     private readonly settings: ParserSettingsService,
+    private readonly connection: SupplierConnectionService,
   ) {}
 
   /* ------------------------------------------------------------ read ---- */
@@ -198,6 +199,8 @@ export class CategoryQueueService {
 
   async processBatch(sourceCode: string, limit = 5) {
     this.ensureCrawlable(sourceCode);
+    // Same guard as the products batch: a blocked site is not crawled.
+    await this.connection.assertUsable(sourceCode);
 
     // Never-crawled first, then the stalest — the products queue's rule. By
     // level and url alone, the categories the watchdog re-queues every 24 h
@@ -346,7 +349,7 @@ export class CategoryQueueService {
   }
 
   private async fetchText(url: string) {
-    const res = await fetchWithTimeout(url, {
+    const res = await this.connection.fetch(url, {
       headers: {
         'user-agent':
           'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',

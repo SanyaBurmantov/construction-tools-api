@@ -2,6 +2,14 @@ import { AdminActionLogService } from './admin-action-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 describe('AdminActionLogService.redact', () => {
+  it('hides the parser proxy address — its password is inside the URL', () => {
+    const redacted = AdminActionLogService.redact({
+      proxyUrl: 'http://user:secret@1.2.3.4:8000',
+      images: true,
+    }) as Record<string, unknown>;
+    expect(redacted).toEqual({ proxyUrl: '[redacted]', images: true });
+  });
+
   it('replaces anything that looks like a secret', () => {
     const redacted = AdminActionLogService.redact({
       login: 'manager',

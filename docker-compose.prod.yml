@@ -86,6 +86,9 @@ x-backend-environment: &backend-environment
   # и после первого переключения решает уже он, а не эта переменная.
   PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
   PARSER_FETCH_TIMEOUT_MS: ${PARSER_FETCH_TIMEOUT_MS:-20000}
+  # HTTP(S)-прокси для поставщиков, если в /admin/parsing не задан свой:
+  # http://логин:пароль@host:порт. Когда и как его использовать — режим источника.
+  PARSER_PROXY_URL: ${PARSER_PROXY_URL:-}
   # Сторож: доля ошибок для «сломан», задержка и потолок повторов.
   PARSER_FAILURE_RATE_THRESHOLD: ${PARSER_FAILURE_RATE_THRESHOLD:-0.5}
   PARSER_PRICE_MAX_AGE_HOURS: ${PARSER_PRICE_MAX_AGE_HOURS:-48}

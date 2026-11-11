@@ -887,6 +887,29 @@ model ParserCatalogCrawl {
   updatedAt  DateTime @updatedAt
 }
 
+/// How a supplier answers our server, per route (parser/connection/).
+/// A route that fails BLOCKED_AFTER_FAILURES times in a row is BLOCKED; in
+/// `auto` proxy mode that sends the source through the proxy.
+model SupplierConnection {
+  sourceCode          String
+  /// DIRECT | PROXY
+  route               String
+  /// UNKNOWN | OK | DEGRADED | BLOCKED
+  state               String    @default("UNKNOWN")
+  /// UNREACHABLE (no connection) | DENIED (403/429)
+  failureKind         String?
+  consecutiveFailures Int       @default(0)
+  lastOkAt            DateTime?
+  lastFailAt          DateTime?
+  lastError           String?
+  lastStatus          Int?
+  lastMs              Int?
+  blockedSince        DateTime?
+  updatedAt           DateTime  @updatedAt
+
+  @@id([sourceCode, route])
+}
+
 /// Old category addresses retained after consolidating the legacy catalog tree.
 model CategoryRedirect {
   slug       String   @id

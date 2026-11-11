@@ -15,7 +15,9 @@ export type AdminActionEntry = {
 };
 
 /** Anything whose name suggests a secret never reaches the log. */
-const SECRET_KEY = /(password|token|secret|passwordHash|authorization)/i;
+/** `proxyUrl` carries the proxy's login and password inside the URL. */
+const SECRET_KEY =
+  /(password|token|secret|passwordHash|authorization|proxyUrl)/i;
 /** The log is evidence of what changed, not a replayable request body. */
 const MAX_PAYLOAD_CHARS = 4000;
 const DEFAULT_TTL_DAYS = 180;

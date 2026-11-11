@@ -2,6 +2,7 @@
 import type {
   BulkRetryResponse,
   CategoryRow,
+  ConnectionCheck,
   DataQualityReport,
   MediaMirrorStats,
   ParserError,
@@ -9,6 +10,7 @@ import type {
   ParserJob,
   ParserOverview,
   ParserRun,
+  ProxyMode,
   ParserSourceOverview,
   Source,
   SourceDraft,
@@ -190,6 +192,41 @@ const saveSourceSettings = (code: string) =>
     await adminFetch(`/parser/sources/${code}`, { method: 'PATCH', body })
     return `${code}: настройки сохранены`
   }, code)
+
+/* -------------------------------------------------------------- connection */
+
+/** The proxy address: `null` removes it. Sent once, never shown back in full. */
+const saveProxy = (proxyUrl: string | null) =>
+  runControl(proxyUrl ? 'proxy' : 'proxy-clear', async () => {
+    await adminFetch('/parser/proxy', { method: 'PUT', body: { proxyUrl: proxyUrl ?? '' } })
+    return proxyUrl ? 'Прокси сохранён' : 'Прокси убран'
+  })
+
+const toggleProxyImages = (images: boolean) =>
+  runControl('proxy-images', async () => {
+    await adminFetch('/parser/proxy', { method: 'PUT', body: { images } })
+    return images ? 'Фото пойдут через прокси' : 'Фото снова напрямую'
+  })
+
+const setProxyMode = (code: string, proxyMode: ProxyMode) =>
+  runControl(`mode-${code}`, async () => {
+    await adminFetch(`/parser/sources/${code}`, { method: 'PATCH', body: { proxyMode } })
+    return `${code}: режим прокси сохранён`
+  })
+
+/** Knocks on the supplier now; the answer is the toast, the table reloads. */
+const checkConnection = (code: string) =>
+  runControl(`check-${code}`, async () => {
+    const answer = await adminFetch<ConnectionCheck>(
+      `/parser/sources/${code}/connection/check`,
+      { method: 'POST' },
+    )
+    return answer.results
+      .map(result => `${result.route === 'PROXY' ? 'через прокси' : 'напрямую'}: ${
+        result.ok ? `пускает (${result.status}, ${result.ms} мс)` : `нет — ${result.error ?? `HTTP ${result.status}`}`
+      }`)
+      .join('; ')
+  })
 
 /* ------------------------------------------------------------------ queues */
 
@@ -510,6 +547,15 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
       @toggle-source="toggleSource"
       @save="saveSourceSettings"
       @run-job="runJob"
+    />
+
+    <AdminParsingConnectionPanel
+      :control="control"
+      :busy="controlBusy"
+      @save-proxy="saveProxy"
+      @toggle-images="toggleProxyImages"
+      @set-mode="setProxyMode"
+      @check="checkConnection"
     />
 
     <AdminParsingCronHealth :health="health" />

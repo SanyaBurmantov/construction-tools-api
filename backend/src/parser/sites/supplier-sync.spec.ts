@@ -1,3 +1,4 @@
+import { directConnection } from '../connection/direct-connection.testing';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
@@ -87,6 +88,7 @@ describe.each(cases)(
         d.categoryTree as never,
         d.settings as never,
         d.identity as never,
+        directConnection(),
       );
       fetchMock.mockResolvedValue(
         new Response(
@@ -128,6 +130,7 @@ describe('Dukon offer lifecycle', () => {
       d.categoryTree as never,
       d.settings as never,
       d.identity as never,
+      directConnection(),
     );
     fetchMock.mockResolvedValue(new Response(null, { status }));
     expect(
@@ -148,6 +151,7 @@ describe('Dukon offer lifecycle', () => {
       d.categoryTree as never,
       d.settings as never,
       d.identity as never,
+      directConnection(),
     );
     const html = readFileSync(
       join(__dirname, 'fixtures', 'dukon-product.html'),
@@ -172,6 +176,7 @@ describe('Dukon offer lifecycle', () => {
       d.categoryTree as never,
       d.settings as never,
       d.identity as never,
+      directConnection(),
     );
     fetchMock.mockResolvedValue(
       new Response(
@@ -202,6 +207,7 @@ describe('Dukon offer lifecycle', () => {
       d.categoryTree as never,
       d.settings as never,
       d.identity as never,
+      directConnection(),
     );
     fetchMock.mockResolvedValue(
       new Response(
@@ -252,6 +258,7 @@ describe.each([
         d.categoryTree as never,
         d.settings as never,
         d.identity as never,
+        directConnection(),
       );
     }
 
