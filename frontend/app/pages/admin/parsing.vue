@@ -9,6 +9,7 @@ import type {
   ParserHealth,
   ParserJob,
   ParserOverview,
+  ParserProxy,
   ParserRun,
   ProxyMode,
   ParserSourceOverview,
@@ -195,16 +196,43 @@ const saveSourceSettings = (code: string) =>
 
 /* -------------------------------------------------------------- connection */
 
-/** The proxy address: `null` removes it. Sent once, never shown back in full. */
-const saveProxy = (proxyUrl: string | null) =>
-  runControl(proxyUrl ? 'proxy' : 'proxy-clear', async () => {
-    await adminFetch('/parser/proxy', { method: 'PUT', body: { proxyUrl: proxyUrl ?? '' } })
-    return proxyUrl ? 'Прокси сохранён' : 'Прокси убран'
+/** Proxy addresses are sent once and never shown back in full. */
+const addProxy = (proxy: { name: string, proxyUrl: string }) =>
+  runControl('proxy-add', async () => {
+    await adminFetch('/parser/proxies', {
+      method: 'POST',
+      body: { name: proxy.name || undefined, proxyUrl: proxy.proxyUrl },
+    })
+    return 'Прокси добавлен'
+  })
+
+const updateProxy = (id: string, change: { name?: string, proxyUrl?: string }) =>
+  runControl(`proxy-${id}`, async () => {
+    await adminFetch(`/parser/proxies/${id}`, { method: 'PATCH', body: change })
+    return change.proxyUrl ? 'Адрес прокси заменён — его история проверок начнётся заново' : 'Прокси переименован'
+  })
+
+/** Asked first: the suppliers using it move to the first proxy left. */
+const proxyToDelete = ref<ParserProxy | null>(null)
+const deleteProxy = () => {
+  const proxy = proxyToDelete.value
+  if (!proxy) return
+  return runControl(`proxy-delete-${proxy.id}`, async () => {
+    await adminFetch(`/parser/proxies/${proxy.id}`, { method: 'DELETE' })
+    proxyToDelete.value = null
+    return `Прокси «${proxy.name}» удалён`
+  })
+}
+
+const setSourceProxy = (code: string, proxyId: string) =>
+  runControl(`choice-${code}`, async () => {
+    await adminFetch(`/parser/sources/${code}`, { method: 'PATCH', body: { proxyId } })
+    return `${code}: прокси выбран`
   })
 
 const toggleProxyImages = (images: boolean) =>
   runControl('proxy-images', async () => {
-    await adminFetch('/parser/proxy', { method: 'PUT', body: { images } })
+    await adminFetch('/parser/proxy-settings', { method: 'PUT', body: { images } })
     return images ? 'Фото пойдут через прокси' : 'Фото снова напрямую'
   })
 
@@ -552,11 +580,28 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
     <AdminParsingConnectionPanel
       :control="control"
       :busy="controlBusy"
-      @save-proxy="saveProxy"
+      @add-proxy="addProxy"
+      @update-proxy="updateProxy"
+      @delete-proxy="proxy => (proxyToDelete = proxy)"
       @toggle-images="toggleProxyImages"
       @set-mode="setProxyMode"
+      @set-proxy="setSourceProxy"
       @check="checkConnection"
     />
+
+    <UiConfirm
+      :open="Boolean(proxyToDelete)"
+      :title="`Удалить прокси «${proxyToDelete?.name ?? ''}»?`"
+      :busy="controlBusy === `proxy-delete-${proxyToDelete?.id}`"
+      @update:open="open => { if (!open) proxyToDelete = null }"
+      @confirm="deleteProxy"
+    >
+      <template v-if="proxyToDelete?.usedBy.length">
+        Его используют: {{ proxyToDelete.usedBy.join(', ') }}. Они перейдут на
+        первый оставшийся прокси, а если других нет — пойдут напрямую.
+      </template>
+      <template v-else>Его сейчас никто не использует.</template>
+    </UiConfirm>
 
     <AdminParsingCronHealth :health="health" />
 

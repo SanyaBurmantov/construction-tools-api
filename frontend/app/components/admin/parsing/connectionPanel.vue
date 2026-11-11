@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { ConnectionState, ParserOverview, ProxyMode, RouteSnapshot } from '~/types/parsing'
+import type { ConnectionState, ParserOverview, ParserProxy, ProxyMode, RouteSnapshot } from '~/types/parsing'
 
 /**
- * «Соединение с поставщиками»: does each supplier let our server in, directly
- * and through the proxy, and which way the parser goes now.
+ * «Соединение с поставщиками»: the proxies we have, and for each supplier
+ * whether it lets our server in — directly and through its proxy — which proxy
+ * it uses and when.
  *
  * Presentational like the other panels: the page owns the requests.
  */
@@ -13,13 +14,14 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'save-proxy': [string | null]
+  'add-proxy': [{ name: string, proxyUrl: string }]
+  'update-proxy': [string, { name?: string, proxyUrl?: string }]
+  'delete-proxy': [ParserProxy]
   'toggle-images': [boolean]
   'set-mode': [string, ProxyMode]
+  'set-proxy': [string, string]
   'check': [string]
 }>()
-
-const proxyInput = ref('')
 
 const STATE_LABEL: Record<ConnectionState, string> = {
   UNKNOWN: 'нет данных',
@@ -40,7 +42,9 @@ const MODE_OPTIONS: Array<{ value: ProxyMode, label: string }> = [
 ]
 
 const sources = computed(() => props.control?.sources ?? [])
-const proxy = computed(() => props.control?.proxy ?? null)
+const proxies = computed(() => props.control?.proxies ?? [])
+const proxyOptions = computed(() => proxies.value.map(proxy => ({ value: proxy.id, label: proxy.name })))
+const hostOf = (code: string) => sources.value.find(source => source.code === code)?.host ?? code
 
 function detail(route: RouteSnapshot) {
   if (route.state === 'UNKNOWN') return 'запросов ещё не было'
@@ -52,11 +56,29 @@ function detail(route: RouteSnapshot) {
   return `${why}${since} · ${route.consecutiveFailures} ошибок подряд`
 }
 
-function saveProxy() {
-  const value = proxyInput.value.trim()
-  if (!value) return
-  emit('save-proxy', value)
-  proxyInput.value = ''
+/* New proxy */
+const newProxy = reactive({ name: '', proxyUrl: '' })
+function addProxy() {
+  if (!newProxy.proxyUrl.trim()) return
+  emit('add-proxy', { name: newProxy.name.trim(), proxyUrl: newProxy.proxyUrl.trim() })
+  newProxy.name = ''
+  newProxy.proxyUrl = ''
+}
+
+/* Editing one proxy: a new name and/or a new address (the old one is never shown). */
+const editing = ref<string | null>(null)
+const edit = reactive({ name: '', proxyUrl: '' })
+function startEdit(proxy: ParserProxy) {
+  editing.value = proxy.id
+  edit.name = proxy.name
+  edit.proxyUrl = ''
+}
+function saveEdit(proxy: ParserProxy) {
+  const change: { name?: string, proxyUrl?: string } = {}
+  if (edit.name.trim() && edit.name.trim() !== proxy.name) change.name = edit.name.trim()
+  if (edit.proxyUrl.trim()) change.proxyUrl = edit.proxyUrl.trim()
+  if (Object.keys(change).length) emit('update-proxy', proxy.id, change)
+  editing.value = null
 }
 </script>
 
@@ -66,46 +88,83 @@ function saveProxy() {
       <div class="card-head">
         <h2>Соединение с поставщиками</h2>
         <p>
-          Пускает ли поставщик наш сервер — напрямую и через прокси. Сервер
-          проверяет каждые 10 минут сам; пять ошибок подряд — «блокирует», и
-          пачки этого источника не запускаются, пока соединение не вернётся.
+          Пускает ли поставщик наш сервер — напрямую и через выбранный прокси.
+          Сервер проверяет каждые 10 минут сам; пять ошибок подряд — «блокирует»,
+          и пачки этого источника не запускаются, пока соединение не вернётся.
         </p>
       </div>
     </template>
 
-    <div class="pad proxy">
-      <UiField
-        label="Прокси"
-        :hint="proxy?.configured
-          ? `Сейчас: ${proxy.url}${proxy.from === 'env' ? ' (из переменной PARSER_PROXY_URL)' : ''}. Пароль не показывается и в журнал не пишется.`
-          : 'HTTP(S)-прокси вида http://логин:пароль@host:порт. SOCKS не поддерживается.'"
-      >
-        <div class="proxy-row">
-          <UiInput
-            v-model="proxyInput"
-            size="sm"
-            type="password"
-            autocomplete="off"
-            :placeholder="proxy?.configured ? 'Новый адрес прокси' : 'http://логин:пароль@host:порт'"
-            @keydown.enter="saveProxy"
-          />
-          <UiButton size="sm" :disabled="!proxyInput.trim()" :loading="busy === 'proxy'" @click="saveProxy">
-            Сохранить
-          </UiButton>
-          <UiButton
-            v-if="proxy?.configured"
-            size="sm"
-            variant="ghost"
-            :loading="busy === 'proxy-clear'"
-            @click="emit('save-proxy', null)"
-          >
-            Убрать прокси
-          </UiButton>
-        </div>
-      </UiField>
+    <div class="pad proxies">
+      <h3>Прокси</h3>
+      <p class="muted hint">
+        HTTP(S)-прокси вида http://логин:пароль@host:порт (SOCKS не поддерживается).
+        Пароль после сохранения не показывается и в журнал не пишется. У каждого
+        поставщика ниже — свой прокси из списка; не выбран — первый.
+      </p>
+
+      <ul v-if="proxies.length" class="proxy-list">
+        <li v-for="proxy in proxies" :key="proxy.id" class="proxy-item">
+          <template v-if="editing === proxy.id">
+            <UiInput v-model="edit.name" size="sm" placeholder="Название" class="proxy-name" />
+            <UiInput
+              v-model="edit.proxyUrl"
+              size="sm"
+              type="password"
+              autocomplete="off"
+              placeholder="Новый адрес (пусто — оставить прежний)"
+              class="proxy-url"
+              @keydown.enter="saveEdit(proxy)"
+            />
+            <div class="proxy-actions">
+              <UiButton size="sm" :loading="busy === `proxy-${proxy.id}`" @click="saveEdit(proxy)">Сохранить</UiButton>
+              <UiButton size="sm" variant="ghost" @click="editing = null">Отмена</UiButton>
+            </div>
+          </template>
+          <template v-else>
+            <div class="proxy-info">
+              <strong>{{ proxy.name }}</strong>
+              <span class="code">{{ proxy.url }}</span>
+              <p class="muted hint">
+                {{ proxy.usedBy.length ? `у ${proxy.usedBy.map(hostOf).join(', ')}` : 'никто не использует' }}
+                <template v-if="proxy.from === 'env'"> · из переменной PARSER_PROXY_URL, меняется в .env.prod</template>
+              </p>
+            </div>
+            <div v-if="proxy.from === 'admin'" class="proxy-actions">
+              <UiButton size="sm" variant="ghost" @click="startEdit(proxy)">Изменить</UiButton>
+              <UiButton
+                size="sm"
+                variant="ghost"
+                :loading="busy === `proxy-delete-${proxy.id}`"
+                @click="emit('delete-proxy', proxy)"
+              >
+                Удалить
+              </UiButton>
+            </div>
+          </template>
+        </li>
+      </ul>
+      <p v-else class="muted">Прокси не добавлены — все поставщики идут напрямую.</p>
+
+      <div class="proxy-add">
+        <UiInput v-model="newProxy.name" size="sm" placeholder="Название (необязательно)" class="proxy-name" />
+        <UiInput
+          v-model="newProxy.proxyUrl"
+          size="sm"
+          type="password"
+          autocomplete="off"
+          placeholder="http://логин:пароль@host:порт"
+          class="proxy-url"
+          @keydown.enter="addProxy"
+        />
+        <UiButton size="sm" :disabled="!newProxy.proxyUrl.trim()" :loading="busy === 'proxy-add'" @click="addProxy">
+          Добавить прокси
+        </UiButton>
+      </div>
+
       <UiCheckbox
-        :model-value="proxy?.images ?? false"
-        :disabled="!proxy?.configured || busy === 'proxy-images'"
+        :model-value="control?.proxyImages ?? false"
+        :disabled="!proxies.length || busy === 'proxy-images'"
         label="Фото поставщика тоже через прокси (≈65 КБ на фото — учитывайте тариф прокси)"
         @update:model-value="value => emit('toggle-images', Boolean(value))"
       />
@@ -116,7 +175,7 @@ function saveProxy() {
         { key: 'name', label: 'Поставщик' },
         { key: 'direct', label: 'Напрямую' },
         { key: 'proxy', label: 'Через прокси' },
-        { key: 'mode', label: 'Режим', width: '230px' },
+        { key: 'mode', label: 'Прокси и режим', width: '240px' },
         { key: 'check', label: '', width: '120px', nowrap: true }
       ]"
       :rows="sources"
@@ -128,7 +187,9 @@ function saveProxy() {
         <p v-if="row.connection" class="hint" :class="row.connection.usable ? 'muted' : 'row-error'">
           {{ !row.connection.usable
             ? 'парсинг стоит — идти некуда'
-            : row.connection.route === 'PROXY' ? 'сейчас идёт через прокси' : 'сейчас идёт напрямую' }}
+            : row.connection.route === 'PROXY'
+              ? `сейчас идёт через «${row.connection.proxy?.name}»`
+              : 'сейчас идёт напрямую' }}
         </p>
       </template>
 
@@ -144,26 +205,35 @@ function saveProxy() {
       </template>
 
       <template #cell-proxy="{ row }">
-        <template v-if="row.connection?.proxy">
-          <UiBadge :tone="STATE_TONE[row.connection.proxy.state]" size="sm">
-            {{ STATE_LABEL[row.connection.proxy.state] }}
+        <template v-if="row.connection?.proxyState">
+          <UiBadge :tone="STATE_TONE[row.connection.proxyState.state]" size="sm">
+            {{ STATE_LABEL[row.connection.proxyState.state] }}
           </UiBadge>
-          <p class="muted hint" :title="row.connection.proxy.lastError ?? ''">
-            {{ detail(row.connection.proxy) }}
+          <p class="muted hint" :title="row.connection.proxyState.lastError ?? ''">
+            {{ detail(row.connection.proxyState) }}
           </p>
         </template>
-        <span v-else class="muted">прокси не настроен</span>
+        <span v-else class="muted">прокси нет</span>
       </template>
 
       <template #cell-mode="{ row }">
-        <UiSelect
-          v-if="row.connection"
-          :model-value="row.connection.mode"
-          :options="MODE_OPTIONS"
-          size="sm"
-          :disabled="!proxy?.configured || busy === `mode-${row.code}`"
-          @update:model-value="value => emit('set-mode', row.code, value as ProxyMode)"
-        />
+        <div v-if="row.connection" class="mode">
+          <UiSelect
+            :model-value="row.connection.proxy?.id ?? null"
+            :options="proxyOptions"
+            placeholder="прокси нет"
+            size="sm"
+            :disabled="!proxies.length || busy === `choice-${row.code}`"
+            @update:model-value="value => value && emit('set-proxy', row.code, String(value))"
+          />
+          <UiSelect
+            :model-value="row.connection.mode"
+            :options="MODE_OPTIONS"
+            size="sm"
+            :disabled="!proxies.length || busy === `mode-${row.code}`"
+            @update:model-value="value => emit('set-mode', row.code, value as ProxyMode)"
+          />
+        </div>
       </template>
 
       <template #cell-check="{ row }">
@@ -181,21 +251,67 @@ function saveProxy() {
 </template>
 
 <style scoped>
-/* The page owns the shared chrome (.pad, .muted, .hint, .row-error …) via :deep(). */
-.proxy {
+/* The page owns the shared chrome (.pad, .muted, .hint, .code, .row-error …) via :deep(). */
+.proxies {
   display: grid;
   gap: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.proxy-row {
+.proxies h3 {
+  font-size: var(--text-base);
+  color: var(--text-strong);
+}
+
+.proxy-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.proxy-item,
+.proxy-add {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
 }
 
-.proxy-row :deep(.ui-input) {
+.proxy-item {
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.proxy-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.proxy-info .hint {
+  flex-basis: 100%;
+}
+
+.proxy-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.proxy-name {
+  flex: 0 1 200px;
+}
+
+.proxy-url {
   flex: 1 1 280px;
+}
+
+.mode {
+  display: grid;
+  gap: var(--space-1);
 }
 </style>

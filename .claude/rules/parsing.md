@@ -44,7 +44,8 @@ code default*, and the admin writes the rows via `PATCH /admin/parser/cron` and
 | crawl page cap | `parser.<code>.maxPages` | `<SOURCE>_DISCOVERY_MAX_PAGES` |
 | categories per run | `cron.<code>.categoryBatchLimit` | `<SOURCE>_CATEGORY_BATCH_LIMIT` |
 | category filters | `parser.<code>.category{Include,Exclude}` | `<SOURCE>_CATEGORY_*_REGEX` |
-| proxy address (all sources) | `parser.proxyUrl` (`''` = none) | `PARSER_PROXY_URL` |
+| proxies | table `ParserProxy` (name + url) | `PARSER_PROXY_URL` (listed last, read-only) |
+| proxy of a source | `parser.<code>.proxyId` | — (default: the first proxy) |
 | proxy mode | `parser.<code>.proxyMode` (`off`/`auto`/`always`) | — (default `auto`) |
 | photos through the proxy | `parser.proxyImages` | — (default off) |
 
@@ -171,9 +172,17 @@ per route (DIRECT / PROXY) in `SupplierConnection`: any HTTP answer but 403/429
 is OK (a 404 is the site working), 403/429 is DENIED, no answer is
 UNREACHABLE; `BLOCKED_AFTER_FAILURES` (5) in a row = **BLOCKED**, one answer =
 OK again. Rules are pure and tested (`supplier-connection.ts`).
-- **Route**: mode `off` = direct, `always` = proxy, `auto` (default) = proxy
-  only while direct is BLOCKED and back once direct answers. No proxy
-  configured = always direct. Photos stay direct unless `parser.proxyImages`
+- **Proxies are a list** (`ParserProxy`, `/admin/parsing`: add, rename, new
+  address, delete) and **each source picks one** (`proxyId`; none picked =
+  the first in the list; its proxy deleted = the first left). The PROXY route
+  state is per source — «this supplier through its proxy» — and is reset when
+  the source gets another proxy or its proxy gets a new address (renaming
+  keeps it). `parser.proxyUrl`, the single proxy of the first release, was
+  copied into the list by `20261111150000_parser_proxies` and is no longer
+  read (left for the previous release).
+- **Route**: mode `off` = direct, `always` = its proxy, `auto` (default) =
+  its proxy only while direct is BLOCKED and back once direct answers. No
+  proxy at all = always direct. Photos stay direct unless `parser.proxyImages`
   (a paid proxy counts traffic: ~65 KB a photo).
 - **A blocked route stops the work, it does not burn it**: `processSitemapsBatch`
   and the category crawl call `assertUsable()` first and fail the run with the
@@ -187,7 +196,8 @@ OK again. Rules are pure and tested (`supplier-connection.ts`).
   and once when it has nowhere to go.
 - **State is shared through the table**: both processes write it (the worker
   on every failure and at most once a minute while healthy, the API on a
-  check) and re-read it every 5 s. A new proxy address clears the PROXY rows.
+  check) and re-read it every 5 s; a row deleted by the other process (a
+  proxy reset) is dropped on the next read.
 - **The proxy is HTTP(S) only** (undici `ProxyAgent`, CONNECT; SOCKS is
   refused on save). Its password never leaves the server: the API returns
   `maskProxyUrl()`, the audit log and the error log redact `proxyUrl`.
