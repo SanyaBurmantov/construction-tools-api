@@ -131,6 +131,45 @@ export type ParserSourceOverview = {
   products: QueueStats
   categories: CategoryStats | null
   jobs: ParserHealth['jobs']
+  /** Direct / proxy and whether the supplier lets us in (`parser/connection/`). */
+  connection: SourceConnection | null
+}
+
+export type ProxyMode = 'off' | 'auto' | 'always'
+export type ConnectionState = 'UNKNOWN' | 'OK' | 'DEGRADED' | 'BLOCKED'
+
+/** How one route (direct or through the proxy) to a supplier is doing. */
+export type RouteSnapshot = {
+  state: ConnectionState
+  /** UNREACHABLE = no connection at all, DENIED = 403/429. */
+  failureKind: 'UNREACHABLE' | 'DENIED' | null
+  consecutiveFailures: number
+  lastOkAt: string | null
+  lastFailAt: string | null
+  lastError: string | null
+  lastStatus: number | null
+  lastMs: number | null
+  blockedSince: string | null
+}
+
+export type SourceConnection = {
+  mode: ProxyMode
+  /** The route requests take now. */
+  route: 'DIRECT' | 'PROXY'
+  /** False = batches are not started: the route they would take is blocked. */
+  usable: boolean
+  direct: RouteSnapshot
+  /** Null while no proxy is configured. */
+  proxy: RouteSnapshot | null
+}
+
+export type ParserProxy = {
+  configured: boolean
+  /** Masked: the password never leaves the server. */
+  url: string | null
+  from: 'admin' | 'env' | null
+  /** Supplier photos go through the proxy too. */
+  images: boolean
 }
 
 export type ParserOverview = {
@@ -141,7 +180,15 @@ export type ParserOverview = {
   health: { ok: boolean, maxAgeHours: number }
   /** The process that runs every job; silent for 3 min = not alive. */
   worker: { alive: boolean, lastSeenAt: string | null }
+  proxy: ParserProxy
+  proxyModes: ProxyMode[]
   sources: ParserSourceOverview[]
+}
+
+/** `POST /parser/sources/:code/connection/check`. */
+export type ConnectionCheck = {
+  results: Array<{ route: 'DIRECT' | 'PROXY', ok: boolean, status?: number, error?: string, ms: number }>
+  overview: ParserOverview
 }
 
 /** The edited copy of a source's settings, kept apart from the server's own. */

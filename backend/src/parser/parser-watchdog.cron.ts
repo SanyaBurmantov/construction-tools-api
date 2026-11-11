@@ -1,9 +1,11 @@
+import { SupplierConnectionService } from './connection/supplier-connection.service';
 import { Cron } from '@nestjs/schedule';
 import { Injectable, Logger } from '@nestjs/common';
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
 import {
   ParserSettingsService,
   getParserSource,
+  PARSER_SOURCES,
 } from './parser-settings.service';
 import { QueueRecoveryService } from './queue-recovery.service';
 import { TelegramService } from '../notifications/telegram.service';
@@ -25,6 +27,7 @@ export class ParserWatchdogCron {
     private readonly settings: ParserSettingsService,
     private readonly recovery: QueueRecoveryService,
     private readonly telegram: TelegramService,
+    private readonly connection: SupplierConnectionService,
   ) {}
 
   /** Off-slot on purpose: every source has a parsing slot on the :00/:10/:20 grid. */
@@ -36,6 +39,7 @@ export class ParserWatchdogCron {
     try {
       const requeued = await this.recovery.requeueRecoverable();
       await this.checkHealth();
+      await this.checkConnections();
 
       if (requeued.total) {
         this.logger.log(`Watchdog requeued ${requeued.total} URLs`);
@@ -96,6 +100,46 @@ export class ParserWatchdogCron {
         reason: this.describe(job),
       });
       if (delivered) this.alerted.add(job.key);
+    }
+  }
+
+  /**
+   * A supplier that stopped letting us in: once when it moves to the proxy,
+   * once when there is nowhere left to go, and again after it recovers.
+   */
+  private async checkConnections() {
+    for (const source of PARSER_SOURCES) {
+      const keys = {
+        proxy: `${source.code}-connection-proxy`,
+        down: `${source.code}-connection-down`,
+      };
+      const decision = (await this.settings.isSourceCronEnabled(source.code))
+        ? await this.connection.routeFor(source.code)
+        : null;
+      const current = !decision
+        ? null
+        : !decision.usable
+          ? keys.down
+          : decision.route === 'PROXY' && decision.mode === 'auto'
+            ? keys.proxy
+            : null;
+      for (const key of Object.values(keys)) {
+        if (key !== current) this.alerted.delete(key);
+      }
+      if (!decision || !current || this.alerted.has(current)) continue;
+
+      const reason =
+        current === keys.down
+          ? this.connection
+              .describeBlock(source.code, decision)
+              .replace('Пачка не запускалась.', 'Парсинг стоит.')
+          : `${source.host} не пускает наш сервер напрямую — парсер сам перешёл на прокси.`;
+      const delivered = await this.telegram.notifyParserProblem({
+        key: current,
+        label: `${source.host}: соединение`,
+        reason,
+      });
+      if (delivered) this.alerted.add(current);
     }
   }
 

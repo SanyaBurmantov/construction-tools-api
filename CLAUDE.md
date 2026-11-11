@@ -50,7 +50,7 @@ file** — also when you got there by search rather than by opening a file.
 | API/worker split, containers, memory guards, releases, uptime, postmortems | `infra.md` |
 | Migrations (expand → contract), backups, restore drills, DB role | `database.md` |
 | Accounts, session cookie, CSRF, TOTP, SEO role, `AdminGuard`, what is public | `auth.md` |
-| Parsers: queue, reliability, runtime settings, each supplier, text cleanup | `parsing.md` |
+| Parsers: queue, reliability, runtime settings, bans and the proxy, each supplier, text cleanup | `parsing.md` |
 | Product / category identity, supplier offers, merges and splits | `catalog-identity.md` |
 | Category tree, facets, curated blocks, home page, default order, SEO bits | `catalog-storefront.md` |
 | Search (Russian FTS, synonyms, search journal) | `search.md` |
@@ -119,8 +119,9 @@ The rules most expensive to break. Each is explained in its topic file.
 - Parser settings are runtime (`ParserSettingsService`: DB row → env → default)
   — never `process.env` at module load. A supplier is declared once, in
   `PARSER_SOURCES`.
-- Outbound HTTP goes through `fetchWithTimeout`; Telegram and mail never throw
-  into a request.
+- Outbound HTTP goes through `fetchWithTimeout`; supplier HTTP through
+  `SupplierConnectionService.fetch()` (route, proxy, ban state); Telegram and
+  mail never throw into a request.
 - Migrations are expand → contract (a rollback runs old code on the new
   schema); never `prisma db push` for prod.
 - A batch pass never loads text columns in bulk (select ids, then one row at a

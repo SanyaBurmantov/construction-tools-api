@@ -1,3 +1,4 @@
+import { SupplierConnectionService } from '../connection/supplier-connection.service';
 import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
@@ -10,7 +11,6 @@ import {
 } from '../supplier-queue-parser';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
-import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
 import { ParserLogService } from '../parser-log.service';
 import { ParserHttpError } from '../parser-http.error';
@@ -86,8 +86,17 @@ export class ToolsByParserService extends SupplierQueueParser {
     categoryTree: CategoryTreeService,
     settings: ParserSettingsService,
     identity: ProductIdentityService,
+    connection: SupplierConnectionService,
   ) {
-    super(prisma, parserLogService, offers, categoryTree, settings, identity);
+    super(
+      prisma,
+      parserLogService,
+      offers,
+      categoryTree,
+      settings,
+      identity,
+      connection,
+    );
   }
 
   protected isSkippedError(error: unknown) {
@@ -781,7 +790,7 @@ export class ToolsByParserService extends SupplierQueueParser {
     const configured = Number(process.env.TOOLS_BY_CATALOG_FETCH_TIMEOUT_MS);
     const timeoutMs =
       Number.isFinite(configured) && configured > 0 ? configured : 60_000;
-    return fetchWithTimeout(url, init, { timeoutMs });
+    return this.fetchSupplier(url, init, { timeoutMs });
   }
 
   private async fetchCatalogPage(url: string) {
@@ -879,7 +888,7 @@ export class ToolsByParserService extends SupplierQueueParser {
   }
 
   private async fetchText(url: string) {
-    const res = await fetchWithTimeout(url, {
+    const res = await this.fetchSupplier(url, {
       headers: { 'user-agent': 'Mozilla/5.0' },
     });
     if (!res.ok) throw new ParserHttpError(res.status, url);

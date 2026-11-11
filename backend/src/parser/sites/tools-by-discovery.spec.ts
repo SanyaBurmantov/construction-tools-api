@@ -1,3 +1,4 @@
+import { directConnection } from '../connection/direct-connection.testing';
 import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ToolsByParserService } from './tools-by-source.parser';
 
@@ -57,6 +58,7 @@ describe('Tools.by catalog discovery', () => {
         getRequestDelayMs: () => Promise.resolve(0),
       } as never,
       {} as never,
+      directConnection(),
     );
   let service: ToolsByParserService;
 
@@ -443,6 +445,7 @@ describe('Tools.by refresh guards', () => {
       {} as never,
       {} as never,
       {} as never,
+      directConnection(),
     );
     jest
       .spyOn(
@@ -502,6 +505,7 @@ describe('Tools.by product URL classification', () => {
       {} as never,
       {} as never,
       {} as never,
+      directConnection(),
     );
     jest
       .spyOn(

@@ -1,3 +1,4 @@
+import { directConnection } from '../connection/direct-connection.testing';
 import { CategoryQueueService } from './category-queue.service';
 
 type Access = {
@@ -17,6 +18,7 @@ describe('TH-Tools category crawl settings', () => {
       { saveSitemaps: () => Promise.resolve() } as never,
       {} as never,
       settings as never,
+      directConnection(),
     ) as unknown as Access;
     const fetch = jest
       .spyOn(service, 'fetchText')

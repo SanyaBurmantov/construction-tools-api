@@ -1,10 +1,10 @@
+import { SupplierConnectionService } from '../connection/supplier-connection.service';
 import { Injectable, Logger } from '@nestjs/common';
 import { FALLBACK_CATEGORY_SLUG } from '../../common/constants/catalog';
 import { SupplierInfo, SupplierQueueParser } from '../supplier-queue-parser';
 import { PrismaService } from '../../prisma/prisma.service';
 import { generateSlug } from '../../common/utils/generate-slug';
 import { upsertTolerantly } from '../../common/utils/upsert-tolerantly';
-import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
 import { ParserLogService } from '../parser-log.service';
 import { ParserHttpError } from '../parser-http.error';
 import { OffersService } from '../../offers/offers.service';
@@ -75,8 +75,17 @@ export class ThToolsParserService extends SupplierQueueParser {
     categoryTree: CategoryTreeService,
     settings: ParserSettingsService,
     identity: ProductIdentityService,
+    connection: SupplierConnectionService,
   ) {
-    super(prisma, parserLogService, offers, categoryTree, settings, identity);
+    super(
+      prisma,
+      parserLogService,
+      offers,
+      categoryTree,
+      settings,
+      identity,
+      connection,
+    );
   }
 
   protected isSkippedError(error: unknown) {
@@ -479,7 +488,7 @@ export class ThToolsParserService extends SupplierQueueParser {
   }
 
   private async fetchText(url: string) {
-    const res = await fetchWithTimeout(url, {
+    const res = await this.fetchSupplier(url, {
       headers: {
         'user-agent':
           'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',

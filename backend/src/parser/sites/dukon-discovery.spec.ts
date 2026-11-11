@@ -1,3 +1,4 @@
+import { directConnection } from '../connection/direct-connection.testing';
 import { ParserHttpError } from '../parser-http.error';
 import { DukonParserService } from './dukon.parser';
 
@@ -45,6 +46,7 @@ function createService(crawl: ReturnType<typeof crawlStore>, maxPages = 100) {
       getRequestDelayMs: () => Promise.resolve(0),
     } as never,
     {} as never,
+    directConnection(),
   );
 }
 
@@ -395,6 +397,7 @@ describe('Dukon batch monitoring', () => {
       {} as never,
       settings as never,
       {} as never,
+      directConnection(),
     );
     jest
       .spyOn(service, 'cleanupStoredProductImages')

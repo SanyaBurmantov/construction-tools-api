@@ -1,3 +1,4 @@
+import { directConnection } from '../parser/connection/direct-connection.testing';
 import sharp from 'sharp';
 import { fetchWithTimeout } from '../common/utils/fetch-with-timeout';
 import { S3Client } from '../common/utils/s3-client';
@@ -89,7 +90,11 @@ function service(prisma: unknown) {
   const telegram = {
     notifyParserProblem: jest.fn().mockResolvedValue(undefined),
   };
-  return new ImageMirrorService(prisma as never, telegram as never);
+  return new ImageMirrorService(
+    prisma as never,
+    telegram as never,
+    directConnection(),
+  );
 }
 
 const okResponse = (body: Buffer) =>
@@ -246,6 +251,7 @@ describe('ImageMirrorService candidate walk', () => {
       {
         notifyParserProblem: jest.fn(),
       } as never,
+      directConnection(),
     );
 
     await mirror.tick(); // full page → cursor at its last URL

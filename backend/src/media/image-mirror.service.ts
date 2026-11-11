@@ -1,12 +1,10 @@
+import { SupplierConnectionService } from '../parser/connection/supplier-connection.service';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../notifications/telegram.service';
-import {
-  fetchWithTimeout,
-  ResponseTooLargeError,
-} from '../common/utils/fetch-with-timeout';
+import { ResponseTooLargeError } from '../common/utils/fetch-with-timeout';
 import { PLACEHOLDER_IMAGE_MARKERS } from '../common/utils/product-images';
 import { runsBackgroundJobs } from '../common/utils/process-role';
 import { mapWithConcurrency } from '../common/utils/run-with-concurrency';
@@ -86,6 +84,7 @@ export class ImageMirrorService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
+    private readonly connection: SupplierConnectionService,
   ) {
     const config = s3ConfigFromEnv();
     this.s3 = config && this.media ? new S3Client(config) : null;
@@ -269,11 +268,14 @@ export class ImageMirrorService implements OnModuleInit {
 
     let body: Buffer;
     try {
-      const res = await fetchWithTimeout(
+      // A supplier's photo goes the way its pages go (direct or proxy) when
+      // «фото через прокси» is on; any other host is fetched as it is.
+      const res = await this.connection.fetch(
         sourceUrl,
         { headers: { 'user-agent': USER_AGENT, accept: 'image/*' } },
         // Cut off while downloading, not checked after a full buffer.
         { timeoutMs: 15_000, retries: 1, maxBytes: MAX_IMAGE_BYTES },
+        'image',
       );
       if (!res.ok) {
         await this.markFailed(sourceUrl, `HTTP ${res.status}`);

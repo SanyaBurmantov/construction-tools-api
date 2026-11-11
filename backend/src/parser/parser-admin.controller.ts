@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -30,8 +31,10 @@ import {
   CategoryQueueQueryDto,
   CategoryQueueToggleDto,
   ParserCronDto,
+  ParserProxyDto,
   ParserSourceSettingsDto,
 } from './dto/parser-admin.dto';
+import { SupplierConnectionService } from './connection/supplier-connection.service';
 
 /**
  * The control panel behind `/admin/parsing`: is the cron on, is anything
@@ -52,15 +55,17 @@ export class ParserAdminController {
     private readonly toolsBy: ToolsByParserService,
     private readonly textCleanup: ProductTextCleanupService,
     private readonly brandCleanup: BrandCleanupService,
+    private readonly connection: SupplierConnectionService,
   ) {}
 
   /* -------------------------------------------------------- overview ---- */
 
   @Get('overview')
   async getOverview() {
-    const [settings, health] = await Promise.all([
+    const [settings, health, connection] = await Promise.all([
       this.settings.getOverview(),
       this.runtimeStatus.getHealth(),
+      this.connection.overview(),
     ]);
 
     const sources = await Promise.all(
@@ -73,6 +78,8 @@ export class ParserAdminController {
         jobs: health.jobs.filter((job) =>
           job.key.startsWith(`${source.code}-`),
         ),
+        // Direct / proxy, and whether the supplier lets us in (connection/).
+        connection: connection.sources[source.code] ?? null,
       })),
     );
 
@@ -87,6 +94,9 @@ export class ParserAdminController {
       health: { ok: health.ok, maxAgeHours: health.maxAgeHours },
       // Every job runs in the worker; the screen warns when it is silent.
       worker: health.worker,
+      // The proxy as it may be shown: the password never leaves the server.
+      proxy: connection.proxy,
+      proxyModes: connection.modes,
       sources,
     };
   }
@@ -120,6 +130,9 @@ export class ParserAdminController {
     if (dto.categoryBatchLimit !== undefined) {
       await this.settings.setCategoryBatchLimit(code, dto.categoryBatchLimit);
     }
+    if (dto.proxyMode !== undefined) {
+      await this.connection.setProxyMode(code, dto.proxyMode);
+    }
     if (
       dto.categoryIncludeRegex !== undefined ||
       dto.categoryExcludeRegex !== undefined
@@ -131,6 +144,30 @@ export class ParserAdminController {
     }
 
     return this.getOverview();
+  }
+
+  /** The proxy every source can use (`auto` / `always` per source). */
+  @Put('proxy')
+  async setProxy(@Body() dto: ParserProxyDto) {
+    if (dto.proxyUrl !== undefined) {
+      await this.connection.setProxyUrl(dto.proxyUrl);
+    }
+    if (dto.images !== undefined) {
+      await this.connection.setProxyImages(dto.images);
+    }
+    return this.getOverview();
+  }
+
+  /**
+   * Knocks on the supplier's home page now, directly and through the proxy,
+   * from this server — the same check the worker makes every 10 minutes.
+   */
+  @Post('sources/:code/connection/check')
+  @HttpCode(200)
+  async checkConnection(@Param('code') code: string) {
+    this.ensureKnownSource(code);
+    const results = await this.connection.probe(code);
+    return { results, overview: await this.getOverview() };
   }
 
   /* ------------------------------------------------------------ jobs ---- */

@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { XMLParser } from 'fast-xml-parser';
 import { chunkArray } from '../../common/utils/chunk-array';
 import { mapWithConcurrency } from '../../common/utils/run-with-concurrency';
-import { fetchWithTimeout } from '../../common/utils/fetch-with-timeout';
+import { SupplierConnectionService } from '../connection/supplier-connection.service';
 
 type SitemapEntry = { loc: string };
 
@@ -69,7 +69,10 @@ type SitemapXml = {
 export class SitemapsService {
   private readonly logger = new Logger(SitemapsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly connection: SupplierConnectionService,
+  ) {}
 
   /**
    * Returns what the pass actually did, rather than only logging it.
@@ -101,7 +104,7 @@ export class SitemapsService {
   }
 
   async getProductUrlsThTools(url: string): Promise<string[]> {
-    const response = await fetchWithTimeout(url);
+    const response = await this.connection.fetch(url);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}`);

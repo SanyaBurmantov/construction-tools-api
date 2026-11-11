@@ -81,6 +81,17 @@ const banner = computed(() => {
     }
   }
 
+  // A supplier that drops our IP: its batches are not started at all, and
+  // nothing else on the page would say why its queue stopped moving.
+  const shut = overview.sources.filter(source => source.effectiveEnabled && source.connection && !source.connection.usable)
+  if (shut.length) {
+    return {
+      tone: 'danger' as const,
+      title: `Поставщик не пускает наш сервер: ${shut.map(source => source.host).join(', ')}`,
+      text: 'Пачки этих источников не запускаются. Задайте прокси и режим «авто» в блоке «Соединение с поставщиками» — парсер переключится сам, а когда блок снимут, вернётся напрямую.',
+    }
+  }
+
   if (!overview.cronEnabled) {
     return {
       tone: 'danger' as const,

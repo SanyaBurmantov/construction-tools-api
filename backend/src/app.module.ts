@@ -16,6 +16,7 @@ import { PlansModule } from './plans/plans.module';
 import { BrandsModule } from './brands/brands.module';
 import { SourcesModule } from './sources/sources.module';
 import { ParserModule } from './parser/parser.module';
+import { SupplierConnectionModule } from './parser/connection/supplier-connection.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
@@ -75,6 +76,7 @@ import { runsBackgroundJobs } from './common/utils/process-role';
     PlansModule,
     BrandsModule,
     SourcesModule,
+    SupplierConnectionModule,
     ParserModule,
     OrdersModule,
     CartModule,

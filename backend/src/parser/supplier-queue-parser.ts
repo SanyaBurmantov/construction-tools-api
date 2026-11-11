@@ -15,6 +15,11 @@ import { ParserLogService } from './parser-log.service';
 import { ParserSettingsService } from './parser-settings.service';
 import { ProductIdentityService } from './product-identity.service';
 import { claimQueueBatch, queueTable, QueueSourceCode } from './queue-table';
+import { FetchWithTimeoutOptions } from '../common/utils/fetch-with-timeout';
+import {
+  SupplierBlockedError,
+  SupplierConnectionService,
+} from './connection/supplier-connection.service';
 
 export type QueueStatusFilter =
   | 'PENDING'
@@ -69,7 +74,20 @@ export abstract class SupplierQueueParser {
     protected readonly categoryTree: CategoryTreeService,
     protected readonly settings: ParserSettingsService,
     protected readonly identity: ProductIdentityService,
+    protected readonly connection: SupplierConnectionService,
   ) {}
+
+  /**
+   * Every request to the supplier: picks direct or proxy, counts the answer
+   * towards the connection state (`parser/connection/`).
+   */
+  protected fetchSupplier(
+    url: string,
+    init: RequestInit = {},
+    options: FetchWithTimeoutOptions = {},
+  ) {
+    return this.connection.fetch(url, init, options);
+  }
 
   /** Fetches, parses and saves one product page. */
   abstract parseProductUrl(url: string): Promise<unknown>;
@@ -195,6 +213,9 @@ export abstract class SupplierQueueParser {
   }
 
   async processSitemapsBatch(limit = 30, concurrency = 1) {
+    // A blocked supplier used to cost a whole batch of retries (90 minutes
+    // for dukon) and be recorded as a success with 150 failures. Not started.
+    await this.connection.assertUsable(this.supplier.code);
     await this.beforeBatch();
     // Claimed, not just read: concurrent workers get disjoint rows.
     const urls = await claimQueueBatch(this.prisma, this.supplier.code, limit);
@@ -203,10 +224,39 @@ export abstract class SupplierQueueParser {
     const delayMs = await this.settings.getRequestDelayMs(this.supplier.code);
 
     const batch: BatchResult = emptyBatchResult();
+    const notTried: string[] = [];
+    const stop: { reason: string | null } = { reason: null };
     await runWithConcurrency(urls, concurrency, async (entry) => {
+      if (stop.reason) {
+        notTried.push(entry.url);
+        return;
+      }
       await this.sleep(delayMs);
       countOutcome(batch, await this.processSitemapUrl(entry.url));
+      // The ban can start mid-batch. In `auto` mode the route has just moved
+      // to the proxy and the batch goes on; with nowhere to go it stops.
+      const decision = await this.connection.routeFor(this.supplier.code);
+      if (!decision.usable) {
+        stop.reason = this.connection.describeBlock(
+          this.supplier.code,
+          decision,
+        );
+      }
     });
+
+    if (stop.reason) {
+      // Hand the untouched rows back now instead of after the claim lease.
+      if (notTried.length) {
+        await this.queue.updateMany({
+          where: { url: { in: notTried } },
+          data: { lastTriedAt: null },
+        });
+      }
+      throw new SupplierBlockedError(
+        `${stop.reason.replace(' Пачка не запускалась.', '')} Пачка остановлена: разобрано ${batch.processed}, сохранено ${batch.saved}, не тронуто ${notTried.length}.`,
+        this.supplier.code,
+      );
+    }
 
     return { ...(await this.getQueueStats()), batch };
   }

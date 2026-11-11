@@ -44,6 +44,9 @@ code default*, and the admin writes the rows via `PATCH /admin/parser/cron` and
 | crawl page cap | `parser.<code>.maxPages` | `<SOURCE>_DISCOVERY_MAX_PAGES` |
 | categories per run | `cron.<code>.categoryBatchLimit` | `<SOURCE>_CATEGORY_BATCH_LIMIT` |
 | category filters | `parser.<code>.category{Include,Exclude}` | `<SOURCE>_CATEGORY_*_REGEX` |
+| proxy address (all sources) | `parser.proxyUrl` (`''` = none) | `PARSER_PROXY_URL` |
+| proxy mode | `parser.<code>.proxyMode` (`off`/`auto`/`always`) | — (default `auto`) |
+| photos through the proxy | `parser.proxyImages` | — (default off) |
 
 A source runs only when the global switch **and** its own switch are on. Parsers
 must read these through the service — **never** `process.env` at module load,
@@ -153,6 +156,44 @@ the size-stripped URL, largest kept.
   for over 6 h is reported `ERROR`. `fetchWithTimeout` reads the **body**
   inside the timeout too (it returns a buffered `Response`), and keeps the
   Telegram bot token out of its error messages.
+
+## Connection to suppliers: bans and the proxy
+
+**Suppliers ban our server's IP** (th-tool.by from 2026-11-01, dukon.by from
+2026-11-09: ping answers, TCP 80/443 is dropped). Nothing said so: every batch
+"finished" `saved: 0, failed: 150` after 90 minutes of retries and was
+recorded as SUCCESS. So **every supplier request goes through
+`SupplierConnectionService.fetch()`** (`parser/connection/`, `@Global()`):
+the parsers via `SupplierQueueParser.fetchSupplier()`, the sitemap reader, the
+category crawler and the photo mirror. It matches the URL to a source by host
+(`sourceForUrl`, subdomains included), picks the route and counts the answer
+per route (DIRECT / PROXY) in `SupplierConnection`: any HTTP answer but 403/429
+is OK (a 404 is the site working), 403/429 is DENIED, no answer is
+UNREACHABLE; `BLOCKED_AFTER_FAILURES` (5) in a row = **BLOCKED**, one answer =
+OK again. Rules are pure and tested (`supplier-connection.ts`).
+- **Route**: mode `off` = direct, `always` = proxy, `auto` (default) = proxy
+  only while direct is BLOCKED and back once direct answers. No proxy
+  configured = always direct. Photos stay direct unless `parser.proxyImages`
+  (a paid proxy counts traffic: ~65 KB a photo).
+- **A blocked route stops the work, it does not burn it**: `processSitemapsBatch`
+  and the category crawl call `assertUsable()` first and fail the run with the
+  reason (`SupplierBlockedError`); a ban that starts mid-batch stops the batch
+  after the URL that tipped it (in `auto` the route has just moved to the proxy
+  and the batch goes on) and hands the untouched rows back (`lastTriedAt = null`).
+- **The probe** (`SupplierConnectionCron`, worker, every 10 min at :04) knocks
+  on each supplier's home page on every route — it is what notices a lifted
+  ban while no batch runs. «Проверить» on `/admin/parsing` does the same from
+  the API. The watchdog alerts Telegram once when a source moves to the proxy
+  and once when it has nowhere to go.
+- **State is shared through the table**: both processes write it (the worker
+  on every failure and at most once a minute while healthy, the API on a
+  check) and re-read it every 5 s. A new proxy address clears the PROXY rows.
+- **The proxy is HTTP(S) only** (undici `ProxyAgent`, CONNECT; SOCKS is
+  refused on save). Its password never leaves the server: the API returns
+  `maskProxyUrl()`, the audit log and the error log redact `proxyUrl`.
+- `undici` is a direct dependency for `ProxyAgent`; its dispatcher is passed to
+  Node's own `fetch`, checked with Node 22.
+- Specs build parsers with `directConnection()` (`connection/direct-connection.testing.ts`).
 
 ## Suppliers
 
