@@ -68,8 +68,11 @@ file** — also when you got there by search rather than by opening a file.
 | AI assistant (eight background jobs) | `ai-assist.md` |
 | AI detector, uniqueness, typograf | `ai-detector.md` |
 
-Also: skills `add-parser`, `parser-ops`, `deploy-prod`, `claude-edit-products`
-(`.claude/skills/`); `SUPPLIER_PARSER_DEVELOPMENT_GUIDE.md` (field-by-field
+Skills (`.claude/skills/`): `add-parser`, `parser-ops`, `deploy-prod`,
+`prod-check` (read-only look at production, catalogue export), `seo-measure`
+(Search Console, indexing experiments), `claude-edit-products`. A hook
+(`.claude/hooks/format-backend.sh`) runs prettier on every backend `.ts` file
+Claude edits. Also: `SUPPLIER_PARSER_DEVELOPMENT_GUIDE.md` (field-by-field
 normalization); `feature.md` (recommendations in depth); `detector/README.md`;
 `docs/postmortems/`.
 

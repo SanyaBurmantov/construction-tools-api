@@ -17,9 +17,12 @@ not the shares. Re-measure in 1–2 weeks:
 
 ```sh
 GSC_MEMORY=<memory>/gsc-service-account.md NODE_USE_ENV_PROXY=1 \
-  node ai-pilot/claude-edit-2026-11-10/inspect-google.mjs \
-  ai-pilot/claude-edit-2026-11-10/groups.json ai-pilot/claude-edit-2026-11-10/google-<date>.json
+  node scripts/gsc.mjs inspect ai-pilot/claude-edit-2026-11-10/groups.json \
+  ai-pilot/claude-edit-2026-11-10/google-<date>.json \
+  --prev ai-pilot/claude-edit-2026-11-10/google-2026-11-10.json
 ```
+
+(the `seo-measure` skill has the whole procedure)
 
 Yandex is not in the baseline yet (its Webmaster token was not available to
 the session).
