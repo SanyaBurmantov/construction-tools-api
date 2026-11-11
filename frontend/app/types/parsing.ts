@@ -158,18 +158,24 @@ export type SourceConnection = {
   route: 'DIRECT' | 'PROXY'
   /** False = batches are not started: the route they would take is blocked. */
   usable: boolean
+  /** The proxy this source uses: the one picked, or the first in the list. */
+  proxy: { id: string, name: string } | null
+  /** Picked by an admin; null = the first in the list. */
+  proxyIdPicked: string | null
   direct: RouteSnapshot
-  /** Null while no proxy is configured. */
-  proxy: RouteSnapshot | null
+  /** This source through its proxy; null while there is no proxy. */
+  proxyState: RouteSnapshot | null
 }
 
 export type ParserProxy = {
-  configured: boolean
+  id: string
+  name: string
   /** Masked: the password never leaves the server. */
-  url: string | null
-  from: 'admin' | 'env' | null
-  /** Supplier photos go through the proxy too. */
-  images: boolean
+  url: string
+  /** `env` = PARSER_PROXY_URL, not editable here. */
+  from: 'admin' | 'env'
+  /** Sources that go through it (when they go through a proxy). */
+  usedBy: string[]
 }
 
 export type ParserOverview = {
@@ -180,7 +186,9 @@ export type ParserOverview = {
   health: { ok: boolean, maxAgeHours: number }
   /** The process that runs every job; silent for 3 min = not alive. */
   worker: { alive: boolean, lastSeenAt: string | null }
-  proxy: ParserProxy
+  proxies: ParserProxy[]
+  /** Supplier photos go through the proxy too. */
+  proxyImages: boolean
   proxyModes: ProxyMode[]
   sources: ParserSourceOverview[]
 }

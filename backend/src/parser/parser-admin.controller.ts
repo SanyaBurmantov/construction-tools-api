@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -31,7 +32,9 @@ import {
   CategoryQueueQueryDto,
   CategoryQueueToggleDto,
   ParserCronDto,
-  ParserProxyDto,
+  ParserProxyCreateDto,
+  ParserProxySettingsDto,
+  ParserProxyUpdateDto,
   ParserSourceSettingsDto,
 } from './dto/parser-admin.dto';
 import { SupplierConnectionService } from './connection/supplier-connection.service';
@@ -94,8 +97,9 @@ export class ParserAdminController {
       health: { ok: health.ok, maxAgeHours: health.maxAgeHours },
       // Every job runs in the worker; the screen warns when it is silent.
       worker: health.worker,
-      // The proxy as it may be shown: the password never leaves the server.
-      proxy: connection.proxy,
+      // Proxies as they may be shown: the password never leaves the server.
+      proxies: connection.proxies,
+      proxyImages: connection.images,
       proxyModes: connection.modes,
       sources,
     };
@@ -133,6 +137,9 @@ export class ParserAdminController {
     if (dto.proxyMode !== undefined) {
       await this.connection.setProxyMode(code, dto.proxyMode);
     }
+    if (dto.proxyId !== undefined) {
+      await this.connection.setProxyChoice(code, dto.proxyId || null);
+    }
     if (
       dto.categoryIncludeRegex !== undefined ||
       dto.categoryExcludeRegex !== undefined
@@ -146,12 +153,37 @@ export class ParserAdminController {
     return this.getOverview();
   }
 
-  /** The proxy every source can use (`auto` / `always` per source). */
-  @Put('proxy')
-  async setProxy(@Body() dto: ParserProxyDto) {
-    if (dto.proxyUrl !== undefined) {
-      await this.connection.setProxyUrl(dto.proxyUrl);
-    }
+  /* --------------------------------------------------------- proxies ---- */
+
+  /** Each source picks one of these (`proxyId`) and when to use it (`proxyMode`). */
+  @Post('proxies')
+  async addProxy(@Body() dto: ParserProxyCreateDto) {
+    await this.connection.addProxy(dto.name, dto.proxyUrl);
+    return this.getOverview();
+  }
+
+  /** A new address resets its sources' «через прокси» record. */
+  @Patch('proxies/:id')
+  async updateProxy(
+    @Param('id') id: string,
+    @Body() dto: ParserProxyUpdateDto,
+  ) {
+    await this.connection.updateProxy(id, {
+      name: dto.name,
+      url: dto.proxyUrl,
+    });
+    return this.getOverview();
+  }
+
+  /** Its sources move to the first proxy left, or go direct. */
+  @Delete('proxies/:id')
+  async deleteProxy(@Param('id') id: string) {
+    await this.connection.deleteProxy(id);
+    return this.getOverview();
+  }
+
+  @Put('proxy-settings')
+  async setProxySettings(@Body() dto: ParserProxySettingsDto) {
     if (dto.images !== undefined) {
       await this.connection.setProxyImages(dto.images);
     }

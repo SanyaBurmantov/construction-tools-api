@@ -887,6 +887,17 @@ model ParserCatalogCrawl {
   updatedAt  DateTime @updatedAt
 }
 
+/// Proxies the parsers may go through (parser/connection/). Each source picks
+/// one (`ParserSetting parser.<code>.proxyId`, the first one by default).
+/// The URL carries the login and password; the API only ever returns it masked.
+model ParserProxy {
+  id        String   @id @default(uuid())
+  name      String
+  url       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// How a supplier answers our server, per route (parser/connection/).
 /// A route that fails BLOCKED_AFTER_FAILURES times in a row is BLOCKED; in
 /// `auto` proxy mode that sends the source through the proxy.

@@ -25,9 +25,11 @@ import {
   sourceForUrl,
 } from './supplier-connection';
 
-const PROXY_URL_KEY = 'parser.proxyUrl';
 const PROXY_IMAGES_KEY = 'parser.proxyImages';
 const proxyModeKey = (code: string) => `parser.${code}.proxyMode`;
+const proxyIdKey = (code: string) => `parser.${code}.proxyId`;
+/** The proxy from `PARSER_PROXY_URL`: listed last, not editable from the admin. */
+const ENV_PROXY_ID = 'env';
 
 /** Settings and states are re-read this often — both processes write them. */
 const CACHE_TTL_MS = 5000;
@@ -64,6 +66,14 @@ export class SupplierBlockedError extends Error {
   }
 }
 
+/** A proxy as the service uses it; `url` never leaves the server unmasked. */
+export type ProxyEntry = {
+  id: string;
+  name: string;
+  url: string;
+  from: 'admin' | 'env';
+};
+
 type StoredRoute = {
   snapshot: RouteSnapshot;
   touchedAt: number;
@@ -76,9 +86,12 @@ type StoredRoute = {
  * the state in `SupplierConnection` so the API can show it and the worker can
  * act on it. Lives in both processes; the database row is the shared truth.
  *
- * Rules (pure, tested) are in `supplier-connection.ts`. The proxy address and
- * the per-source mode are runtime settings in `ParserSetting`, like every
- * other parser knob: DB row → env `PARSER_PROXY_URL` → none.
+ * Rules (pure, tested) are in `supplier-connection.ts`. Proxies are a list
+ * (`ParserProxy`, plus `PARSER_PROXY_URL` from env as a read-only entry);
+ * each source picks one (`parser.<code>.proxyId`, the first by default) and a
+ * mode (`parser.<code>.proxyMode`). The PROXY route's state is per source —
+ * it is about that source through its proxy, and is reset when the source
+ * gets another proxy or its proxy's address changes.
  */
 @Injectable()
 export class SupplierConnectionService {
@@ -89,7 +102,8 @@ export class SupplierConnectionService {
   } | null = null;
   private routes = new Map<string, StoredRoute>();
   private routesExpireAt = 0;
-  private agent: { url: string; dispatcher: ProxyAgent } | null = null;
+  private proxiesCache: { list: ProxyEntry[]; expiresAt: number } | null = null;
+  private agents = new Map<string, ProxyAgent>();
   private warnedBadEnvProxy = false;
 
   constructor(private readonly prisma: PrismaService) {}
@@ -115,7 +129,14 @@ export class SupplierConnectionService {
       purpose === 'image' && !(await this.proxyImages())
         ? 'DIRECT'
         : decision.route;
-    return this.request(source.code, route, url, init, options);
+    return this.request(
+      source.code,
+      route,
+      url,
+      init,
+      options,
+      decision.proxyEntry,
+    );
   }
 
   private async request(
@@ -124,8 +145,10 @@ export class SupplierConnectionService {
     url: string,
     init: RequestInit,
     options: FetchWithTimeoutOptions,
+    proxy: ProxyEntry | null,
   ): Promise<Response> {
-    const dispatcher = route === 'PROXY' ? await this.dispatcher() : undefined;
+    const dispatcher =
+      route === 'PROXY' && proxy ? this.dispatcher(proxy.url) : undefined;
     if (route === 'PROXY' && !dispatcher) {
       throw new SupplierUnreachableError(
         'Прокси выбран, но не настроен',
@@ -156,7 +179,9 @@ export class SupplierConnectionService {
         ms: Date.now() - started,
       });
       throw new SupplierUnreachableError(
-        route === 'PROXY' ? `${message} (через прокси)` : message,
+        route === 'PROXY'
+          ? `${message} (через прокси «${proxy?.name}»)`
+          : message,
         code,
         route,
         { cause: error },
@@ -168,18 +193,21 @@ export class SupplierConnectionService {
 
   /** The route this source's requests take now and whether it is worth trying. */
   async routeFor(code: string) {
-    const [mode, proxyUrl] = await Promise.all([
+    const [mode, proxy] = await Promise.all([
       this.proxyMode(code),
-      this.proxyUrl(),
+      this.proxyFor(code),
     ]);
     const direct = await this.snapshot(code, 'DIRECT');
-    const route = chooseRoute(mode, Boolean(proxyUrl), direct);
+    const route = chooseRoute(mode, Boolean(proxy), direct);
     const current =
       route === 'DIRECT' ? direct : await this.snapshot(code, 'PROXY');
     return {
       mode,
       route,
-      proxyConfigured: Boolean(proxyUrl),
+      proxyConfigured: Boolean(proxy),
+      /** The proxy this source would use; also the one it uses when route is PROXY. */
+      proxy: proxy ? { id: proxy.id, name: proxy.name } : null,
+      proxyEntry: proxy,
       usable: isUsable(current),
       snapshot: current,
     };
@@ -206,10 +234,13 @@ export class SupplierConnectionService {
         ? `отвечает ${s.lastError ?? '403/429'}`
         : 'не устанавливает соединение';
     const since = s.blockedSince ? ` с ${formatMinsk(s.blockedSince)}` : '';
-    const via = decision.route === 'PROXY' ? 'через прокси' : 'напрямую';
+    const via =
+      decision.route === 'PROXY'
+        ? `через прокси «${decision.proxy?.name}»`
+        : 'напрямую';
     const hint =
       decision.route === 'PROXY'
-        ? 'прокси тоже не помогает'
+        ? 'прокси тоже не помогает — выберите другой'
         : decision.proxyConfigured
           ? `режим прокси «${decision.mode}» — включите «авто» или «всегда»`
           : 'прокси не настроен';
@@ -227,9 +258,8 @@ export class SupplierConnectionService {
     const source = getParserSource(code);
     if (!source)
       throw new BadRequestException(`Unknown parser source: ${code}`);
-    const routes: ConnectionRoute[] = (await this.proxyUrl())
-      ? ['DIRECT', 'PROXY']
-      : ['DIRECT'];
+    const proxy = await this.proxyFor(code);
+    const routes: ConnectionRoute[] = proxy ? ['DIRECT', 'PROXY'] : ['DIRECT'];
     const results = [];
     for (const route of routes) {
       const started = Date.now();
@@ -244,6 +274,7 @@ export class SupplierConnectionService {
             retries: 0,
             maxBytes: 5 * 1024 * 1024,
           },
+          proxy,
         );
         results.push({
           route,
@@ -275,26 +306,41 @@ export class SupplierConnectionService {
   /* --------------------------------------------------------- overview ---- */
 
   async overview() {
-    const proxyRow = (await this.settings()).get(PROXY_URL_KEY);
-    const proxyUrl = await this.proxyUrl();
+    const proxies = await this.proxies();
     const sources: Record<string, unknown> = {};
+    const usedBy = new Map<string, string[]>();
     for (const source of PARSER_SOURCES) {
       const decision = await this.routeFor(source.code);
+      if (decision.proxy) {
+        usedBy.set(decision.proxy.id, [
+          ...(usedBy.get(decision.proxy.id) ?? []),
+          source.code,
+        ]);
+      }
       sources[source.code] = {
         mode: decision.mode,
         route: decision.route,
         usable: decision.usable,
+        /** The proxy this source uses (picked, or the first in the list). */
+        proxy: decision.proxy,
+        /** Picked by an admin; null = the first in the list. */
+        proxyIdPicked:
+          (await this.settings()).get(proxyIdKey(source.code)) || null,
         direct: await this.snapshot(source.code, 'DIRECT'),
-        proxy: proxyUrl ? await this.snapshot(source.code, 'PROXY') : null,
+        proxyState: decision.proxy
+          ? await this.snapshot(source.code, 'PROXY')
+          : null,
       };
     }
     return {
-      proxy: {
-        configured: Boolean(proxyUrl),
-        url: maskProxyUrl(proxyUrl),
-        from: proxyRow !== undefined ? 'admin' : proxyUrl ? 'env' : null,
-        images: await this.proxyImages(),
-      },
+      proxies: proxies.map((proxy) => ({
+        id: proxy.id,
+        name: proxy.name,
+        url: maskProxyUrl(proxy.url),
+        from: proxy.from,
+        usedBy: usedBy.get(proxy.id) ?? [],
+      })),
+      images: await this.proxyImages(),
       modes: PROXY_MODES,
       sources,
     };
@@ -302,28 +348,60 @@ export class SupplierConnectionService {
 
   /* --------------------------------------------------------- settings ---- */
 
-  /** `''` or null clears it (an env proxy then no longer applies either). */
-  async setProxyUrl(raw: string | null) {
-    let value = '';
-    if (raw && raw.trim()) {
-      try {
-        value = normalizeProxyUrl(raw);
-      } catch (error) {
-        throw new BadRequestException(
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
-    await this.writeSetting(PROXY_URL_KEY, value);
-    // A new proxy starts with a clean record: the old one's failures are not its.
-    await this.prisma.supplierConnection.deleteMany({
-      where: { route: 'PROXY' },
+  async addProxy(name: string | undefined, rawUrl: string) {
+    const url = this.validProxyUrl(rawUrl);
+    const count = await this.prisma.parserProxy.count();
+    const proxy = await this.prisma.parserProxy.create({
+      data: { name: name?.trim() || `Прокси ${count + 1}`, url },
     });
-    this.routes.clear();
-    this.routesExpireAt = 0;
+    this.proxiesCache = null;
     this.logger.log(
-      `Parser proxy ${value ? `set to ${maskProxyUrl(value)}` : 'cleared'}`,
+      `Parser proxy «${proxy.name}» added (${maskProxyUrl(url)})`,
     );
+    return proxy.id;
+  }
+
+  /** A new address is a different proxy: its sources' PROXY record starts over. */
+  async updateProxy(id: string, change: { name?: string; url?: string }) {
+    const existing = await this.editableProxy(id);
+    const url =
+      change.url !== undefined && change.url.trim()
+        ? this.validProxyUrl(change.url)
+        : undefined;
+    await this.prisma.parserProxy.update({
+      where: { id },
+      data: {
+        ...(change.name?.trim() ? { name: change.name.trim() } : {}),
+        ...(url ? { url } : {}),
+      },
+    });
+    this.proxiesCache = null;
+    if (url && url !== existing.url) await this.resetProxyState(id);
+  }
+
+  /** Its sources fall back to the first proxy left (or go direct). */
+  async deleteProxy(id: string) {
+    await this.editableProxy(id);
+    await this.resetProxyState(id);
+    await this.prisma.parserProxy.delete({ where: { id } });
+    await this.prisma.parserSetting.deleteMany({
+      where: { key: { endsWith: '.proxyId' }, value: id },
+    });
+    this.settingsCache = null;
+    this.proxiesCache = null;
+  }
+
+  /** `null` or '' = the first proxy in the list. */
+  async setProxyChoice(code: string, proxyId: string | null) {
+    if (!getParserSource(code))
+      throw new BadRequestException(`Unknown parser source: ${code}`);
+    if (proxyId && !(await this.proxies()).some((p) => p.id === proxyId)) {
+      throw new BadRequestException('Такого прокси нет в списке');
+    }
+    const before = await this.proxyFor(code);
+    await this.writeSetting(proxyIdKey(code), proxyId ?? '');
+    const after = await this.proxyFor(code);
+    if (before?.id !== after?.id) await this.resetProxyState(null, [code]);
   }
 
   async setProxyMode(code: string, mode: string) {
@@ -350,13 +428,56 @@ export class SupplierConnectionService {
     return (await this.settings()).get(PROXY_IMAGES_KEY) === 'true';
   }
 
-  private async proxyUrl(): Promise<string | null> {
-    const stored = (await this.settings()).get(PROXY_URL_KEY);
-    if (stored !== undefined) return stored || null;
+  /** The proxy a source uses: the one picked, else the first in the list. */
+  private async proxyFor(code: string): Promise<ProxyEntry | null> {
+    const list = await this.proxies();
+    const picked = (await this.settings()).get(proxyIdKey(code));
+    return list.find((proxy) => proxy.id === picked) ?? list[0] ?? null;
+  }
+
+  /** Admin's proxies in the order they were added, then the env one. */
+  async proxies(): Promise<ProxyEntry[]> {
+    const now = Date.now();
+    if (this.proxiesCache && this.proxiesCache.expiresAt > now) {
+      return this.proxiesCache.list;
+    }
+    let list: ProxyEntry[] = [];
+    try {
+      const rows = await this.prisma.parserProxy.findMany({
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      list = rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        url: row.url,
+        from: 'admin' as const,
+      }));
+    } catch (error) {
+      this.logger.warn(`Parser proxies unavailable: ${String(error)}`);
+    }
+    const env = this.envProxy();
+    if (env) list.push(env);
+    this.proxiesCache = { list, expiresAt: now + CACHE_TTL_MS };
+    // An agent for an address no longer listed holds sockets for nothing.
+    for (const [url, agent] of this.agents) {
+      if (!list.some((proxy) => proxy.url === url)) {
+        this.agents.delete(url);
+        void agent.close().catch(() => undefined);
+      }
+    }
+    return list;
+  }
+
+  private envProxy(): ProxyEntry | null {
     const env = process.env.PARSER_PROXY_URL?.trim();
     if (!env) return null;
     try {
-      return normalizeProxyUrl(env);
+      return {
+        id: ENV_PROXY_ID,
+        name: 'PARSER_PROXY_URL',
+        url: normalizeProxyUrl(env),
+        from: 'env',
+      };
     } catch (error) {
       if (!this.warnedBadEnvProxy) {
         this.logger.warn(`PARSER_PROXY_URL ignored: ${String(error)}`);
@@ -366,15 +487,57 @@ export class SupplierConnectionService {
     }
   }
 
-  private async dispatcher() {
-    const url = await this.proxyUrl();
-    if (!url) return undefined;
-    if (this.agent?.url !== url) {
-      const old = this.agent?.dispatcher;
-      this.agent = { url, dispatcher: new ProxyAgent(url) };
-      void old?.close().catch(() => undefined);
+  private dispatcher(url: string) {
+    let agent = this.agents.get(url);
+    if (!agent) {
+      agent = new ProxyAgent(url);
+      this.agents.set(url, agent);
     }
-    return this.agent.dispatcher;
+    return agent;
+  }
+
+  private validProxyUrl(raw: string) {
+    try {
+      return normalizeProxyUrl(raw);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private async editableProxy(id: string) {
+    if (id === ENV_PROXY_ID) {
+      throw new BadRequestException(
+        'Этот прокси задан переменной PARSER_PROXY_URL — меняется в .env.prod',
+      );
+    }
+    const proxy = await this.prisma.parserProxy.findUnique({ where: { id } });
+    if (!proxy) throw new BadRequestException('Такого прокси нет в списке');
+    return proxy;
+  }
+
+  /**
+   * Forgets the PROXY record of the given sources, or of every source that
+   * uses proxy `proxyId` now: its failures belonged to another address.
+   */
+  private async resetProxyState(proxyId: string | null, codes?: string[]) {
+    const affected =
+      codes ??
+      (
+        await Promise.all(
+          PARSER_SOURCES.map(async (source) =>
+            (await this.proxyFor(source.code))?.id === proxyId
+              ? (source.code as string)
+              : null,
+          ),
+        )
+      ).filter((code): code is string => code !== null);
+    if (!affected.length) return;
+    await this.prisma.supplierConnection.deleteMany({
+      where: { route: 'PROXY', sourceCode: { in: affected } },
+    });
+    for (const code of affected) this.routes.delete(`${code}:PROXY`);
   }
 
   private async settings() {
@@ -480,6 +643,14 @@ export class SupplierConnectionService {
     this.routesExpireAt = now + CACHE_TTL_MS;
     try {
       const rows = await this.prisma.supplierConnection.findMany();
+      // A row the other process deleted (a proxy reset) is gone here too,
+      // unless this process has a newer, not yet stored version of it.
+      const present = new Set(rows.map((r) => `${r.sourceCode}:${r.route}`));
+      for (const [key, local] of this.routes) {
+        if (!present.has(key) && local.flushedAt >= local.touchedAt) {
+          this.routes.delete(key);
+        }
+      }
       for (const row of rows) {
         const key = `${row.sourceCode}:${row.route}`;
         const local = this.routes.get(key);

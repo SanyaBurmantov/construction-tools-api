@@ -133,7 +133,7 @@ export class ParserWatchdogCron {
           ? this.connection
               .describeBlock(source.code, decision)
               .replace('Пачка не запускалась.', 'Парсинг стоит.')
-          : `${source.host} не пускает наш сервер напрямую — парсер сам перешёл на прокси.`;
+          : `${source.host} не пускает наш сервер напрямую — парсер сам перешёл на прокси «${decision.proxy?.name ?? '?'}».`;
       const delivered = await this.telegram.notifyParserProblem({
         key: current,
         label: `${source.host}: соединение`,

@@ -77,6 +77,12 @@ export class ParserSourceSettingsDto {
   @IsOptional()
   @IsIn(PROXY_MODES)
   proxyMode?: (typeof PROXY_MODES)[number];
+
+  /** Which proxy this source uses; '' = the first in the list. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  proxyId?: string;
 }
 
 export const CATEGORY_QUEUE_STATUSES = [
@@ -130,13 +136,33 @@ export class CategoryQueueProcessDto {
   limit?: number;
 }
 
-export class ParserProxyDto {
-  /** http(s)://user:password@host:port; '' or null removes it. Redacted in the audit log. */
+export class ParserProxyCreateDto {
+  /** Shown in the admin; «Прокси N» when empty. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  name?: string;
+
+  /** http(s)://user:password@host:port. Redacted in the audit log. */
+  @IsString()
+  @MaxLength(500)
+  proxyUrl!: string;
+}
+
+export class ParserProxyUpdateDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  name?: string;
+
+  /** A new address; empty = keep the current one. */
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  proxyUrl?: string | null;
+  proxyUrl?: string;
+}
 
+export class ParserProxySettingsDto {
   /** Supplier photos through the proxy too (traffic: ~65 KB a photo). */
   @IsOptional()
   @IsBoolean()
