@@ -158,10 +158,8 @@ export type SourceConnection = {
   route: 'DIRECT' | 'PROXY'
   /** False = batches are not started: the route they would take is blocked. */
   usable: boolean
-  /** The proxy this source uses: the one picked, or the first in the list. */
+  /** The proxy picked for this source; null = «Без прокси», always direct. */
   proxy: { id: string, name: string } | null
-  /** Picked by an admin; null = the first in the list. */
-  proxyIdPicked: string | null
   direct: RouteSnapshot
   /** This source through its proxy; null while there is no proxy. */
   proxyState: RouteSnapshot | null
@@ -174,7 +172,7 @@ export type ParserProxy = {
   url: string
   /** `env` = PARSER_PROXY_URL, not editable here. */
   from: 'admin' | 'env'
-  /** Sources that go through it (when they go through a proxy). */
+  /** Sources it is picked for. */
   usedBy: string[]
 }
 

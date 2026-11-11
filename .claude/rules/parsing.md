@@ -45,7 +45,7 @@ code default*, and the admin writes the rows via `PATCH /admin/parser/cron` and
 | categories per run | `cron.<code>.categoryBatchLimit` | `<SOURCE>_CATEGORY_BATCH_LIMIT` |
 | category filters | `parser.<code>.category{Include,Exclude}` | `<SOURCE>_CATEGORY_*_REGEX` |
 | proxies | table `ParserProxy` (name + url) | `PARSER_PROXY_URL` (listed last, read-only) |
-| proxy of a source | `parser.<code>.proxyId` | — (default: the first proxy) |
+| proxy of a source | `parser.<code>.proxyId` (`''` = none) | — (default: none, direct) |
 | proxy mode | `parser.<code>.proxyMode` (`off`/`auto`/`always`) | — (default `auto`) |
 | photos through the proxy | `parser.proxyImages` | — (default off) |
 
@@ -173,8 +173,11 @@ is OK (a 404 is the site working), 403/429 is DENIED, no answer is
 UNREACHABLE; `BLOCKED_AFTER_FAILURES` (5) in a row = **BLOCKED**, one answer =
 OK again. Rules are pure and tested (`supplier-connection.ts`).
 - **Proxies are a list** (`ParserProxy`, `/admin/parsing`: add, rename, new
-  address, delete) and **each source picks one** (`proxyId`; none picked =
-  the first in the list; its proxy deleted = the first left). The PROXY route
+  address, delete) and **a source uses one only if it is picked for it**
+  (`proxyId`; default «Без прокси»; its proxy deleted = none again). The first
+  version handed the first proxy to every source, which read as «every
+  supplier is bound to a proxy» with no way to say «this one, never». The env
+  proxy has to be picked too (id `env`). The PROXY route
   state is per source — «this supplier through its proxy» — and is reset when
   the source gets another proxy or its proxy gets a new address (renaming
   keeps it). `parser.proxyUrl`, the single proxy of the first release, was
@@ -198,6 +201,9 @@ OK again. Rules are pure and tested (`supplier-connection.ts`).
   on every failure and at most once a minute while healthy, the API on a
   check) and re-read it every 5 s; a row deleted by the other process (a
   proxy reset) is dropped on the next read.
+- `fetchWithTimeout` appends the error's `cause` (`ECONNREFUSED: …`, a TLS
+  error from a proxy) to undici's bare «fetch failed», URLs stripped — that is
+  what the connection table and the run errors show.
 - **The proxy is HTTP(S) only** (undici `ProxyAgent`, CONNECT; SOCKS is
   refused on save). Its password never leaves the server: the API returns
   `maskProxyUrl()`, the audit log and the error log redact `proxyUrl`.
