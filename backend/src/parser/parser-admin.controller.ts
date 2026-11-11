@@ -175,7 +175,7 @@ export class ParserAdminController {
     return this.getOverview();
   }
 
-  /** Its sources move to the first proxy left, or go direct. */
+  /** The sources that used it are left without a proxy. */
   @Delete('proxies/:id')
   async deleteProxy(@Param('id') id: string) {
     await this.connection.deleteProxy(id);

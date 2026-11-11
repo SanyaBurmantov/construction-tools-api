@@ -78,7 +78,7 @@ export class ParserSourceSettingsDto {
   @IsIn(PROXY_MODES)
   proxyMode?: (typeof PROXY_MODES)[number];
 
-  /** Which proxy this source uses; '' = the first in the list. */
+  /** Which proxy this source uses; '' = none, always direct. */
   @IsOptional()
   @IsString()
   @MaxLength(80)

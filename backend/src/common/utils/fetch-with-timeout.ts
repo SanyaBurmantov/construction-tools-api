@@ -108,8 +108,15 @@ export async function fetchWithTimeout(
     typeof lastError.message === 'string'
       ? lastError.message
       : String(lastError);
+  // undici says only «fetch failed»; the reason (ECONNREFUSED, a TLS error
+  // from a proxy, a refused CONNECT) is on `cause` — the one thing worth
+  // reading when a supplier or a proxy stops answering.
+  const cause =
+    typeof lastError === 'object' && lastError !== null && 'cause' in lastError
+      ? describeCause(lastError.cause)
+      : '';
   throw new Error(
-    `Failed to fetch ${redactUrl(url)} after ${retries + 1} attempts (timeout ${timeoutMs}ms): ${reason}`,
+    `Failed to fetch ${redactUrl(url)} after ${retries + 1} attempts (timeout ${timeoutMs}ms): ${reason}${cause && !reason.includes(cause) ? ` (${cause})` : ''}`,
     { cause: lastError },
   );
 }
@@ -184,6 +191,18 @@ export function redactUrl(url: string): string {
   } catch {
     return '[unparseable url]';
   }
+}
+
+/** `code: message` of an error's cause, without any URL it may carry. */
+function describeCause(cause: unknown): string {
+  if (typeof cause !== 'object' || cause === null) return '';
+  const code =
+    'code' in cause && typeof cause.code === 'string' ? cause.code : '';
+  const message =
+    'message' in cause && typeof cause.message === 'string'
+      ? cause.message.replace(/[a-z]+:\/\/\S+/gi, '[url]').slice(0, 200)
+      : '';
+  return [code, message].filter(Boolean).join(': ');
 }
 
 function retryDelay(attempt: number, baseMs: number, res?: Response): number {

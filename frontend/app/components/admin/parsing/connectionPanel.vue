@@ -43,7 +43,11 @@ const MODE_OPTIONS: Array<{ value: ProxyMode, label: string }> = [
 
 const sources = computed(() => props.control?.sources ?? [])
 const proxies = computed(() => props.control?.proxies ?? [])
-const proxyOptions = computed(() => proxies.value.map(proxy => ({ value: proxy.id, label: proxy.name })))
+/** «Без прокси» first: a supplier uses a proxy only when one is picked for it. */
+const proxyOptions = computed(() => [
+  { value: '', label: 'Без прокси' },
+  ...proxies.value.map(proxy => ({ value: proxy.id, label: proxy.name })),
+])
 const hostOf = (code: string) => sources.value.find(source => source.code === code)?.host ?? code
 
 function detail(route: RouteSnapshot) {
@@ -99,8 +103,9 @@ function saveEdit(proxy: ParserProxy) {
       <h3>Прокси</h3>
       <p class="muted hint">
         HTTP(S)-прокси вида http://логин:пароль@host:порт (SOCKS не поддерживается).
-        Пароль после сохранения не показывается и в журнал не пишется. У каждого
-        поставщика ниже — свой прокси из списка; не выбран — первый.
+        Пароль после сохранения не показывается и в журнал не пишется. Прокси
+        используется только теми поставщиками, кому он выбран в таблице ниже;
+        по умолчанию — «Без прокси».
       </p>
 
       <ul v-if="proxies.length" class="proxy-list">
@@ -213,24 +218,24 @@ function saveEdit(proxy: ParserProxy) {
             {{ detail(row.connection.proxyState) }}
           </p>
         </template>
-        <span v-else class="muted">прокси нет</span>
+        <span v-else class="muted">без прокси</span>
       </template>
 
       <template #cell-mode="{ row }">
         <div v-if="row.connection" class="mode">
           <UiSelect
-            :model-value="row.connection.proxy?.id ?? null"
+            :model-value="row.connection.proxy?.id ?? ''"
             :options="proxyOptions"
-            placeholder="прокси нет"
             size="sm"
             :disabled="!proxies.length || busy === `choice-${row.code}`"
-            @update:model-value="value => value && emit('set-proxy', row.code, String(value))"
+            @update:model-value="value => emit('set-proxy', row.code, String(value ?? ''))"
           />
           <UiSelect
+            v-if="row.connection.proxy"
             :model-value="row.connection.mode"
             :options="MODE_OPTIONS"
             size="sm"
-            :disabled="!proxies.length || busy === `mode-${row.code}`"
+            :disabled="busy === `mode-${row.code}`"
             @update:model-value="value => emit('set-mode', row.code, value as ProxyMode)"
           />
         </div>

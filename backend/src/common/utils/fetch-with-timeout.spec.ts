@@ -72,6 +72,26 @@ describe('fetchWithTimeout', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('says why fetch failed, without the URL the cause may carry', async () => {
+    const failed = new TypeError('fetch failed', {
+      cause: Object.assign(
+        new Error(
+          'connect ECONNREFUSED 10.0.0.1:8000 via http://u:p@10.0.0.1:8000',
+        ),
+        { code: 'ECONNREFUSED' },
+      ),
+    });
+    global.fetch = jest
+      .fn()
+      .mockRejectedValue(failed) as unknown as typeof fetch;
+
+    const run = fetchWithTimeout('https://th-tool.by/x', {}, { retries: 0 });
+    await expect(run).rejects.toThrow(
+      /fetch failed \(ECONNREFUSED: connect ECONNREFUSED 10\.0\.0\.1:8000 via \[url\]\)/,
+    );
+    await expect(run).rejects.not.toThrow(/u:p@/);
+  });
+
   it('does not retry non-retryable client errors', async () => {
     const fetchMock = jest
       .fn()

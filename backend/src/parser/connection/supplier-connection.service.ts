@@ -88,8 +88,8 @@ type StoredRoute = {
  *
  * Rules (pure, tested) are in `supplier-connection.ts`. Proxies are a list
  * (`ParserProxy`, plus `PARSER_PROXY_URL` from env as a read-only entry);
- * each source picks one (`parser.<code>.proxyId`, the first by default) and a
- * mode (`parser.<code>.proxyMode`). The PROXY route's state is per source —
+ * a source uses one only if an admin picked it (`parser.<code>.proxyId`, none
+ * by default) and then by its mode (`parser.<code>.proxyMode`). The PROXY route's state is per source —
  * it is about that source through its proxy, and is reset when the source
  * gets another proxy or its proxy's address changes.
  */
@@ -321,11 +321,8 @@ export class SupplierConnectionService {
         mode: decision.mode,
         route: decision.route,
         usable: decision.usable,
-        /** The proxy this source uses (picked, or the first in the list). */
+        /** The proxy picked for this source; null = it never uses one. */
         proxy: decision.proxy,
-        /** Picked by an admin; null = the first in the list. */
-        proxyIdPicked:
-          (await this.settings()).get(proxyIdKey(source.code)) || null,
         direct: await this.snapshot(source.code, 'DIRECT'),
         proxyState: decision.proxy
           ? await this.snapshot(source.code, 'PROXY')
@@ -379,7 +376,7 @@ export class SupplierConnectionService {
     if (url && url !== existing.url) await this.resetProxyState(id);
   }
 
-  /** Its sources fall back to the first proxy left (or go direct). */
+  /** Its sources are left without a proxy (they go direct). */
   async deleteProxy(id: string) {
     await this.editableProxy(id);
     await this.resetProxyState(id);
@@ -391,7 +388,7 @@ export class SupplierConnectionService {
     this.proxiesCache = null;
   }
 
-  /** `null` or '' = the first proxy in the list. */
+  /** `null` or '' = no proxy for this source: it always goes direct. */
   async setProxyChoice(code: string, proxyId: string | null) {
     if (!getParserSource(code))
       throw new BadRequestException(`Unknown parser source: ${code}`);
@@ -428,11 +425,16 @@ export class SupplierConnectionService {
     return (await this.settings()).get(PROXY_IMAGES_KEY) === 'true';
   }
 
-  /** The proxy a source uses: the one picked, else the first in the list. */
+  /**
+   * The proxy picked for a source, or null. Never a default: a proxy is used
+   * only by the sources an admin gave it to — the first version handed the
+   * first proxy in the list to everyone, which read as «every supplier is
+   * bound to a proxy» with no way to say «this one, never».
+   */
   private async proxyFor(code: string): Promise<ProxyEntry | null> {
-    const list = await this.proxies();
     const picked = (await this.settings()).get(proxyIdKey(code));
-    return list.find((proxy) => proxy.id === picked) ?? list[0] ?? null;
+    if (!picked) return null;
+    return (await this.proxies()).find((proxy) => proxy.id === picked) ?? null;
   }
 
   /** Admin's proxies in the order they were added, then the env one. */

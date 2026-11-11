@@ -159,7 +159,11 @@ describe('SupplierConnectionService', () => {
 
   it('in auto mode moves a blocked source to its proxy, and back after a good probe', async () => {
     const { connection } = service();
-    await connection.addProxy('Минск', 'http://user:secret@10.0.0.1:8000');
+    const minsk = await connection.addProxy(
+      'Минск',
+      'http://user:secret@10.0.0.1:8000',
+    );
+    await connection.setProxyChoice('dukon', minsk);
     await failUntilBlocked(connection);
 
     await expect(connection.routeFor('dukon')).resolves.toMatchObject({
@@ -179,27 +183,41 @@ describe('SupplierConnectionService', () => {
     });
   });
 
-  it('each source goes through the proxy picked for it, the first one by default', async () => {
+  it('a source uses a proxy only once it is picked for it', async () => {
     const { connection } = service();
     const first = await connection.addProxy(undefined, 'http://10.0.0.1:8000');
     const second = await connection.addProxy('Второй', 'http://10.0.0.2:8000');
     await connection.setProxyMode('dukon', 'always');
     await connection.setProxyMode('tools-by', 'always');
-    await connection.setProxyChoice('tools-by', second);
     fetchMock.mockImplementation(answered);
 
+    // Nothing picked: direct, whatever the mode.
+    await connection.fetch('https://dukon.by/', {}, noRetry);
+    expect(dispatcherOf(0)).toBeUndefined();
+    await expect(connection.routeFor('dukon')).resolves.toMatchObject({
+      route: 'DIRECT',
+      proxy: null,
+    });
+
+    await connection.setProxyChoice('dukon', first);
+    await connection.setProxyChoice('tools-by', second);
     await connection.fetch('https://dukon.by/', {}, noRetry);
     await connection.fetch('https://tools.by/', {}, noRetry);
-    expect(dispatcherOf(0)).not.toBe(dispatcherOf(1));
-    await expect(connection.routeFor('dukon')).resolves.toMatchObject({
-      proxy: { id: first, name: 'Прокси 1' },
-    });
+    expect(dispatcherOf(1)).toBeDefined();
+    expect(dispatcherOf(1)).not.toBe(dispatcherOf(2));
 
     const overview = await connection.overview();
     expect(overview.proxies.map((p) => [p.name, p.usedBy])).toEqual([
-      ['Прокси 1', ['th-tools', 'dukon']],
+      ['Прокси 1', ['dukon']],
       ['Второй', ['tools-by']],
     ]);
+
+    // «Без прокси» again.
+    await connection.setProxyChoice('dukon', null);
+    await expect(connection.routeFor('dukon')).resolves.toMatchObject({
+      route: 'DIRECT',
+      proxy: null,
+    });
     await expect(
       connection.setProxyChoice('dukon', 'no-such-proxy'),
     ).rejects.toThrow(/нет в списке/);
@@ -207,7 +225,8 @@ describe('SupplierConnectionService', () => {
 
   it('a blocked proxy leaves nowhere to go and says which one', async () => {
     const { connection } = service();
-    await connection.addProxy('Минск', 'http://10.0.0.1:8000');
+    const minsk = await connection.addProxy('Минск', 'http://10.0.0.1:8000');
+    await connection.setProxyChoice('dukon', minsk);
     await connection.setProxyMode('dukon', 'always');
     await failUntilBlocked(connection);
     await expect(connection.assertUsable('dukon')).rejects.toThrow(
@@ -217,8 +236,9 @@ describe('SupplierConnectionService', () => {
 
   it('another proxy for a source, or a new address, starts its record over', async () => {
     const { connection, prisma } = service();
-    await connection.addProxy('A', 'http://10.0.0.1:8000');
+    const first = await connection.addProxy('A', 'http://10.0.0.1:8000');
     const second = await connection.addProxy('B', 'http://10.0.0.2:8000');
+    await connection.setProxyChoice('dukon', first);
     await connection.setProxyMode('dukon', 'always');
     await failUntilBlocked(connection);
     expect(prisma.rows.get('dukon:PROXY')?.state).toBe('BLOCKED');
@@ -239,7 +259,7 @@ describe('SupplierConnectionService', () => {
     expect(prisma.rows.get('dukon:PROXY')?.state).toBe('BLOCKED');
   });
 
-  it('deleting a proxy moves its sources to the first one left', async () => {
+  it('deleting a proxy leaves its sources without one', async () => {
     const { connection, prisma } = service();
     await connection.addProxy('A', 'http://10.0.0.1:8000');
     const b = await connection.addProxy('B', 'http://10.0.0.2:8000');
@@ -247,13 +267,15 @@ describe('SupplierConnectionService', () => {
     await connection.deleteProxy(b);
     expect(prisma.settings.has('parser.dukon.proxyId')).toBe(false);
     await expect(connection.routeFor('dukon')).resolves.toMatchObject({
-      proxy: { name: 'A' },
+      route: 'DIRECT',
+      proxy: null,
     });
   });
 
   it('photos stay direct unless allowed through the proxy', async () => {
     const { connection } = service();
-    await connection.addProxy(undefined, 'http://10.0.0.1:8000');
+    const proxy = await connection.addProxy(undefined, 'http://10.0.0.1:8000');
+    await connection.setProxyChoice('dukon', proxy);
     await connection.setProxyMode('dukon', 'always');
     fetchMock.mockImplementation(answered);
 

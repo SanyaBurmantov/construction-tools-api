@@ -227,7 +227,7 @@ const deleteProxy = () => {
 const setSourceProxy = (code: string, proxyId: string) =>
   runControl(`choice-${code}`, async () => {
     await adminFetch(`/parser/sources/${code}`, { method: 'PATCH', body: { proxyId } })
-    return `${code}: прокси выбран`
+    return proxyId ? `${code}: прокси выбран` : `${code}: без прокси`
   })
 
 const toggleProxyImages = (images: boolean) =>
@@ -597,8 +597,8 @@ useHead({ title: 'Парсинг | Админка', meta: [{ name: 'robots', con
       @confirm="deleteProxy"
     >
       <template v-if="proxyToDelete?.usedBy.length">
-        Его используют: {{ proxyToDelete.usedBy.join(', ') }}. Они перейдут на
-        первый оставшийся прокси, а если других нет — пойдут напрямую.
+        Его используют: {{ proxyToDelete.usedBy.join(', ') }}. Они останутся
+        без прокси и пойдут напрямую — выберите им другой, если нужно.
       </template>
       <template v-else>Его сейчас никто не использует.</template>
     </UiConfirm>
