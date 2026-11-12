@@ -1,4 +1,4 @@
-import { balanceFor, parseBalanceFloor } from './ai-runner.cron';
+import { balanceFor, parseBalanceFloor } from './ai-balance-floor';
 
 describe('AI spend floor', () => {
   it('reads «36.4» and «36,4 cny»', () => {
