@@ -15,14 +15,16 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { AiEntity } from '@prisma/client';
 import { AdminGuard } from '../admin/admin.guard';
-import { SeoAccess } from '../admin/seo-access';
+import { AdminOnly, SeoAccess } from '../admin/seo-access';
 import type { AuthenticatedRequest } from '../auth/auth-request';
 import { AiService } from './ai.service';
+import { AiBalanceFloorService } from './ai-balance-floor.service';
 import {
   AiBrandQueryDto,
   AiCategoryQueryDto,
   AiCreateTaskDto,
   AiExplainDto,
+  AiMinBalanceDto,
   AiPreviewDto,
   AiProductQueryDto,
   AiPromptDto,
@@ -38,11 +40,25 @@ import {
 @Controller('admin/ai')
 @SeoAccess()
 export class AiController {
-  constructor(private readonly ai: AiService) {}
+  constructor(
+    private readonly ai: AiService,
+    private readonly floor: AiBalanceFloorService,
+  ) {}
 
   @Get('status')
-  status() {
-    return this.ai.status();
+  async status() {
+    const [status, minBalance] = await Promise.all([
+      this.ai.status(),
+      this.floor.setting(),
+    ]);
+    return { ...status, minBalance };
+  }
+
+  /** The spend cap of the runner and the assistant — money, so ADMIN only. */
+  @Patch('min-balance')
+  @AdminOnly()
+  setMinBalance(@Body() dto: AiMinBalanceDto) {
+    return this.floor.set(dto.value === undefined ? null : dto.value);
   }
 
   @Get('models')

@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { AdminModule } from '../admin/admin.module';
 import { AiController } from './ai.controller';
 import { AiRunnerCron } from './ai-runner.cron';
+import { AiBalanceFloorService } from './ai-balance-floor.service';
 import { AiService } from './ai.service';
 import { AiTemplateTextsService } from './ai-template-texts.service';
 import { AiClient } from './ai.client';
@@ -28,6 +29,7 @@ import {
     AiRewriteChecksService,
     AiClient,
     AiRunnerCron,
+    AiBalanceFloorService,
     AiTemplateTextsService,
     AiAssistService,
     AiAssistCron,

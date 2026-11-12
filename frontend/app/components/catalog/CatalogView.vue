@@ -704,6 +704,53 @@ const showAbout = computed(() =>
   && (descriptionAll.value.length > 1 || descriptionIntro.value.length > INTRO_CHARS)
 )
 
+/**
+ * «Подробнее о разделе» → the text under the grid. The plain #anchor jump
+ * missed it by a different amount on every page: past 140px the header folds
+ * its promo strip and category row, which shortens the document *above* the
+ * target in the middle of the jump, and the sticky header then sat over the
+ * heading. So the jump aims below the header as it will be once folded, and
+ * checks once it has stopped (the fold animates for 200 ms). Measured
+ * 2026-11-12, five categories at 390 and 1280 px: the old jump missed by
+ * −834…+2 503 px, this one lands the card 16 px under the header on every one.
+ * The URL is left alone — a #fragment in it used to refetch the grid. Without
+ * JS the href still works; `scroll-margin-top` keeps the heading clear.
+ */
+/** Space between the sticky header and the «О разделе» card (= --space-4). */
+const ABOUT_GAP = 16
+
+function scrollToAbout(event: MouseEvent) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  const section = document.getElementById('category-about')
+  if (!section) return
+  event.preventDefault()
+
+  const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+  // Measured, not the --header-height token: on a phone the folded header
+  // keeps its search row (125px at 390, against 68 on a desktop).
+  const header = document.querySelector<HTMLElement>('.site-header')
+  const offset = () => section.getBoundingClientRect().top - ((header?.getBoundingClientRect().bottom ?? 0) + ABOUT_GAP)
+
+  // The fold takes the same height out of the header and out of the page
+  // above the section, so «section − header bottom» measured now is already
+  // the distance it will be once folded.
+  window.scrollTo({ top: Math.max(0, window.scrollY + offset()), behavior })
+
+  // One correction at most, and only for this jump: a listener left waiting
+  // must not yank the page on the visitor's next scroll.
+  let done = false
+  const settle = () => {
+    if (done) return
+    done = true
+    window.removeEventListener('scrollend', onEnd)
+    const miss = offset()
+    if (Math.abs(miss) > 2) window.scrollTo({ top: window.scrollY + miss, behavior })
+  }
+  const onEnd = () => setTimeout(settle, 250)
+  if ('onscrollend' in window) window.addEventListener('scrollend', onEnd, { once: true })
+  setTimeout(settle, 1500)
+}
+
 /* ---- Search journal (useSearchLog, /admin/search) ---- */
 // A search the visitor actually saw: its first page, once the results are
 // in. Filters on top of a search re-report it; the server counts a repeat
@@ -741,7 +788,7 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
         <!-- The link sits outside the clamped paragraph: inside, the clamp hid
              it exactly when the text was long enough to need it. -->
         <p v-if="descriptionIntro" class="intro">{{ descriptionIntro }}</p>
-        <a v-if="showAbout" href="#category-about" class="more-link">Подробнее о разделе</a>
+        <a v-if="showAbout" href="#category-about" class="more-link" @click="scrollToAbout">Подробнее о разделе</a>
       </div>
       <div class="head-links">
         <!-- Purchasers compare in their own sheet; same URL for everyone, so
@@ -1001,6 +1048,8 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
 .category-about {
   min-width: 0;
   margin-top: var(--space-4);
+  /* Clear of the folded sticky header; scrollToAbout() reads it too. */
+  scroll-margin-top: calc(var(--header-height) + var(--space-4));
   padding: var(--space-6) var(--space-8);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);

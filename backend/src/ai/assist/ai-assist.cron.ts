@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { AiClient } from '../ai.client';
-import { balanceFor, parseBalanceFloor } from '../ai-runner.cron';
+import { AiBalanceFloorService } from '../ai-balance-floor.service';
 import { ASSIST_JOB_INFO, ASSIST_JOBS, AssistJob } from './assist-jobs';
 import { AiAssistService } from './ai-assist.service';
 
@@ -10,7 +10,8 @@ import { AiAssistService } from './ai-assist.service';
  * task runner's :00) one step of one switched-on job — at most one request
  * to the model — round-robin, so no job starves the others. A job with
  * nothing to do rests for its `idleMinutes`; an error rests it for 15 min;
- * `AI_MIN_BALANCE` stops it like it stops the task runner.
+ * the balance floor (/admin/ai, `AI_MIN_BALANCE` as the fallback) stops it
+ * like it stops the task runner.
  */
 @Injectable()
 export class AiAssistCron {
@@ -22,14 +23,11 @@ export class AiAssistCron {
   constructor(
     private readonly assist: AiAssistService,
     private readonly client: AiClient,
+    private readonly floor: AiBalanceFloorService,
   ) {}
 
-  private async aboveFloor() {
-    const floor = parseBalanceFloor(process.env.AI_MIN_BALANCE);
-    if (!floor) return true;
-    const quota = await this.client.quota();
-    const amount = balanceFor(quota?.balances ?? null, floor.currency);
-    return amount !== null && amount >= floor.amount;
+  private aboveFloor() {
+    return this.floor.aboveFloor('AI assist');
   }
 
   @Cron('30 * * * * *')

@@ -371,6 +371,14 @@ export class AiTemplateTextDto {
   text?: string | null;
 }
 
+/** The spend cap: «20 CNY», «20»; '' = no floor; null = back to `AI_MIN_BALANCE`. */
+export class AiMinBalanceDto {
+  @IsOptional()
+  @IsString()
+  @Length(0, 40)
+  value?: string | null;
+}
+
 export class AiRescheduleDto {
   @IsOptional()
   @Transform(emptyToUndefined)
