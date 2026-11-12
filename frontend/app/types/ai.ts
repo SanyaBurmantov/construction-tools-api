@@ -26,6 +26,14 @@ export type AiStatus = {
     balance: string | null
   } | null
   fields: Record<AiEntity, AiFieldDef[]>
+  /** The spend cap: under this balance the runner and the assistant stop. */
+  minBalance?: {
+    /** «20 CNY», «36.4», '' = no floor. */
+    value: string
+    source: 'admin' | 'env' | 'none'
+    /** AI_MIN_BALANCE as deployed — what «Сбросить» goes back to. */
+    env: string
+  }
 }
 
 export type AiModel = { id: string, name: string, contextLength: number }

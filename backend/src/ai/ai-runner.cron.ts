@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { AiService } from './ai.service';
 import { AiClient } from './ai.client';
+import { AiBalanceFloorService } from './ai-balance-floor.service';
 
 /**
  * The scheduler. Every minute it takes the earliest due task and runs a few
@@ -19,6 +20,7 @@ export class AiRunnerCron {
   constructor(
     private readonly ai: AiService,
     private readonly client: AiClient,
+    private readonly floor: AiBalanceFloorService,
   ) {}
 
   private get batchesPerTick() {
@@ -26,27 +28,9 @@ export class AiRunnerCron {
     return Number.isFinite(value) && value > 0 ? value : 3;
   }
 
-  private lastFloorWarning = 0;
-
-  /**
-   * False when the paid key's balance is under `AI_MIN_BALANCE` — or cannot
-   * be read while a floor is set: a spend cap that fails open is no cap.
-   */
-  private async aboveFloor() {
-    const floor = parseBalanceFloor(process.env.AI_MIN_BALANCE);
-    if (!floor) return true;
-    const quota = await this.client.quota();
-    const amount = balanceFor(quota?.balances ?? null, floor.currency);
-    if (amount !== null && amount >= floor.amount) return true;
-    if (Date.now() - this.lastFloorWarning > 60 * 60 * 1000) {
-      this.lastFloorWarning = Date.now();
-      this.logger.warn(
-        amount === null
-          ? `AI runner stopped: AI_MIN_BALANCE=${process.env.AI_MIN_BALANCE} is set but the balance could not be read`
-          : `AI runner stopped: balance ${amount} is under AI_MIN_BALANCE=${process.env.AI_MIN_BALANCE}`,
-      );
-    }
-    return false;
+  /** The spend cap — set in /admin/ai, `AI_MIN_BALANCE` as the fallback. */
+  private aboveFloor() {
+    return this.floor.aboveFloor('AI runner');
   }
 
   @Cron('0 * * * * *')
@@ -73,9 +57,10 @@ export class AiRunnerCron {
 }
 
 /**
- * `AI_MIN_BALANCE`: the floor under which the runner stops — the spend cap of
- * a run is «balance at the start minus what we agreed to spend». «36.4» or
- * «36.4 CNY»; empty or unreadable means no floor.
+ * The balance floor under which the runner stops — the spend cap of a run is
+ * «balance at the start minus what we agreed to spend». «36.4» or
+ * «36.4 CNY»; empty or unreadable means no floor. Where it is set:
+ * `AiBalanceFloorService` (/admin/ai, then `AI_MIN_BALANCE`).
  */
 export function parseBalanceFloor(raw: string | undefined) {
   const match = /^\s*(\d+(?:[.,]\d+)?)\s*([A-Za-z]{3})?\s*$/.exec(raw ?? '');
