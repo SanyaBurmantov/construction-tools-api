@@ -510,6 +510,109 @@ export class ProductIdentityService {
         create: { ...identity, value: display, valueNorm: facet },
       });
     }
+
+    await this.foldMovedSpecifications(productId);
+  }
+
+  /**
+   * Values a product still holds under a category it is no longer in.
+   *
+   * `Specification` is per category, so a product that moved (the supplier
+   * re-filed it, a mapping changed, an admin moved it) got its next parse
+   * written under the new category's rows while the old category's rows stayed
+   * — the product page listed «Бренд», «Вес», «Код» twice, the old copy
+   * sometimes with a stale value (2068 products on 2026-11-12).
+   *
+   * A left-behind value with a twin under the current category (same key or
+   * canonical key) is deleted — the twin is the fresher one. One without a
+   * twin is moved onto the current category's row, so nothing the supplier
+   * no longer repeats is lost. `productId` limits it to one product (after a
+   * parse); without it, the whole catalogue (the nightly pass).
+   */
+  async foldMovedSpecifications(
+    productId?: string,
+    dryRun = false,
+  ): Promise<{ dropped: number; moved: number }> {
+    const onlyProduct = productId
+      ? Prisma.sql`AND p.id = ${productId}`
+      : Prisma.empty;
+    const twin = Prisma.sql`EXISTS (
+      SELECT 1 FROM "ProductSpecification" k
+      JOIN "Specification" ks ON ks.id = k."specificationId"
+      WHERE k."productId" = ps."productId"
+        AND ks."categoryId" = p."categoryId"
+        AND (ks.key = s.key OR ks."canonicalKey" = s."canonicalKey")
+    )`;
+
+    if (dryRun) {
+      const [row] = await this.prisma.$queryRaw<
+        Array<{ dropped: number; moved: number }>
+      >`
+        SELECT count(*) FILTER (WHERE ${twin})::int AS dropped,
+               count(*) FILTER (WHERE NOT ${twin})::int AS moved
+        FROM "ProductSpecification" ps
+        JOIN "Specification" s ON s.id = ps."specificationId"
+        JOIN "Product" p ON p.id = ps."productId"
+        WHERE s."categoryId" <> p."categoryId" ${onlyProduct}
+      `;
+      return row ?? { dropped: 0, moved: 0 };
+    }
+
+    let dropped = await this.prisma.$executeRaw`
+      DELETE FROM "ProductSpecification" ps
+      USING "Specification" s, "Product" p
+      WHERE s.id = ps."specificationId"
+        AND p.id = ps."productId"
+        AND s."categoryId" <> p."categoryId"
+        ${onlyProduct}
+        AND ${twin}
+    `;
+
+    const orphans = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        categoryId: string;
+        name: string;
+        key: string;
+        value: string;
+      }>
+    >`
+      SELECT ps.id, p."categoryId", s.name, s.key, ps.value
+      FROM "ProductSpecification" ps
+      JOIN "Specification" s ON s.id = ps."specificationId"
+      JOIN "Product" p ON p.id = ps."productId"
+      WHERE s."categoryId" <> p."categoryId" ${onlyProduct}
+      ORDER BY ps."productId", ps.id
+      LIMIT 5000
+    `;
+
+    let moved = 0;
+    for (const row of orphans) {
+      const specification = await this.upsertSpecification(
+        row.categoryId,
+        row.name,
+        row.key,
+        row.value,
+      );
+      if (!specification) continue;
+      try {
+        await this.prisma.productSpecification.update({
+          where: { id: row.id },
+          data: { specificationId: specification.id },
+        });
+        moved++;
+      } catch (error) {
+        // Two old categories left the same key behind: the first one moved,
+        // this one is its duplicate.
+        if (!isUniqueViolation(error)) throw error;
+        await this.prisma.productSpecification.deleteMany({
+          where: { id: row.id },
+        });
+        dropped++;
+      }
+    }
+
+    return { dropped, moved };
   }
 
   /**

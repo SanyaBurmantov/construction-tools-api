@@ -57,7 +57,14 @@ Product identity is the supplier offer, category identity is pathKey, one produc
   every day and the card flipped between suppliers. Stock/price are per offer
   as before. Specs are saved under the product's **actual** category
   (`saveSpecifications` reads it), not the supplier's breadcrumb one — a
-  locked or owner-kept category used to lose its facets. And when a supplier
+  locked or owner-kept category used to lose its facets. **A move leaves no
+  second copy**: `Specification` is per category, so after a move the old
+  category's rows stayed beside the new ones and the page listed «Бренд»,
+  «Вес», «Код» twice, the old copy sometimes stale (2068 products,
+  2026-11-12). `foldMovedSpecifications()` runs after every
+  `saveSpecifications` and nightly in the normalizer (before the spec pass):
+  a left-behind row with a twin in the current category (key or canonical
+  key) is deleted, one without is moved over (`moved-specs.db.spec.ts`). And when a supplier
   changes what identifies a product (article, short model suffix, SOLO/SET,
   sizes, pack) while our name is locked, the product gets
   `supplierNameChange` and shows in the data-quality panel («Поставщик
