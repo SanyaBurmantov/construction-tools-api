@@ -15,6 +15,12 @@ const isMaintenance = computed(() => props.error.statusCode === 503)
  */
 const isNotFound = computed(() => props.error.statusCode === 404)
 
+/**
+ * The catalogue size for the 404 copy. Only on a 404: a 503 means the API is
+ * down, and waiting for its timeout would only delay the maintenance screen.
+ */
+const catalogSize = isNotFound.value ? await useCatalogSize() : computed(() => '')
+
 // The error page used to have no <title> at all, so an outage answer or a 404
 // read in a crawler (or an audit) as «page without a title».
 useHead(() => ({
@@ -67,7 +73,7 @@ const retry = () => reloadNuxtApp({ persistState: false })
       <span class="eyebrow">Ошибка 404</span>
       <h1>Страница не найдена</h1>
       <p>Возможно, товар снят с продажи, раздел переехал или в ссылке опечатка.
-        Найдите нужное через каталог или поиск — в каталоге больше 95 000 позиций.</p>
+        Найдите нужное через каталог или поиск<template v-if="catalogSize"> — в каталоге {{ catalogSize }}</template>.</p>
       <div class="error-actions">
         <UiButton size="lg" @click="clearError({ redirect: '/catalog' })">Перейти в каталог</UiButton>
         <UiButton size="lg" variant="secondary" @click="handleError">На главную</UiButton>

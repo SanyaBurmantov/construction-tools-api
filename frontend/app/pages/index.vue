@@ -138,6 +138,9 @@ const [
 // outage page cannot outlive the outage.
 if (unavailable.value) throw apiUnavailableError()
 
+// «95 000+ позиций» in the hero — from the tree above, never typed in.
+const catalogSize = computed(() => catalogSizeText(tree.value))
+
 /**
  * The «Каталог» tiles follow the header strip an admin curates in
  * `/admin/storefront` (the same order as «Популярное:» under the search), and
@@ -252,7 +255,8 @@ useHead({
       <div class="hero-main">
         <h1>Инструмент и оборудование для организаций</h1>
         <p class="hero-sub">
-          95 000+ позиций с ежедневным обновлением цен. Счёт на оплату — сразу
+          <template v-if="catalogSize">{{ catalogSize }} с ежедневным обновлением цен.</template>
+          <template v-else>Цены обновляются ежедневно.</template> Счёт на оплату — сразу
           на сайте, безналичный расчёт, договор поставки, доставка по Беларуси.
         </p>
 

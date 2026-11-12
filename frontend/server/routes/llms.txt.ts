@@ -1,5 +1,6 @@
 import { setResponseHeader } from 'h3'
 import { company } from '../../app/data/company'
+import { catalogSizeText } from '../../app/composables/useCatalogSize'
 
 /**
  * llms.txt (llmstxt.org): a Markdown map of the site for language models and
@@ -8,13 +9,22 @@ import { company } from '../../app/data/company'
  * Built here rather than in `public/` so the requisites come from the one
  * place they are kept (`app/data/company.ts`) and the links from `siteUrl`.
  */
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const siteUrl = String(config.public.siteUrl).replace(/\/$/, '')
+  const apiBase = String(config.apiBaseServer).replace(/\/$/, '')
+
+  // The same figure the pages print (`catalogSizeText`); without an answer the
+  // summary simply goes without a number.
+  const roots = await $fetch<Array<{ productCount: number }>>(`${apiBase}/categories/tree`, {
+    params: { depth: 1 },
+    timeout: 5000,
+  }).catch(() => [])
+  const catalogSize = catalogSizeText(roots)
 
   const body = `# Gost.by
 
-> Интернет-магазин инструмента и оборудования в Беларуси для организаций и частных покупателей: 95 000+ позиций, цены обновляются ежедневно, счёт на оплату для юрлиц оформляется прямо на сайте.
+> Интернет-магазин инструмента и оборудования в Беларуси для организаций и ИП: ${catalogSize ? `${catalogSize}, ` : ''}цены обновляются ежедневно, счёт на оплату оформляется прямо на сайте.
 
 Продавец: ${company.name}, УНП ${company.unp}, ${company.legalAddress}. Телефон ${company.phone}, e-mail ${company.email}.
 

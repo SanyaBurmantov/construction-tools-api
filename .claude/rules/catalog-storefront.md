@@ -123,6 +123,13 @@ Category tree and browsing API, facets, curated blocks, the home page, category 
   is `GET /search/popular` (terms ≥2 visitors in 30 days) once there are
   three, else the first tiles.
 
+**The catalogue size is never typed in** (12.11): the pages said «95 000+»
+and «более 50 тысяч» at once. Home hero, /organizaciyam (text + meta),
+/about, the 404 and `/llms.txt` print `catalogSizeText()`
+(`composables/useCatalogSize.ts`, pure part `utils/catalog-size.ts`, tested):
+the sum of the root counts from `/categories/tree`, rounded down to thousands
+(«95 000+ позиций»); unknown → the sentence goes without a number.
+
 **Default catalogue order: complete cards first.** `Product.listingRank`
 (real photo 2 + description 1) is recomputed hourly by `ListingRankService`;
 the default sort and search ties order by it before the name, so the cards
