@@ -1,6 +1,8 @@
 import {
   stripVarDump,
   cleanProductTexts,
+  collapseRepeatedText,
+  MIN_REPEAT_BLOCK,
   sanitizeSupplierText,
   sanitizeSupplierTitle,
   truncateAtWord,
@@ -239,5 +241,118 @@ describe('stripVarDump', () => {
     expect(
       stripVarDump('array(1) { ["A"]=> array(1) { ["B"]=> int(1) } Текст'),
     ).toBe('Текст');
+  });
+});
+
+// Verbatim from production (gost.by/api/products/…, 2026-11-12): one copy of
+// the Complex Miracle text that dukon.by's four trade offers repeated.
+const MIRACLE =
+  'Бесконтактный автошампунь с пеной зеленого цвета. Преимущества: Образует цветную стойкую активную пену, эффективно удаляющую загрязнения Эффективно удаляет засохшую грязь и следы насекомых, растворяет и смывает масляные загрязнения Позволяет получить чистую блестящую поверхность без разводов и белесого налета Не окрашивает поверхность и не оказывает негативного воздействия на пластик, резину и ЛКП автомобиля Свойства: Состав: деионизированная вода (30% и более), анионные поверхностно-активные вещества (более 5 %, но менее 15 %), неионогенные поверхностно-активные вещества (менее 5 %), комплексообразователи (более 15 %, но менее 30 %), гидроксид натрия (менее 5%), функциональные добавки, краситель. Срок годности: 3 года с даты изготовления Страна производитель: Россия Применение: Пеногенератор: 750мл на 50л. Пенокомплект: 150мл на 1л. Дозатрон 1 – 2%. Время выдержки 1-2 мин. Рекомендации: Хранить в недоступном для детей месте. Не наносить на горячую поверхность! Не допускать высыхания цветной пены на поверхности! Избегать длительного контакта с кожей. В случае попадания в глаза немедленно промыть большим количеством проточной воды. При необходимости обратиться к врачу.';
+// 421 characters, 32 times on the СМ benches.
+const BENCH =
+  'Скамьи для раздевалок, гардеробных и подсобных помещений изготавливаются в общепромышленном и антистатическом исполнении. Длина скамьи: 1000, 1200, 1500, 1800, 2000 мм. Ширина скамьи: 400 мм. Современный дизайн, прочная, усиленная конструкция. Представлена в трёх основных цветах каркасов и кромок. Скамья регулируется по высоте сиденья от 455 мм до 735 мм от уровня пола. Максимально распределенная нагрузка – до 400 кг.';
+
+describe('collapseRepeatedText', () => {
+  it('keeps one copy of a text repeated back to back', () => {
+    expect(collapseRepeatedText(Array(4).fill(MIRACLE).join(' '))).toBe(
+      MIRACLE,
+    );
+    expect(collapseRepeatedText(Array(32).fill(BENCH).join(' '))).toBe(BENCH);
+    expect(collapseRepeatedText(`${BENCH} ${BENCH}`)).toBe(BENCH);
+  });
+
+  it('ignores whitespace differences between the copies', () => {
+    const glued = `${BENCH}${BENCH}`;
+    expect(collapseRepeatedText(glued)).toBe(BENCH);
+    const spaced = `${BENCH}\n\n${BENCH.replace(/ /g, '  ')}\n`;
+    expect(collapseRepeatedText(spaced)).toBe(BENCH);
+  });
+
+  it('drops a paragraph equal to the one before it', () => {
+    const intro = 'Шлифмашина угловая BULL WS 1210.';
+    expect(
+      collapseRepeatedText(
+        `${intro}\n${BENCH}\n${BENCH}\nГарантия 12 месяцев.`,
+      ),
+    ).toBe(`${intro}\n${BENCH}\nГарантия 12 месяцев.`);
+  });
+
+  it('leaves short repeats, list rows and spec-table rows alone', () => {
+    const texts = [
+      'Да Да',
+      '— — —',
+      'Ключ рожковый 10x12. Ключ рожковый 10x12.',
+      'Материал: сталь\nМатериал: сталь\nПокрытие: —\nПокрытие: —',
+      '■ ■ Инструмент оснащен защитой от перегрузки.',
+      'Вес 180 600 Ход площадки, мм 40 80 Напряжение питания, В 380 380',
+      // A block just under the minimum, twice.
+      `${'а'.repeat(MIN_REPEAT_BLOCK - 1)} ${'а'.repeat(MIN_REPEAT_BLOCK - 1)}`,
+    ];
+    for (const text of texts) expect(collapseRepeatedText(text)).toBe(text);
+  });
+
+  it('leaves a text that only partly repeats itself alone', () => {
+    // Suppliers restate a sentence further down (JOHN BEAN V2260), and two
+    // offers can differ in a word — neither is a copy to drop.
+    const texts = [
+      `${BENCH} Цвет каркаса: серый. ${BENCH}`,
+      `${BENCH} ${BENCH} Цвет каркаса: серый.`,
+      `${BENCH} ${BENCH.replace('400 кг', '300 кг')}`,
+      `${MIRACLE} ${MIRACLE.replace('зеленого', 'розового')}`,
+    ];
+    for (const text of texts) expect(collapseRepeatedText(text)).toBe(text);
+  });
+
+  it('runs inside sanitizeSupplierText, before and after the boilerplate goes', () => {
+    expect(sanitizeSupplierText(Array(3).fill(MIRACLE).join(' '))).toBe(
+      MIRACLE,
+    );
+    expect(
+      sanitizeSupplierText(
+        `Описание: ${BENCH} ${BENCH} Звоните ☎ +375 (29) 668-00-11`,
+      ),
+    ).toBe(BENCH);
+  });
+
+  it('re-cuts the short text and its SEO copy from the collapsed full one', () => {
+    // The parsers cut the short text from the full one. A block over 240
+    // characters gives the same cut; a shorter one held its second copy.
+    const repeated = `${BENCH} ${BENCH}`;
+    const short = truncateAtWord(repeated, 240);
+    expect(
+      cleanProductTexts({
+        name: 'Скамья СМ-1000',
+        descriptionFull: repeated,
+        descriptionShort: short,
+        seoDescription: short,
+      }),
+    ).toEqual({ descriptionFull: BENCH });
+    // A short text of a block under 240 characters held the start of the
+    // second copy.
+    const block = BENCH.slice(0, 200);
+    const twice = `${block} ${block}`;
+    expect(
+      cleanProductTexts({
+        name: 'Скамья',
+        descriptionFull: twice,
+        descriptionShort: truncateAtWord(twice, 240),
+        seoDescription: truncateAtWord(twice, 240),
+      }),
+    ).toEqual({
+      descriptionFull: block,
+      descriptionShort: block,
+      seoDescription: block,
+    });
+  });
+
+  it('leaves a short text of its own alone', () => {
+    expect(
+      cleanProductTexts({
+        name: 'Скамья',
+        descriptionFull: `${BENCH} ${BENCH}`,
+        descriptionShort: 'Скамья для раздевалок.',
+        seoDescription: 'Скамья для раздевалок.',
+      }),
+    ).toEqual({ descriptionFull: BENCH });
   });
 });

@@ -16,7 +16,8 @@
  * «Звоните…», «Лучшие цены…» and phone numbers go.
  *
  * Pure and dependency-free: used at import (ProductIdentityService) and by the
- * one-off backfill of rows imported before this existed.
+ * backfill of rows imported before a rule existed (ProductTextCleanupService,
+ * once per `SUPPLIER_TEXT_RULE_VERSION`).
  */
 
 /** A Belarusian phone: +375 (29) 668-00-11, 375 29 6680011, 8 (029) 668-00-11. */
@@ -153,6 +154,78 @@ export function stripVarDump(text: string): string {
   return current;
 }
 
+/**
+ * Bump when a rule in this file changes what `cleanProductTexts` returns:
+ * `ProductTextCleanupService` then re-reads every product once under the new
+ * rules (its cursor key carries this number), so cards saved before the rule
+ * are fixed without a re-parse — the suppliers that ban us may never re-parse
+ * them. 2 — `collapseRepeatedText` (2026-11-12).
+ */
+export const SUPPLIER_TEXT_RULE_VERSION = 2;
+
+/**
+ * Smallest repeated block that is collapsed, in non-space characters. A
+ * shorter repeat is more likely meant («Да Да», «— —», two equal rows of a
+ * spec table); the copies seen in production are 300–1 900 characters.
+ */
+export const MIN_REPEAT_BLOCK = 80;
+
+const SPACE = /\s/u;
+
+/** `text` up to and including its `count`-th non-space character. */
+function cutAfterNonSpace(text: string, count: number): string {
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (SPACE.test(text[i])) continue;
+    if (++seen === count) return text.slice(0, i + 1);
+  }
+  return text;
+}
+
+/** The whole text is one block repeated N ≥ 2 times → the first copy. */
+function collapseWholeRepeat(text: string): string {
+  const compact = text.replace(/\s+/gu, '');
+  const length = compact.length;
+  for (let block = MIN_REPEAT_BLOCK; block * 2 <= length; block++) {
+    if (length % block !== 0) continue;
+    if (!compact.startsWith(compact.slice(0, block), block)) continue;
+    if (compact.slice(0, block).repeat(length / block) !== compact) continue;
+    return cutAfterNonSpace(text, block);
+  }
+  return text;
+}
+
+/** A paragraph equal to the one right before it is dropped. */
+function collapseRepeatedParagraphs(text: string): string {
+  if (!text.includes('\n')) return text;
+  // split() with a capture group alternates [paragraph, break, paragraph, …].
+  const parts = text.split(/(\s*\n\s*)/u);
+  const kept: string[] = [];
+  let previous = '';
+  for (let i = 0; i < parts.length; i += 2) {
+    const key = parts[i].replace(/\s+/gu, '');
+    if (key.length >= MIN_REPEAT_BLOCK && key === previous) continue;
+    if (kept.length) kept.push(parts[i - 1]);
+    kept.push(parts[i]);
+    if (key) previous = key;
+  }
+  return kept.join('');
+}
+
+/**
+ * Text the supplier repeats back to back. dukon.by renders the description
+ * once per trade offer (1 л, 5 л, 20 кг — all but the first hidden), and the
+ * parser read them all: «Бесконтактный автошампунь Complex Miracle» showed the
+ * same 1 187 characters four times (2026-11-12). Two shapes are collapsed:
+ * the whole text being one block × N (copies may differ in whitespace), and
+ * a paragraph equal to the one before it. Blocks shorter than
+ * `MIN_REPEAT_BLOCK` are left alone, and so is text that only *partly*
+ * repeats — two offers with different texts are not a duplicate.
+ */
+export function collapseRepeatedText(text: string): string {
+  return collapseRepeatedParagraphs(collapseWholeRepeat(text));
+}
+
 function isMarketing(sentence: string) {
   if (MARKETING_SENTENCE.some((re) => re.test(sentence))) return true;
   return BUY.test(sentence) && SUPPLIER_CITY.test(sentence);
@@ -165,7 +238,7 @@ function isMarketing(sentence: string) {
 export function sanitizeSupplierText(text: string | null | undefined): string {
   if (!text) return '';
   text = stripVarDump(text);
-  text = stripTabHeaders(text);
+  text = collapseRepeatedText(stripTabHeaders(text));
   if (!ANY_MARKER.test(text)) return text;
 
   const parts = text.split(BOUNDARY);
@@ -187,7 +260,8 @@ export function sanitizeSupplierText(text: string | null | undefined): string {
     kept.push(kept.length ? separator || ' ' : '', piece);
   }
 
-  return kept.join('').trim();
+  // Copies that differed only by the boilerplate are equal now.
+  return collapseRepeatedText(kept.join('').trim());
 }
 
 const TITLE_TAIL =
@@ -246,9 +320,19 @@ export function cleanProductTexts(
   if (full !== undefined && full !== fields.descriptionFull)
     patch.descriptionFull = full || null;
 
+  // The parsers cut the short text from the full one; a full text that was
+  // repeated (or otherwise cleaned) gives the short one a new start.
+  const fullChanged = full !== undefined && full !== fields.descriptionFull;
+  const cutFromFull = (value: string | null | undefined) =>
+    fullChanged &&
+    typeof value === 'string' &&
+    value === truncateAtWord(fields.descriptionFull as string, SHORT_MAX);
+
   let short: string | undefined;
   if (typeof fields.descriptionShort === 'string') {
-    short = sanitizeSupplierText(fields.descriptionShort);
+    short = cutFromFull(fields.descriptionShort)
+      ? truncateAtWord(full ?? '', SHORT_MAX)
+      : sanitizeSupplierText(fields.descriptionShort);
     if (short !== fields.descriptionShort) {
       if (!short && full) short = truncateAtWord(full, SHORT_MAX);
       patch.descriptionShort = short || null;
@@ -256,7 +340,12 @@ export function cleanProductTexts(
   }
 
   if (typeof fields.seoDescription === 'string') {
-    const seo = sanitizeSupplierText(fields.seoDescription);
+    // dukon falls back to the short text for the SEO description.
+    const seo =
+      fields.seoDescription === fields.descriptionShort &&
+      cutFromFull(fields.descriptionShort)
+        ? (short ?? '')
+        : sanitizeSupplierText(fields.seoDescription);
     if (seo !== fields.seoDescription)
       patch.seoDescription =
         seo ||

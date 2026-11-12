@@ -142,7 +142,13 @@ Supplier tab labels in front of a description («Файлы BULL Электро�
 private screens (their `noindex` exists only after JS) and has Yandex
 `Clean-param` for tracking tags and `sort`. og:image is our own
 `/_ipx/…&s_1200x630&fit_contain&b_ffffff` (`utils/og-image.ts`), never the
-supplier URL. Product JSON-LD carries `gtin*` from the barcode,
-`priceValidUntil` = last offer sync (`priceCheckedAt`) + 7 days, shipping and
-return policy. A category's `seoDescription` equal to its name counts as
+supplier URL, and always **absolute** — the default `/og-image.png` is set in
+`app.vue` from `siteUrl` (in `nuxt.config` `app.head` it was relative: the
+home page, /brand, /sales). Product JSON-LD carries `gtin*` from the barcode,
+`priceValidUntil` = last offer sync (`priceCheckedAt`) + 7 days **only while
+that date is after today** — otherwise the field is left out, never
+re-dated (`utils/product-jsonld.ts`; a past date makes Google drop the
+offer, 12.11: tens of thousands of cards of unparsed suppliers), shipping and
+return policy; `description` is cut to ~1000 characters at a sentence.
+Product pages are `og:type=product` with `product:price:*`. A category's `seoDescription` equal to its name counts as
 empty and the template is used until an AI task writes one.

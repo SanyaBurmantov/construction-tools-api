@@ -36,7 +36,7 @@ const deliveryOptions = computed(() => [
     value: 'COURIER' as const,
     label: DELIVERY_LABEL.COURIER,
     cost: deliveryFor('COURIER', COMPANY, goodsTotal.value),
-    hint: `По адресу, в течение 1–2 дней${freeForCompanyHint.value}`,
+    hint: `По адресу, обычно 1–2 дня${freeForCompanyHint.value}`,
   },
   {
     value: 'POST' as const,
@@ -386,8 +386,8 @@ useHead({
 
           <UiCard title="Оплата">
             <p class="payer-note">
-              {{ PAYMENT_LABEL.INVOICE }}. Менеджер подтвердит заказ, выставит счёт на
-              организацию и пришлёт его на e-mail.
+              {{ PAYMENT_LABEL.INVOICE }}. Счёт на организацию придёт на e-mail,
+              менеджер подтвердит наличие и срок.
             </p>
           </UiCard>
 

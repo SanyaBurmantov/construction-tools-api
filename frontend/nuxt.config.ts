@@ -120,10 +120,17 @@ export default defineNuxtConfig({
       htmlAttrs: { lang: 'ru' },
       link: [
         // SVG first for crisp tabs on modern browsers, PNG/ICO as fallback.
+        // Yandex wants a big one in the results (Webmaster: BIG_FAVICON_ABSENT)
+        // — 120×120 is its size; 48 and 192 for Google and Android.
+        // favicon.ico is a real ICO (16/32/48): it used to be a 48 px PNG
+        // under that name, which Webmaster reported as FAVICON_ERROR.
         { rel: 'icon', type: 'image/svg+xml', href: '/logo-mark.svg' },
+        { rel: 'icon', type: 'image/png', sizes: '120x120', href: '/favicon-120x120.png' },
+        { rel: 'icon', type: 'image/png', sizes: '192x192', href: '/icon-192.png' },
+        { rel: 'icon', type: 'image/png', sizes: '48x48', href: '/favicon-48x48.png' },
         { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
         { rel: 'icon', type: 'image/png', sizes: '16x16', href: '/favicon-16x16.png' },
-        { rel: 'shortcut icon', href: '/favicon.ico' },
+        { rel: 'shortcut icon', type: 'image/x-icon', href: '/favicon.ico' },
         { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
         { rel: 'manifest', href: '/site.webmanifest' },
         // Self-hosted Manrope (see assets/scss/main.scss). Both subsets are
@@ -139,13 +146,13 @@ export default defineNuxtConfig({
         { name: 'color-scheme', content: 'light' },
         { name: 'theme-color', content: '#1d4ed8' },
         { name: 'apple-mobile-web-app-title', content: 'Gost.by' },
-        // Default social preview; pages with their own image override it.
-        { property: 'og:image', content: '/og-image.png' },
+        // Default social preview: og:image / twitter:image are set in
+        // app/app.vue as absolute URLs (the origin is runtime config);
+        // pages with their own image override them.
         { property: 'og:image:width', content: '1200' },
         { property: 'og:image:height', content: '630' },
         { property: 'og:site_name', content: 'Gost.by' },
         { property: 'og:locale', content: 'ru_RU' },
-        { name: 'twitter:image', content: '/og-image.png' },
         { name: 'yandex-verification', content: YANDEX_WEBMASTER_VERIFICATION },
       ],
       ...metrikaHead,

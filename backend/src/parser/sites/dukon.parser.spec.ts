@@ -24,6 +24,29 @@ describe('dukon.parse helpers', () => {
     );
   });
 
+  it("reads the shown offer's description, not every offer's copy", () => {
+    // Real markup (trimmed): four trade offers, one text block each, three
+    // hidden. The container's text was the description four times.
+    const offers = cheerio.load(
+      readFileSync(
+        join(__dirname, 'fixtures', 'dukon-product-offers.html'),
+        'utf8',
+      ),
+    );
+    const description = parser.parseDescription(offers);
+    expect(
+      description.startsWith(
+        'Концентрированное средство для бесконтактной мойки автомобиля',
+      ),
+    ).toBe(true);
+    expect(description.endsWith('При необходимости обратиться к врачу.')).toBe(
+      true,
+    );
+    expect(description.match(/Концентрированное средство/g)).toHaveLength(1);
+    expect(description).not.toContain('array(');
+    expect(description).not.toContain('Подробная информация');
+  });
+
   it('rejects a category listing even when it has Product JSON-LD', () => {
     const category = cheerio.load(`
       <h1>Шкафы для газовых баллонов</h1>

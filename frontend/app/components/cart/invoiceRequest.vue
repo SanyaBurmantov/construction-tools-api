@@ -55,7 +55,7 @@ const deliveryOptions = computed(() => [
   {
     value: 'COURIER' as const,
     label: DELIVERY_LABEL.COURIER,
-    hint: `${deliveryHint('COURIER')}, 1–2 дня`,
+    hint: `${deliveryHint('COURIER')}, обычно 1–2 дня`,
   },
   {
     value: 'POST' as const,
@@ -159,7 +159,7 @@ async function submit() {
     <form class="invoice-form" novalidate @submit.prevent="submit">
       <p class="lead">
         Без регистрации: заполните реквизиты — счёт придёт на e-mail, а менеджер
-        подтвердит наличие. Цены в счёте фиксируются на несколько дней.
+        подтвердит наличие. Цены в счёте зафиксированы до указанной в нём даты.
       </p>
 
       <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>

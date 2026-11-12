@@ -3,6 +3,7 @@ import type { CatalogProduct } from '~/composables/useProductActions'
 import type { BreadcrumbItem, ProductDetail, ProductRecommendations } from '~/types/api'
 import { company } from '~/data/company'
 import { copyText } from '~/utils/clipboard'
+import { jsonLdDescription, priceValidUntil } from '~/utils/product-jsonld'
 
 /** «Арт. … ⧉» beside the brand: one click puts the article on the clipboard. */
 const skuToast = useAppToast()
@@ -196,10 +197,11 @@ const ogImage = computed(() => ogImageUrl(siteUrl, images.value[0]?.url))
 /**
  * «Цена обновлена 28.10.2026» — the last time a supplier's price was read.
  * Prices are re-read daily, so the JSON-LD promises them for a week from
- * that check: honest, and still in the future for a live product. A product
- * whose offers stopped syncing shows an old date, which is the truth.
+ * that check (`priceValidUntil`, utils/product-jsonld.ts). A product whose
+ * offers stopped syncing shows its old date on the page, which is the truth,
+ * and no `priceValidUntil` at all once that week is over — a past date makes
+ * Google drop the offer.
  */
-const PRICE_VALID_DAYS = 7
 const priceCheckedAt = computed(() => {
   const value = product.value?.priceCheckedAt
   return value ? new Date(value) : null
@@ -239,7 +241,6 @@ useSeoMeta({
   description: () => metaDescription.value,
   ogTitle: () => product.value?.name || 'Товар | Gost.by',
   ogDescription: () => metaDescription.value,
-  ogType: 'website',
   ogUrl: () => canonicalUrl.value,
   ogImage: () => ogImage.value,
   ogImageWidth: () => (ogImage.value ? OG_IMAGE_WIDTH : undefined),
@@ -249,9 +250,23 @@ useSeoMeta({
   twitterCard: 'summary_large_image',
 })
 
+// og:type «product» with its price (Open Graph product namespace) —
+// `useSeoMeta` types `ogType` without it, so these are plain meta tags.
+const productOgMeta = computed(() => {
+  const p = product.value
+  const meta = [{ key: 'og:type', property: 'og:type', content: p ? 'product' : 'website' }]
+  if (p?.priceValue != null && p.priceValue > 0) {
+    meta.push(
+      { key: 'product:price:amount', property: 'product:price:amount', content: String(p.priceValue) },
+      { key: 'product:price:currency', property: 'product:price:currency', content: currency.value },
+    )
+  }
+  return meta
+})
+
 useHead(() => {
   const p = product.value
-  if (!p) return { link: [{ rel: 'canonical', href: canonicalUrl.value }] }
+  if (!p) return { link: [{ rel: 'canonical', href: canonicalUrl.value }], meta: productOgMeta.value }
 
   const productLd: Record<string, unknown> = {
     '@context': 'https://schema.org',
@@ -266,11 +281,13 @@ useHead(() => {
   const gtin = gtinFromBarcode(p.barcode)
   if (gtin) productLd[gtin.key] = gtin.value
   // The full description is the product text; `descriptionShort` may be the
-  // supplier's advert (see metaDescription), so it is not used here.
-  productLd.description = p.descriptionFull || metaDescription.value
+  // supplier's advert (see metaDescription), so it is not used here. Cut to
+  // ~1000 characters at a sentence: some supplier texts are thousands long.
+  productLd.description = jsonLdDescription(p.descriptionFull) || metaDescription.value
   if (images.value.length) productLd.image = images.value.map((image) => image.url)
   if (p.brand?.name) productLd.brand = { '@type': 'Brand', name: p.brand.name }
   if (p.priceValue != null && p.priceValue > 0) {
+    const validUntil = priceValidUntil(priceCheckedAt.value)
     productLd.offers = {
       '@type': 'Offer',
       price: p.priceValue,
@@ -282,24 +299,11 @@ useHead(() => {
       itemCondition: 'https://schema.org/NewCondition',
       url: canonicalUrl.value,
       seller: { '@type': 'Organization', name: 'Gost.by' },
-      ...(priceCheckedAt.value
-        ? {
-            priceValidUntil: new Date(priceCheckedAt.value.getTime() + PRICE_VALID_DAYS * 86_400_000)
-              .toISOString()
-              .slice(0, 10),
-          }
-        : {}),
+      ...(validUntil ? { priceValidUntil: validUntil } : {}),
       shippingDetails: {
         '@type': 'OfferShippingDetails',
         shippingRate: { '@type': 'MonetaryAmount', value: courierCost.value, currency: 'BYN' },
         shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'BY' },
-      },
-      hasMerchantReturnPolicy: {
-        '@type': 'MerchantReturnPolicy',
-        applicableCountry: 'BY',
-        returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
-        merchantReturnDays: 14,
-        returnMethod: 'https://schema.org/ReturnInStore',
       },
     }
   }
@@ -315,6 +319,7 @@ useHead(() => {
 
   return {
     link: [{ rel: 'canonical', href: canonicalUrl.value }],
+    meta: productOgMeta.value,
     script: [{ type: 'application/ld+json', innerHTML: JSON.stringify(productLd) }],
   }
 })
