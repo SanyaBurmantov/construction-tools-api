@@ -294,13 +294,6 @@ useHead(() => {
         shippingRate: { '@type': 'MonetaryAmount', value: courierCost.value, currency: 'BYN' },
         shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'BY' },
       },
-      hasMerchantReturnPolicy: {
-        '@type': 'MerchantReturnPolicy',
-        applicableCountry: 'BY',
-        returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
-        merchantReturnDays: 14,
-        returnMethod: 'https://schema.org/ReturnInStore',
-      },
     }
   }
   // Only emit aggregateRating when there really are reviews — Google rejects
