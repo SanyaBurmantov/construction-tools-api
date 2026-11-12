@@ -751,6 +751,25 @@ function scrollToAbout(event: MouseEvent) {
   setTimeout(settle, 1500)
 }
 
+/*
+ * «Коротко» beside the category text (owner, 2026-11-12: «покрасивее»):
+ * facts the page already loaded, as links a buyer can use — never filler.
+ * A group with nothing in it is not drawn; counts of 0 never appear
+ * (categoryLinks drops them, brands are filtered the same way).
+ */
+const ABOUT_CHIPS = 8
+const aboutTotal = computed(() => products.value?.pagination.total ?? category.value?.productCount ?? 0)
+const aboutSubcategories = computed(() => categoryLinks.value.slice(0, ABOUT_CHIPS))
+const aboutBrands = computed(() => {
+  // On a landing the brand is the page itself.
+  if (landing.value) return []
+  return (brands.value || [])
+    .map(brand => ({ ...brand, count: brandCounts.value[brand.id] || 0 }))
+    .filter(brand => brand.count > 0)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'))
+    .slice(0, ABOUT_CHIPS)
+})
+
 /* ---- Search journal (useSearchLog, /admin/search) ---- */
 // A search the visitor actually saw: its first page, once the results are
 // in. Filters on top of a search re-report it; the server counts a repeat
@@ -980,8 +999,57 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
          pushed the products off the first screen), across the whole page —
          under the filters too, not squeezed beside them (owner, 2026-11-06). -->
     <section v-if="showAbout" id="category-about" class="category-about">
-      <h2>{{ landing ? landing.h1 : `О разделе «${category?.name}»` }}</h2>
-      <p v-for="(paragraph, index) in descriptionAll" :key="index">{{ paragraph }}</p>
+      <div class="about-text">
+        <p class="about-eyebrow">О разделе</p>
+        <h2>{{ landing ? landing.h1 : category?.name }}</h2>
+        <p v-for="(paragraph, index) in descriptionAll" :key="index" :class="{ 'about-lead': index === 0 }">
+          {{ paragraph }}
+        </p>
+      </div>
+
+      <aside class="about-facts" aria-label="Коротко о разделе">
+        <p v-if="aboutTotal" class="facts-figure">
+          <strong>{{ pluralize(aboutTotal, 'product') }}</strong>
+          <span v-if="priceRange?.min">от {{ formatPrice(priceRange.min, 'BYN') }}</span>
+        </p>
+
+        <div v-if="aboutSubcategories.length" class="facts-group">
+          <h3>Подразделы</h3>
+          <div class="facts-chips">
+            <NuxtLink v-for="item in aboutSubcategories" :key="item.id" :to="categoryTo(item.slug)" class="facts-chip">
+              {{ item.name }}<span>{{ item.count }}</span>
+            </NuxtLink>
+          </div>
+        </div>
+
+        <div v-if="aboutBrands.length" class="facts-group">
+          <h3>Бренды</h3>
+          <div class="facts-chips">
+            <!-- A filter of this category, not the brand's page: the buyer
+                 stays with the goods he came for. nofollow — the filtered
+                 address canonicalises to the category anyway. -->
+            <NuxtLink
+              v-for="brand in aboutBrands"
+              :key="brand.id"
+              :to="{ path: categoryPath, query: { brands: brand.id } }"
+              rel="nofollow"
+              class="facts-chip"
+            >
+              {{ brand.name }}<span>{{ brand.count }}</span>
+            </NuxtLink>
+          </div>
+        </div>
+
+        <ul class="facts-terms">
+          <li><UiIcon name="check" :size="16" :stroke-width="2.2" /> Оплата по счёту для организаций</li>
+          <li><UiIcon name="check" :size="16" :stroke-width="2.2" /> Доставка по Беларуси</li>
+          <li><UiIcon name="check" :size="16" :stroke-width="2.2" /> Самовывоз в Витебске</li>
+        </ul>
+
+        <a :href="priceListUrl({ categorySlug: category?.slug })" class="facts-price" rel="nofollow" download @click="reachGoal('price_list')">
+          Прайс-лист раздела (Excel)
+        </a>
+      </aside>
     </section>
   </div>
 </template>
@@ -1046,44 +1114,188 @@ function onResultClick(event: MouseEvent, productId: string, index: number) {
    inside keeps a readable line and wraps even an unbroken string (a pasted link, a run of
    characters) instead of pushing past the content area (owner, 2026-11-06). */
 .category-about {
+  display: grid;
   min-width: 0;
   margin-top: var(--space-4);
   /* Clear of the folded sticky header; scrollToAbout() reads it too. */
   scroll-margin-top: calc(var(--header-height) + var(--space-4));
-  padding: var(--space-6) var(--space-8);
+  /* Text, then «Коротко» — the right half of the card used to be empty. */
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--surface-card);
   color: var(--text-default);
   font-size: var(--text-base);
   line-height: 1.65;
+  overflow: hidden;
 }
 
-.category-about h2,
-.category-about p {
-  max-width: 75ch;
+.about-text {
+  min-width: 0;
+  padding: var(--space-6) var(--space-8);
+}
+
+.about-text h2,
+.about-text p {
+  max-width: 68ch;
   overflow-wrap: anywhere;
 }
 
-.category-about h2 {
-  margin-bottom: var(--space-4);
-  color: var(--text-strong);
-  font-size: var(--text-xl);
+.about-eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--brand);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.category-about p {
+.about-text h2 {
+  margin: 0 0 var(--space-4);
+  color: var(--text-strong);
+  font-size: var(--text-2xl);
+  line-height: 1.2;
+}
+
+.about-text p:not(.about-eyebrow) {
   margin: 0;
   white-space: pre-line;
 }
 
-.category-about p + p {
+.about-text p:not(.about-eyebrow) + p {
   margin-top: var(--space-3);
+}
+
+/* The first paragraph is the answer to «что здесь» — it reads first. */
+.about-text .about-lead {
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+
+.about-facts {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: var(--space-6);
+  border-left: 1px solid var(--border-subtle);
+  background: var(--surface-page);
+  gap: var(--space-5);
+}
+
+.facts-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  gap: var(--space-1) var(--space-2);
+}
+
+.facts-figure strong {
+  color: var(--text-strong);
+  font-size: var(--text-lg);
+}
+
+.facts-group h3 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.facts-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.facts-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--surface-card);
+  color: var(--text-default);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  gap: var(--space-2);
+  overflow-wrap: anywhere;
+  transition: border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+
+.facts-chip span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.facts-chip:hover,
+.facts-chip:focus-visible {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.facts-terms {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  color: var(--text-default);
+  font-size: var(--text-sm);
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.facts-terms li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.facts-terms :deep(svg) {
+  flex: none;
+  color: var(--success);
+}
+
+.facts-price {
+  align-self: flex-start;
+  color: var(--brand);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .category-about {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .about-facts {
+    border-top: 1px solid var(--border-subtle);
+    border-left: 0;
+  }
 }
 
 @media (max-width: 640px) {
   .category-about {
-    padding: var(--space-4);
     font-size: var(--text-sm);
+  }
+
+  .about-text,
+  .about-facts {
+    padding: var(--space-4);
+  }
+
+  .about-text h2 {
+    font-size: var(--text-xl);
+  }
+
+  .about-text .about-lead {
+    font-size: var(--text-base);
   }
 }
 
