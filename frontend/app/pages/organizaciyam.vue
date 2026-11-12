@@ -8,9 +8,11 @@ import type { SellerInfo } from '~/composables/useB2b'
  * how paying by invoice works, what documents come with it, the shop's
  * requisites, the price list, and a way to ask for a supply contract.
  */
+const catalogSize = await useCatalogSize()
+
 const description
-  = 'Снабжение организаций инструментом, оборудованием и расходниками: 95 000+ позиций, счёт на оплату сразу на сайте, '
-    + 'оплата по безналичному расчёту, договор поставки, доставка по Беларуси.'
+  = `Снабжение организаций инструментом, оборудованием и расходниками: ${catalogSize.value ? `${catalogSize.value}, ` : ''}`
+    + 'счёт на оплату сразу на сайте, оплата по безналичному расчёту, договор поставки, доставка по Беларуси.'
 
 usePageSeo({ title: 'Для организаций', description, path: '/organizaciyam' })
 
@@ -106,7 +108,8 @@ const tools = [
     <header class="hero">
       <h1>Снабжение организаций инструментом и расходниками</h1>
       <p class="hero-lead">
-        95 000+ позиций от первого импортера в РБ с ежедневным обновлением цен.
+        <template v-if="catalogSize">{{ catalogSize }} от первого импортера в РБ с ежедневным обновлением цен.</template>
+        <template v-else>Товары от первого импортера в РБ с ежедневным обновлением цен.</template>
         Счёт на оплату — сразу на сайте, оплата по безналичному расчёту, работа по договору поставки,
         доставка по всей Беларуси и самовывоз в Витебске.
       </p>

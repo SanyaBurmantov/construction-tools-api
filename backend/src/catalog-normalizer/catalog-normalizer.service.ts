@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ParserRuntimeStatusService } from '../parser/parser-runtime-status.service';
+import { ProductIdentityService } from '../parser/product-identity.service';
 import {
   SpecNormalizerService,
   SpecNormalizeReport,
@@ -18,6 +19,11 @@ export type CatalogNormalizeReport = {
   dryRun: boolean;
   specs: SpecNormalizeReport;
   categories: CategoryNormalizeReport;
+  /**
+   * Values products kept under a category they had left: dropped where the
+   * current category holds the same characteristic, moved where it did not.
+   */
+  movedProductSpecs: { dropped: number; moved: number };
   durationMs: number;
 };
 
@@ -44,6 +50,7 @@ export class CatalogNormalizerService {
     private readonly specs: SpecNormalizerService,
     private readonly categories: CategoryNormalizerService,
     private readonly status: ParserRuntimeStatusService,
+    private readonly identity: ProductIdentityService,
   ) {}
 
   get isRunning() {
@@ -122,12 +129,21 @@ export class CatalogNormalizerService {
       // but a run that merges categories will fold a few more specifications
       // than its preview promised — never fewer.
       const categories = await this.categories.normalize(dryRun);
+      // Before the spec pass, so the rows that move land in the categories
+      // it then folds and normalizes. A parse does the same per product;
+      // this catches products moved without a re-parse (admin, offline
+      // supplier) and what piled up before the parse did it.
+      const movedProductSpecs = await this.identity.foldMovedSpecifications(
+        undefined,
+        dryRun,
+      );
       const specs = await this.specs.normalize(dryRun);
 
       const report: CatalogNormalizeReport = {
         dryRun,
         specs,
         categories,
+        movedProductSpecs,
         durationMs: Date.now() - startedAt,
       };
       if (!dryRun) await this.status.success(CATALOG_NORMALIZE_KEY, report);
