@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiClient } from './ai.client';
-import { balanceFor, parseBalanceFloor } from './ai-runner.cron';
+import { balanceFor, parseBalanceFloor } from './ai-balance-floor';
 
 /** The admin's floor; no row = the env value (the old place). */
 export const MIN_BALANCE_KEY = 'ai.minBalance';
