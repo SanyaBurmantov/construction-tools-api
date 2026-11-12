@@ -261,9 +261,29 @@ and the wrong city on our pages and in the JSON-LD. `parser/supplier-text.ts`
 sentences and phone numbers and leaves anything without its markers
 byte-for-byte alone; `ProductIdentityService.save()` applies it to every
 parser's `descriptionShort/Full` + `seoTitle/Description`. Rows imported before
-it are cleaned by `ProductTextCleanupService` a minute after boot (idempotent;
-`PRODUCT_TEXT_CLEANUP_ON_BOOT=false` to skip, `POST /admin/parser/clean-product-texts`
-to re-run) — the same tested function rather than a SQL copy of it.
+a rule are fixed by `ProductTextCleanupService` (worker only) — the same tested
+function rather than a SQL copy of it: **once per `SUPPLIER_TEXT_RULE_VERSION`**
+it reads every product (ids in chunks, then one row), resumable through the
+`productTextCleanup.cursor.v<N>` setting, a minute after boot and nightly at
+04:27 until done; it skips `lockedFields`/`aiLockedFields` and writes only
+text (+ `contentUpdatedAt`). **Bump the version when a rule changes what
+`cleanProductTexts` returns** — that is the only way stored cards (whose
+supplier may ban us and never re-parse them) get the new rule.
+`PRODUCT_TEXT_CLEANUP_ON_BOOT=false` skips the boot run.
+
+**A text repeated back to back is one text** (`collapseRepeatedText`, v2,
+2026-11-12). dukon.by renders the description once per trade offer (1 л /
+5 л / 20 кг, all but the shown one `display:none`) and the parser read the
+container: Complex car shampoos 3–4 copies, СМ benches 32, tyre changers and
+alignment stands 2–3 — 32 of 1 548 sampled cards. `dukon.parse.ts` now reads
+the shown `.contentinner-detail-info` block; `sanitizeSupplierText` collapses
+the rest for every parser: the whole text = one block × N (whitespace
+between copies ignored), or a paragraph equal to the one before it. Blocks
+under `MIN_REPEAT_BLOCK` (80 non-space chars) stay — «Да Да», equal spec
+rows. A text that only *partly* repeats stays too: suppliers restate a
+sentence further down, and tools.by's «Преимущества» tab differs from its
+«Описание» in bullets — neither is an exact copy (sample: 0 false positives).
+The short text cut from a repeated full one is re-cut.
 
 **dukon.by's PHP var_dump never reaches our text either**: its product page
 prints a `var_dump` of the catalogue record (up to 2.5 MB, 1 480 cards

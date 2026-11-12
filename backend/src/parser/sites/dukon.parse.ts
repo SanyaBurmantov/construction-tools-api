@@ -557,11 +557,21 @@ export function isProductImageUrl(url: string) {
 }
 
 export function parseDescription($: cheerio.CheerioAPI) {
-  const text = clean(
-    $('#detailtext, .detailtext, #description, .content.description')
-      .first()
-      .text(),
+  const container = $(
+    '#detailtext, .detailtext, #description, .content.description',
+  ).first();
+  // A product with trade offers (1 л, 5 л, 20 кг) carries one text block per
+  // offer, all but the current one `display: none`. The container's text was
+  // every block back to back — the same description up to 32 times (Complex
+  // car shampoos, СМ benches; 2026-11-12). The shown block is the one.
+  const offers = container.find('.contentinner-detail-info');
+  const shown = offers.filter(
+    (_, element) => !/display\s*:\s*none/i.test($(element).attr('style') ?? ''),
   );
+  const source = offers.length
+    ? (shown.length ? shown : offers).first()
+    : container;
+  const text = clean(source.text());
   return sanitizeSupplierText(
     text.replace(/^Подробная информация\s*array\(0\) \{ \}\s*/, ''),
   );

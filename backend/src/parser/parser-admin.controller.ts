@@ -261,8 +261,10 @@ export class ParserAdminController {
   }
 
   /**
-   * Re-runs the boot-time pass that strips supplier sales boilerplate (their
-   * phone, «купить в Минске») from product text. Idempotent.
+   * Resumes the worker's pass that brings stored product text up to the
+   * current supplier-text rules (their phone, «купить в Минске», a text
+   * repeated per trade offer). Runs once per rule version: when the pass is
+   * done this reads one setting and returns `alreadyDone`.
    */
   @Post('clean-product-texts')
   @HttpCode(200)

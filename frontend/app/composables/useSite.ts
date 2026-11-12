@@ -1,3 +1,5 @@
+import { absoluteImageUrl } from '~/utils/og-image'
+
 /**
  * Site origin and API base, resolved once instead of in every page.
  *
@@ -26,7 +28,7 @@ export function usePageSeo(options: {
   image?: string
   robots?: string
 }) {
-  const { absoluteUrl } = useSite()
+  const { siteUrl, absoluteUrl } = useSite()
   const title = `${options.title} | Gost.by`
   const url = absoluteUrl(options.path)
   useSeoMeta({
@@ -36,7 +38,7 @@ export function usePageSeo(options: {
     ogDescription: options.description,
     ogUrl: url,
     ogType: 'website',
-    ...(options.image ? { ogImage: options.image } : {}),
+    ...(options.image ? { ogImage: absoluteImageUrl(siteUrl, options.image) } : {}),
     ...(options.robots ? { robots: options.robots } : {}),
   })
   useHead({ link: [{ rel: 'canonical', href: url }] })

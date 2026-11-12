@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { paginationItems } from '~/utils/pagination'
+
 type PageHref = (page: number) => string // eslint-disable-line no-unused-vars
 
 const props = defineProps<{
@@ -18,22 +20,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{ change: [page: number] }>()
 
-/** Windowed page list with ellipses: 1 … 4 5 [6] 7 8 … 20 */
-const items = computed<Array<number | '…'>>(() => {
-  const { page, pages } = props
-  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
-
-  const result: Array<number | '…'> = [1]
-  const start = Math.max(2, page - 1)
-  const end = Math.min(pages - 1, page + 1)
-
-  if (start > 2) result.push('…')
-  for (let i = start; i <= end; i += 1) result.push(i)
-  if (end < pages - 1) result.push('…')
-  result.push(pages)
-
-  return result
-})
+/**
+ * «1 … p-1 p p+1 … last» plus anchors at p ± 4, 16, 64, … — every page of a
+ * long listing a few clicks away for a crawler (utils/pagination.ts). Only a
+ * pager of links gets the anchors: a button pager (admin tables, account,
+ * reviews) is never crawled and keeps the compact window.
+ */
+const items = computed(() => paginationItems(props.page, props.pages, { anchors: Boolean(props.hrefFor) }))
 
 function go(page: number) {
   if (page < 1 || page > props.pages || page === props.page) return
@@ -50,86 +43,92 @@ function onLinkClick(event: MouseEvent, page: number) {
 
 <template>
   <nav v-if="pages > 1" class="ui-pagination" aria-label="Постраничная навигация">
-    <a
-      v-if="hrefFor && page > 1"
-      :href="hrefFor(page - 1)"
-      class="nav"
-      rel="prev"
-      aria-label="Предыдущая страница"
-      @click="onLinkClick($event, page - 1)"
-    >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </a>
-    <button
-      v-else
-      type="button"
-      class="nav"
-      :disabled="page <= 1"
-      aria-label="Предыдущая страница"
-      @click="go(page - 1)"
-    >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </button>
+    <!-- Each number travels with its «…» (and the first/last with the arrow,
+         the last with the total) as one unit that never breaks: the row may
+         wrap, but an arrow, a «…» or «N шт.» is never left alone on a line. -->
+    <span v-for="(item, index) in items" :key="item.page" class="unit">
+      <template v-if="index === 0">
+        <a
+          v-if="hrefFor && page > 1"
+          :href="hrefFor(page - 1)"
+          class="nav"
+          rel="prev"
+          aria-label="Предыдущая страница"
+          @click="onLinkClick($event, page - 1)"
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
+        <button
+          v-else
+          type="button"
+          class="nav"
+          :disabled="page <= 1"
+          aria-label="Предыдущая страница"
+          @click="go(page - 1)"
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M12 4l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </template>
 
-    <template v-for="(item, index) in items" :key="`${item}-${index}`">
-      <span v-if="item === '…'" class="gap" aria-hidden="true">…</span>
+      <span v-if="item.gapBefore" class="gap" aria-hidden="true">…</span>
       <a
-        v-else-if="hrefFor && item !== page"
-        :href="hrefFor(item)"
+        v-if="hrefFor && item.page !== page"
+        :href="hrefFor(item.page)"
         class="page"
-        @click="onLinkClick($event, item)"
+        @click="onLinkClick($event, item.page)"
       >
-        {{ item }}
+        {{ item.page }}
       </a>
       <span
         v-else-if="hrefFor"
         class="page is-current"
         aria-current="page"
       >
-        {{ item }}
+        {{ item.page }}
       </span>
       <button
         v-else
         type="button"
         class="page"
-        :class="{ 'is-current': item === page }"
-        :aria-current="item === page ? 'page' : undefined"
-        @click="go(item)"
+        :class="{ 'is-current': item.page === page }"
+        :aria-current="item.page === page ? 'page' : undefined"
+        @click="go(item.page)"
       >
-        {{ item }}
+        {{ item.page }}
       </button>
-    </template>
 
-    <a
-      v-if="hrefFor && page < pages"
-      :href="hrefFor(page + 1)"
-      class="nav"
-      rel="next"
-      aria-label="Следующая страница"
-      @click="onLinkClick($event, page + 1)"
-    >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M8 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </a>
-    <button
-      v-else
-      type="button"
-      class="nav"
-      :disabled="page >= pages"
-      aria-label="Следующая страница"
-      @click="go(page + 1)"
-    >
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M8 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </button>
-
-    <span v-if="total != null" class="total">{{ total }} шт.</span>
+      <template v-if="index === items.length - 1">
+        <a
+          v-if="hrefFor && page < pages"
+          :href="hrefFor(page + 1)"
+          class="nav"
+          rel="next"
+          aria-label="Следующая страница"
+          @click="onLinkClick($event, page + 1)"
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M8 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </a>
+        <button
+          v-else
+          type="button"
+          class="nav"
+          :disabled="page >= pages"
+          aria-label="Следующая страница"
+          @click="go(page + 1)"
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M8 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <span v-if="total != null" class="total">{{ total }} шт.</span>
+      </template>
+    </span>
   </nav>
 </template>
 
@@ -139,6 +138,14 @@ function onLinkClick(event: MouseEvent, page: number) {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
+  row-gap: var(--space-2);
+}
+
+.unit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
 }
 
 .page,
@@ -189,5 +196,25 @@ function onLinkClick(event: MouseEvent, page: number) {
   margin-left: var(--space-3);
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+/* The anchors make up to ~11 numbers: on a phone they wrap into a second
+   line at a slightly smaller size instead of being hidden — they are what a
+   visitor (and a crawler) jumps through a long listing by. */
+@media (max-width: 560px) {
+  .page,
+  .nav {
+    min-width: 34px;
+    height: 34px;
+    padding: 0 var(--space-1);
+  }
+
+  .gap {
+    padding: 0;
+  }
+
+  .total {
+    margin-left: var(--space-2);
+  }
 }
 </style>

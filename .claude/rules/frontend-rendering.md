@@ -96,6 +96,17 @@ ISR route rules, the bounded page cache and its warm-up, canonical and legacy UR
   `parentId`, root first) — it used to jump from «Каталог» to the leaf.
   The product's Описание / Характеристики / Отзывы tabs render every panel
   and hide the inactive ones (`v-show`), so the specs are in the HTML.
+  **Every listing page is a few clicks deep** (`UiPagination`,
+  `utils/pagination.ts`, tested): besides «1 … p-1 p p+1 … last» the pager
+  links p ± 4, 16, 64, … — page 90 of 178 was 88 clicks from page 1, now any
+  page is ≤ 6 (Search Console, 12.11: 67% of products «URL неизвестен
+  Google»). Don't shrink it back to the window. Anchors only for a pager
+  of links (`hrefFor`: catalogue, `/sales`); a pager of buttons (admin
+  tables, account orders, reviews) is never crawled and keeps the compact
+  window (`{ anchors: false }`). Each number wraps together with its «…»,
+  the first/last with the arrow, the last with «N шт.» (`.unit`, nowrap):
+  checked at 320–1440 px, an arrow, a «…» or the total used to be left
+  alone on a line (12.11).
 
 - **«Пусто» and «не ответило» are different screens.** The storefront fetches
   softly (a failed rail degrades to an empty rail, so cached pages always
