@@ -607,6 +607,35 @@ export function parseBreadcrumbNames($: cheerio.CheerioAPI) {
     .filter(Boolean);
 }
 
+/**
+ * dukon.by sells some items at «Цена: уточняйте» (workbenches, tool trolleys,
+ * cabinets — ~400 offers on 2026-11-13). Such a page still carries the usual
+ * price block, `.soloprice-wrap` > `.price.gen`, with Bitrix's placeholder
+ * «1 руб.» in it, but hidden (`display: none`), and shows the «уточняйте»
+ * note instead. Reading `.price.gen` put a 1 BYN workbench on sale.
+ */
+export function isPriceOnRequest($: cheerio.CheerioAPI) {
+  if (/цена:\s*уточняйте/i.test(clean($('.card-soloprice').first().text()))) {
+    return true;
+  }
+  // A priced page has a hidden wrap too (the wholesale OPT3 price), but its
+  // first, retail one is shown; an on-request page hides every one of them.
+  const wraps = $('.soloprice-wrap').toArray();
+  return (
+    wraps.length > 0 &&
+    wraps.every((el) => /display\s*:\s*none/i.test($(el).attr('style') ?? ''))
+  );
+}
+
+/** The price a buyer sees on the page; none when it is «уточняйте». */
+export function parseShownPrice(
+  $: cheerio.CheerioAPI,
+  jsonLdPrice?: number,
+): number | undefined {
+  if (isPriceOnRequest($)) return undefined;
+  return parsePrice($('.price.gen').first().text()) || jsonLdPrice;
+}
+
 export function parseOldPrice($: cheerio.CheerioAPI, currentPrice?: number) {
   const candidates = [
     '.old-price',

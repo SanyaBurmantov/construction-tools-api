@@ -35,11 +35,12 @@ import {
   parseSeoTitle,
   parseMeta,
   parseBreadcrumbNames,
+  isPriceOnRequest,
   parseOldPrice,
   parseStockStatus,
   parseModelCodeFromName,
   normalizeCurrency,
-  parsePrice,
+  parseShownPrice,
   absoluteUrl,
   clean,
 } from './dukon.parse';
@@ -417,10 +418,10 @@ export class DukonParserService extends SupplierQueueParser {
       jsonLd?.barcode;
     const breadcrumbs = parseBreadcrumbNames($);
     const brandName = resolveBrand($, specs, jsonLd?.brand, breadcrumbs);
-    const priceValue =
-      parsePrice($('.price.gen').first().text()) || jsonLd?.price;
+    const priceOnRequest = isPriceOnRequest($);
+    const priceValue = parseShownPrice($, jsonLd?.price);
     const priceCurrency = normalizeCurrency(jsonLd?.currency) || 'BYN';
-    const oldPrice = parseOldPrice($, priceValue);
+    const oldPrice = priceOnRequest ? undefined : parseOldPrice($, priceValue);
     const stockStatus = parseStockStatus($, jsonLd?.availability);
     const descriptionFull =
       parseDescription($) ||
@@ -503,6 +504,7 @@ export class DukonParserService extends SupplierQueueParser {
       barcode,
       brandName,
       priceValue,
+      priceOnRequest,
       priceCurrency,
       oldPrice,
       stockStatus,
@@ -551,8 +553,8 @@ export class DukonParserService extends SupplierQueueParser {
       parseModelCodeFromName(name);
     const breadcrumbs = parseBreadcrumbNames($);
     const brandName = resolveBrand($, specs, jsonLd?.brand, breadcrumbs);
-    const priceValue =
-      parsePrice($('.price.gen').first().text()) || jsonLd?.price;
+    const priceOnRequest = isPriceOnRequest($);
+    const priceValue = parseShownPrice($, jsonLd?.price);
     const descriptionFull =
       parseDescription($) ||
       sanitizeSupplierText(clean(jsonLd?.description || ''));
@@ -575,8 +577,9 @@ export class DukonParserService extends SupplierQueueParser {
         jsonLd?.barcode,
       brandName,
       priceValue,
+      priceOnRequest,
       priceCurrency: normalizeCurrency(jsonLd?.currency) || 'BYN',
-      oldPrice: parseOldPrice($, priceValue),
+      oldPrice: priceOnRequest ? undefined : parseOldPrice($, priceValue),
       stockStatus: parseStockStatus($, jsonLd?.availability),
       descriptionFull,
       descriptionShort: parseDescriptionShort($, descriptionFull),
@@ -599,6 +602,7 @@ export class DukonParserService extends SupplierQueueParser {
       barcode?: string;
       brandName?: string;
       priceValue?: number;
+      priceOnRequest: boolean;
       priceCurrency: string;
       oldPrice?: number;
       stockStatus: DukonStockStatus;
@@ -627,6 +631,7 @@ export class DukonParserService extends SupplierQueueParser {
         model: data.model,
         barcode: data.barcode,
         oldPrice: data.oldPrice,
+        priceOnRequest: data.priceOnRequest || undefined,
         stockStatus: data.stockStatus,
         descriptionShort: data.descriptionShort,
         seoTitle: data.seoTitle,
@@ -641,7 +646,11 @@ export class DukonParserService extends SupplierQueueParser {
       url,
       name: data.name,
       sku: data.sku,
-      price: offerPrice(data.priceValue, data.stockStatus === 'out_of_stock'),
+      price: offerPrice(
+        data.priceValue,
+        data.stockStatus === 'out_of_stock',
+        data.priceOnRequest,
+      ),
       currency: data.priceCurrency,
       stock: data.stockStatus === 'in_stock',
       images: data.images,

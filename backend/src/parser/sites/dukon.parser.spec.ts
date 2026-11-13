@@ -240,6 +240,37 @@ describe('dukon.parse helpers', () => {
     ]);
   });
 
+  describe('price on request («Цена: уточняйте»)', () => {
+    const load = (file: string) =>
+      cheerio.load(readFileSync(join(__dirname, 'fixtures', file), 'utf8'));
+
+    it('takes no price from the hidden «1 руб.» placeholder', () => {
+      const page = load('dukon-price-on-request.html');
+      // What the parser used to read: a 1 BYN tool trolley went on sale.
+      expect(parser.parsePrice(page('.price.gen').first().text())).toBe(1);
+      expect(parser.isPriceOnRequest(page)).toBe(true);
+      expect(parser.parseShownPrice(page, 1)).toBeUndefined();
+    });
+
+    it('reads the retail price when the wholesale wrap is hidden', () => {
+      const page = load('dukon-price-shown.html');
+      expect(parser.isPriceOnRequest(page)).toBe(false);
+      expect(parser.parseShownPrice(page)).toBe(62.29);
+    });
+
+    it('treats every price wrap hidden as on request, even without the note', () => {
+      const page = cheerio.load(
+        '<div class="soloprice card-soloprice"><div class="soloprice-wrap" style="display:none"><div class="price gen">1 руб.</div></div></div>',
+      );
+      expect(parser.isPriceOnRequest(page)).toBe(true);
+    });
+
+    it('leaves a page without the block alone', () => {
+      expect(parser.isPriceOnRequest($)).toBe(false);
+      expect(parser.parseShownPrice($)).toBe(384.82);
+    });
+  });
+
   describe('brand', () => {
     const spec = (name: string, value: string) => ({ name, value });
     const empty = cheerio.load('<html></html>');
