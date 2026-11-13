@@ -250,6 +250,16 @@ after 3 (`MAX_CATALOG_PAGE_FAILURES`), and the run still reports ERROR rather
 than SUCCESS when anything was deferred or dropped. `dukon.parse.ts` filters
 off-site `/brands/` and paginator links, and `PAGEN_2` is pagination, not a
 category.
+**«Цена: уточняйте» is no price** (2026-11-13). Such a dukon page (workbenches,
+tool trolleys, cabinets — ~409 offers) still has `.soloprice-wrap` >
+`.price.gen` with Bitrix's placeholder «1 руб.», only hidden, and the parser
+put a 1 BYN trolley on sale. `isPriceOnRequest` (the «уточняйте» note, or
+every `.soloprice-wrap` hidden — a priced page hides one too, the wholesale
+OPT3 price, but shows the retail one first) makes `offerPrice(…, true)`
+return `null`: the offer is withdrawn and the card goes priceless and out
+of stock like any unquoted item. Checked on 25 placeholder + 40 priced live
+pages (fixtures `dukon-price-*.html`). Never filter on «price = 1» — a real
+item sells at 0.90–1.00.
 
 ## Supplier text and specs
 

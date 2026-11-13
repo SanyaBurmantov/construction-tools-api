@@ -16,6 +16,12 @@ describe('offerPrice', () => {
     expect(offerPrice(undefined, false)).toBeUndefined();
     expect(offerPrice(Number.NaN, false)).toBeUndefined();
   });
+
+  it('withdraws the price when the page says it is on request', () => {
+    // dukon.by keeps «1 руб.» in the hidden price block of such items.
+    expect(offerPrice(1, false, true)).toBeNull();
+    expect(offerPrice(undefined, false, true)).toBeNull();
+  });
 });
 
 describe('stuckAfterHours', () => {
