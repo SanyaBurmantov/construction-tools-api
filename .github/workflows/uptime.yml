@@ -31,7 +31,7 @@ jobs:
     # Alert step after it must still run.
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           sparse-checkout: deploy/uptime-check.sh
           sparse-checkout-cone-mode: false
