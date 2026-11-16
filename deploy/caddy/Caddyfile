@@ -36,7 +36,10 @@ www.{$DOMAIN} {
   # и ссылок открывают страницу внутри metrika.yandex.ru).
   # Google Tag Manager (16.11.2026): GTM, Google Analytics 4 и Google Ads по
   # списку Google для CSP, плюс tagmanager.google.com для режима
-  # предпросмотра. Тег в контейнере GTM для любого другого сервиса браузер
+  # предпросмотра. Google Ads шлёт конверсии на разные поддомены
+  # doubleclick.net (ad., googleads.g., td.) — открыт весь домен; проверено
+  # на живом сайте 16.11 по событию securitypolicyviolation.
+  # Тег в контейнере GTM для любого другого сервиса браузер
   # заблокирует — его хосты добавляются сюда осознанно.
   header {
     # No includeSubDomains: mail.gost.by is hoster.by's webmail with a
@@ -46,7 +49,7 @@ www.{$DOMAIN} {
     Referrer-Policy "strict-origin-when-cross-origin"
     Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
     Cross-Origin-Opener-Policy "same-origin"
-    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com https://yastatic.net https://www.googletagmanager.com https://*.googletagmanager.com https://tagmanager.google.com https://www.googleadservices.com https://googleads.g.doubleclick.net https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com wss://mc.yandex.ru wss://mc.yandex.by wss://mc.yandex.com https://mc.webvisor.org https://mc.webvisor.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://googleads.g.doubleclick.net https://www.google.com https://pagead2.googlesyndication.com https://www.googleadservices.com; frame-src 'self' blob: https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com https://www.googletagmanager.com https://td.doubleclick.net; worker-src 'self' blob:; frame-ancestors 'self' https://metrika.yandex.ru https://metrika.yandex.by https://metrica.yandex.com https://*.webvisor.com; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com https://yastatic.net https://www.googletagmanager.com https://*.googletagmanager.com https://tagmanager.google.com https://www.googleadservices.com https://googleads.g.doubleclick.net https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com wss://mc.yandex.ru wss://mc.yandex.by wss://mc.yandex.com https://mc.webvisor.org https://mc.webvisor.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.doubleclick.net https://www.google.com https://www.google.by https://pagead2.googlesyndication.com https://www.googleadservices.com; frame-src 'self' blob: https://mc.yandex.ru https://mc.yandex.by https://mc.yandex.com https://www.googletagmanager.com https://*.doubleclick.net; worker-src 'self' blob:; frame-ancestors 'self' https://metrika.yandex.ru https://metrika.yandex.by https://metrica.yandex.com https://*.webvisor.com; base-uri 'self'; form-action 'self'; object-src 'none'"
     -X-Powered-By
     -Server
   }
