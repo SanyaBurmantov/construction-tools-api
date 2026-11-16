@@ -101,3 +101,21 @@ Request timing and SLOs, pg_stat_statements, facets cache, our page-view counter
   `purchase`. The goals themselves are created in the counter by
   `backend/scripts/metrika-goals.mjs` (idempotent, needs a `metrika:write`
   token). Never rename a goal id — its goal stops counting; add a new one.
+
+- **Google Tag Manager** (`GTM-WC86H7DJ`, 16.11 — asked for by the owner's
+  side; `nuxt.config.ts` `__gostGtm`). Same rules as Metrika: production
+  only, never `/admin*` (`plugins/metrika-admin.client.ts` reloads into the
+  admin when either counter runs), **only after «Принять все»**. The consent
+  record carries a version (`CONSENT_VERSION`, 2 — in `useCookieConsent.ts`
+  *and* `nuxt.config.ts`, keep them equal): an «all» given to the
+  Metrika-only banner (no `v`) keeps Metrika running but re-opens the banner,
+  and GTM loads only after the new answer. Bump it whenever the banner starts
+  naming another service. Refusal wipes `_ym*`, `_ga*`, `_gid`, `_gat*`,
+  `_gcl*` and reloads if a counter ran. **CSP is the leash**: whoever edits
+  the container can add any tag, but only GTM / GA4 / Google Ads hosts (and
+  `tagmanager.google.com` for preview) are open in `deploy/caddy/Caddyfile`
+  — a tag for another service is blocked until its hosts are added there on
+  purpose. GTM and Metrika share `dataLayer`, so the container sees the
+  e-commerce `add` / `purchase` pushes. The banner and `/privacy` (2.7,
+  5.3.1, 9.2) name Google; the policy text waits for the lawyer like the
+  rest.

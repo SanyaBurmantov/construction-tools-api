@@ -39,6 +39,22 @@ const earlyClickScript = {
 
 const YANDEX_METRIKA_ID = 113800110
 /**
+ * Google Tag Manager (16.11.2026). Same rules as Metrika above: production
+ * only, never on `/admin*`, and only with consent — `window.__gostGtm()` runs
+ * on «Принять все», or at load when the stored consent is `v >= 2` (the
+ * banner text that names Google; a visitor who accepted the Metrika-only
+ * text is asked again). Whoever edits the container can put any script on
+ * the storefront, but only hosts opened in the CSP (deploy/caddy/Caddyfile:
+ * GTM, Google Analytics, Google Ads) can load or receive anything — a tag for
+ * another service needs its hosts added there. GTM shares `dataLayer` with
+ * Metrika's e-commerce (`utils/metrika.ts`), so it sees the same `add` /
+ * `purchase` pushes. SPA navigation: a container needs a History Change
+ * trigger (GA4's enhanced measurement does it by itself).
+ */
+const GTM_ID = 'GTM-WC86H7DJ'
+/** Bump when the consent banner starts naming another service. */
+const CONSENT_VERSION = 2
+/**
  * Yandex Webmaster ownership of gost.by (account that owns the Metrika
  * counter; host added through the Webmaster API on 2026-11-05). Not a
  * secret — Webmaster only checks that the page carries it. Removing it
@@ -52,7 +68,7 @@ const metrikaHead = isProdBuild
         earlyClickScript,
         {
           key: 'yandex-metrika',
-          innerHTML: `window.__gostMetrika=function(){if(window.ym||/^\\/admin(\\/|$)/.test(location.pathname))return;(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href.replace(/([?&](?:token|id)=)[^&#]*/g,'$1-'),accurateTrackBounce:true,trackLinks:true});};try{var c=JSON.parse(localStorage.getItem('cookie-consent')||'null');if(c&&c.choice==='all')window.__gostMetrika();}catch(e){}`,
+          innerHTML: `window.__gostGtm=function(){if(window.__gostGtmLoaded||/^\\/admin(\\/|$)/.test(location.pathname))return;window.__gostGtmLoaded=1;var w=window,d=document;w.dataLayer=w.dataLayer||[];w.dataLayer.push({'gtm.start':new Date().getTime(),event:'gtm.js'});var k=d.createElement('script'),a=d.getElementsByTagName('script')[0];k.async=true;k.src='https://www.googletagmanager.com/gtm.js?id=${GTM_ID}';a.parentNode.insertBefore(k,a)};window.__gostMetrika=function(){if(window.ym||/^\\/admin(\\/|$)/.test(location.pathname))return;(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};m[i].l=1*new Date();for(var j=0;j<document.scripts.length;j++){if(document.scripts[j].src===r){return;}}k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})(window,document,'script','https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_ID}','ym');ym(${YANDEX_METRIKA_ID},'init',{ssr:true,webvisor:true,clickmap:true,ecommerce:'dataLayer',referrer:document.referrer,url:location.href.replace(/([?&](?:token|id)=)[^&#]*/g,'$1-'),accurateTrackBounce:true,trackLinks:true});};try{var c=JSON.parse(localStorage.getItem('cookie-consent')||'null');if(c&&c.choice==='all'){window.__gostMetrika();if(c.v>=${CONSENT_VERSION})window.__gostGtm();}}catch(e){}`,
         },
       ],
     }
