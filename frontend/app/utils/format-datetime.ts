@@ -60,3 +60,18 @@ export const formatDateTimeWithYear = (iso: Iso) => format(dateTimeWithYear, iso
 /** «11 окт, 14:05:09» — the audit trail and the error log, where order matters. */
 export const formatDateTimeWithSeconds = (iso: Iso) =>
   format(dateTimeWithSeconds, iso)
+
+const lastDay = new Intl.DateTimeFormat(LOCALE, {
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'Europe/Minsk',
+})
+
+/**
+ * «31 января» — the last day an exclusive deadline still covers: a promo code
+ * whose `endsAt` is 1 February 00:00 works through 31 January. Pinned to
+ * Minsk time because SSR runs in UTC — without it the server and the browser
+ * print different days for a deadline set at local midnight.
+ */
+export const formatLastDay = (iso: Iso) =>
+  iso ? lastDay.format(new Date(new Date(iso).getTime() - 1)) : '—'

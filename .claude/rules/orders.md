@@ -95,6 +95,19 @@ Checkout and terms of sale, organisations-only mode, cart re-pricing and server 
   exhausted check is done in JS because Prisma cannot compare two columns
   (`usedCount >= maxUses`) in a `where`, and `usedCount`/`maxUses` never leave
   the admin API.
+  **Advertised codes** (16.11): the same list is public at
+  `GET /promo-codes/public` — the home page's strip (`HomePromoNotice`, the
+  first one) and **auto-apply**: the cart and checkout apply the advertised
+  code worth the most on the cart by themselves when none is applied
+  (`usePromoCode().autoApply()`, the choice is pure `utils/auto-promo.ts`,
+  tested; codes below their minimum are skipped without a validate call —
+  that endpoint is throttled). The chip says «применён автоматически»; ✕
+  remembers the code for the tab's session and it is not put back; an
+  auto-applied code that stops fitting drops out silently, a typed one still
+  shows its error. `isPublic` therefore means «advertised to everyone,
+  including guests» — switch it off for a code meant for one person. Nothing
+  to take down when a code ends: an expired code leaves the list, the strip
+  and the auto-apply (the home page is `swr: 60`).
 
 ## Cart and lists
 

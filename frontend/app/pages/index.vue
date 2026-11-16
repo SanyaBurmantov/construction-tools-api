@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Banner, Brand, ProductsResponse } from '~/types/api'
+import type { Banner, Brand, ProductsResponse, PromoCodeOffer } from '~/types/api'
 import { company } from '~/data/company'
 import { toCardProduct } from '~/composables/useProductActions'
 
@@ -70,8 +70,8 @@ function varied(list: ProductsResponse['data'], size = HOME_RAIL_SIZE, perCatego
 /** How many brand tiles the home page shows: two full rows of eight. */
 const HOME_BRAND_COUNT = 16
 
-// Eight independent requests: started together, the render waits for the
-// slowest one instead of their sum.
+// Independent requests: started together, the render waits for the slowest
+// one instead of their sum.
 const [
   { data: sales },
   { data: popular },
@@ -82,6 +82,7 @@ const [
   { data: tree },
   { data: brands },
   { data: popularSearches },
+  { data: promo },
 ] = await Promise.all([
   useRail('home-sales', { onSale: true, sortBy: 'createdAt', sortOrder: 'desc' }),
   useRail('home-popular', { inStock: true, sortBy: 'rating', sortOrder: 'desc' }),
@@ -130,6 +131,14 @@ const [
     'home-popular-searches',
     () => $fetch<{ terms: string[] }>(`${apiBase}/search/popular`).catch(() => ({ terms: [] })),
     { default: () => ({ terms: [] }) }
+  ),
+  // The advertised promo code — decoration like the banners: a failure just
+  // leaves the strip out. The home page is swr 60, so an expired code is gone
+  // within a minute.
+  useAsyncData<{ data: PromoCodeOffer[] }>(
+    'home-promo',
+    () => $fetch<{ data: PromoCodeOffer[] }>(`${apiBase}/promo-codes/public`).catch(() => ({ data: [] })),
+    { default: () => ({ data: [] }) }
   ),
 ])
 
@@ -248,6 +257,8 @@ useHead({
 
 <template>
   <div class="home">
+    <HomePromoNotice v-if="promo.data[0]" class="home-promo" :offer="promo.data[0]" />
+
     <HomeHeroBanners v-if="banners.data.length" :banners="banners.data" />
 
     <!-- Hero: search and categories, not a slogan -->
@@ -440,6 +451,11 @@ useHead({
   display: flex;
   flex-direction: column;
   gap: var(--space-10);
+}
+
+/* The promo strip belongs to the hero below it, not a section of its own. */
+.home-promo {
+  margin-bottom: calc(var(--space-6) * -1);
 }
 
 /* ---- Hero ---- */

@@ -105,7 +105,8 @@ Category tree and browsing API, facets, curated blocks, the home page, category 
   (`useHeaderCategories()`, shared key with the home page), cached 30 s in
   the API.
 
-- **Home page** (05.11, `pages/index.vue`): hero → terms → «Каталог»
+- **Home page** (05.11, `pages/index.vue`): [the advertised promo code,
+  when there is one — see `orders.md`] → hero → terms → «Каталог»
   (12 tiles: 6 × 2 on a computer, 4 × 3 on a tablet, 3 × 4 on a phone) → «Популярное у организаций» →
   `HomeForCompanies` (three steps of a purchase by invoice, cart / price
   list / supply contract, the seller's requisites) → «Новинки» → brands.

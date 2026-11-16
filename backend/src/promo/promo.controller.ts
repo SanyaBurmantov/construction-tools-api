@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import { PromoService } from './promo.service';
@@ -20,5 +20,17 @@ export class PromoController {
   @Post('validate')
   validate(@Body() dto: ValidatePromoCodeDto) {
     return this.service.validateForCheckout(dto.code, dto.itemsTotal);
+  }
+
+  /**
+   * The codes the shop advertises to everyone — the home page's promo strip.
+   * The same list the account's «Доступные промокоды» shows: `isPublic` means
+   * "advertised", so a code meant for one person (flag off) never appears
+   * here, and `usedCount` stays admin-only. An expired or exhausted code drops
+   * out by itself, so the strip disappears without anyone touching it.
+   */
+  @Get('public')
+  listPublic() {
+    return this.service.listAvailable();
   }
 }
