@@ -156,6 +156,23 @@ export interface AdminBanner extends Banner {
 }
 
 /**
+ * A promo code the shop advertises: `GET /promo-codes/public` (home page) and
+ * `GET /account/promo-codes` (the account) answer with the same list.
+ * `endsAt` is the exclusive end — the moment the code stops working.
+ */
+export interface PromoCodeOffer {
+  id: string
+  code: string
+  description: string | null
+  type: 'PERCENT' | 'FIXED'
+  value: number
+  minOrderTotal: number | null
+  freeDelivery: boolean
+  endsAt: string | null
+  usesLeft: number | null
+}
+
+/**
  * Mirrors the Prisma `OrderStatus` enum exactly. It used to carry a
  * `COMPLETED` that the database has never had: filtering by it or setting it
  * was a 400 from the DTO, and the two statuses that do exist (`PROCESSING`,

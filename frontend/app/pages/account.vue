@@ -1,22 +1,10 @@
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
 import type { AccountUser, CustomerType } from '~/composables/useAuth'
-import type { Order, OrderStatus, Paginated } from '~/types/api'
+import type { Order, OrderStatus, Paginated, PromoCodeOffer } from '~/types/api'
 import type { CompanyRequisitesModel } from '~/utils/requisites'
 // The year matters here: an order history spans them.
 import { formatDateTimeWithYear as formatDateTime } from '~/utils/format-datetime'
-
-type AccountPromoCode = {
-  id: string
-  code: string
-  description: string | null
-  type: 'PERCENT' | 'FIXED'
-  value: number
-  minOrderTotal: number | null
-  freeDelivery: boolean
-  endsAt: string | null
-  usesLeft: number | null
-}
 
 type Summary = {
   user: AccountUser
@@ -240,7 +228,7 @@ function repeatOrder(order: Order) {
 }
 
 /* ---- Promo codes ------------------------------------------------------- */
-const promoCodes = ref<AccountPromoCode[]>([])
+const promoCodes = ref<PromoCodeOffer[]>([])
 const promoLoading = ref(false)
 const promoError = ref('')
 const copiedCode = ref('')
@@ -249,7 +237,7 @@ async function loadPromoCodes() {
   promoLoading.value = true
   promoError.value = ''
   try {
-    const response = await authFetch<{ data: AccountPromoCode[] }>('/account/promo-codes')
+    const response = await authFetch<{ data: PromoCodeOffer[] }>('/account/promo-codes')
     promoCodes.value = response.data
   } catch (error) {
     promoError.value = errorMessage(error, 'Не удалось загрузить промокоды')
@@ -273,7 +261,7 @@ async function copyCode(code: string) {
   }
 }
 
-const discountLabel = (code: AccountPromoCode) =>
+const discountLabel = (code: PromoCodeOffer) =>
   code.type === 'PERCENT' ? `−${code.value}%` : `−${formatPrice(code.value, 'BYN')}`
 
 /* ---- E-mail confirmation ------------------------------------------------ */

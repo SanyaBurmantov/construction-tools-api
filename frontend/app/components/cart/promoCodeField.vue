@@ -19,6 +19,7 @@ const input = ref('')
 // Rendered only once the cart has lines, so the restore below sees them.
 onMounted(async () => {
   await promo.restore()
+  await promo.autoApply()
   input.value = promo.code.value
 })
 promo.watchCartTotal()
@@ -29,7 +30,7 @@ async function apply() {
 }
 
 function remove() {
-  promo.clear()
+  promo.dismiss()
   input.value = ''
 }
 </script>
@@ -57,6 +58,7 @@ function remove() {
       <div>
         <code>{{ promo.preview.value.code }}</code>
         <span v-if="promo.preview.value.freeDelivery">+ бесплатная доставка</span>
+        <span v-if="promo.auto.value">применён автоматически</span>
       </div>
       <button type="button" aria-label="Убрать промокод" @click="remove">✕</button>
     </div>
