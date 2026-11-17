@@ -18,3 +18,11 @@ export const TH_TOOLS_DEFAULT_EXCLUDE_REGEX = '';
 
 /** tools.by: no default filter — every category is imported. */
 export const TOOLS_BY_DEFAULT_EXCLUDE_REGEX = '';
+
+/**
+ * b2bit.by: only the «Стройка и ремонт» department (owner, 2026-11-17). The
+ * portal also sells computers, phones, appliances and furniture — not ours.
+ * The filter is matched against the full b2bit chain, department included,
+ * and discovery walks only the leaves it lets through.
+ */
+export const B2BIT_DEFAULT_INCLUDE_REGEX = '^Стройка и ремонт( /|$)';

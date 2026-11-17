@@ -8,6 +8,7 @@ import {
 import { SitemapsService } from './sitemaps/sitemaps.service';
 import { ThToolsParserService } from './sites/th-tools-source.parser';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
+import { B2bitParserService } from './sites/b2bit-source.parser';
 import { DukonParserService } from './sites/dukon.parser';
 
 /** What an admin request may pass to a job. */
@@ -72,6 +73,7 @@ export class ParserJobsService {
     private readonly thTools: ThToolsParserService,
     private readonly toolsBy: ToolsByParserService,
     private readonly dukon: DukonParserService,
+    private readonly b2bit: B2bitParserService,
   ) {}
 
   /** Jobs a source has, in the order they make sense to an operator. */
@@ -185,6 +187,32 @@ export class ParserJobsService {
             description:
               'Возвращает всю очередь в PENDING и перечитывает каталог заново.',
             run: () => this.dukon.revalidateAllSitemaps(),
+          },
+        ];
+      case 'b2bit':
+        return [
+          {
+            name: 'refresh',
+            label: 'Обойти каталог',
+            description:
+              'Читает дерево категорий b2bit и списки товаров в продаже (по фильтру категорий, по умолчанию «Стройка и ремонт») и добавляет новые товары в очередь. ~150 запросов.',
+            run: () => this.b2bit.refreshSitemaps(),
+          },
+          {
+            name: 'process',
+            label: 'Разобрать пачку',
+            description: 'Берёт из очереди пачку товаров и сохраняет их.',
+            run: async (params) =>
+              this.b2bit.processSitemapsBatch(
+                params?.limit ?? (await this.settings.getBatchLimit(code)),
+                1,
+              ),
+          },
+          {
+            name: 'revalidate',
+            label: 'Перечитать всё',
+            description: 'Возвращает всю очередь в PENDING.',
+            run: () => this.b2bit.revalidateAllSitemaps(),
           },
         ];
       default:

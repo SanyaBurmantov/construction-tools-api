@@ -1,0 +1,181 @@
+{
+ "id": 265589,
+ "general_properties": [
+  {
+   "id": 16192848,
+   "property_id": 14195,
+   "name": "Тип",
+   "value": "отвертка с набором оснастки",
+   "unit": "",
+   "order": 0
+  },
+  {
+   "id": 27125045,
+   "property_id": 34947,
+   "name": "Количество предметов",
+   "value": "38",
+   "unit": "Grands",
+   "order": 0
+  },
+  {
+   "id": 37291111,
+   "property_id": 36668,
+   "name": "Вид наконечника",
+   "value": "для сверхточных работ Pentalobe (P); прямой шлиц Slotted (SL); крестовой с насечками Pozidriv (PZ); звездочкой Torx (T); трехлопастный Tri-Wing (TW); крестовой Philips (PH)",
+   "unit": "",
+   "order": 1
+  }
+ ],
+ "properties": [
+  {
+   "name": "Основная информация",
+   "order": 0,
+   "value": [
+    {
+     "id": 16192848,
+     "property_id": 14195,
+     "name": "Тип",
+     "value": "отвертка с набором оснастки",
+     "unit": "",
+     "order": 0
+    },
+    {
+     "id": 27125045,
+     "property_id": 34947,
+     "name": "Количество предметов",
+     "value": "38",
+     "unit": "Grands",
+     "order": 0
+    },
+    {
+     "id": 37291111,
+     "property_id": 36668,
+     "name": "Вид наконечника",
+     "value": "для сверхточных работ Pentalobe (P); прямой шлиц Slotted (SL); крестовой с насечками Pozidriv (PZ); звездочкой Torx (T); трехлопастный Tri-Wing (TW); крестовой Philips (PH)",
+     "unit": "",
+     "order": 1
+    }
+   ]
+  },
+  {
+   "name": "Дополнительная информация",
+   "order": 1,
+   "value": [
+    {
+     "id": 27125045,
+     "property_id": 34947,
+     "name": "Количество предметов",
+     "value": "38",
+     "unit": "Grands",
+     "order": 0
+    },
+    {
+     "id": 27125042,
+     "property_id": 24786,
+     "name": "Цвет",
+     "value": "черный",
+     "unit": "",
+     "order": 0
+    },
+    {
+     "id": 16192850,
+     "property_id": 14199,
+     "name": "Материал рукоятки",
+     "value": "пластик",
+     "unit": "",
+     "order": 1
+    },
+    {
+     "id": 27125044,
+     "property_id": 34945,
+     "name": "Материал рабочей части",
+     "value": "металл",
+     "unit": "",
+     "order": 2
+    },
+    {
+     "id": 16192851,
+     "property_id": 14200,
+     "name": "Комплектация",
+     "value": "Магнитный удлинитель - 60мм;Отвертка под биты;Phillips - 1.0, 1.5, 2.0, 2.5, 3.5;Flathead - 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0;Pentalobe - 0.8, 1.2;Torx - T3 - T10 + T15, T20;Tri-wing - 0.8, 2.0;Spanner - 1.6;Star - 0.8, 1.2 ;Pozidriv - Y0.8, Y2.0.",
+     "unit": "",
+     "order": 5
+    }
+   ]
+  },
+  {
+   "name": "Страна происхождения",
+   "order": 500,
+   "value": [
+    {
+     "name": "Страна происхождения",
+     "value": "КИТАЙ",
+     "unit": "",
+     "order": 0
+    }
+   ]
+  }
+ ],
+ "name": "Набор отверток Ugreen CM372-80459 (80459)",
+ "description": "отвертка с набором оснастки / 38 / для сверхточных работ Pentalobe (P); прямой шлиц Slotted (SL); крестовой с насечками Pozidriv (PZ); звездочкой Torx (T); трехлопастный Tri-Wing (TW); крестовой Philips (PH)",
+ "sku": "80459",
+ "discounted": 0,
+ "available": false,
+ "category": {
+  "id": 209,
+  "name": "Отвертки и наборы отверток",
+  "image": "https://unknown.domain/category/%D0%9E%D1%82%D0%B2%D0%B5%D1%80%D1%82%D0%BA%D0%B8_%D0%B8_%D0%BD%D0%B0%D0%B1%D0%BE%D1%80%D1%8B_%D0%BE%D1%82%D0%B2%D0%B5%D1%80%D1%82%D0%BE%D0%BA_vW4PVVD.png"
+ },
+ "vendor": {
+  "id": 4752,
+  "name": "Ugreen",
+  "image": null
+ },
+ "ean": "6957303884599",
+ "length": "0.16000",
+ "width": "0.09000",
+ "height": "0.03000",
+ "volume": "0.00043",
+ "weight": "0.27000",
+ "photos": [
+  "https://media.b2bit.by/media/public/2024/07/20/70/70b2fe29-a08e-41ba-911a-47dbcd00d38a.jpeg",
+  "https://media.b2bit.by/media/public/2024/07/20/ae/ae09ca81-613e-4c58-b141-3ffd01347256.jpeg",
+  "https://media.b2bit.by/media/public/2024/07/20/8b/8b820ea4-e67f-4445-a48d-972359b9bc7b.jpeg",
+  "https://media.b2bit.by/media/public/2024/07/20/27/27a77609-ea76-4eae-aef3-33333fc98cbf.jpeg",
+  "https://media.b2bit.by/media/public/2024/07/20/eb/eb4696d2-7e32-4f24-b37f-0aa657e818fd.jpeg"
+ ],
+ "offers": [
+  {
+   "ext_id": "1000001",
+   "company": "АйТи Дистрибуция ООО",
+   "warehouse": "Склад",
+   "sku": "0000000001",
+   "new": false,
+   "quantity": 40,
+   "is_reserve": false,
+   "stock": "Много",
+   "stock_id": 3,
+   "free_dereserve": true,
+   "available_date": null,
+   "warranty": 6,
+   "promotion": "",
+   "price": 30.0,
+   "price_old": 0,
+   "price_rrc": 35.0,
+   "vat": 999,
+   "order": false,
+   "order_text": "В наличии",
+   "currency": "BYN",
+   "available": true,
+   "status": "stock",
+   "traceable": false,
+   "max_quantity_template": 0,
+   "warehouse_type": 1,
+   "edo": false,
+   "article": ""
+  }
+ ],
+ "ext_id": "424676",
+ "product_labels": [],
+ "step_changes": 1
+}

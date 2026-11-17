@@ -470,6 +470,20 @@ model SitemapsToolsBy {
   @@index([status, visitedAt])
 }
 
+/// b2bit.by product queue; url = https://b2bit.by/product/<id> (see sites/b2bit.parse.ts).
+model SitemapsB2bit {
+  id          String    @id @default(uuid())
+  url         String    @unique
+  isVisited   Boolean   @default(false)
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?
+  lastTriedAt DateTime?
+  visitedAt   DateTime?
+
+  @@index([status, visitedAt])
+}
+
 enum OrderStatus {
   NEW
   CONFIRMED

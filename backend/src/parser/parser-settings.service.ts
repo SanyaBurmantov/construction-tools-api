@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  B2BIT_DEFAULT_INCLUDE_REGEX,
   TH_TOOLS_DEFAULT_EXCLUDE_REGEX,
   TOOLS_BY_DEFAULT_EXCLUDE_REGEX,
 } from './parser-defaults';
@@ -13,6 +14,7 @@ const DEFAULT_CATEGORY_FILTERS: Record<
   'th-tools': { include: '', exclude: TH_TOOLS_DEFAULT_EXCLUDE_REGEX },
   'tools-by': { include: '', exclude: TOOLS_BY_DEFAULT_EXCLUDE_REGEX },
   dukon: { include: '', exclude: '' },
+  b2bit: { include: B2BIT_DEFAULT_INCLUDE_REGEX, exclude: '' },
 };
 
 /**
@@ -92,6 +94,27 @@ export const PARSER_SOURCES = [
     defaultBatchLimit: 300,
     hasCategoryQueue: false,
     defaultEnabled: true,
+  },
+  {
+    code: 'b2bit',
+    name: 'B2BIT (b2bit.by)',
+    // api.b2bit.by is matched as a subdomain: the API is what we fetch.
+    host: 'b2bit.by',
+    queuePrefix: '/b2bit',
+    envFlag: 'B2BIT_CRON_ENABLED',
+    envBatchLimit: 'B2BIT_CRON_BATCH_LIMIT',
+    envRequestDelay: 'B2BIT_REQUEST_DELAY_MS',
+    envCategoryInclude: 'B2BIT_CATEGORY_INCLUDE_REGEX',
+    envCategoryExclude: 'B2BIT_CATEGORY_EXCLUDE_REGEX',
+    envMaxPages: 'B2BIT_DISCOVERY_MAX_PAGES',
+    defaultRequestDelayMs: 3000,
+    /** ~95 leaf categories, ~4.8k products at 100 a page: ~150 listing pages. */
+    defaultMaxPages: 500,
+    /** 4.8k products: a first pass in ~16 batches, a day's re-read the same. */
+    defaultBatchLimit: 300,
+    hasCategoryQueue: false,
+    /** Off until the login is in `.env.prod` and a preview looked right. */
+    defaultEnabled: false,
   },
 ] as const;
 

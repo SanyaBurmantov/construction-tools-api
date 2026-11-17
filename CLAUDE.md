@@ -5,7 +5,7 @@ Guidance for working in this repository. Read this first.
 ## What this project is
 
 gost.by — a construction-tools catalogue for business buyers. It continuously
-parses products from supplier sites (th-tool.by, dukon.by, tools.by),
+parses products from supplier sites (th-tool.by, dukon.by, tools.by, b2bit.by),
 normalizes them into a shared catalogue and serves a public storefront.
 
 - **backend/** — NestJS 11 API (TypeScript), Prisma 5 + PostgreSQL 15, the

@@ -1,0 +1,454 @@
+{
+ "id": 1083588,
+ "general_properties": [
+  {
+   "id": 36829937,
+   "property_id": 17491,
+   "name": "Частота вращения вала, об/м",
+   "value": "15000",
+   "unit": "DimensionlessQuantity",
+   "order": 1
+  },
+  {
+   "id": 36812640,
+   "property_id": 17492,
+   "name": "Рабочая ширина",
+   "value": "82.0",
+   "unit": "Millimeters",
+   "order": 2
+  },
+  {
+   "id": 36812639,
+   "property_id": 17490,
+   "name": "Питание",
+   "value": "аккумулятор",
+   "unit": "",
+   "order": 3
+  },
+  {
+   "id": 36812648,
+   "property_id": 17506,
+   "name": "Напряжение аккумулятора",
+   "value": "18",
+   "unit": "Volts",
+   "order": 4
+  },
+  {
+   "id": 36812650,
+   "property_id": 17509,
+   "name": "Аккумулятор в комплекте",
+   "value": "нет",
+   "unit": "",
+   "order": 5
+  },
+  {
+   "id": 36812642,
+   "property_id": 17498,
+   "name": "Подключение к пылесосу",
+   "value": "да",
+   "unit": "",
+   "order": 6
+  },
+  {
+   "id": 36829917,
+   "property_id": 17500,
+   "name": "Возможность стационарной установки",
+   "value": "нет",
+   "unit": "",
+   "order": 7
+  },
+  {
+   "id": 36812644,
+   "property_id": 17501,
+   "name": "Параллельный упор",
+   "value": "да",
+   "unit": "",
+   "order": 8
+  },
+  {
+   "id": 36812638,
+   "property_id": 17489,
+   "name": "Вес",
+   "value": "2.5",
+   "unit": "Kilograms",
+   "order": 9
+  }
+ ],
+ "properties": [
+  {
+   "name": "Основная информация",
+   "order": 0,
+   "value": [
+    {
+     "id": 37319176,
+     "property_id": 17493,
+     "name": "Глубина строгания",
+     "value": null,
+     "unit": "Millimeters",
+     "order": 0
+    },
+    {
+     "id": 36829937,
+     "property_id": 17491,
+     "name": "Частота вращения вала, об/м",
+     "value": "15000",
+     "unit": "DimensionlessQuantity",
+     "order": 1
+    },
+    {
+     "id": 37319177,
+     "property_id": 17494,
+     "name": "Глубина выборки паза",
+     "value": null,
+     "unit": "Millimeters",
+     "order": 1
+    },
+    {
+     "id": 36812640,
+     "property_id": 17492,
+     "name": "Рабочая ширина",
+     "value": "82.0",
+     "unit": "Millimeters",
+     "order": 2
+    },
+    {
+     "id": 36812639,
+     "property_id": 17490,
+     "name": "Питание",
+     "value": "аккумулятор",
+     "unit": "",
+     "order": 3
+    },
+    {
+     "id": 36812648,
+     "property_id": 17506,
+     "name": "Напряжение аккумулятора",
+     "value": "18",
+     "unit": "Volts",
+     "order": 4
+    },
+    {
+     "id": 36812650,
+     "property_id": 17509,
+     "name": "Аккумулятор в комплекте",
+     "value": "нет",
+     "unit": "",
+     "order": 5
+    },
+    {
+     "id": 36812642,
+     "property_id": 17498,
+     "name": "Подключение к пылесосу",
+     "value": "да",
+     "unit": "",
+     "order": 6
+    },
+    {
+     "id": 36829917,
+     "property_id": 17500,
+     "name": "Возможность стационарной установки",
+     "value": "нет",
+     "unit": "",
+     "order": 7
+    },
+    {
+     "id": 36812644,
+     "property_id": 17501,
+     "name": "Параллельный упор",
+     "value": "да",
+     "unit": "",
+     "order": 8
+    },
+    {
+     "id": 36812638,
+     "property_id": 17489,
+     "name": "Вес",
+     "value": "2.5",
+     "unit": "Kilograms",
+     "order": 9
+    }
+   ]
+  },
+  {
+   "name": "Дополнительная информация",
+   "order": 1,
+   "value": [
+    {
+     "id": 37319176,
+     "property_id": 17493,
+     "name": "Глубина строгания",
+     "value": null,
+     "unit": "Millimeters",
+     "order": 0
+    },
+    {
+     "id": 37319177,
+     "property_id": 17494,
+     "name": "Глубина выборки паза",
+     "value": null,
+     "unit": "Millimeters",
+     "order": 1
+    },
+    {
+     "id": 36812641,
+     "property_id": 17496,
+     "name": "V-образный паз",
+     "value": "True",
+     "unit": "",
+     "order": 2
+    },
+    {
+     "id": 36812647,
+     "property_id": 17505,
+     "name": "Тип аккумулятора",
+     "value": "Li-ion",
+     "unit": "",
+     "order": 3
+    },
+    {
+     "id": 36812648,
+     "property_id": 17506,
+     "name": "Напряжение аккумулятора",
+     "value": "18",
+     "unit": "Volts",
+     "order": 4
+    },
+    {
+     "id": 36812642,
+     "property_id": 17498,
+     "name": "Подключение к пылесосу",
+     "value": "да",
+     "unit": "",
+     "order": 6
+    },
+    {
+     "id": 36829918,
+     "property_id": 17507,
+     "name": "Дополнительный аккумулятор",
+     "value": "False",
+     "unit": "",
+     "order": 6
+    },
+    {
+     "id": 36829917,
+     "property_id": 17500,
+     "name": "Возможность стационарной установки",
+     "value": "нет",
+     "unit": "",
+     "order": 7
+    },
+    {
+     "id": 36812649,
+     "property_id": 17508,
+     "name": "Зарядное устройство",
+     "value": "False",
+     "unit": "",
+     "order": 7
+    },
+    {
+     "id": 36812644,
+     "property_id": 17501,
+     "name": "Параллельный упор",
+     "value": "да",
+     "unit": "",
+     "order": 8
+    },
+    {
+     "id": 36829976,
+     "property_id": 35595,
+     "name": "Особенности",
+     "value": "возможность подключения пылесоса, кнопка блокировки выключателя, желобы для снятия фасок",
+     "unit": "",
+     "order": 8
+    },
+    {
+     "id": 36812643,
+     "property_id": 17499,
+     "name": "Комплектация",
+     "value": "рубанок, параллельная направляющая, ножи (карбид вольфрама), ключ, устройство для установки ножей",
+     "unit": "",
+     "order": 9
+    }
+   ]
+  },
+  {
+   "name": "Размеры и вес",
+   "order": 2,
+   "value": [
+    {
+     "id": 36812645,
+     "property_id": 17502,
+     "name": "Длина",
+     "value": "40.04",
+     "unit": "Centimeters",
+     "order": 0
+    },
+    {
+     "id": 36812646,
+     "property_id": 17503,
+     "name": "Ширина",
+     "value": "17.05",
+     "unit": "Centimeters",
+     "order": 1
+    },
+    {
+     "id": 36812651,
+     "property_id": 28124,
+     "name": "Высота",
+     "value": "40.02",
+     "unit": "Centimeters",
+     "order": 2
+    }
+   ]
+  },
+  {
+   "name": "Комплектация",
+   "order": 2,
+   "value": [
+    {
+     "id": 36812650,
+     "property_id": 17509,
+     "name": "Аккумулятор в комплекте",
+     "value": "нет",
+     "unit": "",
+     "order": 5
+    },
+    {
+     "id": 36829918,
+     "property_id": 17507,
+     "name": "Дополнительный аккумулятор",
+     "value": "False",
+     "unit": "",
+     "order": 6
+    },
+    {
+     "id": 36812649,
+     "property_id": 17508,
+     "name": "Зарядное устройство",
+     "value": "False",
+     "unit": "",
+     "order": 7
+    },
+    {
+     "id": 36812643,
+     "property_id": 17499,
+     "name": "Комплектация",
+     "value": "рубанок, параллельная направляющая, ножи (карбид вольфрама), ключ, устройство для установки ножей",
+     "unit": "",
+     "order": 9
+    }
+   ]
+  },
+  {
+   "name": "Габариты и вес",
+   "order": 3,
+   "value": [
+    {
+     "id": 36812645,
+     "property_id": 17502,
+     "name": "Длина",
+     "value": "40.04",
+     "unit": "Centimeters",
+     "order": 0
+    },
+    {
+     "id": 36812646,
+     "property_id": 17503,
+     "name": "Ширина",
+     "value": "17.05",
+     "unit": "Centimeters",
+     "order": 1
+    },
+    {
+     "id": 36812638,
+     "property_id": 17489,
+     "name": "Вес",
+     "value": "2.5",
+     "unit": "Kilograms",
+     "order": 9
+    }
+   ]
+  },
+  {
+   "name": "Страна происхождения",
+   "order": 500,
+   "value": [
+    {
+     "name": "Страна происхождения",
+     "value": "КИТАЙ",
+     "unit": "",
+     "order": 0
+    }
+   ]
+  }
+ ],
+ "name": "Электрорубанок DeWalt DCP580N (DCP580N-XJ)",
+ "description": "15000 / 82.0 / аккумулятор / 18 / нет / да / нет / да / 2.5",
+ "sku": "DCP580N-XJ",
+ "discounted": 0,
+ "available": false,
+ "category": {
+  "id": 1003,
+  "name": "Электрорубанки",
+  "image": "https://unknown.domain/category/rubanok-100.png"
+ },
+ "vendor": {
+  "id": 6104,
+  "name": "DeWalt",
+  "image": null
+ },
+ "ean": "5035048616253",
+ "length": "0.40000",
+ "width": "0.40000",
+ "height": "0.17000",
+ "volume": "0.02720",
+ "weight": "3.64000",
+ "photos": [
+  "https://catalogapp.b-cdn.net/production/images/08/02/06/40/1253131e-5e77-49d5-9d66-ed73cc461053.jpg",
+  "https://catalogapp.b-cdn.net/production/images/08/02/06/40/d7c9bec7-bc6e-4958-a59a-3756895810fe.jpg",
+  "https://catalogapp.b-cdn.net/production/images/59/21/44/28/7d3123da-e6e2-451a-8ce8-635951347a6c.jpg",
+  "https://catalogapp.b-cdn.net/production/images/08/02/06/40/ecd5e9c1-07c4-4404-a272-96ecf41d4d29.jpg",
+  "https://catalogapp.b-cdn.net/production/images/08/02/06/40/d44010ae-ac94-4ead-a7a0-9fb2c16c54e6.jpg"
+ ],
+ "offers": [
+  {
+   "ext_id": "1000001",
+   "company": "АйТи Дистрибуция ООО",
+   "warehouse": "Склад",
+   "sku": "0000000001",
+   "new": false,
+   "quantity": 41,
+   "is_reserve": false,
+   "stock": "Много",
+   "stock_id": 3,
+   "free_dereserve": true,
+   "available_date": null,
+   "warranty": 12,
+   "promotion": "Спец. цена",
+   "price": 500.0,
+   "price_old": 600.0,
+   "price_rrc": 700.0,
+   "vat": 999,
+   "order": false,
+   "order_text": "В наличии",
+   "currency": "BYN",
+   "available": true,
+   "status": "stock",
+   "traceable": false,
+   "max_quantity_template": 0,
+   "warehouse_type": 1,
+   "edo": false,
+   "article": ""
+  }
+ ],
+ "ext_id": "1319297",
+ "product_labels": [
+  {
+   "title": "Акция",
+   "code": "promo",
+   "color": "#FFFFFF",
+   "bg": "#E02020"
+  }
+ ],
+ "step_changes": 1
+}
