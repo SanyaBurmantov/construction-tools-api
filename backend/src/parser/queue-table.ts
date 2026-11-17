@@ -10,6 +10,7 @@ const QUEUE_TABLES = {
   'th-tools': { delegate: 'sitemapsThTools', table: 'SitemapsThTools' },
   'tools-by': { delegate: 'sitemapsToolsBy', table: 'SitemapsToolsBy' },
   dukon: { delegate: 'sitemapsDukon', table: 'SitemapsDukon' },
+  b2bit: { delegate: 'sitemapsB2bit', table: 'SitemapsB2bit' },
 } as const;
 
 export type QueueSourceCode = keyof typeof QUEUE_TABLES;

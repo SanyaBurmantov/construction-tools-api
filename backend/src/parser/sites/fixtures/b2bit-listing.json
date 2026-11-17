@@ -1,0 +1,40 @@
+{
+ "count": 205,
+ "products": [
+  {
+   "id": 1083588,
+   "name": "Электрорубанок DeWalt DCP580N (DCP580N-XJ)",
+   "offers": [
+    {
+     "status": "stock",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 1166411,
+   "name": "Электрорубанок TEH TEP8290",
+   "offers": [
+    {
+     "status": "stock",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 922993,
+   "name": "Электрорубанок Milwaukee M18 BP-0 (4933451113)",
+   "offers": [
+    {
+     "status": "stock",
+     "available": true
+    }
+   ]
+  },
+  {
+   "id": 1083588,
+   "name": "Электрорубанок DeWalt DCP580N (DCP580N-XJ)",
+   "offers": []
+  }
+ ]
+}

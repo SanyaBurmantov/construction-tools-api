@@ -269,6 +269,16 @@ export class AdminController {
     return this.adminService.queueRows('tools-by', query);
   }
 
+  @Get('queue/b2bit')
+  getB2bitQueueStats() {
+    return this.adminService.queueStats('b2bit');
+  }
+
+  @Get('queue/b2bit/sitemaps')
+  getB2bitSitemaps(@Query() query: AdminSitemapQueryDto) {
+    return this.adminService.queueRows('b2bit', query);
+  }
+
   @Get('queue/sitemaps')
   getSitemaps(@Query() query: AdminSitemapQueryDto) {
     return this.adminService.queueRows('th-tools', query);
@@ -366,6 +376,26 @@ export class AdminController {
   @Post('queue/tools-by/sitemaps/:id/retry')
   retryToolsBySitemap(@Param('id') id: string) {
     return this.adminService.retryQueueRow('tools-by', id);
+  }
+
+  @Post('queue/b2bit/refresh-sitemaps')
+  refreshB2bitSitemaps() {
+    return this.adminService.refreshQueue('b2bit');
+  }
+
+  @Post('queue/b2bit/process')
+  processB2bitQueuedProducts(@Body('limit') limit?: unknown) {
+    return this.adminService.processQueue('b2bit', limit);
+  }
+
+  @Post('queue/b2bit/sitemaps/retry-problems')
+  retryProblemB2bitSitemaps() {
+    return this.adminService.retryQueueProblems('b2bit');
+  }
+
+  @Post('queue/b2bit/sitemaps/:id/retry')
+  retryB2bitSitemap(@Param('id') id: string) {
+    return this.adminService.retryQueueRow('b2bit', id);
   }
 
   @Post('categories')

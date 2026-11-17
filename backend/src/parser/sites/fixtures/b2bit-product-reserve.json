@@ -1,0 +1,242 @@
+{
+ "id": 1078314,
+ "general_properties": [
+  {
+   "id": 36513778,
+   "property_id": 24786,
+   "name": "Цвет",
+   "value": "серебристый",
+   "unit": "",
+   "order": 0
+  },
+  {
+   "id": 36513779,
+   "property_id": 30572,
+   "name": "Тип",
+   "value": "болт",
+   "unit": "",
+   "order": 0
+  },
+  {
+   "id": 36513780,
+   "property_id": 30574,
+   "name": "Количество в упаковке",
+   "value": "100",
+   "unit": "DimensionlessQuantity",
+   "order": 1
+  },
+  {
+   "id": 36513787,
+   "property_id": 30858,
+   "name": "Область применения",
+   "value": "универсальная",
+   "unit": "",
+   "order": 2
+  },
+  {
+   "id": 36513781,
+   "property_id": 30576,
+   "name": "Длина изделия",
+   "value": "30.0",
+   "unit": "Millimeters",
+   "order": 3
+  },
+  {
+   "id": 36513782,
+   "property_id": 30619,
+   "name": "Форма головки",
+   "value": "цилиндрическая",
+   "unit": "",
+   "order": 5
+  },
+  {
+   "id": 36513783,
+   "property_id": 30621,
+   "name": "Материал",
+   "value": "оцинкованная сталь",
+   "unit": "",
+   "order": 7
+  },
+  {
+   "id": 36513784,
+   "property_id": 30811,
+   "name": "Вес упаковки",
+   "value": "4.181",
+   "unit": "Kilograms",
+   "order": 8
+  }
+ ],
+ "properties": [
+  {
+   "name": "Основная информация",
+   "order": 0,
+   "value": [
+    {
+     "id": 36513778,
+     "property_id": 24786,
+     "name": "Цвет",
+     "value": "серебристый",
+     "unit": "",
+     "order": 0
+    },
+    {
+     "id": 36513779,
+     "property_id": 30572,
+     "name": "Тип",
+     "value": "болт",
+     "unit": "",
+     "order": 0
+    },
+    {
+     "id": 36513780,
+     "property_id": 30574,
+     "name": "Количество в упаковке",
+     "value": "100",
+     "unit": "DimensionlessQuantity",
+     "order": 1
+    },
+    {
+     "id": 36513787,
+     "property_id": 30858,
+     "name": "Область применения",
+     "value": "универсальная",
+     "unit": "",
+     "order": 2
+    },
+    {
+     "id": 36513781,
+     "property_id": 30576,
+     "name": "Длина изделия",
+     "value": "30.0",
+     "unit": "Millimeters",
+     "order": 3
+    },
+    {
+     "id": 36513782,
+     "property_id": 30619,
+     "name": "Форма головки",
+     "value": "цилиндрическая",
+     "unit": "",
+     "order": 5
+    },
+    {
+     "id": 36513783,
+     "property_id": 30621,
+     "name": "Материал",
+     "value": "оцинкованная сталь",
+     "unit": "",
+     "order": 7
+    },
+    {
+     "id": 36513784,
+     "property_id": 30811,
+     "name": "Вес упаковки",
+     "value": "4.181",
+     "unit": "Kilograms",
+     "order": 8
+    }
+   ]
+  },
+  {
+   "name": "Дополнительная информация",
+   "order": 1,
+   "value": [
+    {
+     "id": 36513785,
+     "property_id": 30813,
+     "name": "Особенности",
+     "value": "резьба: M8",
+     "unit": "",
+     "order": 5
+    },
+    {
+     "id": 36513786,
+     "property_id": 30815,
+     "name": "Комплектация",
+     "value": "болт быстрого монтажа - 100 шт., упаковка",
+     "unit": "",
+     "order": 6
+    }
+   ]
+  },
+  {
+   "name": "Страна происхождения",
+   "order": 500,
+   "value": [
+    {
+     "name": "Страна происхождения",
+     "value": "ЧЕШСКАЯ РЕСПУБЛИКА",
+     "unit": "",
+     "order": 0
+    }
+   ]
+  }
+ ],
+ "name": "Болт Fischer FHS CLIX 100шт (538653)",
+ "description": "болт / 100 / универсальная / 30.0 / серебристый / цилиндрическая / оцинкованная сталь / 4.181",
+ "sku": "538653",
+ "discounted": 0,
+ "available": false,
+ "category": {
+  "id": 1440,
+  "name": "Болты, винты, шпильки",
+  "image": "https://unknown.domain/category/%D0%B1%D0%BE%D0%BB%D1%82%D1%8B.png"
+ },
+ "vendor": {
+  "id": 2170,
+  "name": "Fischer",
+  "image": null
+ },
+ "ean": "4048962265156",
+ "length": "0.28000",
+ "width": "0.18000",
+ "height": "0.09000",
+ "volume": "0.00454",
+ "weight": "4.18100",
+ "photos": [
+  "https://media.b2bit.by/media/public/2024/07/26/10/109e6308-5ed4-49eb-a574-4657e79c6402.jpeg",
+  "https://media.b2bit.by/media/public/2024/07/26/7c/7c108524-72b2-42fc-b9dc-93730e1722f8.jpeg",
+  "https://media.b2bit.by/media/public/2024/07/26/ae/ae4ffaf0-9db1-4b91-9ff6-98993570afd7.jpeg"
+ ],
+ "offers": [
+  {
+   "ext_id": "1000001",
+   "company": "АйТи Дистрибуция ООО",
+   "warehouse": "Склад",
+   "sku": "0000000001",
+   "new": false,
+   "quantity": 0,
+   "is_reserve": true,
+   "stock": "В резерве",
+   "stock_id": 0,
+   "free_dereserve": true,
+   "available_date": null,
+   "warranty": 12,
+   "promotion": "POWER DEAL",
+   "price": 80.0,
+   "price_old": 110.0,
+   "price_rrc": 130.0,
+   "vat": 999,
+   "order": false,
+   "order_text": "",
+   "currency": "BYN",
+   "available": false,
+   "status": "reserve",
+   "traceable": false,
+   "max_quantity_template": 0,
+   "warehouse_type": 1,
+   "edo": false,
+   "article": ""
+  }
+ ],
+ "ext_id": "1314022",
+ "product_labels": [
+  {
+   "title": "Акция",
+   "code": "promo",
+   "color": "#FFFFFF",
+   "bg": "#E02020"
+  }
+ ],
+ "step_changes": 1
+}

@@ -113,6 +113,15 @@ x-backend-environment: &backend-environment
   TOOLS_BY_CATEGORY_INCLUDE_REGEX: ${TOOLS_BY_CATEGORY_INCLUDE_REGEX:-}
   TOOLS_BY_CATEGORY_EXCLUDE_REGEX: ${TOOLS_BY_CATEGORY_EXCLUDE_REGEX:-}
   DUKON_DISCOVERY_MAX_PAGES: ${DUKON_DISCOVERY_MAX_PAGES:-5000}
+  # b2bit.by: off until the dealer login is in .env.prod. The category filter
+  # is NOT passed here on purpose — an empty env value would override the code
+  # default («Стройка и ремонт» only) and import the whole portal.
+  B2BIT_CRON_ENABLED: ${B2BIT_CRON_ENABLED:-false}
+  B2BIT_CRON_BATCH_LIMIT: ${B2BIT_CRON_BATCH_LIMIT:-300}
+  B2BIT_REQUEST_DELAY_MS: ${B2BIT_REQUEST_DELAY_MS:-3000}
+  B2BIT_DISCOVERY_MAX_PAGES: ${B2BIT_DISCOVERY_MAX_PAGES:-500}
+  B2BIT_LOGIN: ${B2BIT_LOGIN:-}
+  B2BIT_PASSWORD: ${B2BIT_PASSWORD:-}
   # Terms of sale (backend/src/orders/order-terms.ts), mirrored to the
   # storefront below.
   DELIVERY_COST_COURIER: ${DELIVERY_COST_COURIER:-20}

@@ -1,0 +1,803 @@
+[
+ {
+  "id": 745,
+  "name": "Компьютеры, сети и оргтехника",
+  "parent_id": null,
+  "count": 2754,
+  "subcategories": [
+   {
+    "id": 734,
+    "name": "Компьютеры, моноблоки и мониторы",
+    "parent_id": 745,
+    "count": 197,
+    "subcategories": [
+     {
+      "id": 1257,
+      "name": "Мониторы",
+      "parent_id": 734,
+      "count": 63,
+      "subcategories": []
+     },
+     {
+      "id": 1261,
+      "name": "Компьютеры",
+      "parent_id": 734,
+      "count": 66,
+      "subcategories": []
+     },
+     {
+      "id": 1258,
+      "name": "Информационные панели и интерактивные доски",
+      "parent_id": 734,
+      "count": 60,
+      "subcategories": []
+     },
+     {
+      "id": 537,
+      "name": "Компоненты интерактивных панелей и мониторов",
+      "parent_id": 734,
+      "count": 8,
+      "subcategories": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": 1450,
+  "name": "Стройка и ремонт",
+  "parent_id": null,
+  "count": 4823,
+  "subcategories": [
+   {
+    "id": 646,
+    "name": "Двери",
+    "parent_id": 1450,
+    "count": 49,
+    "subcategories": [
+     {
+      "id": 1093,
+      "name": "Замки",
+      "parent_id": 646,
+      "count": 22,
+      "subcategories": []
+     },
+     {
+      "id": 1094,
+      "name": "Аксессуары и фурнитура для дверей",
+      "parent_id": 646,
+      "count": 27,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 1446,
+    "name": "Электроинструмент",
+    "parent_id": 1450,
+    "count": 3013,
+    "subcategories": [
+     {
+      "id": 987,
+      "name": "Электропилы",
+      "parent_id": 1446,
+      "count": 84,
+      "subcategories": []
+     },
+     {
+      "id": 1014,
+      "name": "Электролобзики",
+      "parent_id": 1446,
+      "count": 20,
+      "subcategories": []
+     },
+     {
+      "id": 1003,
+      "name": "Электрорубанки",
+      "parent_id": 1446,
+      "count": 11,
+      "subcategories": []
+     },
+     {
+      "id": 21,
+      "name": "Электрические ножницы",
+      "parent_id": 1446,
+      "count": 5,
+      "subcategories": []
+     },
+     {
+      "id": 989,
+      "name": "Шуруповерты, электроотвертки",
+      "parent_id": 1446,
+      "count": 207,
+      "subcategories": []
+     },
+     {
+      "id": 1009,
+      "name": "Перфораторы",
+      "parent_id": 1446,
+      "count": 89,
+      "subcategories": []
+     },
+     {
+      "id": 994,
+      "name": "Угловые шлифмашины (болгарки)",
+      "parent_id": 1446,
+      "count": 95,
+      "subcategories": []
+     },
+     {
+      "id": 991,
+      "name": "Шлифовальные машины",
+      "parent_id": 1446,
+      "count": 73,
+      "subcategories": []
+     },
+     {
+      "id": 1018,
+      "name": "Дрели",
+      "parent_id": 1446,
+      "count": 42,
+      "subcategories": []
+     },
+     {
+      "id": 1021,
+      "name": "Гвоздезабиватели и электро-степлеры",
+      "parent_id": 1446,
+      "count": 19,
+      "subcategories": []
+     },
+     {
+      "id": 1019,
+      "name": "Граверы",
+      "parent_id": 1446,
+      "count": 7,
+      "subcategories": []
+     },
+     {
+      "id": 995,
+      "name": "Заточные станки (точила)",
+      "parent_id": 1446,
+      "count": 10,
+      "subcategories": []
+     },
+     {
+      "id": 1903,
+      "name": "Наборы электроинструментов",
+      "parent_id": 1446,
+      "count": 24,
+      "subcategories": []
+     },
+     {
+      "id": 1008,
+      "name": "Плиткорезы электрические",
+      "parent_id": 1446,
+      "count": 1,
+      "subcategories": []
+     },
+     {
+      "id": 1596,
+      "name": "Специализированный электроинструмент",
+      "parent_id": 1446,
+      "count": 11,
+      "subcategories": []
+     },
+     {
+      "id": 997,
+      "name": "Термоклеевые пистолеты",
+      "parent_id": 1446,
+      "count": 4,
+      "subcategories": []
+     },
+     {
+      "id": 990,
+      "name": "Штроборезы",
+      "parent_id": 1446,
+      "count": 5,
+      "subcategories": []
+     },
+     {
+      "id": 988,
+      "name": "Электрические краскопульты",
+      "parent_id": 1446,
+      "count": 6,
+      "subcategories": []
+     },
+     {
+      "id": 1893,
+      "name": "Электрорезы",
+      "parent_id": 1446,
+      "count": 1,
+      "subcategories": []
+     },
+     {
+      "id": 993,
+      "name": "Фрезеры",
+      "parent_id": 1446,
+      "count": 8,
+      "subcategories": []
+     },
+     {
+      "id": 1011,
+      "name": "Отбойные молотки",
+      "parent_id": 1446,
+      "count": 13,
+      "subcategories": []
+     },
+     {
+      "id": 244,
+      "name": "Миксеры для строительных смесей",
+      "parent_id": 1446,
+      "count": 6,
+      "subcategories": []
+     },
+     {
+      "id": 996,
+      "name": "Промышленные фены",
+      "parent_id": 1446,
+      "count": 7,
+      "subcategories": []
+     },
+     {
+      "id": 1026,
+      "name": "Аккумуляторы и зарядные устройства для электроинструмента",
+      "parent_id": 1446,
+      "count": 73,
+      "subcategories": []
+     },
+     {
+      "id": 210,
+      "name": "Сверла, буры, зенкеры, расходники для инструмента",
+      "parent_id": 1446,
+      "count": 1815,
+      "subcategories": []
+     },
+     {
+      "id": 1597,
+      "name": "Шлифовальная оснастка",
+      "parent_id": 1446,
+      "count": 121,
+      "subcategories": []
+     },
+     {
+      "id": 1025,
+      "name": "Аксессуары и запчасти для электроинструмента",
+      "parent_id": 1446,
+      "count": 256,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 644,
+    "name": "Отопление, водоснабжение",
+    "parent_id": 1450,
+    "count": 42,
+    "subcategories": [
+     {
+      "id": 1056,
+      "name": "Запорная арматура, муфты, фитинги",
+      "parent_id": 644,
+      "count": 3,
+      "subcategories": []
+     },
+     {
+      "id": 301,
+      "name": "Крепёж и комплектующие для труб",
+      "parent_id": 644,
+      "count": 36,
+      "subcategories": []
+     },
+     {
+      "id": 1012,
+      "name": "Насосы",
+      "parent_id": 644,
+      "count": 2,
+      "subcategories": []
+     },
+     {
+      "id": 1089,
+      "name": "Электроводонагреватели",
+      "parent_id": 644,
+      "count": 1,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 1444,
+    "name": "Сварочное и паяльное оборудование",
+    "parent_id": 1450,
+    "count": 9,
+    "subcategories": [
+     {
+      "id": 1367,
+      "name": "Аппараты для сварки труб",
+      "parent_id": 1444,
+      "count": 2,
+      "subcategories": []
+     },
+     {
+      "id": 1010,
+      "name": "Паяльные лампы, паяльники",
+      "parent_id": 1444,
+      "count": 1,
+      "subcategories": []
+     },
+     {
+      "id": 427,
+      "name": "Принадлежности и аксессуары для сварки и пайки",
+      "parent_id": 1444,
+      "count": 6,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 647,
+    "name": "Сантехника",
+    "parent_id": 1450,
+    "count": 12,
+    "subcategories": [
+     {
+      "id": 499,
+      "name": "Комплектующие для сантехники",
+      "parent_id": 647,
+      "count": 12,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 1445,
+    "name": "Измерительные приборы и инструменты",
+    "parent_id": 1450,
+    "count": 114,
+    "subcategories": [
+     {
+      "id": 1016,
+      "name": "Лазерные нивелиры",
+      "parent_id": 1445,
+      "count": 8,
+      "subcategories": []
+     },
+     {
+      "id": 1634,
+      "name": "Аксессуары, штативы для измерительного инструмента",
+      "parent_id": 1445,
+      "count": 18,
+      "subcategories": []
+     },
+     {
+      "id": 1635,
+      "name": "Вольтметры, мультиметры, индикаторы напряжения, тестеры",
+      "parent_id": 1445,
+      "count": 3,
+      "subcategories": []
+     },
+     {
+      "id": 1017,
+      "name": "Лазерные дальномеры",
+      "parent_id": 1445,
+      "count": 4,
+      "subcategories": []
+     },
+     {
+      "id": 1629,
+      "name": "Рулетки, мерные ленты",
+      "parent_id": 1445,
+      "count": 23,
+      "subcategories": []
+     },
+     {
+      "id": 1626,
+      "name": "Угломеры, линейки строительные",
+      "parent_id": 1445,
+      "count": 21,
+      "subcategories": []
+     },
+     {
+      "id": 1625,
+      "name": "Уровни ручные, уклономеры",
+      "parent_id": 1445,
+      "count": 35,
+      "subcategories": []
+     },
+     {
+      "id": 1624,
+      "name": "Штангенциркули",
+      "parent_id": 1445,
+      "count": 2,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 1447,
+    "name": "Ручной инструмент",
+    "parent_id": 1450,
+    "count": 809,
+    "subcategories": [
+     {
+      "id": 209,
+      "name": "Отвертки и наборы отверток",
+      "parent_id": 1447,
+      "count": 162,
+      "subcategories": []
+     },
+     {
+      "id": 380,
+      "name": "Ключи и наборы",
+      "parent_id": 1447,
+      "count": 81,
+      "subcategories": []
+     },
+     {
+      "id": 232,
+      "name": "Наборы инструментов",
+      "parent_id": 1447,
+      "count": 20,
+      "subcategories": []
+     },
+     {
+      "id": 1610,
+      "name": "Аксессуары и принадлежности для ручного инструмента",
+      "parent_id": 1447,
+      "count": 45,
+      "subcategories": []
+     },
+     {
+      "id": 1592,
+      "name": "Воротки, трещотки",
+      "parent_id": 1447,
+      "count": 20,
+      "subcategories": []
+     },
+     {
+      "id": 363,
+      "name": "Губцевый инструмент",
+      "parent_id": 1447,
+      "count": 125,
+      "subcategories": []
+     },
+     {
+      "id": 250,
+      "name": "Малярный, отделочный инструмент",
+      "parent_id": 1447,
+      "count": 8,
+      "subcategories": []
+     },
+     {
+      "id": 139,
+      "name": "Маркеры, карандаши строительные",
+      "parent_id": 1447,
+      "count": 12,
+      "subcategories": []
+     },
+     {
+      "id": 1609,
+      "name": "Метчики, плашки",
+      "parent_id": 1447,
+      "count": 6,
+      "subcategories": []
+     },
+     {
+      "id": 1608,
+      "name": "Механические степлеры, заклепочники",
+      "parent_id": 1447,
+      "count": 5,
+      "subcategories": []
+     },
+     {
+      "id": 1607,
+      "name": "Напильники, надфили",
+      "parent_id": 1447,
+      "count": 18,
+      "subcategories": []
+     },
+     {
+      "id": 222,
+      "name": "Ножи, ножницы строительные",
+      "parent_id": 1447,
+      "count": 64,
+      "subcategories": []
+     },
+     {
+      "id": 221,
+      "name": "Ножницы по металлу",
+      "parent_id": 1447,
+      "count": 21,
+      "subcategories": []
+     },
+     {
+      "id": 1606,
+      "name": "Плиткорезы",
+      "parent_id": 1447,
+      "count": 5,
+      "subcategories": []
+     },
+     {
+      "id": 1891,
+      "name": "Разметчики, маркировщики строительные",
+      "parent_id": 1447,
+      "count": 2,
+      "subcategories": []
+     },
+     {
+      "id": 1433,
+      "name": "Рубанки",
+      "parent_id": 1447,
+      "count": 3,
+      "subcategories": []
+     },
+     {
+      "id": 130,
+      "name": "Ручные пилы, ножовки, лобзики",
+      "parent_id": 1447,
+      "count": 37,
+      "subcategories": []
+     },
+     {
+      "id": 1604,
+      "name": "Съемники",
+      "parent_id": 1447,
+      "count": 3,
+      "subcategories": []
+     },
+     {
+      "id": 1603,
+      "name": "Тиски, струбцины",
+      "parent_id": 1447,
+      "count": 113,
+      "subcategories": []
+     },
+     {
+      "id": 1602,
+      "name": "Труборезы",
+      "parent_id": 1447,
+      "count": 9,
+      "subcategories": []
+     },
+     {
+      "id": 113,
+      "name": "Ударно-рычажный инструмент",
+      "parent_id": 1447,
+      "count": 50,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 636,
+    "name": "Строительное оборудование, станки, спецодежда",
+    "parent_id": 1450,
+    "count": 279,
+    "subcategories": [
+     {
+      "id": 999,
+      "name": "Станки",
+      "parent_id": 636,
+      "count": 9,
+      "subcategories": []
+     },
+     {
+      "id": 998,
+      "name": "Тачки, тележки",
+      "parent_id": 636,
+      "count": 4,
+      "subcategories": []
+     },
+     {
+      "id": 986,
+      "name": "Ящики, сумки, шкафы для инструмента",
+      "parent_id": 636,
+      "count": 68,
+      "subcategories": []
+     },
+     {
+      "id": 545,
+      "name": "Спецодежда и средства защиты",
+      "parent_id": 636,
+      "count": 102,
+      "subcategories": []
+     },
+     {
+      "id": 1890,
+      "name": "Аксессуары для хранения инструмента",
+      "parent_id": 636,
+      "count": 80,
+      "subcategories": []
+     },
+     {
+      "id": 1370,
+      "name": "Верстаки, стойки, козлы",
+      "parent_id": 636,
+      "count": 8,
+      "subcategories": []
+     },
+     {
+      "id": 366,
+      "name": "Грузоподъемное оборудование",
+      "parent_id": 636,
+      "count": 3,
+      "subcategories": []
+     },
+     {
+      "id": 1023,
+      "name": "Строительные вибраторы",
+      "parent_id": 636,
+      "count": 5,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 650,
+    "name": "Электрика (проводка, автоматика)",
+    "parent_id": 1450,
+    "count": 53,
+    "subcategories": [
+     {
+      "id": 136,
+      "name": "Коробки распределительные, монтажные, подрозетники",
+      "parent_id": 650,
+      "count": 5,
+      "subcategories": []
+     },
+     {
+      "id": 359,
+      "name": "Дверные звонки",
+      "parent_id": 650,
+      "count": 2,
+      "subcategories": []
+     },
+     {
+      "id": 1591,
+      "name": "Изолента, термоусадка",
+      "parent_id": 650,
+      "count": 1,
+      "subcategories": []
+     },
+     {
+      "id": 1437,
+      "name": "Кабель-каналы и кабельный крепеж",
+      "parent_id": 650,
+      "count": 44,
+      "subcategories": []
+     },
+     {
+      "id": 315,
+      "name": "Клеммы, наконечники, соединители кабелей",
+      "parent_id": 650,
+      "count": 1,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 1449,
+    "name": "Крепёж, метизы",
+    "parent_id": 1450,
+    "count": 425,
+    "subcategories": [
+     {
+      "id": 1436,
+      "name": "Саморезы",
+      "parent_id": 1449,
+      "count": 53,
+      "subcategories": []
+     },
+     {
+      "id": 1441,
+      "name": "Анкеры, дюбели",
+      "parent_id": 1449,
+      "count": 191,
+      "subcategories": []
+     },
+     {
+      "id": 1440,
+      "name": "Болты, винты, шпильки",
+      "parent_id": 1449,
+      "count": 62,
+      "subcategories": []
+     },
+     {
+      "id": 1439,
+      "name": "Гайки, шайбы",
+      "parent_id": 1449,
+      "count": 41,
+      "subcategories": []
+     },
+     {
+      "id": 1615,
+      "name": "Гвозди",
+      "parent_id": 1449,
+      "count": 6,
+      "subcategories": []
+     },
+     {
+      "id": 1898,
+      "name": "Скобы, гвозди для строительного степлера",
+      "parent_id": 1449,
+      "count": 33,
+      "subcategories": []
+     },
+     {
+      "id": 1434,
+      "name": "Шурупы",
+      "parent_id": 1449,
+      "count": 39,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 1618,
+    "name": "Бензоинструмент и оборудование",
+    "parent_id": 1450,
+    "count": 6,
+    "subcategories": [
+     {
+      "id": 1020,
+      "name": "Генераторы и электростанции",
+      "parent_id": 1618,
+      "count": 6,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 645,
+    "name": "Вентиляция и кондиционирование",
+    "parent_id": 1450,
+    "count": 1,
+    "subcategories": [
+     {
+      "id": 1062,
+      "name": "Вытяжная и приточная вентиляция",
+      "parent_id": 645,
+      "count": 1,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 1448,
+    "name": "Пневмоинструмент",
+    "parent_id": 1450,
+    "count": 10,
+    "subcategories": [
+     {
+      "id": 1174,
+      "name": "Компрессоры",
+      "parent_id": 1448,
+      "count": 6,
+      "subcategories": []
+     },
+     {
+      "id": 1006,
+      "name": "Пневматические краскопульты",
+      "parent_id": 1448,
+      "count": 4,
+      "subcategories": []
+     }
+    ]
+   },
+   {
+    "id": 635,
+    "name": "Строительные и отделочные материалы",
+    "parent_id": 1450,
+    "count": 1,
+    "subcategories": [
+     {
+      "id": 256,
+      "name": "Ленты, скотчи строительные",
+      "parent_id": 635,
+      "count": 1,
+      "subcategories": []
+     }
+    ]
+   }
+  ]
+ }
+]

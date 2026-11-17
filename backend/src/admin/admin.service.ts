@@ -26,6 +26,7 @@ import { AdminProductQueryDto } from './dto/admin-product-query.dto';
 import { ThToolsParserService } from '../parser/sites/th-tools-source.parser';
 import { DukonParserService } from '../parser/sites/dukon.parser';
 import { ToolsByParserService } from '../parser/sites/tools-by-source.parser';
+import { B2bitParserService } from '../parser/sites/b2bit-source.parser';
 import { AdminUpdateBrandDto } from './dto/admin-update-brand.dto';
 import { AdminUpdateCategoryDto } from './dto/admin-update-category.dto';
 import { AdminSitemapQueryDto } from './dto/admin-sitemap-query.dto';
@@ -104,6 +105,7 @@ export class AdminService {
     private readonly thToolsParserService: ThToolsParserService,
     private readonly dukonParserService: DukonParserService,
     private readonly toolsByParserService: ToolsByParserService,
+    private readonly b2bitParserService: B2bitParserService,
     private readonly parserLogService: ParserLogService,
     private readonly runtimeStatus: ParserRuntimeStatusService,
     private readonly pricing: PricingService,
@@ -677,7 +679,9 @@ export class AdminService {
       ? await this.dukonParserService.parseProductUrl(dto.url)
       : parser.isToolsBy
         ? await this.toolsByParserService.parseProductUrl(dto.url)
-        : await this.thToolsParserService.parseProductUrl(dto.url);
+        : parser.isB2bit
+          ? await this.b2bitParserService.parseProductUrl(dto.url)
+          : await this.thToolsParserService.parseProductUrl(dto.url);
 
     return { ok: true, product };
   }
@@ -689,7 +693,9 @@ export class AdminService {
       ? await this.dukonParserService.previewProductUrl(dto.url)
       : parser.isToolsBy
         ? await this.toolsByParserService.previewProductUrl(dto.url)
-        : await this.thToolsParserService.previewProductUrl(dto.url);
+        : parser.isB2bit
+          ? await this.b2bitParserService.previewProductUrl(dto.url)
+          : await this.thToolsParserService.previewProductUrl(dto.url);
 
     return { ok: true, dryRun: true, parsed };
   }
@@ -772,6 +778,8 @@ export class AdminService {
         return this.dukonParserService;
       case 'tools-by':
         return this.toolsByParserService;
+      case 'b2bit':
+        return this.b2bitParserService;
     }
   }
 
@@ -1340,10 +1348,11 @@ export class AdminService {
     const isDukon = source.code === 'dukon';
     const isThTools = source.code === 'th-tools';
     const isToolsBy = source.code === 'tools-by';
-    if (!isThTools && !isDukon && !isToolsBy) {
+    const isB2bit = source.code === 'b2bit';
+    if (!isThTools && !isDukon && !isToolsBy && !isB2bit) {
       throw new BadRequestException('Unsupported source parser');
     }
 
-    return { isDukon, isThTools, isToolsBy };
+    return { isDukon, isThTools, isToolsBy, isB2bit };
   }
 }

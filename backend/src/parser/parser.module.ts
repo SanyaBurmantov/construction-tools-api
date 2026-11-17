@@ -7,6 +7,8 @@ import { DukonParserService } from './sites/dukon.parser';
 import { DukonCron } from './sites/dukon.cron';
 import { ToolsByParserService } from './sites/tools-by-source.parser';
 import { ToolsByCron } from './sites/tools-by.cron';
+import { B2bitParserService } from './sites/b2bit-source.parser';
+import { B2bitCron } from './sites/b2bit.cron';
 import { ParserAdminController } from './parser-admin.controller';
 import { ParserLogService } from './parser-log.service';
 import { ParserRuntimeStatusService } from './parser-runtime-status.service';
@@ -32,6 +34,8 @@ import { OffersModule } from '../offers/offers.module';
     DukonParserService,
     ToolsByParserService,
     ToolsByCron,
+    B2bitParserService,
+    B2bitCron,
     ThToolsCron,
     DukonCron,
     ParserLogService,
@@ -59,6 +63,7 @@ import { OffersModule } from '../offers/offers.module';
     ThToolsParserService,
     DukonParserService,
     ToolsByParserService,
+    B2bitParserService,
     ParserLogService,
     ParserRuntimeStatusService,
     ParserSettingsService,

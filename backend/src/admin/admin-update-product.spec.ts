@@ -49,6 +49,7 @@ function build(current: Record<string, unknown>) {
     unused,
     unused,
     unused,
+    unused,
     pricing,
     unused,
     indexNow,

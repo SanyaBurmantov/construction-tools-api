@@ -452,6 +452,13 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
         count(*) FILTER (WHERE status = 'FAILED'),
         count(*) FILTER (WHERE status = 'SKIPPED')
       FROM "SitemapsDukon"
+      UNION ALL
+      SELECT 'b2bit',
+        count(*) FILTER (WHERE status = 'PENDING'),
+        count(*) FILTER (WHERE status = 'DONE'),
+        count(*) FILTER (WHERE status = 'FAILED'),
+        count(*) FILTER (WHERE status = 'SKIPPED')
+      FROM "SitemapsB2bit"
     `;
 
     return rows
@@ -487,7 +494,7 @@ export class ParserRuntimeStatusService implements OnApplicationBootstrap {
         SELECT sp.* FROM "SourceProduct" sp JOIN "Product" p ON p.id = sp."productId"
         WHERE p.status = 'PUBLISHED' AND sp.stock = true AND sp.price > 0
       ) sp ON sp."sourceId" = s.id
-      WHERE s.code IN ('th-tools', 'tools-by', 'dukon')
+      WHERE s.code IN ('th-tools', 'tools-by', 'dukon', 'b2bit')
       GROUP BY s.code ORDER BY s.code
     `;
     return rows.map((row) => {

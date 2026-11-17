@@ -213,7 +213,7 @@ OK again. Rules are pure and tested (`supplier-connection.ts`).
 
 ## Suppliers
 
-**Sources.** `th-tool.by`, `dukon.by` and `tools.by` are the suppliers. The
+**Sources.** `th-tool.by`, `dukon.by`, `tools.by` and `b2bit.by` (2026-11-17) are the suppliers. The
 sample site `7745.by` (never a supplier) and its parser, cron, queue table
 (`Sitemaps7745`, dropped in `20261029130000_drop_7745`) and env vars were
 removed on 2026-10-29 at the owner's request — don't bring it back.
@@ -260,6 +260,38 @@ return `null`: the offer is withdrawn and the card goes priceless and out
 of stock like any unquoted item. Checked on 25 placeholder + 40 priced live
 pages (fixtures `dukon-price-*.html`). Never filter on «price = 1» — a real
 item sells at 0.90–1.00.
+
+**b2bit.by specifics** (added 2026-11-17; `b2bit.parse.ts` pure +
+`b2bit-source.parser.ts` service + `b2bit.cron.ts`). The B2B portal of «АйТи
+Дистрибуция»; the owner's company «МультиТул» is a dealer there. A React app
+over `api.b2bit.by/api/v1` — **there is no HTML**: the parser logs in
+(`POST /auth/login`, `B2BIT_LOGIN`/`B2BIT_PASSWORD` in `.env.prod` only, the
+repo is public), sends `Authorization: token <token> <partnerId>`, renews on a
+401. Discovery = `/categories` + `/category/<leaf>/products` with the four stock
+flags (`stock/reserve/under_order/transit=true`, `unavailable=false`; without
+them the API answers 500) — ~120 pages, 4 821 products on 2026-11-17, the same
+set as the dealer price list. Product = `/product/<id>`, offer URL
+`https://b2bit.by/product/<id>`.
+- **We sell at the struck-through price** (`price_old`, owner 2026-11-17), not
+  the dealer price (`price`, our purchase) and not the RRP (`price_rrc`). It is
+  ≈ ×1.33 of the purchase, always under the RRP, and is *not* shown struck
+  through on our storefront. No `price_old` (no promotion, ~1.5 %: e.g. the
+  ZKTeco locks) → no price, the card goes priceless — agreed. Dealer price, RRP,
+  quantity and promotion are kept in the admin-only `SourceProduct` snapshot.
+  Fixtures carry **invented prices** — real dealer prices stay out of git.
+- **Only «Стройка и ремонт»** (owner): the default INCLUDE in
+  `parser-defaults.ts` is matched against the full b2bit chain. It is
+  deliberately not in `docker-compose.prod.yml` — an empty env value would
+  override it and import the whole portal (computers, appliances).
+- Our category branch starts **below** «Стройка и ремонт»
+  (`b2bitCatalogBranch`), so products land in our own «Электроинструмент»,
+  «Ручной инструмент»… roots; `SourceCategory` keeps the full chain.
+- The offer's `available` is the stock flag (`reserve` = not available); the
+  product-level `available` is false even for items in stock. `description` is
+  spec values joined by « / » without names — never imported, b2bit cards
+  have specs and photos only. Spec groups repeat rows (dedupe by
+  `property_id`), units are English ids mapped into the name («Мощность, Вт»),
+  `True/False` → да/нет.
 
 ## Supplier text and specs
 
