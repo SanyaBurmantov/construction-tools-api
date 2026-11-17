@@ -46,6 +46,15 @@ Prisma migrations (expand → contract), deploy-time migration step, backups and
   the server. It is size-verified and stamps its own
   `backup-config-s3.ok`; the watchdog alerts when that is over 26 h old. The script reads the shared `S3_ENDPOINT/S3_ACCESS_KEY/
   S3_SECRET_KEY` (old `S3_BACKUP_*` names still win) and `S3_BACKUP_BUCKET`.
+  **Only the nightly dump goes to `daily/`.** auto-deploy runs
+  `backup-db.sh --predeploy`: `predeploy/`, kept `S3_BACKUP_PREDEPLOY_DAYS`
+  (2), no monthly copy, no config archive, no stamp (a release's copy must not
+  hide a failing night). Every release with a migration used to add a 400 MB
+  dump to `daily/` for 14 days — 11.9 GB of backups filled the storage, and
+  from 2026-11-15 MinIO answered 507 to every write: three nights without an
+  off-site backup and no new photos. A failed upload leaves its reason in
+  `backup-s3.error` («переполнено» on a 507), which the watchdog's alert
+  quotes; the photo mirror pauses 30 min on a 507 and says the same.
   It refuses a backup bucket equal to `S3_MEDIA_BUCKET`, and the worker
   refuses a media bucket equal to `S3_BACKUP_BUCKET` — the media bucket is
   made public-read, so one typo would publish every dump.

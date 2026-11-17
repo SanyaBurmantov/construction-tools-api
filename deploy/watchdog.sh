@@ -46,8 +46,12 @@ flock -n 8 || exit 0
 
 # A release in progress recreates containers and briefly takes the site down;
 # auto-deploy.sh has its own health gate and rollback. Probe the lock without
-# holding it (holding it would make the deploy skip its run).
-if [[ -e "$DEPLOY_LOCK" ]] && ! flock -n "$DEPLOY_LOCK" true 2>/dev/null; then
+# holding it (holding it would make the deploy skip its run). Both timers tick
+# every two minutes and drift into step: the deploy's one-second «anything
+# new?» check held the lock at that very moment, and half the watchdog runs
+# (~270 a day, 2026-11-12..17) were skipped. Wait out such a check; a real
+# release takes minutes.
+if [[ -e "$DEPLOY_LOCK" ]] && ! flock -w 20 "$DEPLOY_LOCK" true 2>/dev/null; then
   echo "Deploy in progress; watchdog run skipped"
   exit 0
 fi
@@ -305,8 +309,10 @@ check_flag backup "$(( backup_age_h > BACKUP_MAX_AGE_HOURS ))" \
 if [[ -n "$(env_value S3_BACKUP_BUCKET)" ]]; then
   s3_ok=$(stat -c %Y "$STATE_DIR/backup-s3.ok" 2>/dev/null || true)
   if [[ -z "$s3_ok" ]]; then s3_age_h=9999; else s3_age_h=$(( (now - s3_ok) / 3600 )); fi
+  # backup-db.sh leaves the reason of the last failed upload («переполнено»).
+  s3_error=$(head -c 300 "$STATE_DIR/backup-s3.error" 2>/dev/null || true)
   check_flag backup_s3 "$(( s3_age_h > BACKUP_MAX_AGE_HOURS ))" \
-    "🔴 Бэкап базы не выгружается в S3: последняя выгрузка $( [[ $s3_age_h == 9999 ]] && echo 'не найдена' || echo "$s3_age_h ч назад"). Локальные копии есть; смотрите journalctl -u construction-tools-backup." \
+    "🔴 Бэкап базы не выгружается в S3: последняя выгрузка $( [[ $s3_age_h == 9999 ]] && echo 'не найдена' || echo "$s3_age_h ч назад").${s3_error:+ Причина: $s3_error.} Локальные копии есть; смотрите journalctl -u construction-tools-backup." \
     "✅ Бэкап базы снова выгружается в S3 ($s3_age_h ч)."
   # The config archive (.env.prod + TLS certificates) has its own stamp;
   # checked once backup-db.sh has written it at least once.

@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Nightly (the timer): daily/ in S3, a monthly copy, the config archive and
+# the off-site stamp the watchdog checks. --predeploy (auto-deploy, before a
+# migration): predeploy/ only, kept S3_BACKUP_PREDEPLOY_DAYS (2). Releases
+# used to drop a 400 MB dump into daily/ each — several a day, 14 days
+# long: 11.9 GB of backups filled the storage and from 2026-11-15 nothing
+# could be written there (no backups, no photos).
+kind=daily
+if [[ "${1:-}" == "--predeploy" ]]; then kind=predeploy; fi
+
 app_dir=/opt/construction-tools/app
 backup_dir=/opt/construction-tools/backups
 state_dir=/var/lib/construction-tools
@@ -48,7 +57,7 @@ prune_local() {
 # gost.by) under daily/, and the first one of each month is copied server-side
 # to monthly/. Retention is the bucket's lifecycle rule, re-applied on every
 # run so nobody has to set it up by hand: daily/ S3_BACKUP_DAILY_DAYS (14),
-# monthly/ S3_BACKUP_MONTHLY_DAYS (180).
+# monthly/ S3_BACKUP_MONTHLY_DAYS (180), predeploy/ S3_BACKUP_PREDEPLOY_DAYS (2).
 #
 # An upload failure does not fail the script: the local backup is good, and
 # auto-deploy runs this before a migration — an S3 outage must not block a
@@ -72,8 +81,10 @@ s3_region=$(first_value S3_BACKUP_REGION S3_REGION)
 s3_region=${s3_region:-us-east-1}
 daily_days=$(env_value S3_BACKUP_DAILY_DAYS)
 monthly_days=$(env_value S3_BACKUP_MONTHLY_DAYS)
+predeploy_days=$(env_value S3_BACKUP_PREDEPLOY_DAYS)
 daily_days=${daily_days:-14}
 monthly_days=${monthly_days:-180}
+predeploy_days=${predeploy_days:-2}
 
 if [[ -z "$s3_endpoint" || -z "$s3_bucket" || -z "$s3_key" || -z "$s3_secret" ]]; then
   echo "S3 endpoint/keys or S3_BACKUP_BUCKET not set; off-site copy skipped"
@@ -108,24 +119,40 @@ upload() {
   lifecycle="<LifecycleConfiguration>\
 <Rule><ID>daily</ID><Status>Enabled</Status><Filter><Prefix>daily/</Prefix></Filter><Expiration><Days>$daily_days</Days></Expiration></Rule>\
 <Rule><ID>monthly</ID><Status>Enabled</Status><Filter><Prefix>monthly/</Prefix></Filter><Expiration><Days>$monthly_days</Days></Expiration></Rule>\
+<Rule><ID>predeploy</ID><Status>Enabled</Status><Filter><Prefix>predeploy/</Prefix></Filter><Expiration><Days>$predeploy_days</Days></Expiration></Rule>\
 </LifecycleConfiguration>"
   md5=$(printf '%s' "$lifecycle" | openssl md5 -binary | base64)
+  # curl's errors are kept for the watchdog's alert: a full storage answers
+  # 507 to the small lifecycle PUT, and the big upload then often ends in a
+  # 503 or a cut connection instead (2026-11-15..17).
   s3 -o /dev/null -X PUT -H "Content-MD5: $md5" -H 'Content-Type: application/xml' \
-    --data-binary "$lifecycle" "$base?lifecycle=" ||
+    --data-binary "$lifecycle" "$base?lifecycle=" 2>"$err_file" || {
+    cat "$err_file" >&2
     echo "S3: lifecycle rule not applied; old copies will not expire" >&2
+  }
 
-  s3 -o /dev/null --max-time 3600 -H 'Content-Type: application/gzip' \
-    -T "$file" "$base/daily/$name" || return 1
+  if ! s3 -o /dev/null --max-time 3600 -H 'Content-Type: application/gzip' \
+    -T "$file" "$base/$kind/$name" 2>>"$err_file"; then
+    cat "$err_file" >&2
+    if grep -q 'error: 507' "$err_file"; then
+      echo "хранилище S3 переполнено (HTTP 507)" > "$state_dir/backup-s3.error"
+    else
+      tail -1 "$err_file" > "$state_dir/backup-s3.error"
+    fi
+    return 1
+  fi
 
   # Verify what landed rather than trust the 200.
   local local_size remote_size
   local_size=$(stat -c %s "$file")
-  remote_size=$(s3 -I "$base/daily/$name" | tr -d '\r' | awk 'tolower($1) == "content-length:" { print $2 }')
+  remote_size=$(s3 -I "$base/$kind/$name" | tr -d '\r' | awk 'tolower($1) == "content-length:" { print $2 }')
   if [[ "$remote_size" != "$local_size" ]]; then
-    echo "S3: size mismatch for daily/$name (local $local_size, remote ${remote_size:-none})" >&2
+    echo "S3: size mismatch for $kind/$name (local $local_size, remote ${remote_size:-none})" >&2
+    echo "размер в S3 не совпал с дампом" > "$state_dir/backup-s3.error"
     return 1
   fi
-  echo "Database backup uploaded: $base/daily/$name"
+  echo "Database backup uploaded: $base/$kind/$name"
+  [[ "$kind" == daily ]] || return 0
 
   local month
   month=${name:9:6}
@@ -168,9 +195,16 @@ upload_config() {
   echo "Config backup uploaded: $base/daily/$cname"
 }
 
+err_file=$(mktemp)
+trap 'rm -f "$tmp" "$err_file"' EXIT
+
 if upload; then
-  touch "$state_dir/backup-s3.ok"
   prune_local
+  # Only the nightly dump keeps the stamp fresh: a release's copy is gone in
+  # two days and must not hide a failing night.
+  [[ "$kind" == daily ]] || exit 0
+  touch "$state_dir/backup-s3.ok"
+  rm -f "$state_dir/backup-s3.error"
   if upload_config; then
     touch "$state_dir/backup-config-s3.ok"
   else

@@ -49,6 +49,7 @@ case "$1" in
 SELECT 'th-tool.by' AS source, status, count(*) AS urls, max("visitedAt")::timestamp(0) AS last_visited FROM "SitemapsThTools" GROUP BY status
 UNION ALL SELECT 'dukon.by', status, count(*), max("visitedAt")::timestamp(0) FROM "SitemapsDukon" GROUP BY status
 UNION ALL SELECT 'tools.by', status, count(*), max("visitedAt")::timestamp(0) FROM "SitemapsToolsBy" GROUP BY status
+UNION ALL SELECT 'b2bit.by', status, count(*), max("visitedAt")::timestamp(0) FROM "SitemapsB2bit" GROUP BY status
 ORDER BY 1, 2;
 \echo == jobs
 SELECT key, "isRunning" AS running, "lastSuccessAt"::timestamp(0) AS last_success, "lastErrorAt"::timestamp(0) AS last_error,

@@ -36,6 +36,12 @@ const HOST_DOWN_MS = 30 * 60_000;
 const ALERT_EVERY_MS = 6 * 3600_000;
 /** A full pass found nothing to copy: look again after this long. */
 const IDLE_AFTER_EMPTY_PASS_MS = 10 * 60_000;
+/**
+ * A full bucket (MinIO 507 XMinioStorageFull, 2026-11-15) refuses every
+ * write: copying waits this long instead of downloading supplier photos only
+ * to throw them away.
+ */
+const STORAGE_FULL_PAUSE_MS = 30 * 60_000;
 const USER_AGENT =
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
@@ -78,6 +84,7 @@ export class ImageMirrorService implements OnModuleInit {
   /** Where the candidate walk stopped (`sourceUrl` order); '' = from the start. */
   private cursor = '';
   private idleUntil = 0;
+  private storageFullUntil = 0;
   /** sharp runs one photo at a time: decoding is the memory peak. */
   private renderChain: Promise<unknown> = Promise.resolve();
 
@@ -128,6 +135,7 @@ export class ImageMirrorService implements OnModuleInit {
     this.running = true;
     try {
       if (!(await this.ensureBucket())) return null;
+      if (this.storageFull()) return null;
       if (await this.overQuota()) return null;
 
       const urls = await this.candidates();
@@ -148,7 +156,14 @@ export class ImageMirrorService implements OnModuleInit {
       );
       for (const outcome of outcomes) counts[outcome]++;
 
-      if (counts['s3-error'] > 0 && counts.stored + counts.relinked === 0) {
+      if (this.storageFull()) {
+        await this.alert(
+          'Хранилище S3 переполнено (HTTP 507): новые фото не копируются, бэкапы базы в него тоже не выгружаются. Нужно освободить место или расширить тариф hoster.by; копирование пробует снова каждые 30 мин.',
+        );
+      } else if (
+        counts['s3-error'] > 0 &&
+        counts.stored + counts.relinked === 0
+      ) {
         await this.alert(
           `Ни одно фото из ${urls.length} не записалось в S3 — проверьте ключи и место в хранилище.`,
         );
@@ -248,6 +263,8 @@ export class ImageMirrorService implements OnModuleInit {
 
     const host = hostOf(sourceUrl);
     if (this.downHosts.has(host)) return 'host-down';
+    // Another photo of this tick found the bucket full.
+    if (this.storageFull()) return 's3-error';
 
     // Already in the bucket (a lost row, a crash after the upload): the
     // largest cap present is the stored one — it is always written last.
@@ -330,6 +347,8 @@ export class ImageMirrorService implements OnModuleInit {
         this.logger.warn(`S3 put ${key}: ${message(error)}`);
         if (error instanceof S3Error && error.status === 403)
           this.bucketReady = false;
+        if (error instanceof S3Error && error.status === 507)
+          this.storageFullUntil = Date.now() + STORAGE_FULL_PAUSE_MS;
         return 's3-error';
       }
       bytes += variant.body.length;
@@ -382,6 +401,10 @@ export class ImageMirrorService implements OnModuleInit {
       create: { sourceUrl, ...data, attempts: 1 },
       update: { ...data, attempts: { increment: 1 } },
     });
+  }
+
+  private storageFull(): boolean {
+    return Date.now() < this.storageFullUntil;
   }
 
   private async overQuota(): Promise<boolean> {
