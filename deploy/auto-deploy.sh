@@ -197,7 +197,7 @@ if [[ -n "$(env_value DB_APP_USER)" ]]; then
 fi
 
 migrate() {
-  bash "$APP_DIR/deploy/backup-db.sh" || {
+  bash "$APP_DIR/deploy/backup-db.sh" --predeploy || {
     echo "Backup before migration failed; not migrating" >&2
     return 1
   }

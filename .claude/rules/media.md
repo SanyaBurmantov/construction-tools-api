@@ -45,7 +45,10 @@ is not a photo), placeholders are never copied (so the placeholder checks on
 days, a host that does not answer is skipped for 30 min, candidates are walked
 in `sourceUrl` order from an in-memory cursor over `ProductImage_sourceUrl_idx`
 (~30 ms a tick; the first version grouped all ~244k image rows every 20 s —
-3.3 s each), a pass with nothing to do rests 10 min, and `S3_MEDIA_MAX_GB` (30 of the 50 GB plan) stops it. The worker
+3.3 s each), a pass with nothing to do rests 10 min, and `S3_MEDIA_MAX_GB` (30 of the 50 GB plan) stops it — it counts our
+bytes from `ImageMirror`, not the hoster's: on 2026-11-15 the storage said
+full (507 `XMinioStorageFull`) at ~22 GB of 50, so a 507 also pauses copying
+for 30 min with its own alert, instead of downloading photos to throw away. The worker
 creates the bucket and sets its policy itself: **objects are public-read by
 exact key, listing is closed** (owner's choice, 2026-11-02) — IPX fetches
 them like any other source (`image.domains` has the S3 host). The backups

@@ -1,7 +1,7 @@
 import { directConnection } from '../parser/connection/direct-connection.testing';
 import sharp from 'sharp';
 import { fetchWithTimeout } from '../common/utils/fetch-with-timeout';
-import { S3Client } from '../common/utils/s3-client';
+import { S3Client, S3Error } from '../common/utils/s3-client';
 import { ImageMirrorService } from './image-mirror.service';
 import { variantKey } from './image-variants';
 
@@ -196,6 +196,44 @@ describe('ImageMirrorService.tick', () => {
       status: 'FAILED',
       error: 'not an image',
     });
+  });
+
+  it('says the bucket is full and stops downloading photos for a while', async () => {
+    const photo = await sharp({
+      create: { width: 300, height: 200, channels: 3, background: '#3c3' },
+    })
+      .jpeg()
+      .toBuffer();
+    fetchMock.mockResolvedValue(okResponse(photo));
+    fakeS3();
+    jest
+      .spyOn(S3Client.prototype, 'putObject')
+      .mockRejectedValue(
+        new S3Error(507, 'S3 put: HTTP 507 XMinioStorageFull'),
+      );
+    const telegram = {
+      notifyParserProblem: jest.fn().mockResolvedValue(undefined),
+    };
+    const first = fakePrisma([
+      { url: 'https://dukon.by/upload/a.jpg', mirrored: false },
+    ]);
+    const mirror = new ImageMirrorService(
+      first.prisma as never,
+      telegram as never,
+      directConnection(),
+    );
+
+    expect((await mirror.tick())?.['s3-error']).toBe(1);
+    expect(telegram.notifyParserProblem).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: expect.stringContaining('переполнено') as unknown,
+      }),
+    );
+
+    // The next tick neither reads candidates nor asks a supplier.
+    fetchMock.mockClear();
+    expect(await mirror.tick()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('does nothing without the S3 settings', async () => {
