@@ -11,6 +11,8 @@ import type { Response } from 'express';
 import { ErrorLogService } from '../../errors/error-log.service';
 import { actorLabel, isAdminPath, isAdminScope } from '../admin-scope';
 import type { AuthenticatedRequest } from '../../auth/auth-request';
+import { LoadSheddingException } from '../http/load-shedding.exception';
+import { requestVisitor } from '../http/ssr-visitor';
 
 type ErrorResponse = {
   statusCode: number;
@@ -144,6 +146,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // an anonymous way to fill the table and the heap.
       const rejected =
         REJECTED_ADMIN_ATTEMPT.has(status) || status === RATE_LIMITED;
+      // Shedding is one story per endpoint, not per product: by route pattern
+      // a burst folds into one row (`occurrences`) instead of fifty.
+      const byRoute = rejected || exception instanceof LoadSheddingException;
+      const visitor = requestVisitor(request);
       const concretePath = (request.originalUrl || request.url).split('?')[0];
       const routePath = (request as { route?: { path?: unknown } }).route?.path;
       // Fire-and-forget with its own catch inside the service: the response
@@ -154,7 +160,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         // Without the query string: `?x=1`, `?x=2`… are the same broken
         // endpoint and must collapse into one row.
         path:
-          rejected && typeof routePath === 'string'
+          byRoute && typeof routePath === 'string'
             ? routePath
             : concretePath.slice(0, 500),
         kind:
@@ -167,17 +173,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message: Array.isArray(loggedMessage)
           ? loggedMessage.join('; ')
           : String(loggedMessage),
-        detail: Array.isArray(loggedMessage)
-          ? { message: loggedMessage }
-          : undefined,
+        detail: {
+          ...(Array.isArray(loggedMessage) ? { message: loggedMessage } : {}),
+          // The visitor a server-side render was fetching for.
+          ...(visitor.viaSsr ? { via: 'ssr' } : {}),
+        },
         stack:
           status >= 500 && exception instanceof Error
             ? exception.stack
             : undefined,
         payload: rejected ? undefined : request.body,
         actorLabel: actorLabel(request),
-        ip: request.ip,
-        userAgent: request.headers?.['user-agent'],
+        ip: visitor.ip,
+        userAgent: visitor.userAgent,
       });
     }
 

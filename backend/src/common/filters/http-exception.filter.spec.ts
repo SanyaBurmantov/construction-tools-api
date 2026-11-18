@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
 import { HttpExceptionFilter } from './http-exception.filter';
+import { LoadSheddingException } from '../http/load-shedding.exception';
 
 function buildHost(request: Record<string, unknown> = {}) {
   let body: Record<string, unknown> | undefined;
@@ -228,6 +229,40 @@ describe('HttpExceptionFilter error log', () => {
         stack: undefined,
         ip: '203.0.113.7',
         userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
+      }),
+    );
+  });
+
+  // A burst on one endpoint is one row, and it names the visitor the
+  // server-side render was fetching for — not the frontend container.
+  it('records load shedding by route pattern, with the SSR visitor', () => {
+    const log = errorLog();
+    const { host, status } = buildHost({
+      method: 'GET',
+      path: '/products/a-slug/recommendations',
+      url: '/products/a-slug/recommendations',
+      route: { path: '/products/:slug/recommendations' },
+      ip: '172.18.0.7',
+      headers: {
+        'user-agent': 'node',
+        'x-ssr-visitor-ip': '203.0.113.9',
+        'x-ssr-visitor-ua': 'Mozilla/5.0 (compatible; YandexBot/3.0)',
+      },
+    });
+    new HttpExceptionFilter(log as never).catch(
+      new LoadSheddingException('Подборки временно недоступны'),
+      host,
+    );
+
+    expect(status).toHaveBeenCalledWith(503);
+    expect(log.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 503,
+        kind: 'LoadSheddingException',
+        path: '/products/:slug/recommendations',
+        ip: '203.0.113.9',
+        userAgent: 'Mozilla/5.0 (compatible; YandexBot/3.0)',
+        detail: { via: 'ssr' },
       }),
     );
   });

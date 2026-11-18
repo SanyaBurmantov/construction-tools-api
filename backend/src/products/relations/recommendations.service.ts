@@ -1,11 +1,8 @@
 import { PRODUCT_PAGE_WHERE } from '../product-page-visibility';
-import {
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LoadSheddingException } from '../../common/http/load-shedding.exception';
 import { withoutPlaceholderImages } from '../../common/utils/product-images';
 import { fitmentTitles, type FitmentRole } from './fitment';
 import { packOptions, parsePack } from './packs';
@@ -186,7 +183,7 @@ export class RecommendationsService {
   private async gated<T>(work: () => Promise<T>): Promise<T> {
     if (this.running >= MAX_RUNNING) {
       if (this.waiting.length >= MAX_WAITING)
-        throw new ServiceUnavailableException('Подборки временно недоступны');
+        throw new LoadSheddingException('Подборки временно недоступны');
       await new Promise<void>((resolve) => this.waiting.push(resolve));
     }
     this.running += 1;
