@@ -43,6 +43,15 @@ const UNEXPECTED_CLIENT_ERROR = new Set([400, 405, 409, 413, 415, 422]);
  */
 const REJECTED_ADMIN_ATTEMPT = new Set([401, 403]);
 
+/**
+ * A rate-limited request, anywhere. The storefront shows a 429 as «Мы уже
+ * чиним» (`isApiUnavailable`), and 39 such screens on 16–17.11 left no trace
+ * here — nobody could say whose requests the limit had cut. Recorded like a
+ * rejected admin attempt: by route pattern, without the body, capped per
+ * address in ErrorLogService.
+ */
+const RATE_LIMITED = 429;
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -66,7 +75,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     status: number,
     request: AuthenticatedRequest,
   ): boolean {
-    if (status >= 500) return true;
+    if (status >= 500 || status === RATE_LIMITED) return true;
     if (REJECTED_ADMIN_ATTEMPT.has(status)) return isAdminPath(request);
     return UNEXPECTED_CLIENT_ERROR.has(status) && isAdminScope(request);
   }
@@ -133,7 +142,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // pattern and without its body. By concrete path, every random
       // `/admin/products/<16 KB>` was a new row (and a new in-memory key) —
       // an anonymous way to fill the table and the heap.
-      const rejected = REJECTED_ADMIN_ATTEMPT.has(status);
+      const rejected =
+        REJECTED_ADMIN_ATTEMPT.has(status) || status === RATE_LIMITED;
       const concretePath = (request.originalUrl || request.url).split('?')[0];
       const routePath = (request as { route?: { path?: unknown } }).route?.path;
       // Fire-and-forget with its own catch inside the service: the response

@@ -20,7 +20,7 @@ const { data, status, error } = await useAsyncData<BrandCategoriesResponse>(
 
 if (error.value) {
   // «Не ответило» is not «нет такого бренда» — see the product page.
-  if (isApiUnavailable(error.value)) throw apiUnavailableError()
+  if (isApiUnavailable(error.value)) throw apiUnavailableError(error.value)
   throw createError({ statusCode: 404, statusMessage: 'Бренд не найден', fatal: true })
 }
 

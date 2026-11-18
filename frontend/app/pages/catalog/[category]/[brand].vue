@@ -29,7 +29,7 @@ const { data: landing, error } = await useAsyncData<CatalogLanding | null>(
   }),
 )
 
-if (error.value) throw apiUnavailableError()
+if (error.value) throw apiUnavailableError(error.value)
 
 if (!landing.value) {
   const brand = await $fetch<BrandCategoriesResponse>(

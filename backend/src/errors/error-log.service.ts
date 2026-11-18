@@ -36,7 +36,10 @@ const DEDUPE_WINDOW_MS = 60_000;
 const ALERT_REPEAT_MS = 60 * 60_000;
 const ALERTS_PER_HOUR = 10;
 
-/** New rows for rejected admin attempts per IP per hour (see allowRejected). */
+/**
+ * New rows per IP per hour for rejected admin attempts and rate-limited
+ * requests (see allowRejected).
+ */
 const REJECTED_PER_IP_HOUR = 30;
 
 @Injectable()
@@ -54,13 +57,18 @@ export class ErrorLogService {
     private telegram: TelegramService,
   ) {}
 
-  /** Bounded: the key lives in memory for the dedupe window. */
+  /**
+   * Bounded: the key lives in memory for the dedupe window. A 429 is about
+   * *who* hit the limit, so each address keeps its own row — folded into the
+   * first one, a crawler and a customer in the same minute were one story.
+   */
   private static fingerprint(entry: ErrorEntry) {
     return [
       entry.statusCode,
       entry.method.slice(0, 10),
       entry.path.slice(0, 500),
       entry.message.slice(0, 300),
+      ...(entry.statusCode === 429 ? [entry.ip ?? ''] : []),
     ].join(' ');
   }
 
@@ -71,12 +79,13 @@ export class ErrorLogService {
   >();
 
   /**
-   * A rejected admin attempt (401/403) is a row only `REJECTED_PER_IP_HOUR`
-   * times an hour per address: one attempt is evidence, a thousand from the
-   * same place are one story and a way to fill the table.
+   * A rejected admin attempt (401/403) or a rate-limited request (429) is a
+   * row only `REJECTED_PER_IP_HOUR` times an hour per address: one attempt is
+   * evidence, a thousand from the same place are one story and a way to fill
+   * the table. Repeats still count in `occurrences` of the rows written.
    */
   private allowRejected(entry: ErrorEntry, now: number) {
-    if (entry.statusCode !== 401 && entry.statusCode !== 403) return true;
+    if (![401, 403, 429].includes(entry.statusCode)) return true;
     const ip = entry.ip ?? 'unknown';
     const seen = this.rejectedByIp.get(ip);
     if (!seen || now - seen.since >= 60 * 60_000) {

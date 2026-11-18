@@ -1,3 +1,5 @@
+import { outageCause } from './outage-cause'
+
 /**
  * Tells «API не ответил» apart from «ответил, но пусто».
  *
@@ -28,12 +30,17 @@ export function isApiUnavailable(error: unknown): boolean {
   return true
 }
 
-/** The page shown instead of an empty storefront while the API is down. */
-export function apiUnavailableError() {
+/**
+ * The page shown instead of an empty storefront while the API is down. Pass
+ * the failure: its cause (`HTTP 429`, `нет ответа: …`) rides along in `data`
+ * and the browser's error report carries it to /admin/errors.
+ */
+export function apiUnavailableError(failure?: unknown) {
   return createError({
     statusCode: 503,
     statusMessage: 'Магазин временно недоступен',
     message: 'Мы уже чиним. Обновите страницу через пару минут.',
     fatal: true,
+    ...(failure === undefined ? {} : { data: { cause: outageCause(failure) } }),
   })
 }

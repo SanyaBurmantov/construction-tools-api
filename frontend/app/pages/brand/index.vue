@@ -34,7 +34,7 @@ const { data: brands, status, error } = await useAsyncData<Brand[]>(
 )
 
 // An empty list and an unreachable API look the same on this page otherwise.
-if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
+if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError(error.value)
 
 /** The filter lives in the query so a filtered list stays shareable. */
 const search = computed(() => {
