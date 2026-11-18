@@ -116,7 +116,18 @@ The admin shell and page skeleton, the parsing screen, source notes, feature fla
   hour. The browser's report of a technical-works screen carries
   `detail.cause` («HTTP 429», «HTTP 502», «нет ответа: …», frontend
   `utils/outage-cause.ts`) — pass the failure to `apiUnavailableError(error)`
-  wherever you throw it. A non-HTTP
+  wherever you throw it. **Whose SSR fetch it was**: the Nuxt server adds
+  `x-ssr-visitor-ip` / `x-ssr-visitor-ua` to every SSR fetch of our API
+  (`frontend/server/plugins/ssr-visitor.ts`, wraps the global `$fetch`, finds
+  the request through `nitro.experimental.asyncContext`); the backend believes
+  them only from the Docker network (`common/http/ssr-visitor.ts`) and logs
+  them instead of 172.18.0.7/«node» with `detail.via = 'ssr'`. Logging only:
+  never send the visitor as X-Forwarded-For — with `trust proxy` it would
+  become `req.ip` and SSR would lose its exemption from the 120/min limit.
+  **A deliberate 503** (`LoadSheddingException`, e.g. the recommendations
+  queue bound) is kept by route pattern and reaches Telegram only at ≥ 50 on
+  one route within 5 min (18.11: two crawler bursts of 6 and 47 «🔴 Ошибка
+  503» about a block that renders client-side anyway). A non-HTTP
   error's own message goes to the log only; the client gets
   `Internal server error` (it used to receive Prisma's invocation text).
   Bodies go through the audit's own redaction, so a password cannot land in a

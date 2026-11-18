@@ -196,6 +196,41 @@ describe('ErrorLogService Telegram alerts', () => {
     expect(telegram.notifyServerError).toHaveBeenCalledTimes(1);
   });
 
+  // A crawler opening fifty product pages at once is the guard doing its job.
+  it('stays quiet about load shedding until it lasts', async () => {
+    const { service, telegram } = buildService();
+    const shed = () =>
+      entry({
+        statusCode: 503,
+        method: 'GET',
+        path: '/products/:slug/recommendations',
+        kind: 'LoadSheddingException',
+        message: 'Подборки временно недоступны',
+      });
+
+    for (let i = 0; i < 49; i++) await service.record(shed());
+    expect(telegram.notifyServerError).not.toHaveBeenCalled();
+
+    // Spread out, the window forgets the old ones.
+    now += 5 * 60_000;
+    await service.record(shed());
+    expect(telegram.notifyServerError).not.toHaveBeenCalled();
+
+    for (let i = 0; i < 49; i++) await service.record(shed());
+    expect(telegram.notifyServerError).toHaveBeenCalledTimes(1);
+    expect(telegram.notifyServerError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 503,
+        path: '/products/:slug/recommendations',
+        message: expect.stringContaining('50+ отказов за 5 мин'),
+      }),
+    );
+
+    // Still shedding: once an hour, like any alert.
+    for (let i = 0; i < 100; i++) await service.record(shed());
+    expect(telegram.notifyServerError).toHaveBeenCalledTimes(1);
+  });
+
   it('sends the same failure once an hour', async () => {
     const { service, telegram } = buildService();
     await service.record(entry());

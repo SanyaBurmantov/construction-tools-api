@@ -23,7 +23,10 @@ paths:
   are read live, so a stored row cannot show an old price; a row is redone
   after 3 days, when the product's text changes, or when
   `SIMILAR_RULE_VERSION` is bumped (do that whenever the similarity rules
-  change). A page with no usable row computes and stores it itself. It was
+  change). A page with no usable row computes and stores it itself. Over
+  the queue bound (10 running + 40 waiting) the answer is a
+  `LoadSheddingException` 503 — quiet in Telegram unless it lasts (see
+  `admin.md`, error log). It was
   the costliest query of a product page (~1100 s of DB a day, crawlers).
   «Аксессуары» / «Подходит для» read one table, `ProductCompatibility`
   (accessory → tool), built by `CompatibilityRefreshService` in the worker —

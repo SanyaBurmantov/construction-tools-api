@@ -37,6 +37,15 @@ const ALERT_REPEAT_MS = 60 * 60_000;
 const ALERTS_PER_HOUR = 10;
 
 /**
+ * A deliberate 503 (`LoadSheddingException`) reaches Telegram only when
+ * SHED_ALERT_COUNT of them on one route fall inside SHED_WINDOW_MS: a single
+ * crawler burst is the guard doing its job, minutes of it are an incident.
+ */
+const SHED_ALERT_COUNT = 50;
+const SHED_WINDOW_MS = 5 * 60_000;
+const SHED_KIND = 'LoadSheddingException';
+
+/**
  * New rows per IP per hour for rejected admin attempts and rate-limited
  * requests (see allowRejected).
  */
@@ -51,6 +60,8 @@ export class ErrorLogService {
   /** fingerprint → when it was last sent to Telegram. */
   private readonly alerted = new Map<string, number>();
   private alertTimes: number[] = [];
+  /** route → the last SHED_ALERT_COUNT shedding times (bounded per route). */
+  private readonly shedTimes = new Map<string, number[]>();
 
   constructor(
     private prisma: PrismaService,
@@ -114,6 +125,8 @@ export class ErrorLogService {
       const key = ErrorLogService.fingerprint(entry);
       const now = Date.now();
       const previous = this.recent.get(key);
+      // Counted on every call, folded repeats included: those are the burst.
+      if (entry.kind === SHED_KIND) this.noteShedding(entry, now);
 
       if (previous && now - previous.at < DEDUPE_WINDOW_MS) {
         await this.prisma.errorLog.update({
@@ -147,10 +160,32 @@ export class ErrorLogService {
 
       this.recent.set(key, { id: row.id, at: now });
       this.forgetStaleFingerprints(now);
-      if (entry.statusCode >= 500) this.alert(key, entry, now);
+      if (entry.statusCode >= 500 && entry.kind !== SHED_KIND)
+        this.alert(key, entry, now);
     } catch (error) {
       this.logger.error(`Could not record error log entry: ${String(error)}`);
     }
+  }
+
+  private noteShedding(entry: ErrorEntry, now: number) {
+    const route = entry.path.slice(0, 500);
+    const times = (this.shedTimes.get(route) ?? []).filter(
+      (at) => now - at < SHED_WINDOW_MS,
+    );
+    times.push(now);
+    if (times.length > SHED_ALERT_COUNT) times.shift();
+    if (this.shedTimes.size > 100 && !this.shedTimes.has(route))
+      this.shedTimes.clear();
+    this.shedTimes.set(route, times);
+    if (times.length < SHED_ALERT_COUNT) return;
+    this.alert(
+      `shed ${route}`,
+      {
+        ...entry,
+        message: `${entry.message}: ${SHED_ALERT_COUNT}+ отказов за ${SHED_WINDOW_MS / 60_000} мин — API сбрасывает нагрузку дольше обычного всплеска`,
+      },
+      now,
+    );
   }
 
   /** Fire-and-forget: Telegram being down must not touch error logging. */

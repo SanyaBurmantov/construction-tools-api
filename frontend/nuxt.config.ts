@@ -264,6 +264,11 @@ export default defineNuxtConfig({
     devStorage: {
       cache: { driver: 'memory' },
     },
+    // `useEvent()` anywhere in a request: server/plugins/ssr-visitor.ts finds
+    // the visitor an SSR fetch is made for through it.
+    experimental: {
+      asyncContext: true,
+    },
   },
   runtimeConfig: {
     apiBaseServer: process.env.API_BASE_SERVER || process.env.API_BASE || 'http://localhost:8000',
