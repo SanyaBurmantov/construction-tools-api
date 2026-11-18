@@ -39,6 +39,7 @@ export class ClientErrorsController {
         line: dto.line,
         column: dto.column,
         release: dto.release,
+        cause: dto.cause,
       },
       userAgent,
     });

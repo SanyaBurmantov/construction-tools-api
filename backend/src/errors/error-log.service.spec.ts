@@ -63,6 +63,29 @@ describe('ErrorLogService.record', () => {
     expect(create).toHaveBeenCalledTimes(31);
   });
 
+  it('keeps each rate-limited address in its own row, at most 30 an hour', async () => {
+    const { service, create, update } = buildService();
+    const limited = (ip: string, path = '/products/:slug') =>
+      entry({
+        statusCode: 429,
+        method: 'GET',
+        path,
+        message: 'ThrottlerException: Too Many Requests',
+        ip,
+      });
+
+    await service.record(limited('1.1.1.1'));
+    await service.record(limited('1.1.1.1')); // same minute: folded
+    await service.record(limited('2.2.2.2')); // another address: its own row
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenCalledTimes(1);
+
+    for (let i = 0; i < 40; i++) {
+      await service.record(limited('3.3.3.3', `/route/${i}`));
+    }
+    expect(create).toHaveBeenCalledTimes(2 + 30);
+  });
+
   it('writes the failure', async () => {
     const { service, create } = buildService();
     await service.record(entry());

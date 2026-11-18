@@ -6,6 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import { HttpExceptionFilter } from './http-exception.filter';
 
 function buildHost(request: Record<string, unknown> = {}) {
@@ -198,6 +199,35 @@ describe('HttpExceptionFilter error log', () => {
         statusCode: 401,
         path: '/admin/products/:id',
         payload: undefined,
+      }),
+    );
+  });
+
+  // The storefront shows a 429 as «Мы уже чиним»: whose requests the limit
+  // cut must be on record, outside admin scope too.
+  it('records a rate-limited storefront request by route pattern, with who sent it', () => {
+    const log = errorLog();
+    const { host, status } = buildHost({
+      method: 'GET',
+      path: '/products/some-slug',
+      url: '/products/some-slug?x=1',
+      originalUrl: '/products/some-slug?x=1',
+      route: { path: '/products/:slug' },
+      ip: '203.0.113.7',
+      headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64)' },
+    });
+    new HttpExceptionFilter(log as never).catch(new ThrottlerException(), host);
+
+    expect(status).toHaveBeenCalledWith(429);
+    expect(log.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 429,
+        method: 'GET',
+        path: '/products/:slug',
+        payload: undefined,
+        stack: undefined,
+        ip: '203.0.113.7',
+        userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
       }),
     );
   });

@@ -52,7 +52,7 @@ const { data, status, error } = await useAsyncData<ProductsResponse>(
 // Without this the page falls back to its empty default and reads as «скидок
 // нет» while the API is simply down. Server-side only: on the client the page
 // is already rendered and a blip must not replace it.
-if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
+if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError(error.value)
 // Past the last page: a 404, not an empty page with 200 (see CatalogView).
 if (import.meta.server && !error.value && page.value > Math.max(1, data.value.pagination.pages)) {
   throw createError({ statusCode: 404, statusMessage: 'Страница не найдена', fatal: true })

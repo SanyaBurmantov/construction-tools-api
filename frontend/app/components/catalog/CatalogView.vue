@@ -200,6 +200,7 @@ const queryParams = computed(() => cleanParams({
  * turned into the maintenance page below.
  */
 const categoryUnavailable = ref(false)
+let categoryFailure: unknown
 
 // The four requests are independent — products are filtered by the slug in
 // the URL, not by the category answer — so they start together and the render
@@ -241,6 +242,7 @@ const [
       ? $fetch<CategoryPage>(`${apiBase}/categories/${encodeURIComponent(props.categorySlug)}`).catch(error => {
           if (isApiUnavailable(error)) {
             categoryUnavailable.value = true
+            categoryFailure = error
             return null
           }
           throw error
@@ -284,7 +286,7 @@ watch(catalogDataKey, () => {
   if (import.meta.client) resultsAnimated.value = true
 })
 
-if (categoryUnavailable.value) throw apiUnavailableError()
+if (categoryUnavailable.value) throw apiUnavailableError(categoryFailure)
 
 if (props.categorySlug && !category.value) {
   throw createError({ statusCode: 404, statusMessage: 'Категория не найдена', fatal: true })
@@ -304,7 +306,7 @@ if (category.value && props.categorySlug !== category.value.slug) {
  * answer: the page around it is already rendered and a transient blip must not
  * throw the visitor out of it.
  */
-if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError()
+if (import.meta.server && isApiUnavailable(error.value)) throw apiUnavailableError(error.value)
 
 // A `?page=N` past the last page is a 404, not an empty «ничего не найдено»
 // with 200 and a self-canonical — a soft 404 the cache kept and search

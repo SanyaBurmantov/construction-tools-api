@@ -17,10 +17,14 @@ const emptyPage = { data: [], pagination: { page: 1, limit: 8, total: 0, pages: 
  * Only the product rails count: they are the shop.
  */
 const unavailable = ref(false)
+let unavailableFailure: unknown
 
 function soft<T>(request: Promise<T>, fallback: T): Promise<T> {
   return request.catch(error => {
-    if (isApiUnavailable(error)) unavailable.value = true
+    if (isApiUnavailable(error)) {
+      unavailable.value = true
+      unavailableFailure = error
+    }
     return fallback
   })
 }
@@ -145,7 +149,7 @@ const [
 // The catalogue did not answer: show the technical-works page rather than a
 // shop that looks sold out. Nitro never caches a 4xx/5xx response, so the
 // outage page cannot outlive the outage.
-if (unavailable.value) throw apiUnavailableError()
+if (unavailable.value) throw apiUnavailableError(unavailableFailure)
 
 // «95 000+ позиций» in the hero — from the tree above, never typed in.
 const catalogSize = computed(() => catalogSizeText(tree.value))

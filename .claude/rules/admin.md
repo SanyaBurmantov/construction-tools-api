@@ -108,7 +108,15 @@ The admin shell and page skeleton, the parsing screen, source notes, feature fla
   it can be given `ErrorLogService` by DI — the response it sends is unchanged.
   What it keeps: **every 5xx**, plus the client errors an **admin-scope**
   request was answered with (400/405/409/413/415/422), plus **401/403 on
-  `/admin` paths** — the only record of rejected admin attempts. A non-HTTP
+  `/admin` paths** — the only record of rejected admin attempts —, plus
+  **every 429**, storefront included (18.11: 39 «Мы уже чиним» screens on
+  16–17.11 left no trace of whose requests the 120/min limit had cut). 401/403
+  on `/admin` and 429 are kept by route pattern, without the body, a 429 per
+  address (its IP is in the dedupe key), at most 30 new rows per address an
+  hour. The browser's report of a technical-works screen carries
+  `detail.cause` («HTTP 429», «HTTP 502», «нет ответа: …», frontend
+  `utils/outage-cause.ts`) — pass the failure to `apiUnavailableError(error)`
+  wherever you throw it. A non-HTTP
   error's own message goes to the log only; the client gets
   `Internal server error` (it used to receive Prisma's invocation text).
   Bodies go through the audit's own redaction, so a password cannot land in a

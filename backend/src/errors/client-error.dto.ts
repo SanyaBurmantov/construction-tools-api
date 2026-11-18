@@ -51,6 +51,15 @@ export class ClientErrorDto {
   @Max(10_000_000)
   column?: number;
 
+  /**
+   * Why the technical-works screen was shown: «HTTP 429», «HTTP 502»,
+   * «нет ответа: TypeError: Failed to fetch» (frontend `outageCause`).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  cause?: string;
+
   /** Nuxt build id: which deploy the visitor's page came from. */
   @IsOptional()
   @IsString()

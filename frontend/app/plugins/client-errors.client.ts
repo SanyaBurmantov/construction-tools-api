@@ -26,6 +26,8 @@ type Report = {
   source?: string
   line?: number
   column?: number
+  /** «HTTP 429», «нет ответа: …» — why the technical-works screen was shown. */
+  cause?: string
 }
 
 export default defineNuxtPlugin((nuxtApp) => {
@@ -66,7 +68,14 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   function fromError(error: unknown, fallbackName?: string): Report {
     if (error instanceof Error) {
-      return { message: error.message || String(error), name: error.name || fallbackName, stack: error.stack }
+      // apiUnavailableError() keeps the failure it stands for in `data.cause`.
+      const cause = (error as { data?: { cause?: unknown } }).data?.cause
+      return {
+        message: error.message || String(error),
+        name: error.name || fallbackName,
+        stack: error.stack,
+        ...(typeof cause === 'string' && cause ? { cause: cause.slice(0, 200) } : {}),
+      }
     }
     return { message: typeof error === 'string' ? error : JSON.stringify(error) ?? String(error), name: fallbackName }
   }
