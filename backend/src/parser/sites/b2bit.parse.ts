@@ -8,14 +8,15 @@
  * shape.
  *
  * Things that are not what they look like:
- * - **The price we sell at is the struck-through one** (owner, 2026-11-17).
- *   An offer carries three numbers: `price` — our dealer (purchase) price,
- *   `price_old` — the price the portal shows crossed out next to it, and
- *   `price_rrc` — the manufacturer's recommended retail. We sell at
- *   `price_old` (≈ ×1.33 of the purchase price, always under the RRP). It is
- *   *not* a "was" price for our storefront — nothing is shown struck through
- *   on our side. An offer without one (no promotion, ~1.5 %) has no price for
- *   us: the card goes priceless, as agreed with the owner.
+ * - **The price we sell at is the RRP** (owner, 2026-11-19; before that the
+ *   struck-through one). An offer carries three numbers: `price` — our dealer
+ *   (purchase) price, `price_old` — the price the portal shows crossed out
+ *   next to it (≈ ×1.33 of the purchase, under the RRP), and `price_rrc` — the
+ *   manufacturer's recommended retail. We sell at `price_rrc`; the RRP of the
+ *   dealer price list (xlsx) is the same number, so the API is the source. An
+ *   offer without an RRP (~0.7 %) sells at the higher of `price_old` and the
+ *   offer's current price (`withCurrentPrice`) — it does not drop. Nothing is
+ *   shown struck through on our side.
  * - The product's own `available` flag is false even for items in stock; the
  *   offer's `available` is the one that says «можно купить» (`reserve`
  *   offers are `available: false`).
@@ -211,16 +212,50 @@ export function pickB2bitOffer(
 }
 
 /**
- * Our selling price of an offer: the struck-through `price_old`. Undefined
- * when there is none, or when it is under the purchase price — that would be
- * a sale at a loss, so it is treated as no price rather than trusted.
+ * Our selling price of an offer: the RRP (`price_rrc`), or — without one —
+ * the struck-through `price_old`. A number under the purchase price would be a
+ * sale at a loss, so it is skipped rather than trusted.
  */
 export function sellingPrice(offer: B2bitOffer | undefined) {
-  const old = positive(offer?.price_old);
-  if (old === undefined) return undefined;
+  return pricedFrom(offer)?.price;
+}
+
+function pricedFrom(
+  offer: B2bitOffer | undefined,
+): { price: number; from: 'rrp' | 'struck' } | undefined {
   const purchase = positive(offer?.price);
-  if (purchase !== undefined && old < purchase) return undefined;
-  return old;
+  const sellable = (value: number | undefined) =>
+    value !== undefined && (purchase === undefined || value >= purchase);
+  const rrp = positive(offer?.price_rrc);
+  if (sellable(rrp)) return { price: rrp!, from: 'rrp' };
+  const old = positive(offer?.price_old);
+  if (sellable(old)) return { price: old!, from: 'struck' };
+  return undefined;
+}
+
+/**
+ * The price to store on the offer, given the one it has now. Without an RRP
+ * the offer keeps the higher of the new price and its current one (owner,
+ * 2026-11-19) — a current price under the purchase price is not kept. An RRP
+ * is taken as it is, up or down; no offer at all → no price.
+ */
+export function withCurrentPrice(
+  parsed: Pick<
+    ParsedB2bitProduct,
+    'price' | 'priceFrom' | 'purchasePrice' | 'hasOffer'
+  >,
+  current: number | null | undefined,
+): number | undefined {
+  if (!parsed.hasOffer) return undefined;
+  if (parsed.priceFrom === 'rrp') return parsed.price;
+  const keep =
+    current != null &&
+    current > 0 &&
+    (parsed.purchasePrice === undefined || current >= parsed.purchasePrice)
+      ? current
+      : undefined;
+  if (parsed.price === undefined) return keep;
+  return keep !== undefined ? Math.max(parsed.price, keep) : parsed.price;
 }
 
 /* -------------------------------------------------------------- product ---- */
@@ -241,8 +276,10 @@ export type ParsedB2bitProduct = {
   hasOffer: boolean;
   /** An offer that can be bought now. */
   inStock: boolean;
-  /** Our selling price — the struck-through one; see the module note. */
+  /** Our selling price — the RRP, else the struck-through one; see the module note. */
   price?: number;
+  /** Where `price` came from. */
+  priceFrom?: 'rrp' | 'struck';
   /** Admin-only reference numbers; never on the storefront. */
   purchasePrice?: number;
   rrp?: number;
@@ -257,6 +294,7 @@ export function parseB2bitProduct(
   categoryPaths: Map<number, string[]>,
 ): ParsedB2bitProduct {
   const offer = pickB2bitOffer(product.offers);
+  const priced = pricedFrom(offer);
   const categoryId = product.category?.id;
   const breadcrumbs =
     (categoryId !== undefined ? categoryPaths.get(categoryId) : undefined) ??
@@ -274,7 +312,8 @@ export function parseB2bitProduct(
     specifications: b2bitSpecifications(product.properties),
     hasOffer: Boolean(offer),
     inStock: offer?.available === true,
-    price: sellingPrice(offer),
+    price: priced?.price,
+    priceFrom: priced?.from,
     purchasePrice: positive(offer?.price),
     rrp: positive(offer?.price_rrc),
     quantity:
