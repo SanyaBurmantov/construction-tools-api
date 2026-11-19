@@ -31,6 +31,7 @@ import {
   b2bitProductId,
   b2bitProductUrl,
   parseB2bitProduct,
+  withCurrentPrice,
 } from './b2bit.parse';
 
 type SavedCategoryRef = { id: string; mappedCategoryId?: string | null };
@@ -586,11 +587,13 @@ export class B2bitParserService extends SupplierQueueParser {
   }
 
   /**
-   * The offer row. `price` is our selling price (the struck-through one); the
-   * dealer price, RRP, quantity and promotion go into the admin-only snapshot.
+   * The offer row. `price` is our selling price (the RRP; without one, the
+   * higher of the struck-through price and the offer's current price — see
+   * `withCurrentPrice`); the dealer price, RRP, quantity and promotion go into
+   * the admin-only snapshot.
    * The API is JSON, not a selector that can silently stop matching, so a
-   * missing price is believed: no struck-through price or no offer at all →
-   * `null`, the offer stops pricing the card.
+   * missing price is believed: no RRP, struck-through or current price, or no
+   * offer at all → `null`, the offer stops pricing the card.
    */
   private async saveSourceProduct(
     url: string,
@@ -622,7 +625,11 @@ export class B2bitParserService extends SupplierQueueParser {
         parsedAt: new Date().toISOString(),
       },
     });
-    const price = parsed.price ?? null;
+    const current = await this.prisma.sourceProduct.findUnique({
+      where: { sourceId_url: { sourceId, url } },
+      select: { price: true },
+    });
+    const price = withCurrentPrice(parsed, current?.price) ?? null;
 
     await upsertTolerantly(() =>
       this.prisma.sourceProduct.upsert({

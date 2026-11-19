@@ -272,11 +272,17 @@ flags (`stock/reserve/under_order/transit=true`, `unavailable=false`; without
 them the API answers 500) — ~120 pages, 4 821 products on 2026-11-17, the same
 set as the dealer price list. Product = `/product/<id>`, offer URL
 `https://b2bit.by/product/<id>`.
-- **We sell at the struck-through price** (`price_old`, owner 2026-11-17), not
-  the dealer price (`price`, our purchase) and not the RRP (`price_rrc`). It is
-  ≈ ×1.33 of the purchase, always under the RRP, and is *not* shown struck
-  through on our storefront. No `price_old` (no promotion, ~1.5 %: e.g. the
-  ZKTeco locks) → no price, the card goes priceless — agreed. Dealer price, RRP,
+- **We sell at the RRP** (`price_rrc`, owner 2026-11-19; from 2026-11-17 it
+  was the struck-through `price_old`, ≈ ×1.33 of the purchase, under the RRP).
+  The RRP in the dealer price list (xlsx) is the same number — 4 768 of 4 785
+  equal, the rest the API's fresher value, none the API lacks — so the API is
+  the source, no file import. No RRP (35 of 4 820 on 2026-11-19) → the higher
+  of `price_old` and the offer's current `SourceProduct.price`
+  (`withCurrentPrice`: such a price never drops; one under the purchase is not
+  kept); neither → priceless. A number under the purchase price is never a
+  selling price. Nothing is shown struck through on our storefront. Switching
+  to the RRP raised 9 prices by more than 50 % — the spike guard holds those for
+  review in `/admin/pricing`. Dealer price, RRP,
   quantity and promotion are kept in the admin-only `SourceProduct` snapshot.
   Fixtures carry **invented prices** — real dealer prices stay out of git.
 - **Only «Стройка и ремонт»** (owner): the default INCLUDE in

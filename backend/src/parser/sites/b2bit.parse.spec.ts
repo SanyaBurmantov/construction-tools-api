@@ -15,6 +15,7 @@ import {
   parseB2bitProduct,
   pickB2bitOffer,
   sellingPrice,
+  withCurrentPrice,
 } from './b2bit.parse';
 
 // Real API answers (2026-11-17) with invented prices: the repo is public and
@@ -123,8 +124,9 @@ describe('parseB2bitProduct', () => {
     ]);
   });
 
-  it('sells at the struck-through price, keeps the others for the admin', () => {
-    expect(parsed.price).toBe(600);
+  it('sells at the RRP, keeps the others for the admin', () => {
+    expect(parsed.price).toBe(700);
+    expect(parsed.priceFrom).toBe('rrp');
     expect(parsed.purchasePrice).toBe(500);
     expect(parsed.rrp).toBe(700);
     expect(parsed.inStock).toBe(true);
@@ -166,15 +168,15 @@ describe('parseB2bitProduct', () => {
   });
 });
 
-describe('an offer without a struck-through price', () => {
+describe('an offer without a struck-through price but with an RRP', () => {
   const parsed = parseB2bitProduct(
     fixture<B2bitProduct>('b2bit-product-no-struck-price.json'),
     paths,
   );
 
-  it('has no price for us, though it is in stock', () => {
+  it('still sells at the RRP', () => {
     expect(parsed.inStock).toBe(true);
-    expect(parsed.price).toBeUndefined();
+    expect(parsed.price).toBe(35);
     expect(parsed.purchasePrice).toBe(30);
   });
 });
@@ -188,7 +190,7 @@ describe('a reserved offer', () => {
   it('is not in stock but keeps its price', () => {
     expect(parsed.inStock).toBe(false);
     expect(parsed.hasOffer).toBe(true);
-    expect(parsed.price).toBe(110);
+    expect(parsed.price).toBe(130);
   });
 });
 
@@ -211,18 +213,72 @@ describe('a product the portal no longer offers', () => {
 });
 
 describe('selling price and offer choice', () => {
-  it('refuses a struck-through price under the purchase price', () => {
+  it('takes the RRP, else the struck-through price', () => {
+    expect(sellingPrice({ price: 100, price_old: 120, price_rrc: 150 })).toBe(
+      150,
+    );
+    // An RRP under the struck-through price is still the RRP.
+    expect(sellingPrice({ price: 100, price_old: 120, price_rrc: 110 })).toBe(
+      110,
+    );
+    expect(sellingPrice({ price: 100, price_old: 120, price_rrc: null })).toBe(
+      120,
+    );
+    expect(sellingPrice({ price: 100, price_old: 0, price_rrc: 0 })).toBe(
+      undefined,
+    );
+  });
+
+  it('refuses a number under the purchase price', () => {
     expect(sellingPrice({ price: 100, price_old: 90 })).toBeUndefined();
     expect(sellingPrice({ price: 100, price_old: 100 })).toBe(100);
     expect(sellingPrice({ price: 100, price_old: null })).toBeUndefined();
+    // An RRP under the purchase falls back to the struck-through price.
+    expect(sellingPrice({ price: 100, price_old: 120, price_rrc: 90 })).toBe(
+      120,
+    );
   });
 
   it('prefers an offer that can be bought, then the cheaper one', () => {
-    const reserved = { available: false, price: 10, price_old: 11 };
-    const dear = { available: true, price: 10, price_old: 15 };
+    const reserved = { available: false, price: 10, price_rrc: 11 };
+    const dear = { available: true, price: 10, price_rrc: 15 };
     const cheap = { available: true, price: 10, price_old: 13 };
     expect(pickB2bitOffer([reserved, dear, cheap])).toBe(cheap);
     expect(pickB2bitOffer([])).toBeUndefined();
+  });
+});
+
+describe('withCurrentPrice', () => {
+  const offer = { hasOffer: true, purchasePrice: 100 };
+
+  it('takes the RRP as it is, even under the current price', () => {
+    expect(
+      withCurrentPrice({ ...offer, price: 150, priceFrom: 'rrp' }, 180),
+    ).toBe(150);
+  });
+
+  it('without an RRP keeps the higher of the new and the current price', () => {
+    expect(
+      withCurrentPrice({ ...offer, price: 120, priceFrom: 'struck' }, 150),
+    ).toBe(150);
+    expect(
+      withCurrentPrice({ ...offer, price: 160, priceFrom: 'struck' }, 150),
+    ).toBe(160);
+    expect(withCurrentPrice({ ...offer, price: 120 }, null)).toBe(120);
+    // No new price at all: the current one stays.
+    expect(withCurrentPrice(offer, 150)).toBe(150);
+    expect(withCurrentPrice(offer, null)).toBeUndefined();
+  });
+
+  it('never keeps a current price under the purchase price', () => {
+    expect(withCurrentPrice({ ...offer, price: 120 }, 90)).toBe(120);
+    expect(withCurrentPrice(offer, 90)).toBeUndefined();
+  });
+
+  it('drops the price when the portal no longer offers the product', () => {
+    expect(
+      withCurrentPrice({ hasOffer: false, price: undefined }, 150),
+    ).toBeUndefined();
   });
 });
 
