@@ -300,3 +300,73 @@ describe('ImageMirrorService candidate walk', () => {
     expect(cursors).toEqual(['', 'https://a.by/39.jpg', '']);
   });
 });
+
+describe('ImageMirrorService proxied photos', () => {
+  const env = { ...process.env };
+  beforeEach(() => {
+    process.env.S3_ENDPOINT = 'https://s3.test';
+    process.env.S3_ACCESS_KEY = 'k';
+    process.env.S3_SECRET_KEY = 's';
+    process.env.S3_MEDIA_BUCKET = 'gost-by-media';
+    fetchMock.mockReset();
+  });
+  afterEach(() => {
+    process.env = { ...env };
+    jest.restoreAllMocks();
+  });
+
+  // th-tool.by through the paid proxy: 120 requests a minute would be a bill
+  // and an invitation to ban the proxy (2026-11-23).
+  it('copies at most six proxied photos a tick, one at a time, and resumes after them', async () => {
+    fakeS3(new Map());
+    const urls = Array.from(
+      { length: 10 },
+      (_, i) => `https://th-tool.by/wa-data/${i}.webp`,
+    );
+    const cursors: unknown[] = [];
+    const prisma = {
+      $queryRaw: jest.fn(
+        (strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (strings.join('?').includes('sum(bytes)')) {
+            return Promise.resolve([{ bytes: 0n }]);
+          }
+          cursors.push(values[0]);
+          return Promise.resolve(urls.map((url) => ({ url, mirrored: false })));
+        },
+      ),
+      imageMirror: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue(undefined),
+      },
+      productImage: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetched: string[] = [];
+    const connection = {
+      ...directConnection(),
+      goesThroughProxy: () => Promise.resolve(true),
+      fetch: async (url: string) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        fetched.push(url);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        inFlight -= 1;
+        return { ok: false, status: 404 } as Response;
+      },
+    };
+    const mirror = new ImageMirrorService(
+      prisma as never,
+      { notifyParserProblem: jest.fn() } as never,
+      connection as never,
+    );
+
+    await mirror.tick();
+    await mirror.tick();
+
+    expect(fetched.slice(0, 6)).toEqual(urls.slice(0, 6));
+    expect(maxInFlight).toBe(1);
+    // The second tick starts right after the sixth photo.
+    expect(cursors).toEqual(['', urls[5]]);
+  });
+});

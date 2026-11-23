@@ -13,7 +13,15 @@ paths:
 The image mirror, stored WebP sizes, how the storefront picks one, admin uploads.
 
 **Product photos live in our S3, not at the supplier** (`media/`,
-`ImageMirrorService` in the worker, every 20 s, 40 photos, 4 at a time).
+`ImageMirrorService` in the worker, every 20 s, 40 photos, 4 at a time —
+but **at most 6 through a proxy, one at a time**, `PROXIED_PER_TICK`,
+asked through `SupplierConnectionService.goesThroughProxy`; the walk stops
+at the first one over budget and the next tick resumes there). th-tool.by's
+88k photos (2026-11-23) can only come through its paid proxy
+(`parser.proxyImages`); at 40 a tick that is 120 requests a minute — a bill,
+and a ban of the proxy would stop th-tool parsing as well. ~3.5 days at this
+pace. Before switching `proxyImages` on, check S3 room: +~60 KB a photo
+(all four sizes), and the hoster said «full» at ~22 GB of 50 (2026-11-15).
 Every photo used to be hot-linked from the supplier and re-fetched by IPX on
 each browser-cache miss, so a supplier blocking our server (th-tool.by,
 2026-11-01), deleting a delisted product's photo or being slow emptied or
