@@ -19,7 +19,7 @@ import { namesDifferentKinds } from './item-kind';
  * (JetaPro 5868068: a 1.64 BYN cup at tools.by, 230 BYN at dukon; 25
  * groups). A smaller gap is a dealer RRP against a retail price (WorkPro at
  * b2bit is ~1.57× dukon's) — merged, and the dearer card stays, so the merge
- * does not trip the price-spike review.
+ * keeps the URL whose price stands.
  */
 
 export type AutoMergeMember = {
@@ -97,7 +97,7 @@ export function planAutoMerge(
   // and its URL (under SEO measurement) survive, the other one becomes a
   // 301 (129 such cards among the groups on 2026-11-23); then the dearer
   // card — the merged price is the dearest offer's, so its cost does not
-  // move and the spike guard stays quiet; then the most *live* offers, then
+  // move; then the most *live* offers, then
   // the richer card.
   const onSale = (member: AutoMergeMember) =>
     member.status === 'PUBLISHED' ? 1 : 0;

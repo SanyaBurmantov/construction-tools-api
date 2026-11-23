@@ -281,7 +281,7 @@ set as the dealer price list. Product = `/product/<id>`, offer URL
   (`withCurrentPrice`: such a price never drops; one under the purchase is not
   kept); neither → priceless. A number under the purchase price is never a
   selling price. Nothing is shown struck through on our storefront. Switching
-  to the RRP raised 9 prices by more than 50 % — the spike guard holds those for
+  to the RRP raised 9 prices by more than 50 % — the (since removed) spike guard held those for
   review in `/admin/pricing`. Dealer price, RRP,
   quantity and promotion are kept in the admin-only `SourceProduct` snapshot.
   Fixtures carry **invented prices** — real dealer prices stay out of git.

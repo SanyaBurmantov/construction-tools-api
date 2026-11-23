@@ -147,8 +147,7 @@ Product identity is the supplier offer, category identity is pathKey, one produc
   deletes rows it no longer sees. Calibrated on all 1 901 groups
   (2026-11-23): 40 conflicts, ~1 860 merged. A gap under 3× is a dealer RRP
   against a retail price (WorkPro at b2bit ≈ 1.57× dukon) — merged, and the
-  dearer card survives so its cost does not move and the spike guard stays
-  quiet. The key query drops one-supplier groups in SQL, so groups no rule
+  dearer card survives so its URL is the one whose price stands. The key query drops one-supplier groups in SQL, so groups no rule
   will merge never fill the batch.
   **One supplier, two articles = two products.** The old slug-keyed parser
   attached every th-tool.by listing with the same title (Forsage F-…,
