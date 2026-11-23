@@ -82,8 +82,7 @@ const baseProduct: ProductRow = {
 describe('PricingService.applyCost', () => {
   const originalEnv = { ...process.env };
 
-  beforeEach(() => {
-  });
+  beforeEach(() => {});
 
   afterEach(() => {
     process.env = { ...originalEnv };
