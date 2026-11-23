@@ -127,8 +127,15 @@ describe('OffersService.autoMerge', () => {
 
   function run(
     groups: Record<string, Row[]>,
-    options: { limit?: number; dismissed?: string[] } = {},
+    options: {
+      limit?: number;
+      dismissed?: string[];
+      dismissedProducts?: string[][];
+      /** The same groups again under brand+sku keys. */
+      skuGroups?: Record<string, Row[]>;
+    } = {},
   ) {
+    const skuGroups = options.skuGroups ?? {};
     const merge = jest.fn(() => Promise.resolve({}));
     const upsert = jest.fn(() => Promise.resolve({}));
     const deleteMany = jest.fn(() => Promise.resolve({ count: 0 }));
@@ -137,36 +144,50 @@ describe('OffersService.autoMerge', () => {
       $queryRaw: jest
         .fn()
         .mockResolvedValueOnce(Object.keys(groups).map((key) => ({ key })))
-        .mockResolvedValueOnce([]),
+        .mockResolvedValueOnce(Object.keys(skuGroups).map((key) => ({ key }))),
       mergeConflict: {
         findMany: jest.fn(() =>
-          Promise.resolve(
-            (options.dismissed ?? []).map((key) => ({
+          Promise.resolve([
+            ...(options.dismissed ?? []).map((key) => ({
               signal: 'barcode',
               key,
+              productIds: [] as string[],
             })),
-          ),
+            ...(options.dismissedProducts ?? []).map((productIds, i) => ({
+              signal: 'barcode',
+              key: `gone-${i}`,
+              productIds,
+            })),
+          ]),
         ),
         upsert,
         deleteMany,
       },
       product: {
-        findMany: jest.fn(({ where }: { where: { matchBarcode: string } }) =>
-          Promise.resolve(
-            (groups[where.matchBarcode] ?? []).map((row) => ({
-              id: row.id,
-              name: row.name ?? 'Съемник трехлапый BaumAuto',
-              status: 'PUBLISHED',
-              statusSource: 'SYSTEM',
-              priceValue: row.priceValue,
-              aiLockedFields: [],
-              images: [{ id: 'img' }],
-              sourceProducts: row.sourceIds.map((sourceId) => ({
-                sourceId,
-                price: row.priceValue,
+        findMany: jest.fn(
+          ({
+            where,
+          }: {
+            where: { matchBarcode?: string; matchSku?: string };
+          }) =>
+            Promise.resolve(
+              (where.matchBarcode !== undefined
+                ? (groups[where.matchBarcode] ?? [])
+                : (skuGroups[where.matchSku!] ?? [])
+              ).map((row) => ({
+                id: row.id,
+                name: row.name ?? 'Съемник трехлапый BaumAuto',
+                status: 'PUBLISHED',
+                statusSource: 'SYSTEM',
+                priceValue: row.priceValue,
+                aiLockedFields: [],
+                images: [{ id: 'img' }],
+                sourceProducts: row.sourceIds.map((sourceId) => ({
+                  sourceId,
+                  price: row.priceValue,
+                })),
               })),
-            })),
-          ),
+            ),
         ),
       },
     } as unknown as PrismaService;
@@ -224,6 +245,37 @@ describe('OffersService.autoMerge', () => {
     );
     expect(merge).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
+  });
+
+  // A Bosch drill bit at b2bit and tools.by shares a barcode and a
+  // brand+sku: it was listed twice (2026-11-23).
+  it('lists a conflict once when the same products match on both keys', async () => {
+    const pair: Row[] = [
+      { id: 'pack', priceValue: 140, sourceIds: ['b2bit'] },
+      { id: 'single', priceValue: 15.98, sourceIds: ['tools-by'] },
+    ];
+    const { upsert, result } = await run(
+      { '6949509223999': pair },
+      { skuGroups: { 'bosch:2608833905': pair } },
+    );
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(result.conflicts).toBe(1);
+  });
+
+  it('keeps a pair dismissed under one key out under the other', async () => {
+    const pair: Row[] = [
+      { id: 'pack', priceValue: 140, sourceIds: ['b2bit'] },
+      { id: 'single', priceValue: 15.98, sourceIds: ['tools-by'] },
+    ];
+    const { upsert, merge } = await run(
+      {},
+      {
+        skuGroups: { 'bosch:2608833905': pair },
+        dismissedProducts: [['single', 'pack']],
+      },
+    );
+    expect(upsert).not.toHaveBeenCalled();
+    expect(merge).not.toHaveBeenCalled();
   });
 
   it('stops at the limit and keeps the conflict list as it is', async () => {

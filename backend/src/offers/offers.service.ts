@@ -414,13 +414,19 @@ export class OffersService {
    */
   async autoMerge(limit = 200) {
     const startedAt = new Date();
+    // «Разные товары» covers the products, not just the key it was pressed
+    // on: one pair often shares a barcode *and* a brand+sku, and listing it
+    // twice (2026-11-23: a Bosch drill bit at b2bit and tools.by) made a
+    // dismissed pair come back under the other key.
+    const dismissedRows = await this.prisma.mergeConflict.findMany({
+      where: { dismissedAt: { not: null } },
+      select: { signal: true, key: true, productIds: true },
+    });
     const dismissed = new Set(
-      (
-        await this.prisma.mergeConflict.findMany({
-          where: { dismissedAt: { not: null } },
-          select: { signal: true, key: true },
-        })
-      ).map((row) => `${row.signal}:${row.key}`),
+      dismissedRows.map((row) => `${row.signal}:${row.key}`),
+    );
+    const dismissedProducts = new Set(
+      dismissedRows.map((row) => [...row.productIds].sort().join(',')),
     );
     const touched = new Set<string>();
     let groups = 0;
@@ -472,6 +478,16 @@ export class OffersService {
         if (rows.length < 2 || rows.some((row) => touched.has(row.id))) {
           continue;
         }
+        if (
+          dismissedProducts.has(
+            rows
+              .map((row) => row.id)
+              .sort()
+              .join(','),
+          )
+        ) {
+          continue;
+        }
         groups += 1;
         const plan = planAutoMerge(
           rows.map((row) => ({
@@ -515,6 +531,8 @@ export class OffersService {
               lastSeenAt: new Date(),
             },
           });
+          // Listed once: the same products under the next key are skipped.
+          rows.forEach((row) => touched.add(row.id));
           continue;
         }
 
