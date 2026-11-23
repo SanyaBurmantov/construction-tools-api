@@ -5,7 +5,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   RuleContext,
   computePrice,
-  isSuspiciousCostChange,
   margin,
   resolveRule,
 } from './pricing.calculator';
@@ -33,10 +32,6 @@ export class PricingService {
   } | null = null;
 
   constructor(private prisma: PrismaService) {}
-
-  private get spikeThreshold() {
-    return Number(process.env.PRICING_SPIKE_THRESHOLD_PERCENT ?? 50);
-  }
 
   async getActiveRules(): Promise<PricingRule[]> {
     const now = Date.now();
@@ -111,20 +106,10 @@ export class PricingService {
       return { price: null, rule: null, blocked: false, reason: 'manual' };
     }
 
-    if (
-      isSuspiciousCostChange(
-        params.previousCost,
-        params.cost,
-        this.spikeThreshold,
-      )
-    ) {
-      return {
-        price: null,
-        rule: null,
-        blocked: true,
-        reason: 'blocked_spike',
-      };
-    }
+    // No spike guard (owner, 2026-11-23: «защита от скачков не надо, берем
+    // сразу от поставщика»). It held a supplier's new cost for review and
+    // left the old price live — a used DGM BP-1500 pump sold at 214.78 BYN
+    // against a 343.66 supplier price. The price is always the supplier's.
 
     const [rules, categoryIds] = await Promise.all([
       this.getActiveRules(),
@@ -244,39 +229,6 @@ export class PricingService {
           }),
         ]);
       }
-      return decision;
-    }
-
-    if (decision.blocked) {
-      // The product keeps its old cost, so every re-parse of the same typo
-      // trips the guard again. One history row per distinct rejected cost is
-      // enough for the review screen.
-      const lastBlocked = await this.prisma.priceHistory.findFirst({
-        where: { productId, reason: 'blocked_spike' },
-        orderBy: { createdAt: 'desc' },
-        select: { costPrice: true },
-      });
-      if (product.priceReviewNeeded && lastBlocked?.costPrice === cost) {
-        return decision;
-      }
-      this.logger.warn(
-        `Cost jump on product ${productId}: ${product.costPrice} -> ${cost}, price kept for review`,
-      );
-      await this.prisma.$transaction([
-        this.prisma.product.update({
-          where: { id: productId },
-          data: { priceReviewNeeded: true },
-        }),
-        this.prisma.priceHistory.create({
-          data: {
-            productId,
-            costPrice: cost,
-            oldPrice: product.priceValue,
-            newPrice: product.priceValue,
-            reason: 'blocked_spike',
-          },
-        }),
-      ]);
       return decision;
     }
 

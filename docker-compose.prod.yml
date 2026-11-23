@@ -80,8 +80,6 @@ x-backend-environment: &backend-environment
   AI_RUNNER_ENABLED: ${AI_RUNNER_ENABLED:-true}
   # Соль для псевдонимизации IP в отзывах; пусто — используется ADMIN_TOKEN.
   REVIEW_IP_SALT: ${REVIEW_IP_SALT:-}
-  # Скачок закупочной цены свыше N% уходит на ручную проверку, а не на витрину.
-  PRICING_SPIKE_THRESHOLD_PERCENT: ${PRICING_SPIKE_THRESHOLD_PERCENT:-50}
   # Дефолт на старте. Переключатели в /admin/parsing пишут override в БД,
   # и после первого переключения решает уже он, а не эта переменная.
   PARSER_CRON_ENABLED: ${PARSER_CRON_ENABLED:-false}
