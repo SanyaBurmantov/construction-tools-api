@@ -1,0 +1,11 @@
+-- Discounted products only (`GET /products?onSale=1`: the home «Скидки» rail,
+-- /sales, their count, facets and price range). Without it every such query
+-- read all ~127 000 published rows to find the few on sale — 0 on 2026-11-23,
+-- 0.7 s alone and 2–3 s in the burst when the home page's caches expired.
+-- A partial index, not in schema.prisma (Prisma 5 cannot express one), like
+-- the FTS indexes. The predicate has no parameter on purpose: Prisma sends
+-- `status` as a bind value, and a generic plan can use a partial index only
+-- when the query's own clauses prove its predicate — a bound status cannot;
+-- `"oldPrice" > "priceValue"` is the clause products.service.ts always sends.
+-- Tiny while discounts are rare; only adds, so a rollback runs old code as is.
+CREATE INDEX "Product_on_sale_idx" ON "Product"("status", "createdAt") WHERE "oldPrice" > "priceValue";
