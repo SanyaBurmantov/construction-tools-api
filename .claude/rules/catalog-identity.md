@@ -127,6 +127,19 @@ Product identity is the supplier offer, category identity is pathKey, one produc
   carried over (`mergedState()`), and auto-merge never folds away or into a
   product an admin hid or archived — the survivor is the one on sale with the
   most live offers.
+  **Auto-merge runs by itself** (`AutoMergeCron`, worker, hourly at :26,
+  ≤ 200 merges a run; the `/admin/duplicates` button runs the same pass). It
+  was only a button until 2026-11-23, and b2bit.by sat beside 381 matches
+  merged into nothing. The rule is `offers/auto-merge-plan.ts` (pure,
+  tested), checked on the real catalogue first: **different suppliers, one
+  product each** — a supplier listing two of the group's products under one
+  article is a different-products signal (five ABRO air-freshener flavours
+  under th-tool's `B311`, Autel MS906 Pro MAX and MS906BT under dukon's
+  `AU20039`, a used trimmer beside the new one) and the group stays for a
+  human; and **prices within the spike threshold** (1 + 50 %) — JetaPro
+  `5868068` is a 1.64 BYN cup at tools.by and a 230 BYN item at dukon. The
+  key query drops one-supplier groups in SQL, so groups no rule will merge
+  never fill the batch. ~1 900 of 3 540 groups qualified on 2026-11-23.
   **One supplier, two articles = two products.** The old slug-keyed parser
   attached every th-tool.by listing with the same title (Forsage F-…,
   RockForce RF-…) to one card — 7 471 cards, 23 813 offers on 2026-11-02.
@@ -137,8 +150,14 @@ Product identity is the supplier offer, category identity is pathKey, one produc
   `/admin/duplicates` off such groups (th-tool.by also reuses one EAN per
   series). Articles of *different* suppliers prove nothing — each `sku` is
   that supplier's own number.
-  **`Product.costPrice` comes from the cheapest offer**, not from whichever
-  parser ran last — in-stock offers outrank a cheaper unavailable one. Parsers
+  **`Product.costPrice` comes from the most expensive offer in stock**
+  (`best-offer.ts`; owner, 2026-11-23: «для пользователя показывать тот,
+  который самый дорогой» — it was the cheapest until then), never from
+  whichever parser ran last; the pool is the in-stock offers when there are
+  any — an out-of-stock offer's price is the stalest on the card. The admin
+  supplier notes (`AdminProductSourceNote`, every variant) highlight a card
+  several suppliers carry and mark the offer the price comes from
+  («цена на сайте отсюда», `utils/price-offer.ts` — same rule, change both). Parsers
   call `offers.onProductParsed(productId)` *after* saving their SourceProduct.
   Public API exposes only `offers: { count, inStockCount }`. Supplier URLs and
   our costs must never reach the storefront — they are admin-only
