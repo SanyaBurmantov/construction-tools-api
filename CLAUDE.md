@@ -156,7 +156,8 @@ flag keys. **Bump the version when rules change**: `SIMILAR_RULE_VERSION`,
   Prisma via `PrismaService`. Pure HTML→data functions are kept separate from the
   DB-writing service and unit-tested against fixtures in `sites/fixtures/`.
 - Keep parser HTTP polite: real user-agent, request delay, concurrency 1. Batch
-  size is per source (`cron.<code>.batchLimit`): dukon and th-tools use 300, but
+  size is per source (`cron.<code>.batchLimit`): dukon, th-tools and tools.by
+  use 200 (owner, 2026-11-23; at 150 a price cycle took 5–7 days), but
   a batch is just how long a run lasts — the 3 s delay and one request at a time
   are what keep the rate polite.
 - Slugs via `common/utils/generate-slug.ts`; bounded concurrency via
