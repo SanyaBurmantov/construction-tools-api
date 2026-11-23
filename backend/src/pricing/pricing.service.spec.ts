@@ -130,13 +130,13 @@ describe('PricingService.applyCost', () => {
     );
   });
 
-  // A supplier typo must not reach the storefront.
-  it('blocks an implausible cost jump and keeps the old price', async () => {
+  // A supplier typo downwards must not sell at a loss.
+  it('blocks an implausible cost drop and keeps the old price', async () => {
     const { service, productUpdate, historyCreate } = buildService({
       ...baseProduct,
     });
 
-    const decision = await service.applyCost('p1', 1000);
+    const decision = await service.applyCost('p1', 10);
 
     expect(decision.blocked).toBe(true);
     expect(decision.reason).toBe('blocked_spike');
@@ -149,7 +149,7 @@ describe('PricingService.applyCost', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           reason: 'blocked_spike',
-          costPrice: 1000,
+          costPrice: 10,
           newPrice: 150,
         }),
       }),
@@ -161,14 +161,34 @@ describe('PricingService.applyCost', () => {
     const { service, productUpdate, historyCreate } = buildService(
       { ...baseProduct, priceReviewNeeded: true },
       [globalRule()],
-      { costPrice: 1000 },
+      { costPrice: 10 },
     );
 
-    const decision = await service.applyCost('p1', 1000);
+    const decision = await service.applyCost('p1', 10);
 
     expect(decision.blocked).toBe(true);
     expect(productUpdate).not.toHaveBeenCalled();
     expect(historyCreate).not.toHaveBeenCalled();
+  });
+
+  // A held rise from before 2026-11-23 goes live on the next parse.
+  it('applies a large rise at once and clears the review flag', async () => {
+    const { service, productUpdate } = buildService({
+      ...baseProduct,
+      priceReviewNeeded: true,
+    });
+
+    const decision = await service.applyCost('p1', 1000);
+
+    expect(decision.blocked).toBe(false);
+    expect(productUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          costPrice: 1000,
+          priceReviewNeeded: false,
+        }),
+      }),
+    );
   });
 
   // The supplier fixed its typo: "accept" must not adopt the stale value later.

@@ -224,9 +224,16 @@ describe('isSuspiciousCostChange', () => {
     expect(isSuspiciousCostChange(100, 110, 50)).toBe(false);
   });
 
-  // A supplier typo (×10) is the case this exists for.
-  it('flags a tenfold jump', () => {
-    expect(isSuspiciousCostChange(100, 1000, 50)).toBe(true);
+  // A supplier typo (÷10) would sell at a loss — the case this exists for.
+  it('flags a tenfold drop', () => {
+    expect(isSuspiciousCostChange(100, 10, 50)).toBe(true);
+    expect(isSuspiciousCostChange(112.32, 41.54, 50)).toBe(true);
+  });
+
+  // Holding a rise kept a price under the supplier's (owner, 2026-11-23).
+  it('never holds a rise, however large', () => {
+    expect(isSuspiciousCostChange(214.78, 343.66, 50)).toBe(false);
+    expect(isSuspiciousCostChange(100, 1000, 50)).toBe(false);
   });
 
   it('flags a collapse to near zero', () => {
