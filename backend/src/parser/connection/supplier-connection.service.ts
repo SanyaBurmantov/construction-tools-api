@@ -139,6 +139,23 @@ export class SupplierConnectionService {
     );
   }
 
+  /**
+   * Whether `fetch(url, …, purpose)` would go through a proxy right now —
+   * for callers that pace themselves by it (the photo mirror copies at most a
+   * few proxied photos a tick: a paid proxy counts traffic, and a supplier
+   * that bans the proxy address stops the parser too).
+   */
+  async goesThroughProxy(
+    url: string,
+    purpose: SupplierRequestPurpose = 'page',
+  ): Promise<boolean> {
+    const source = sourceForUrl(url, PARSER_SOURCES);
+    if (!source) return false;
+    if (purpose === 'image' && !(await this.proxyImages())) return false;
+    const decision = await this.routeFor(source.code);
+    return decision.route === 'PROXY' && Boolean(decision.proxyEntry);
+  }
+
   private async request(
     code: string,
     route: ConnectionRoute,

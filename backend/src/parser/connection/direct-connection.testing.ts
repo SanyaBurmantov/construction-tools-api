@@ -19,6 +19,7 @@ export function directConnection(): SupplierConnectionService {
     fetch: (url: string, init?: RequestInit, options?: object) =>
       fetchWithTimeout(url, init, options),
     routeFor: () => Promise.resolve(decision),
+    goesThroughProxy: () => Promise.resolve(false),
     assertUsable: () => Promise.resolve(decision),
     describeBlock: () => '',
   } as unknown as SupplierConnectionService;

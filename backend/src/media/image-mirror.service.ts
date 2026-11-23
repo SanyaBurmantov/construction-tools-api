@@ -31,6 +31,15 @@ import {
 /** Photos per tick, and how many are fetched at once. */
 const BATCH = 40;
 const CONCURRENCY = 4;
+/**
+ * Photos fetched **through a proxy** per tick, one at a time: ~18 a minute.
+ * th-tool.by bans the prod address, so with «фото через прокси» its 88k
+ * photos (2026-11-23) go through the same paid proxy as its parser. At the
+ * full 40 a tick that is 120 requests a minute — a bill, and an invitation to
+ * ban the proxy too, which would stop th-tool parsing. At this pace the
+ * backlog is ~3.5 days.
+ */
+const PROXIED_PER_TICK = 6;
 /** A supplier host that did not answer is left alone this long. */
 const HOST_DOWN_MS = 30 * 60_000;
 const ALERT_EVERY_MS = 6 * 3600_000;
@@ -138,8 +147,29 @@ export class ImageMirrorService implements OnModuleInit {
       if (this.storageFull()) return null;
       if (await this.overQuota()) return null;
 
-      const urls = await this.candidates();
-      if (urls.length === 0) return null;
+      const from = this.cursor;
+      const candidates = await this.candidates();
+      if (candidates.length === 0) return null;
+
+      // Proxied photos are paced (PROXIED_PER_TICK, one at a time); the
+      // walk stops at the first one over budget and the next tick resumes
+      // there, so nothing is skipped for a whole pass.
+      const urls: typeof candidates = [];
+      const proxied: typeof candidates = [];
+      for (const row of candidates) {
+        if (await this.connection.goesThroughProxy(row.url, 'image')) {
+          if (proxied.length >= PROXIED_PER_TICK) {
+            this.cursor =
+              urls.length + proxied.length
+                ? [...urls, ...proxied].at(-1)!.url
+                : from;
+            break;
+          }
+          proxied.push(row);
+        } else {
+          urls.push(row);
+        }
+      }
 
       const counts: Record<Outcome, number> = {
         stored: 0,
@@ -148,12 +178,15 @@ export class ImageMirrorService implements OnModuleInit {
         'host-down': 0,
         's3-error': 0,
       };
-      const outcomes = await mapWithConcurrency(urls, CONCURRENCY, (row) =>
+      const copy = (row: { url: string; mirrored: boolean }) =>
         this.mirrorOne(row.url, row.mirrored).catch((error) => {
           this.logger.warn(`Mirror ${row.url}: ${message(error)}`);
           return 'failed' as Outcome;
-        }),
-      );
+        });
+      const outcomes = [
+        ...(await mapWithConcurrency(urls, CONCURRENCY, copy)),
+        ...(await mapWithConcurrency(proxied, 1, copy)),
+      ];
       for (const outcome of outcomes) counts[outcome]++;
 
       if (this.storageFull()) {
@@ -165,7 +198,7 @@ export class ImageMirrorService implements OnModuleInit {
         counts.stored + counts.relinked === 0
       ) {
         await this.alert(
-          `Ни одно фото из ${urls.length} не записалось в S3 — проверьте ключи и место в хранилище.`,
+          `Ни одно фото из ${urls.length + proxied.length} не записалось в S3 — проверьте ключи и место в хранилище.`,
         );
       }
       return counts;
