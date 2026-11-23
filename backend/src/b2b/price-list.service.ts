@@ -62,10 +62,11 @@ export class PriceListService {
    * The file for this filter, built at most once an hour.
    *
    * It used to be built per request: one at a time, three waiting, the rest
-   * 503. With 120k products a build takes minutes, and a crawler from Alibaba
-   * Cloud (112 rotating addresses, 18–23.11.2026) asked for it all day long —
-   * the slot was never free, and a buyer pressing «Скачать прайс» got
-   * «формируется для другого покупателя» ~530 times in a day. Now every
+   * 503. The whole catalogue (120k rows, 17.8 MB) is a ~10 s build, and a
+   * crawler from Alibaba Cloud (112 rotating addresses, 18–23.11.2026) asked
+   * for it faster than that all day long — the queue was never empty, and a
+   * buyer pressing «Скачать прайс» got «формируется для другого покупателя»
+   * ~530 times in a day. Now every
    * request for one filter shares one build; a fresh file is sent from disk
    * without touching the database, and a stale one is still sent at once
    * while the new one is built behind it.

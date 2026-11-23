@@ -205,9 +205,9 @@ Checkout and terms of sale, organisations-only mode, cart re-pricing and server 
   (`PriceListService.file`: concurrent requests share one build, a stale file
   is sent at once while the next one builds, ≤ 60 files in
   `PRICE_LIST_CACHE_DIR`/tmp, gone with the container). It used to be built
-  per request, one at a time and three waiting: at 120k products a build is
-  minutes, and an Alibaba Cloud crawler (112 rotating addresses, 18–23.11)
-  kept the slot busy so buyers got «формируется для другого покупателя»
+  per request, one at a time and three waiting: the whole catalogue is a
+  ~10 s build (17.8 MB, 23.11), and an Alibaba Cloud crawler (112 rotating
+  addresses, 18–23.11) asked faster than that and kept the queue full so buyers got «формируется для другого покупателя»
   ~530 times a day);
   **purchase lists** (`/account/purchase-lists`, ids + quantities only,
   hydrated from `Product` on read like the stored cart); **leads**
