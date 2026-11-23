@@ -28,7 +28,29 @@ type OfferDuplicateGroup = {
   products: DuplicateProduct[]
 }
 
+/**
+ * A group the auto-merge left for a human (`MergeConflict`): one article,
+ * but titles of different kinds of item or prices more than 3× apart.
+ */
+type MergeConflict = {
+  id: string
+  signal: 'barcode' | 'sku'
+  key: string
+  reason: 'names' | 'price'
+  priceRatio: number | null
+  products: Array<{
+    id: string
+    name: string
+    slug: string
+    status: string
+    priceValue: number | null
+    image: string | null
+    offers: Array<{ sourceName: string, url: string, price: number | null, stock: boolean }>
+  }>
+}
+
 const { adminFetch, errorMessage } = useAdminApi()
+const { load: loadStats } = useAdminStats()
 const { formatPrice } = useFormatPrice()
 
 const groups = ref<OfferDuplicateGroup[]>([])
@@ -54,9 +76,43 @@ const VERDICT: Record<AiDuplicateVerdict['verdict'], { label: string, tone: 'suc
   unsure: { label: 'ИИ: не уверен', tone: 'neutral' },
 }
 
+const conflicts = ref<MergeConflict[]>([])
+
+async function loadConflicts() {
+  try {
+    conflicts.value = await adminFetch<MergeConflict[]>('/offers/conflicts')
+  } catch {
+    // The groups below still load; the list simply does not appear.
+  }
+}
+
+function conflictReason(conflict: MergeConflict) {
+  const ratio = conflict.priceRatio?.toLocaleString('ru-BY', { maximumFractionDigits: 1 })
+  return conflict.reason === 'price'
+    ? `Цены отличаются в ${ratio} раза`
+    : 'Похоже, это разные товары: названия о разном'
+}
+
+/** «Один товар» / «Разные товары» — both final; the badge follows. */
+async function resolveConflict(conflict: MergeConflict, action: 'merge' | 'dismiss') {
+  const done = await run(
+    () => adminFetch(`/offers/conflicts/${conflict.id}/${action}`, { method: 'POST', body: {} }),
+    {
+      key: `conflict-${conflict.id}`,
+      error: action === 'merge' ? 'Не удалось объединить' : 'Не удалось сохранить решение',
+      success: action === 'merge' ? 'Объединено в одну карточку' : 'Оставлены разными товарами',
+    },
+  )
+  if (done !== undefined) {
+    conflicts.value = conflicts.value.filter(item => item.id !== conflict.id)
+    void loadStats().catch(() => {})
+  }
+}
+
 async function load() {
   loading.value = true
   loadError.value = ''
+  void loadConflicts()
   adminFetch<Record<string, AiDuplicateVerdict>>('/ai/assist/duplicates')
     .then((value) => { verdicts.value = value })
     .catch(() => { /* decoration: the page works without it */ })
@@ -169,10 +225,79 @@ const autoMergeableCount = computed(
     <UiAlert v-if="loadError" tone="danger">{{ loadError }}</UiAlert>
 
     <UiAlert tone="info">
-      Автоматически объединяются только совпадения по штрихкоду и по паре
-      «бренд + артикул». Совпадения по модели и названию требуют вашего решения —
-      ошибочное слияние разбирать дорого.
+      Совпадения по штрихкоду и по паре «бренд + артикул» объединяются сами, каждый час:
+      если каждый товар — от своего поставщика и ничто не говорит, что это разные вещи.
+      Подозрительные попадают в «Требуют решения» выше. Совпадения по модели и названию —
+      только вручную: ошибочное слияние разбирать дорого.
     </UiAlert>
+
+    <section v-if="conflicts.length" class="conflicts">
+      <h2 class="conflicts-title">
+        Требуют решения: {{ conflicts.length }}
+      </h2>
+      <p class="conflicts-hint">
+        Один артикул у разных поставщиков, но похоже на разные товары — автоматически не
+        объединялись. Решение окончательное: «Разные товары» больше не появятся здесь.
+      </p>
+      <ul class="list">
+        <li v-for="conflict in conflicts" :key="conflict.id" class="group conflict">
+          <header class="group-head">
+            <div class="group-title">
+              <UiBadge tone="warning" size="sm">{{ conflictReason(conflict) }}</UiBadge>
+              <span>{{ conflict.signal === 'barcode' ? 'Штрихкод' : 'Бренд + артикул' }}</span>
+              <code>{{ conflict.key }}</code>
+            </div>
+            <div class="conflict-actions">
+              <UiButton
+                size="sm"
+                variant="secondary"
+                :loading="busy === `conflict-${conflict.id}`"
+                :disabled="Boolean(busy)"
+                @click="resolveConflict(conflict, 'dismiss')"
+              >
+                Разные товары
+              </UiButton>
+              <UiButton
+                size="sm"
+                :disabled="Boolean(busy)"
+                @click="resolveConflict(conflict, 'merge')"
+              >
+                Один товар — объединить
+              </UiButton>
+            </div>
+          </header>
+          <div class="candidates">
+            <div v-for="product in conflict.products" :key="product.id" class="candidate">
+              <span />
+              <div class="candidate-thumb">
+                <img v-if="product.image" :src="product.image" :alt="product.name" loading="lazy">
+                <span v-else aria-hidden="true" />
+              </div>
+              <div class="candidate-body">
+                <NuxtLink :to="`/product/${product.slug}`" target="_blank" class="candidate-name">
+                  {{ product.name }}
+                </NuxtLink>
+                <span class="candidate-meta">
+                  <a
+                    v-for="offer in product.offers"
+                    :key="offer.url"
+                    :href="offer.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ offer.sourceName }} ↗ {{ formatPrice(offer.price, 'BYN') }}
+                  </a>
+                </span>
+              </div>
+              <div class="candidate-prices">
+                <strong>{{ formatPrice(product.priceValue, 'BYN') }}</strong>
+              </div>
+              <span />
+            </div>
+          </div>
+        </li>
+      </ul>
+    </section>
 
     <div v-if="loading" class="list">
       <UiSkeleton v-for="i in 3" :key="i" height="160px" radius="var(--radius-md)" />
@@ -265,9 +390,16 @@ const autoMergeableCount = computed(
       @confirm="autoMerge"
     >
       <p>
-        Будут объединены только группы, совпавшие по штрихкоду или по паре
-        «бренд + артикул» — {{ autoMergeableCount }} шт. Останется карточка
-        с наибольшим числом предложений, остальные присоединятся к ней.
+        Из групп, совпавших по штрихкоду или по паре «бренд + артикул»
+        ({{ autoMergeableCount }} шт.), объединяются только те, где каждый
+        товар — от своего поставщика, а цены отличаются не больше чем на 50%.
+        Остальные остаются здесь на ручное решение. Останется карточка в
+        продаже с наибольшим числом предложений, цена — по самому дорогому
+        предложению в наличии.
+      </p>
+      <p>
+        То же самое делается само каждый час (до 200 слияний за раз) — кнопка
+        нужна, только чтобы не ждать.
       </p>
       <p class="warn">
         Отзывы, характеристики и история цен переносятся, старые адреса начнут
@@ -278,6 +410,36 @@ const autoMergeableCount = computed(
 </template>
 
 <style scoped>
+.conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.conflicts-title {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.conflicts-hint {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.conflict {
+  border-color: var(--warning);
+}
+
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.conflict .candidate-meta a {
+  color: var(--text-link);
+}
 .ai-reason {
   flex-basis: 100%;
   color: var(--text-muted);

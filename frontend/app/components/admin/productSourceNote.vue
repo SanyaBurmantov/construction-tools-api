@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ProductSource } from '~/composables/useProductSources'
+
 /**
  * "Откуда спаршен" — shown **only to a signed-in admin**, everywhere a product
  * appears: the storefront product page, the catalogue cards, the admin product
@@ -26,7 +28,15 @@ const props = withDefaults(
   { variant: 'badge', showEmpty: false }
 )
 
-const { isAdmin, queue, isLoaded, groupedFor, labelFor } = useProductSources()
+const {
+  isAdmin,
+  queue,
+  isLoaded,
+  groupedFor,
+  labelFor,
+  priceOfferFor,
+  isMultiSupplier,
+} = useProductSources()
 const { formatPrice } = useFormatPrice()
 
 // The session is learned client-side after mount, so `isAdmin` usually turns
@@ -53,6 +63,17 @@ const showEmptyNote = computed(() => props.showEmpty && isLoaded(props.productId
 const groups = computed(() => groupedFor(props.productId))
 const label = computed(() => labelFor(props.productId))
 
+/**
+ * A card several suppliers carry (merged by barcode or brand+sku) is
+ * highlighted in every variant, with every supplier shown — the price is the
+ * dearest of their offers (owner, 2026-11-23), and the order may be bought
+ * from any of them.
+ */
+const multi = computed(() => isMultiSupplier(props.productId))
+const priceOffer = computed(() => priceOfferFor(props.productId))
+const isPriceOffer = (offer: ProductSource) =>
+  multi.value && offer.url === priceOffer.value?.url
+
 const relativeFormatter = new Intl.RelativeTimeFormat('ru-BY', { numeric: 'auto' })
 
 /** "2 часа назад" — how fresh the supplier snapshot behind the price is. */
@@ -69,8 +90,15 @@ function lastSyncLabel(iso: string) {
     <template v-if="isAdmin">
       <!-- Product page: the first thing an admin sees. One block per supplier,
            with every page of theirs that feeds this card under it. -->
-      <div v-if="variant === 'banner' && (groups.length || showEmptyNote)" class="banner">
+      <div
+        v-if="variant === 'banner' && (groups.length || showEmptyNote)"
+        class="banner"
+        :class="{ multi }"
+      >
         <span class="banner-label">Источник парсинга</span>
+        <span v-if="multi" class="multi-tag">
+          {{ pluralize(groups.length, 'supplier') }} · цена по самому дорогому
+        </span>
         <ul v-if="groups.length" class="banner-list">
           <li v-for="group in groups" :key="group.sourceId" class="banner-source">
             <span class="banner-source-head">
@@ -81,6 +109,7 @@ function lastSyncLabel(iso: string) {
             </span>
             <span v-for="offer in group.offers" :key="offer.url" class="banner-offer">
               <span class="muted">закупка {{ formatPrice(offer.price, offer.currency) }}</span>
+              <span v-if="isPriceOffer(offer)" class="price-mark">цена на сайте отсюда</span>
               <span :class="offer.stock ? 'in-stock' : 'out-of-stock'">
                 {{ offer.stock ? 'в наличии' : 'нет у поставщика' }}
               </span>
@@ -95,14 +124,19 @@ function lastSyncLabel(iso: string) {
       </div>
 
       <!-- Catalogue card. -->
-      <span v-else-if="variant === 'badge' && groups.length" class="badge">
+      <span v-else-if="variant === 'badge' && groups.length" class="badge" :class="{ multi }">
         {{ label }}
       </span>
 
       <!-- Order composition: the link an admin clicks to go and buy the
            item, one per supplier page, with the purchase price next to it. -->
-      <span v-else-if="variant === 'order' && (groups.length || showEmptyNote)" class="order-source">
+      <span
+        v-else-if="variant === 'order' && (groups.length || showEmptyNote)"
+        class="order-source"
+        :class="{ multi }"
+      >
         <span class="order-source-label">Первоисточник</span>
+        <span v-if="multi" class="multi-tag">{{ pluralize(groups.length, 'supplier') }}</span>
         <template v-if="groups.length">
           <template v-for="group in groups" :key="group.sourceId">
             <a
@@ -115,6 +149,7 @@ function lastSyncLabel(iso: string) {
             >
               <span>{{ group.sourceName }} ↗</span>
               <span class="muted">{{ formatPrice(offer.price, offer.currency) }}</span>
+              <span v-if="isPriceOffer(offer)" class="price-mark">цена на сайте</span>
               <span v-if="!offer.stock" class="out-of-stock">нет у поставщика</span>
             </a>
           </template>
@@ -123,7 +158,11 @@ function lastSyncLabel(iso: string) {
       </span>
 
       <!-- Table cell. -->
-      <span v-else-if="variant === 'line' && (groups.length || showEmptyNote)" class="line">
+      <span
+        v-else-if="variant === 'line' && (groups.length || showEmptyNote)"
+        class="line"
+        :class="{ multi }"
+      >
         <template v-if="groups.length">
           <span v-for="group in groups" :key="group.sourceId" class="line-item">
             <a :href="group.offers[0]!.url" target="_blank" rel="noopener noreferrer">
@@ -133,6 +172,7 @@ function lastSyncLabel(iso: string) {
             <span class="muted">
               {{ formatPrice(group.offers[0]!.price, group.offers[0]!.currency) }}
             </span>
+            <span v-if="isPriceOffer(group.offers[0]!)" class="price-mark">цена</span>
           </span>
         </template>
         <span v-else class="muted">вручную</span>
@@ -203,8 +243,9 @@ function lastSyncLabel(iso: string) {
 }
 
 .badge {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
   padding: 2px var(--space-2);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-xs);
@@ -212,8 +253,10 @@ function lastSyncLabel(iso: string) {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 
 .order-source {
   display: flex;
@@ -278,5 +321,42 @@ a {
 
 a:hover {
   text-decoration: underline;
+}
+/* Several suppliers on one card: the same warm tint in every variant.
+   Last in the sheet, so it wins over each variant's own background. */
+.banner.multi,
+.badge.multi,
+.line.multi,
+.order-source.multi {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.badge.multi {
+  border-style: solid;
+  color: var(--warning-soft-text);
+}
+
+.line.multi,
+.order-source.multi {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+}
+
+.multi-tag,
+.price-mark {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--warning-soft);
+  color: var(--warning-soft-text);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.multi .multi-tag,
+.multi .price-mark {
+  background: var(--surface-card);
 }
 </style>

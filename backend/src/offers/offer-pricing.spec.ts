@@ -1,7 +1,7 @@
 import { OffersService } from './offers.service';
 
 describe('Selected supplier discount', () => {
-  it('takes the old price from the cheapest available offer without mixing suppliers', async () => {
+  it('prices from the most expensive offer in stock, with its own old price', async () => {
     const applyCost = jest.fn(() => Promise.resolve());
     const updateStock = jest.fn(() => Promise.resolve());
     const prisma = {
@@ -36,7 +36,9 @@ describe('Selected supplier discount', () => {
       {} as never,
       { enqueue: jest.fn() } as never,
     ).recomputeFromOffers('product');
-    expect(applyCost).toHaveBeenCalledWith('product', 70, { oldCost: 100 });
+    // 50 is out of stock and ignored; 80 beats 70, and its «was» price
+    // comes with it — never another supplier's.
+    expect(applyCost).toHaveBeenCalledWith('product', 80, { oldCost: 120 });
     expect(updateStock).toHaveBeenCalledWith({
       where: { id: 'product' },
       data: { stockStatus: 'in_stock' },

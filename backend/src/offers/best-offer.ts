@@ -3,9 +3,14 @@
  * OffersService (after a parse) and PricingService (bulk recalculation) use
  * the same rule without depending on each other.
  *
- * In-stock offers win outright: a cheaper offer nobody can fulfil is not a
- * real price. Falls back to the cheapest offer of any kind so a fully
- * out-of-stock product still has a cost to price from.
+ * **The most expensive offer** (owner, 2026-11-23: «для пользователя
+ * показывать тот, который самый дорогой») — a card several suppliers carry
+ * sells at the highest of their prices, and the order is bought wherever it
+ * is cheapest. Until then it was the cheapest offer.
+ *
+ * Offers in stock are the pool when there are any: the price of an offer
+ * nobody can fulfil is the stalest number on the card and must not set it.
+ * A fully out-of-stock product is priced from all of its offers.
  */
 
 export type OfferRow = {
@@ -36,7 +41,7 @@ export function pickBestOffer(rows: OfferRow[]): BestOffer | null {
   const inStock = offers.filter((offer) => offer.stock);
   const pool = inStock.length ? inStock : offers;
   const offer = pool.reduce((best, item) =>
-    item.price < best.price ? item : best,
+    item.price > best.price ? item : best,
   );
 
   const metadata = asRecord(asRecord(offer.specifications)?.source);

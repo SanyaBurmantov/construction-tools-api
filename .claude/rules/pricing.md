@@ -9,7 +9,9 @@ paths:
 PricingService owns the storefront price: rules, rounding, MANUAL mode, price history.
 
 - **Pricing / margin engine** (`pricing/`). Supplier cost lives in
-  `Product.costPrice`; the storefront price is derived from it by `PricingRule`
+  `Product.costPrice` — the most expensive in-stock offer of the card
+  (`offers/best-offer.ts`, owner 2026-11-23; see `catalog-identity.md`);
+  the storefront price is derived from it by `PricingRule`
   (percent and/or flat markup, minimum absolute margin, cost bands, rounding
   `.90/.99/integer/tens`, priority). The most specific active rule wins —
   SOURCE > BRAND > CATEGORY > GLOBAL — and a CATEGORY rule covers the whole

@@ -5,12 +5,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { pickBestOffer } from './best-offer';
 import { ProductMergeService } from './product-merge.service';
-import { articleKey } from './offer-split';
+import { planAutoMerge } from './auto-merge-plan';
 import {
   MatchConfidence,
   MatchSignal,
   compareProducts,
-  isAutoMergeable,
 } from './product-matching';
 
 /** A supplier's article, normalised like `articleKey()` in offer-split.ts. */
@@ -62,9 +61,9 @@ export class OffersService {
   }
 
   /**
-   * Re-prices a product from its cheapest offer. Called after a parser saves a
-   * SourceProduct, so the storefront price reflects the best supplier rather
-   * than whichever parser happened to run last.
+   * Re-prices a product from its offers (`pickBestOffer`: the most expensive
+   * one in stock). Called after a parser saves a SourceProduct, so the price
+   * follows every supplier rather than whichever parser happened to run last.
    */
   async recomputeFromOffers(productId: string) {
     const offer = await this.bestOffer(productId);
@@ -402,111 +401,153 @@ export class OffersService {
   }
 
   /**
-   * One supplier listing two of the group's products under different
-   * articles is that supplier saying they are different products — however
-   * much a reused barcode says otherwise (th-tool.by gives one EAN to a whole
-   * series). Articles of *different* suppliers prove nothing: each supplier's
-   * `sku` is its own number. See offer-split.ts.
-   */
-  private async supplierSaysDifferent(products: Array<{ id: string }>) {
-    const offers = await this.prisma.sourceProduct.findMany({
-      where: { productId: { in: products.map((p) => p.id) } },
-      select: { sourceId: true, sku: true },
-    });
-    const articles = new Map<string, Set<string>>();
-    for (const offer of offers) {
-      const article = articleKey(offer.sku);
-      if (!article) continue;
-      const set = articles.get(offer.sourceId) ?? new Set<string>();
-      set.add(article);
-      articles.set(offer.sourceId, set);
-    }
-    return [...articles.values()].some((set) => set.size > 1);
-  }
-
-  /**
-   * Merges every group matched by barcode or brand+sku.
+   * Merges barcode and brand+sku groups by `planAutoMerge`: different
+   * suppliers, one product each, and nothing that says two different items.
+   * A group that does say so (titles of different kinds, prices > 3× apart)
+   * is recorded as a `MergeConflict` for `/admin/duplicates` instead; one an
+   * admin called «разные товары» is never touched again.
    *
-   * Weaker signals are deliberately excluded — a wrong merge destroys a product
-   * card and is tedious to unpick, so those stay a human decision.
+   * Runs on its own (`AutoMergeCron`, hourly, `limit` merges a run) and from
+   * the admin button. The keys come from SQL that already drops groups where
+   * one supplier lists two of the products, so the groups no rule will ever
+   * merge do not fill the batch and stall it run after run.
    */
-  async autoMerge() {
-    const groups = await this.findDuplicates(500);
+  async autoMerge(limit = 200) {
+    const startedAt = new Date();
+    const dismissed = new Set(
+      (
+        await this.prisma.mergeConflict.findMany({
+          where: { dismissedAt: { not: null } },
+          select: { signal: true, key: true },
+        })
+      ).map((row) => `${row.signal}:${row.key}`),
+    );
+    const touched = new Set<string>();
+    let groups = 0;
     let merged = 0;
     let skipped = 0;
+    let conflicts = 0;
+    let complete = true;
+    const reasons: Record<string, number> = {};
 
-    for (const group of groups) {
-      if (
-        !isAutoMergeable(group) ||
-        (await this.supplierSaysDifferent(group.products))
-      ) {
-        skipped += 1;
-        continue;
-      }
+    for (const [field, signal] of [
+      ['matchBarcode', 'barcode'],
+      ['matchSku', 'sku'],
+    ] as const) {
+      const column = Prisma.raw(`"${field}"`);
+      const keys = await this.prisma.$queryRaw<Array<{ key: string }>>`
+        SELECT p.${column} AS key FROM "Product" p
+        WHERE p.${column} IS NOT NULL
+        GROUP BY p.${column}
+        HAVING count(*) > 1 AND NOT EXISTS (
+          SELECT 1 FROM "SourceProduct" sp
+          JOIN "Product" q ON q."id" = sp."productId"
+          WHERE q.${column} = p.${column}
+          GROUP BY sp."sourceId"
+          HAVING count(DISTINCT q."id") > 1)
+        ORDER BY 1
+        LIMIT 20000`;
 
-      // Products an admin hid or archived are a human decision: they are
-      // neither folded away automatically nor allowed to absorb a live card.
-      const states = new Map(
-        (
-          await this.prisma.product.findMany({
-            where: { id: { in: group.products.map((p) => p.id) } },
-            select: {
-              id: true,
-              status: true,
-              statusSource: true,
-              _count: {
-                select: {
-                  sourceProducts: { where: { price: { not: null, gt: 0 } } },
-                },
-              },
-            },
-          })
-        ).map((row) => [row.id, row]),
-      );
-      const candidates = group.products.filter((product) => {
-        const state = states.get(product.id);
-        return (
-          state &&
-          !(
-            state.statusSource === 'ADMIN' &&
-            (state.status === 'HIDDEN' || state.status === 'ARCHIVED')
-          )
-        );
-      });
-      if (candidates.length < 2) {
-        skipped += 1;
-        continue;
-      }
-
-      // Survivor: on sale first, then the most *live* offers (a dead offer
-      // with no price is not worth keeping a card for), then the richer card.
-      const live = (id: string) => states.get(id)?._count.sourceProducts ?? 0;
-      const onSale = (id: string) =>
-        states.get(id)?.status === 'PUBLISHED' ? 1 : 0;
-      const [target, ...duplicates] = [...candidates].sort(
-        (a, b) =>
-          onSale(b.id) - onSale(a.id) ||
-          live(b.id) - live(a.id) ||
-          b.offerCount - a.offerCount ||
-          (b.image ? 1 : 0) - (a.image ? 1 : 0),
-      );
-      if (!target) continue;
-
-      for (const duplicate of duplicates) {
-        try {
-          await this.merge.merge(target.id, duplicate.id);
-          merged += 1;
-        } catch (error) {
-          this.logger.error(
-            `Auto-merge ${duplicate.id} -> ${target.id} failed: ${String(error)}`,
-          );
+      for (const { key } of keys) {
+        if (merged >= limit) {
+          complete = false;
+          break;
         }
-      }
+        if (dismissed.has(`${signal}:${key}`)) continue;
+        const rows = await this.prisma.product.findMany({
+          where: { [field]: key },
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            statusSource: true,
+            priceValue: true,
+            aiLockedFields: true,
+            images: { take: 1, select: { id: true } },
+            sourceProducts: { select: { sourceId: true, price: true } },
+          },
+        });
+        // A product merged earlier in this run has moved; its group is
+        // re-read on the next run.
+        if (rows.length < 2 || rows.some((row) => touched.has(row.id))) {
+          continue;
+        }
+        groups += 1;
+        const plan = planAutoMerge(
+          rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            status: row.status,
+            statusSource: row.statusSource,
+            priceValue: row.priceValue,
+            liveOffers: row.sourceProducts.filter(
+              (offer) => offer.price != null && offer.price > 0,
+            ).length,
+            offerCount: row.sourceProducts.length,
+            hasImage: row.images.length > 0,
+            hasAiText: row.aiLockedFields.length > 0,
+            sourceIds: [
+              ...new Set(row.sourceProducts.map((offer) => offer.sourceId)),
+            ],
+          })),
+        );
+        if ('skip' in plan) {
+          skipped += 1;
+          reasons[plan.skip] = (reasons[plan.skip] ?? 0) + 1;
+          continue;
+        }
+        if ('conflict' in plan) {
+          conflicts += 1;
+          const productIds = rows.map((row) => row.id);
+          await this.prisma.mergeConflict.upsert({
+            where: { signal_key: { signal, key } },
+            create: {
+              signal,
+              key,
+              reason: plan.conflict,
+              productIds,
+              priceRatio: plan.priceRatio,
+            },
+            update: {
+              reason: plan.conflict,
+              productIds,
+              priceRatio: plan.priceRatio,
+              lastSeenAt: new Date(),
+            },
+          });
+          continue;
+        }
 
-      await this.recomputeFromOffers(target.id);
+        for (const duplicateId of plan.duplicateIds) {
+          try {
+            await this.merge.merge(plan.targetId, duplicateId);
+            merged += 1;
+          } catch (error) {
+            this.logger.error(
+              `Auto-merge ${duplicateId} -> ${plan.targetId} failed: ${String(error)}`,
+            );
+          }
+        }
+        rows.forEach((row) => touched.add(row.id));
+        await this.recomputeFromOffers(plan.targetId);
+      }
+      if (!complete) break;
     }
 
-    return { groups: groups.length, merged, skipped };
+    // A full pass saw every live conflict: the rest were resolved some other
+    // way (merged by hand, a product re-keyed or gone) and leave the list.
+    if (complete) {
+      await this.prisma.mergeConflict.deleteMany({
+        where: { dismissedAt: null, lastSeenAt: { lt: startedAt } },
+      });
+    }
+
+    if (merged || skipped || conflicts) {
+      this.logger.log(
+        `Auto-merge: ${merged} merged, ${conflicts} conflicts for /admin/duplicates, ${skipped} skipped ${JSON.stringify(reasons)}`,
+      );
+    }
+    return { groups, merged, skipped, conflicts, reasons };
   }
 
   /**

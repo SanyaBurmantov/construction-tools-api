@@ -98,8 +98,8 @@ export function useProductSources() {
    * Everything that names a supplier goes through this, so a supplier is named
    * once and its pages hang under it.
    *
-   * Cheapest in-stock offer first inside a group — that is the one the price
-   * comes from, so it is the one worth reading first.
+   * The offer the price comes from (`pickPriceOffer`) leads: its supplier
+   * first, and inside a supplier in-stock pages first, dearest first.
    */
   function groupedFor(productId: string): ProductSourceGroup[] {
     const groups = new Map<string, ProductSourceGroup>()
@@ -121,12 +121,26 @@ export function useProductSources() {
       group.offers.sort(
         (a, b) =>
           Number(b.stock) - Number(a.stock)
-          || (a.price ?? Infinity) - (b.price ?? Infinity)
+          || (b.price ?? -Infinity) - (a.price ?? -Infinity)
       )
     }
 
-    return [...groups.values()]
+    const priceSource = priceOfferFor(productId)?.sourceId
+    return [...groups.values()].sort(
+      (a, b) => Number(b.sourceId === priceSource) - Number(a.sourceId === priceSource)
+    )
   }
+
+  /** The offer the storefront price is taken from, if any is priced. */
+  const priceOfferFor = (productId: string) => pickPriceOffer(sourcesFor(productId))
+
+  /**
+   * Several suppliers carry it (a merged card) — the admin screens highlight
+   * these, because the price is the dearest of them and the order can be
+   * bought from either.
+   */
+  const isMultiSupplier = (productId: string) =>
+    new Set(sourcesFor(productId).map(offer => offer.sourceId)).size > 1
 
   /** "th-tool.by ×2, tools.by" — what the badge shows when space is tight. */
   function labelFor(productId: string) {
@@ -134,10 +148,20 @@ export function useProductSources() {
       .map(group => (group.offers.length > 1
         ? `${group.sourceName} ×${group.offers.length}`
         : group.sourceName))
-      .join(', ')
+      .join(isMultiSupplier(productId) ? ' + ' : ', ')
   }
 
-  return { isAdmin, queue, load, isLoaded, sourcesFor, groupedFor, labelFor }
+  return {
+    isAdmin,
+    queue,
+    load,
+    isLoaded,
+    sourcesFor,
+    groupedFor,
+    labelFor,
+    priceOfferFor,
+    isMultiSupplier,
+  }
 }
 
 /**

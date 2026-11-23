@@ -27,6 +27,17 @@ ISR route rules, the bounded page cache and its warm-up, canonical and legacy UR
   entry. Cached HTML is served cheaply; runtime
   is light. The build is the memory-heavy step.
 
+- **A client-side navigation reads the target page's cached payload**
+  (Nuxt 4.6 loads `_payload.json` for cached routes and `useAsyncData` takes
+  its data from `nuxtApp.static.data` without asking the API). That payload
+  was rendered for nobody — the session cookie is `Path=/api` — so anything
+  that depends on who is looking must not be read from it. The admin-only
+  supplier filter in `CatalogView` was: clicking a supplier changed the URL
+  and the chip but left the unfiltered grid until a reload (2026-11-23,
+  reproduced with Playwright against a local build). Its products
+  `useAsyncData` now has a `getCachedData` that returns nothing while
+  `selectedSource` is set. Any new per-viewer filter needs the same.
+
 - **One URL per page: lowercase, no trailing slash** (`/catalog`, not
   `/catalog/`). `server/middleware/canonical-url.ts` 301s every other form
   (query kept; `/api`, `/_*`, files with an extension untouched), matching the

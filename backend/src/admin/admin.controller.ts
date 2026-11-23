@@ -55,7 +55,12 @@ import {
 } from '../pricing/dto/pricing.dto';
 import { OffersService } from '../offers/offers.service';
 import { ProductMergeService } from '../offers/product-merge.service';
-import { AdminMergeProductsDto } from '../offers/dto/merge-products.dto';
+import {
+  AdminMergeProductsDto,
+  AdminResolveConflictDto,
+} from '../offers/dto/merge-products.dto';
+import { MergeConflictsService } from '../offers/merge-conflicts.service';
+import { actorLabel } from '../common/admin-scope';
 import { SpecificationsAdminService } from './specifications-admin.service';
 import { BannersService } from '../banners/banners.service';
 import {
@@ -95,6 +100,7 @@ export class AdminController {
     private readonly pricingService: PricingService,
     private readonly pricingRulesService: PricingRulesService,
     private readonly offersService: OffersService,
+    private readonly mergeConflicts: MergeConflictsService,
     private readonly productMergeService: ProductMergeService,
     private readonly bannersService: BannersService,
     private readonly specsAdminService: SpecificationsAdminService,
@@ -591,6 +597,32 @@ export class AdminController {
   @HttpCode(200)
   mergeProducts(@Body() dto: AdminMergeProductsDto) {
     return this.offersService.mergeAndReprice(dto.targetId, dto.duplicateId);
+  }
+
+  /**
+   * Groups the auto-merge left for a human: one article, but titles of
+   * different kinds of item or prices > 3× apart (`MergeConflict`).
+   */
+  @Get('offers/conflicts')
+  getMergeConflicts() {
+    return this.mergeConflicts.list();
+  }
+
+  /** «Один товар» — merge the group now. */
+  @Post('offers/conflicts/:id/merge')
+  @HttpCode(200)
+  mergeConflict(@Param('id') id: string, @Body() dto: AdminResolveConflictDto) {
+    return this.mergeConflicts.merge(id, dto.targetId);
+  }
+
+  /** «Разные товары» — keep them apart for good. */
+  @Post('offers/conflicts/:id/dismiss')
+  @HttpCode(200)
+  dismissMergeConflict(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.mergeConflicts.dismiss(id, actorLabel(req));
   }
 
   @Get('specifications')
