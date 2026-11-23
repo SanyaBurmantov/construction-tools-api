@@ -19,6 +19,7 @@ function member(
     liveOffers: sourceIds.length,
     offerCount: sourceIds.length,
     hasImage: true,
+    hasAiText: false,
     sourceIds,
     ...extra,
   };
@@ -96,6 +97,20 @@ describe('planAutoMerge', () => {
     ).toEqual({ skip: 'admin-decided' });
   });
 
+  it('keeps the card whose text we rewrote, and its URL', () => {
+    const plan = planAutoMerge(
+      [
+        member('two-offers', ['dukon', 'tools-by']),
+        member('rewritten', ['th-tools'], { hasAiText: true }),
+      ],
+      RATIO,
+    );
+    expect(plan).toEqual({
+      targetId: 'rewritten',
+      duplicateIds: ['two-offers'],
+    });
+  });
+
   it('keeps the card on sale with the most live offers', () => {
     const plan = planAutoMerge(
       [
@@ -132,6 +147,7 @@ describe('OffersService.autoMerge', () => {
               status: 'PUBLISHED',
               statusSource: 'SYSTEM',
               priceValue: row.priceValue,
+              aiLockedFields: [],
               images: [{ id: 'img' }],
               sourceProducts: row.sourceIds.map((sourceId) => ({
                 sourceId,

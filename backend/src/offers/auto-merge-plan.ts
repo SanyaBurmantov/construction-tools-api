@@ -27,6 +27,8 @@ export type AutoMergeMember = {
   /** Every offer, priced or not. */
   offerCount: number;
   hasImage: boolean;
+  /** Text we rewrote (`aiLockedFields`): the card worth keeping. */
+  hasAiText: boolean;
   /** Distinct suppliers among its offers; empty for a hand-made product. */
   sourceIds: string[];
 };
@@ -73,13 +75,17 @@ export function planAutoMerge(
     return { skip: 'prices-differ' };
   }
 
-  // Survivor: on sale first, then the most *live* offers (a dead offer with
-  // no price is not worth keeping a card for), then the richer card.
+  // Survivor: on sale first; then the card whose text we rewrote — its text
+  // and its URL (under SEO measurement) survive, the other one becomes a
+  // 301 (129 such cards among the groups on 2026-11-23); then the most
+  // *live* offers (a dead offer with no price is not worth keeping a card
+  // for), then the richer card.
   const onSale = (member: AutoMergeMember) =>
     member.status === 'PUBLISHED' ? 1 : 0;
   const [target, ...duplicates] = [...candidates].sort(
     (a, b) =>
       onSale(b) - onSale(a) ||
+      Number(b.hasAiText) - Number(a.hasAiText) ||
       b.liveOffers - a.liveOffers ||
       b.offerCount - a.offerCount ||
       Number(b.hasImage) - Number(a.hasImage) ||

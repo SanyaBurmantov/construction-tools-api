@@ -446,6 +446,7 @@ export class OffersService {
             status: true,
             statusSource: true,
             priceValue: true,
+            aiLockedFields: true,
             images: { take: 1, select: { id: true } },
             sourceProducts: { select: { sourceId: true, price: true } },
           },
@@ -467,6 +468,7 @@ export class OffersService {
             ).length,
             offerCount: row.sourceProducts.length,
             hasImage: row.images.length > 0,
+            hasAiText: row.aiLockedFields.length > 0,
             sourceIds: [
               ...new Set(row.sourceProducts.map((offer) => offer.sourceId)),
             ],
