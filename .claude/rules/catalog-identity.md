@@ -136,10 +136,20 @@ Product identity is the supplier offer, category identity is pathKey, one produc
   article is a different-products signal (five ABRO air-freshener flavours
   under th-tool's `B311`, Autel MS906 Pro MAX and MS906BT under dukon's
   `AU20039`, a used trimmer beside the new one) and the group stays for a
-  human; and **prices within the spike threshold** (1 + 50 %) — JetaPro
-  `5868068` is a 1.64 BYN cup at tools.by and a 230 BYN item at dukon. The
-  key query drops one-supplier groups in SQL, so groups no rule will merge
-  never fill the batch. ~1 900 of 3 540 groups qualified on 2026-11-23.
+  human. What is left can still be two things under one article, and that
+  is a **conflict**, not a merge: titles naming different kinds of item
+  (`offers/item-kind.ts`, head noun + synonyms: «Домкрат» vs «Расширитель»;
+  plain token similarity is useless — b2bit names a thing in two words) or
+  prices more than 3× apart (JetaPro `5868068`: a 1.64 BYN cup at tools.by,
+  230 BYN at dukon). Conflicts go to `MergeConflict` → «Требуют решения» on
+  `/admin/duplicates` with a badge on «Дубли»: «Один товар» merges,
+  «Разные товары» (`dismissedAt`) keeps the group out for good; a full run
+  deletes rows it no longer sees. Calibrated on all 1 901 groups
+  (2026-11-23): 40 conflicts, ~1 860 merged. A gap under 3× is a dealer RRP
+  against a retail price (WorkPro at b2bit ≈ 1.57× dukon) — merged, and the
+  dearer card survives so its cost does not move and the spike guard stays
+  quiet. The key query drops one-supplier groups in SQL, so groups no rule
+  will merge never fill the batch.
   **One supplier, two articles = two products.** The old slug-keyed parser
   attached every th-tool.by listing with the same title (Forsage F-…,
   RockForce RF-…) to one card — 7 471 cards, 23 813 offers on 2026-11-02.

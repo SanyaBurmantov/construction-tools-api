@@ -183,6 +183,8 @@ function openSpecs() {
   z-index: 1;
   bottom: var(--space-2);
   left: var(--space-2);
+  /* Clear of the favourite/compare buttons; «B2BIT + Dukon» is long. */
+  max-width: calc(100% - 56px);
 }
 
 .product-card {

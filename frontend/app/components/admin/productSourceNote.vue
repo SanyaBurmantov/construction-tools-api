@@ -243,8 +243,9 @@ function lastSyncLabel(iso: string) {
 }
 
 .badge {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
   padding: 2px var(--space-2);
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-xs);
@@ -252,6 +253,7 @@ function lastSyncLabel(iso: string) {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

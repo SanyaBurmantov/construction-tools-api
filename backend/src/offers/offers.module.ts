@@ -6,6 +6,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { OfferSplitService } from './offer-split.service';
 import { OfferSplitCron } from './offer-split.cron';
 import { AutoMergeCron } from './auto-merge.cron';
+import { MergeConflictsService } from './merge-conflicts.service';
 
 @Module({
   imports: [PricingModule, SeoModule],
@@ -15,7 +16,8 @@ import { AutoMergeCron } from './auto-merge.cron';
     OfferSplitService,
     OfferSplitCron,
     AutoMergeCron,
+    MergeConflictsService,
   ],
-  exports: [OffersService, ProductMergeService],
+  exports: [OffersService, ProductMergeService, MergeConflictsService],
 })
 export class OffersModule {}

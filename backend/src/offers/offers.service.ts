@@ -402,10 +402,10 @@ export class OffersService {
 
   /**
    * Merges barcode and brand+sku groups by `planAutoMerge`: different
-   * suppliers, one product each, prices within the spike threshold. Weaker
-   * signals and every other group stay a human decision in
-   * `/admin/duplicates` — a wrong merge destroys a card and is tedious to
-   * unpick.
+   * suppliers, one product each, and nothing that says two different items.
+   * A group that does say so (titles of different kinds, prices > 3× apart)
+   * is recorded as a `MergeConflict` for `/admin/duplicates` instead; one an
+   * admin called «разные товары» is never touched again.
    *
    * Runs on its own (`AutoMergeCron`, hourly, `limit` merges a run) and from
    * the admin button. The keys come from SQL that already drops groups where
@@ -413,16 +413,27 @@ export class OffersService {
    * merge do not fill the batch and stall it run after run.
    */
   async autoMerge(limit = 200) {
-    const maxPriceRatio =
-      1 + Number(process.env.PRICING_SPIKE_THRESHOLD_PERCENT ?? 50) / 100;
+    const startedAt = new Date();
+    const dismissed = new Set(
+      (
+        await this.prisma.mergeConflict.findMany({
+          where: { dismissedAt: { not: null } },
+          select: { signal: true, key: true },
+        })
+      ).map((row) => `${row.signal}:${row.key}`),
+    );
     const touched = new Set<string>();
     let groups = 0;
     let merged = 0;
     let skipped = 0;
+    let conflicts = 0;
+    let complete = true;
     const reasons: Record<string, number> = {};
 
-    for (const field of ['matchBarcode', 'matchSku'] as const) {
-      if (merged >= limit) break;
+    for (const [field, signal] of [
+      ['matchBarcode', 'barcode'],
+      ['matchSku', 'sku'],
+    ] as const) {
       const column = Prisma.raw(`"${field}"`);
       const keys = await this.prisma.$queryRaw<Array<{ key: string }>>`
         SELECT p.${column} AS key FROM "Product" p
@@ -438,11 +449,16 @@ export class OffersService {
         LIMIT 20000`;
 
       for (const { key } of keys) {
-        if (merged >= limit) break;
+        if (merged >= limit) {
+          complete = false;
+          break;
+        }
+        if (dismissed.has(`${signal}:${key}`)) continue;
         const rows = await this.prisma.product.findMany({
           where: { [field]: key },
           select: {
             id: true,
+            name: true,
             status: true,
             statusSource: true,
             priceValue: true,
@@ -460,6 +476,7 @@ export class OffersService {
         const plan = planAutoMerge(
           rows.map((row) => ({
             id: row.id,
+            name: row.name,
             status: row.status,
             statusSource: row.statusSource,
             priceValue: row.priceValue,
@@ -473,11 +490,31 @@ export class OffersService {
               ...new Set(row.sourceProducts.map((offer) => offer.sourceId)),
             ],
           })),
-          { maxPriceRatio },
         );
         if ('skip' in plan) {
           skipped += 1;
           reasons[plan.skip] = (reasons[plan.skip] ?? 0) + 1;
+          continue;
+        }
+        if ('conflict' in plan) {
+          conflicts += 1;
+          const productIds = rows.map((row) => row.id);
+          await this.prisma.mergeConflict.upsert({
+            where: { signal_key: { signal, key } },
+            create: {
+              signal,
+              key,
+              reason: plan.conflict,
+              productIds,
+              priceRatio: plan.priceRatio,
+            },
+            update: {
+              reason: plan.conflict,
+              productIds,
+              priceRatio: plan.priceRatio,
+              lastSeenAt: new Date(),
+            },
+          });
           continue;
         }
 
@@ -494,14 +531,23 @@ export class OffersService {
         rows.forEach((row) => touched.add(row.id));
         await this.recomputeFromOffers(plan.targetId);
       }
+      if (!complete) break;
     }
 
-    if (merged || skipped) {
+    // A full pass saw every live conflict: the rest were resolved some other
+    // way (merged by hand, a product re-keyed or gone) and leave the list.
+    if (complete) {
+      await this.prisma.mergeConflict.deleteMany({
+        where: { dismissedAt: null, lastSeenAt: { lt: startedAt } },
+      });
+    }
+
+    if (merged || skipped || conflicts) {
       this.logger.log(
-        `Auto-merge: ${merged} merged, ${skipped} groups left for a human ${JSON.stringify(reasons)}`,
+        `Auto-merge: ${merged} merged, ${conflicts} conflicts for /admin/duplicates, ${skipped} skipped ${JSON.stringify(reasons)}`,
       );
     }
-    return { groups, merged, skipped, reasons };
+    return { groups, merged, skipped, conflicts, reasons };
   }
 
   /**

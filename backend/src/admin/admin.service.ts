@@ -173,6 +173,7 @@ export class AdminService {
       topProducts,
       recentErrors,
       newLeads,
+      mergeConflicts,
     ] = await Promise.all([
       this.prisma.product.count(),
       this.prisma.product.count({ where: { status: 'PUBLISHED' } }),
@@ -233,6 +234,8 @@ export class AdminService {
         },
       }),
       this.prisma.lead.count({ where: { status: 'NEW' } }),
+      // «Дубли» badge: groups the auto-merge left for a human.
+      this.prisma.mergeConflict.count({ where: { dismissedAt: null } }),
     ]);
 
     // Bucket the last 14 days client-side; the row count here is small and it
@@ -269,6 +272,7 @@ export class AdminService {
       admins,
       recentErrors,
       newLeads,
+      mergeConflicts,
       revenueTotal: Math.round((revenue._sum.total ?? 0) * 100) / 100,
       averageOrder: Math.round((revenue._avg.total ?? 0) * 100) / 100,
       ordersByStatus: Object.fromEntries(

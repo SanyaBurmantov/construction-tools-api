@@ -42,7 +42,7 @@ const allNav = computed(() => [
     icon: 'tag',
     badge: badges.value?.priceReviewNeeded,
   },
-  { label: 'Дубли', to: '/admin/duplicates', icon: 'copy' },
+  { label: 'Дубли', to: '/admin/duplicates', icon: 'copy', badge: badges.value?.mergeConflicts },
   { label: 'Витрина', to: '/admin/storefront', icon: 'layout' },
   { label: 'Баннеры', to: '/admin/banners', icon: 'image' },
   { label: 'Категории', to: '/admin/categories', icon: 'tree' },

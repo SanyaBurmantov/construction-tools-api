@@ -1670,3 +1670,28 @@ model AiDetectorCheck {
   @@index([createdAt])
   @@index([textHash])
 }
+
+/// A barcode / brand+sku group the auto-merge would not fold because it looks
+/// like two different items: the titles name different kinds of thing
+/// (`offers/item-kind.ts`) or the prices differ more than 3×. Listed in
+/// `/admin/duplicates` with a badge; «Разные товары» (`dismissedAt`) keeps the
+/// group from being merged or listed again, «Один товар» merges it and drops
+/// the row. Rows the auto-merge no longer finds are deleted by it.
+model MergeConflict {
+  id          String    @id @default(uuid())
+  /// `barcode` | `sku` — which match key the products share.
+  signal      String
+  key         String
+  /// `names` | `price`.
+  reason      String
+  productIds  String[]
+  /// Dearest over cheapest price in the group, when both are priced.
+  priceRatio  Float?
+  detectedAt  DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  dismissedAt DateTime?
+  dismissedBy String?
+
+  @@unique([signal, key])
+  @@index([dismissedAt])
+}

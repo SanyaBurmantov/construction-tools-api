@@ -302,6 +302,8 @@ export interface AdminStats {
   admins: number
   /** Server errors of the last 24h — the badge on «Ошибки». */
   recentErrors: number
+  /** Duplicate groups the auto-merge left for a human — the badge on «Дубли». */
+  mergeConflicts?: number
   revenueTotal: number
   averageOrder: number
   ordersByStatus: Partial<Record<OrderStatus, number>>
