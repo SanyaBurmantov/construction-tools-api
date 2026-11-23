@@ -15,6 +15,11 @@ import {
 export type CategoryNormalizeReport = {
   /** Products hidden because their source's own filters exclude them now. */
   filteredOut: number;
+  /**
+   * Products this pass had hidden that their source's filters allow again,
+   * put back on sale (they still have a live offer and a price).
+   */
+  filteredBack: number;
   /** Products moved out of a placeholder category into the unsorted one. */
   placeholderProductsMoved: number;
   /** Placeholder / merchandising-tag categories removed. */
@@ -65,7 +70,8 @@ export class CategoryNormalizerService {
     // Order matters. Filtering reads the tree as the suppliers built it, so it
     // runs before any merge renames a branch; pruning runs last, once the
     // merges have emptied whatever they are going to empty.
-    const filteredOut = await this.applySourceCategoryFilters(dryRun);
+    const { hidden: filteredOut, restored: filteredBack } =
+      await this.applySourceCategoryFilters(dryRun);
     const placeholders = await this.absorbPlaceholderCategories(dryRun);
     const rootsMerged = await this.unifyRoots(dryRun);
     const emptyCategoriesRemoved = await this.pruneEmptyCategories(dryRun);
@@ -73,6 +79,7 @@ export class CategoryNormalizerService {
 
     const report: CategoryNormalizeReport = {
       filteredOut,
+      filteredBack,
       ...placeholders,
       rootsMerged,
       emptyCategoriesRemoved,
@@ -95,21 +102,32 @@ export class CategoryNormalizerService {
    *
    * At parse time an excluded product is never created — the URL is marked
    * SKIPPED. But the filters are runtime settings that get tightened *after*
-   * an import: `TH_TOOLS_CATEGORY_EXCLUDE_REGEX` lists `косметика`,
-   * `велотехник` and `дача, отдых`, and the catalogue still carried 408
-   * cosmetics products from before it existed. Those are not a taxonomy
-   * problem to be reorganised — they are products the operator has already
-   * said this shop does not sell.
+   * an import: `TH_TOOLS_CATEGORY_EXCLUDE_REGEX` once listed `косметика`, and
+   * the catalogue still carried 408 cosmetics products from before it existed.
+   * Those are not a taxonomy problem to be reorganised — they are products the
+   * operator has already said this shop does not sell.
+   *
+   * **The filter is matched against the supplier's own chain**
+   * (`SourceCategory`), exactly what the parser tested — never against our
+   * tree. Our tree is not the supplier's: b2bit's branch starts *below* its
+   * «Стройка и ремонт» department (`b2bitCatalogBranch`), so its include
+   * `^Стройка и ремонт` matched none of our categories and this pass hid every
+   * b2bit product each night from 2026-11-20 (~4 780 of them), while the
+   * daytime re-read put them back one by one.
    *
    * Excluded products are hidden, not deleted, and the hide is a SYSTEM
-   * status: loosen the regex and the next parse of the URL (SKIPPED rows are
-   * re-checked weekly by the watchdog) publishes the product again through
-   * OffersService. A status an admin set is never touched.
+   * status. The same pass puts back on sale what the filters allow again — a
+   * SYSTEM-hidden product of the source whose every offer sits in an allowed
+   * category and that still has a live offer and a price (the condition
+   * `OffersService.publishIfReady` applies on a parse), so loosening a regex
+   * or fixing this pass needs no button. A status an admin set is never
+   * touched.
    */
-  private async applySourceCategoryFilters(dryRun: boolean): Promise<number> {
-    const nodes = await this.loadTree();
-    const chains = this.buildNameChains(nodes);
+  private async applySourceCategoryFilters(
+    dryRun: boolean,
+  ): Promise<{ hidden: number; restored: number }> {
     let hidden = 0;
+    let restored = 0;
 
     for (const source of PARSER_SOURCES) {
       const filters = await this.settings.getCategoryFilters(source.code);
@@ -117,7 +135,12 @@ export class CategoryNormalizerService {
       const exclude = this.compile(filters.exclude, source.code, 'exclude');
       if (!include && !exclude) continue;
 
-      const excludedCategoryIds = [...chains]
+      const nodes = await this.prisma.sourceCategory.findMany({
+        where: { source: { code: source.code } },
+        select: { id: true, name: true, parentId: true },
+      });
+      const chains = this.buildNameChains(nodes);
+      const excludedIds = [...chains]
         .filter(([, chain]) => {
           const haystack = chain.join(' / ');
           return (
@@ -126,38 +149,66 @@ export class CategoryNormalizerService {
           );
         })
         .map(([id]) => id);
-      if (!excludedCategoryIds.length) continue;
 
-      const where = {
+      // Only products this source alone brought in. A product carried by two
+      // suppliers must not be hidden because one of them filters it.
+      const hideWhere = {
         status: 'PUBLISHED' as const,
         statusSource: 'SYSTEM' as const,
-        categoryId: { in: excludedCategoryIds },
-        // Only products this source actually brought in. A product carried by
-        // two suppliers must not be hidden because one of them filters it.
         sourceProducts: {
           every: { source: { code: source.code } },
-          some: { source: { code: source.code } },
+          some: {
+            source: { code: source.code },
+            sourceCategoryId: { in: excludedIds },
+          },
+        },
+      };
+      const restoreWhere = {
+        status: 'HIDDEN' as const,
+        statusSource: 'SYSTEM' as const,
+        priceValue: { gt: 0 },
+        sourceProducts: {
+          every: {
+            source: { code: source.code },
+            sourceCategoryId: { not: null, notIn: excludedIds },
+          },
+          some: { source: { code: source.code }, price: { gt: 0 } },
         },
       };
 
       if (dryRun) {
-        hidden += await this.prisma.product.count({ where });
+        if (excludedIds.length)
+          hidden += await this.prisma.product.count({ where: hideWhere });
+        restored += await this.prisma.product.count({ where: restoreWhere });
         continue;
       }
 
-      const result = await this.prisma.product.updateMany({
-        where,
-        data: { status: 'HIDDEN' },
+      if (excludedIds.length) {
+        const result = await this.prisma.product.updateMany({
+          where: hideWhere,
+          data: { status: 'HIDDEN' },
+        });
+        if (result.count) {
+          this.logger.log(
+            `${source.code}: hid ${result.count} products in categories its filters exclude`,
+          );
+        }
+        hidden += result.count;
+      }
+
+      const back = await this.prisma.product.updateMany({
+        where: restoreWhere,
+        data: { status: 'PUBLISHED' },
       });
-      if (result.count) {
+      if (back.count) {
         this.logger.log(
-          `${source.code}: hid ${result.count} products in categories its filters exclude`,
+          `${source.code}: put back on sale ${back.count} products its filters allow`,
         );
       }
-      hidden += result.count;
+      restored += back.count;
     }
 
-    return hidden;
+    return { hidden, restored };
   }
 
   /**
@@ -386,7 +437,9 @@ export class CategoryNormalizerService {
    * filters match against — the parsers test `names.join(' / ')`, so the
    * retroactive check has to build the same string.
    */
-  private buildNameChains(nodes: CategoryNode[]): Map<string, string[]> {
+  private buildNameChains(
+    nodes: Array<Pick<CategoryNode, 'id' | 'name' | 'parentId'>>,
+  ): Map<string, string[]> {
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const chains = new Map<string, string[]>();
 
