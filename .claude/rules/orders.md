@@ -200,7 +200,15 @@ Checkout and terms of sale, organisations-only mode, cart re-pricing and server 
   `INVOICE` order with a payer; **commercial offer PDF**
   (`POST /documents/quote`, re-priced from the DB, records a `QUOTE` lead);
   **XLSX price list** (`GET /price-list.xlsx?categorySlug|brandSlug`,
-  streamed with exceljs in id-cursor chunks — never one workbook in the heap);
+  written with exceljs in id-cursor chunks — never one workbook in the heap —
+  **to a file, built at most once an hour per filter** and sent from disk
+  (`PriceListService.file`: concurrent requests share one build, a stale file
+  is sent at once while the next one builds, ≤ 60 files in
+  `PRICE_LIST_CACHE_DIR`/tmp, gone with the container). It used to be built
+  per request, one at a time and three waiting: at 120k products a build is
+  minutes, and an Alibaba Cloud crawler (112 rotating addresses, 18–23.11)
+  kept the slot busy so buyers got «формируется для другого покупателя»
+  ~530 times a day);
   **purchase lists** (`/account/purchase-lists`, ids + quantities only,
   hydrated from `Product` on read like the stored cart); **leads**
   (`POST /leads`: «уточнить наличие / подобрать аналог», the form on

@@ -87,6 +87,21 @@ API and worker processes, containers, memory guards, routing in prod, image buil
   and a crawler pushed SSR into 429s rendered as 404s. Browser traffic comes
   through Caddy and is throttled by its real IP. The storefront treats a 429
   like a 5xx (`isApiUnavailable`).
+- **IPv6 visitors keep their address only through the `edge` network**
+  (2026-11-23). gost.by has an AAAA record (`2a0a:7d80:3:2::2a5`), but
+  `app-network` has no IPv6, so Docker's userland proxy (`docker-proxy` on
+  `[::]:443`) carried every IPv6 visitor to Caddy as the bridge gateway
+  `172.18.0.1`: one shared bucket for every route `@Throttle` (~2 300 «429»
+  on the price list 18–22.11), **no global 120/min limit at all** (a private
+  address is exempt as SSR), and no real address in the error log. Caddy is
+  also on `edge` (`enable_ipv6`, ULA `fd5b:9c3e:7a41::/64`); with an IPv6
+  endpoint Docker (≥ 28, IPv6 gateway on its own network) forwards IPv6 with
+  ip6tables DNAT and the source survives — checked on the box with a probe
+  container: `172.19.0.1` alone, `2a0a:…` with the second network.
+  `app-network` was left untouched on purpose: changing `enable_ipv6` on an
+  existing network makes compose refuse to start until it is recreated, and
+  a rollback would hit the same wall. Suppliers have no AAAA records, so
+  parser egress is unchanged.
 
 ## Releases
 

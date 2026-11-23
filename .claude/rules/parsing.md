@@ -292,6 +292,13 @@ set as the dealer price list. Product = `/product/<id>`, offer URL
 - Our category branch starts **below** «Стройка и ремонт»
   (`b2bitCatalogBranch`), so products land in our own «Электроинструмент»,
   «Ручной инструмент»… roots; `SourceCategory` keeps the full chain.
+  **So a category filter is matched against `SourceCategory` chains, never
+  our tree** — the nightly `CategoryNormalizerService` re-check matched
+  `^Стройка и ремонт` against our tree, found it nowhere and hid every b2bit
+  product each night from 2026-11-20 (4 777, all of them by 23.11). It now
+  reads the supplier's chain like the parser does, and puts back on sale
+  what it had hidden once the filter allows it (SYSTEM-hidden, every offer
+  in an allowed category, a live offer and a price — `filteredBack`).
 - The offer's `available` is the stock flag (`reserve` = not available); the
   product-level `available` is false even for items in stock. `description` is
   spec values joined by « / » without names — never imported, b2bit cards

@@ -16,6 +16,8 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
+import { createReadStream } from 'node:fs';
+import { finished } from 'node:stream/promises';
 import { AdminGuard } from '../admin/admin.guard';
 import { AuthGuard } from '../auth/auth.guard';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
@@ -120,30 +122,30 @@ export class B2bController {
     return this.leads.createQuestion(dto, userId, ip);
   }
 
-  /** XLSX price list: whole catalogue, a category subtree or a brand. */
+  /**
+   * XLSX price list: whole catalogue, a category subtree or a brand. Sent
+   * from a file built at most once an hour (`PriceListService.file`).
+   */
   @Throttle({ default: { limit: 5, ttl: TEN_MINUTES } })
   @Get('price-list.xlsx')
   async downloadPriceList(
     @Query() query: PriceListQueryDto,
     @Res() res: Response,
   ) {
-    await this.priceList.exclusive(async () => {
-      // Resolved first, so an unknown category is a clean 404, not a broken
-      // half-written file.
-      const prepared = await this.priceList.prepare(query);
-      res.set({
-        'Content-Type':
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="${prepared.filename}"`,
-        'Cache-Control': 'no-store',
-      });
-      // A client that hangs up mid-file must not hold the only slot: the
-      // response's `close` (fired on finish and on abort) ends the turn.
-      await Promise.race([
-        this.priceList.write(prepared, res),
-        new Promise((resolve) => res.once('close', resolve)),
-      ]);
+    const file = await this.priceList.file(query);
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Length': String(file.size),
+      'Content-Disposition': `attachment; filename="${file.filename}"`,
+      'Cache-Control': 'no-store',
     });
+    const stream = createReadStream(file.path);
+    // The file can be pruned between the lookup and the open: end the
+    // response rather than leave the client hanging.
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
+    await finished(res).catch(() => undefined);
   }
 
   /* ---- The account's purchase lists ----------------------------------- */
