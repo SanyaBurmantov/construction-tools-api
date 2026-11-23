@@ -30,8 +30,11 @@ PricingService owns the storefront price: rules, rounding, spike guard, MANUAL m
   the best offer instead of wiping every discount.
   Writing the price in the parser would clobber MANUAL prices, and writing
   `costPrice` there would defeat the spike guard, which compares old cost to new.
-  Guards worth knowing: a cost change beyond
-  `PRICING_SPIKE_THRESHOLD_PERCENT` (default 50) is treated as a supplier typo —
+  Guards worth knowing: a cost **drop** beyond
+  `PRICING_SPIKE_THRESHOLD_PERCENT` (default 50) is treated as a supplier typo
+  (a **rise** is applied at once — owner, 2026-11-23: holding it left a used
+  DGM pump at 214.78 against a 343.66 supplier price; a typo upwards only
+  overprices one card, one downwards sells at a loss) —
   the product keeps its price, gets `priceReviewNeeded`, and the rejected cost
   waits in `PriceHistory` until an admin accepts or rejects it in
   `/admin/pricing`. `pricingMode = MANUAL` pins the price: parsing records the
