@@ -11,6 +11,15 @@ export const SLOW_REQUEST_MS = 1000;
 export const N_PLUS_ONE_QUERIES = 15;
 
 /**
+ * Routes left out of the «🐢 Сайт отвечает медленно» alert (they still show on
+ * the admin screen). `/health/*` is the containers' and the uptime check's
+ * probe: a slow answer there is only an echo of whatever slowed the real
+ * routes, and what matters about it is a failure, which the watchdog and the
+ * uptime check already report (owner, 2026-11-23).
+ */
+export const ALERT_IGNORED_ROUTES = /^\/health(\/|$)/;
+
+/**
  * Service level objectives: what «fast enough» means, written down, so a
  * slowdown is a number against a target rather than a feeling. Measured over
  * each route's last SAMPLE_PER_ROUTE requests (latency) and since the process
@@ -151,7 +160,7 @@ export class RequestStats {
     if (input.ms >= SLOW_REQUEST_MS) {
       bucket.slow++;
       const now = input.now ?? Date.now();
-      this.slowTimes.push(now);
+      if (!ALERT_IGNORED_ROUTES.test(input.route)) this.slowTimes.push(now);
       this.slowRing.unshift({
         at: new Date(now).toISOString(),
         method: input.method,
@@ -222,7 +231,7 @@ export class RequestStats {
     return this.slowRing;
   }
 
-  /** Slow requests that finished within the last `windowMs`. */
+  /** Slow requests that finished within the last `windowMs` (alerting routes). */
   slowInWindow(windowMs: number, now = Date.now()): number {
     const from = now - windowMs;
     while (this.slowTimes.length && this.slowTimes[0] < from)
@@ -230,12 +239,13 @@ export class RequestStats {
     return this.slowTimes.length;
   }
 
-  /** Slow requests of the window grouped by route, most first. */
+  /** Slow requests of the window grouped by route, most first (alerting routes). */
   slowRoutesInWindow(windowMs: number, now = Date.now()) {
     const from = new Date(now - windowMs).toISOString();
     const counts = new Map<string, { count: number; maxMs: number }>();
     for (const row of this.slowRing) {
       if (row.at < from) break;
+      if (ALERT_IGNORED_ROUTES.test(row.route)) continue;
       const key = `${row.method} ${row.route}`;
       const entry = counts.get(key) ?? { count: 0, maxMs: 0 };
       entry.count++;

@@ -58,7 +58,15 @@ describe('FacetsWarmupService.warm', () => {
     let inFlight = 0;
     let maxInFlight = 0;
     const findAllFiltered = jest.fn(
-      async (filter: { categorySlug?: string }, _options?: unknown) => {
+      async (
+        filter: {
+          categorySlug?: string;
+          onSale?: boolean;
+          inStock?: boolean;
+          core?: boolean;
+        },
+        _options?: unknown,
+      ) => {
         inFlight += 1;
         maxInFlight = Math.max(maxInFlight, inFlight);
         await new Promise((resolve) => setImmediate(resolve));
@@ -74,11 +82,22 @@ describe('FacetsWarmupService.warm', () => {
       } as unknown as ProductService,
     );
 
-    expect(await service.warm()).toBe(2);
-    expect(findAllFiltered.mock.calls.map(([f]) => f.categorySlug)).toEqual([
-      undefined,
-      'a',
-      'b',
+    expect(await service.warm()).toBe(5);
+    expect(
+      findAllFiltered.mock.calls.map(([f]) => ({
+        categorySlug: f.categorySlug,
+        onSale: f.onSale,
+        inStock: f.inStock,
+        core: f.core,
+      })),
+    ).toEqual([
+      {},
+      // The home page's rails: «Скидки», «Популярное», «Новинки».
+      { onSale: true },
+      { inStock: true },
+      { core: true, inStock: true },
+      { categorySlug: 'a' },
+      { categorySlug: 'b' },
     ]);
     expect(findAllFiltered.mock.calls[0][1]).toEqual({
       refreshSummaryOlderThanMs: expect.any(Number),

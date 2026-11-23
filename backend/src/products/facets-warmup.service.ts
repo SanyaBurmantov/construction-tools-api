@@ -24,6 +24,21 @@ export const MAX_WARMUP_CATEGORIES = 40;
 const PAGE_SIZE = 24;
 
 /**
+ * The filter sets of the home page's rails (`pages/index.vue` `useRail`):
+ * «Скидки» (also /sales), «Популярное», «Новинки». The home page re-renders
+ * every minute; their summaries were not warmed, so all three expired
+ * together and the next render recomputed ~12 heavy queries at once on the
+ * two-core box — the burst behind most «🐢 Сайт отвечает медленно» alerts
+ * (2026-11-23). The summary key ignores sort and page size, so the rails'
+ * own sort and limit need not be repeated here.
+ */
+export const HOME_RAIL_FILTERS: ReadonlyArray<Partial<ProductFilterDto>> = [
+  { onSale: true },
+  { inStock: true },
+  { core: true, inStock: true },
+];
+
+/**
  * Which category pages to keep warm: the ones every visitor can reach in one
  * click — the header strip an admin curated, the home page's featured tiles,
  * the root categories of the menu — in that order, without repeats. Pure.
@@ -44,11 +59,19 @@ export function warmupTargets(input: {
   return slugs.slice(0, MAX_WARMUP_CATEGORIES);
 }
 
+function describeFilter(filter: ProductFilterDto): string {
+  const flags = (['onSale', 'inStock', 'core'] as const).filter(
+    (flag) => filter[flag],
+  );
+  return flags.length ? `catalogue (${flags.join(', ')})` : 'catalogue';
+}
+
 /**
  * Keeps the total + facets of the most visited listings computed, in the API
  * process — the cache lives in its memory, so the worker could not warm it.
  * Every WARMUP_EVERY_MS, one listing at a time (never a burst on the DB):
- * the whole catalogue, then each target category's first page. A listing a
+ * the whole catalogue, the home page's rails, then each target category's
+ * first page. A listing a
  * visitor already refreshed recently is skipped by the age check.
  */
 @Injectable()
@@ -86,6 +109,9 @@ export class FacetsWarmupService implements OnModuleInit, OnModuleDestroy {
       const slugs = await this.targets();
       const listings: ProductFilterDto[] = [
         {} as ProductFilterDto,
+        ...HOME_RAIL_FILTERS.map(
+          (filter) => ({ ...filter }) as ProductFilterDto,
+        ),
         ...slugs.map((categorySlug) => ({ categorySlug }) as ProductFilterDto),
       ];
       for (const filter of listings) {
@@ -98,7 +124,7 @@ export class FacetsWarmupService implements OnModuleInit, OnModuleDestroy {
         } catch (error) {
           // A category that vanished since the list was read is not an outage.
           this.logger.warn(
-            `Facets warm-up of ${filter.categorySlug ?? 'catalogue'} failed: ${String(error)}`,
+            `Facets warm-up of ${filter.categorySlug ?? describeFilter(filter)} failed: ${String(error)}`,
           );
         }
       }

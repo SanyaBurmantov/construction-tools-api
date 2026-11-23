@@ -1,11 +1,41 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * How long the public brand list is shared. Every server render of a
+ * catalogue page asks for it (the brand facet), crawlers walk thousands of
+ * filter URLs, and each answer counted the published products of all ~650
+ * brands: 512 000 calls, ~164 ms each, the database's single biggest cost
+ * (pg_stat_statements, 2026-11-03…23). Counts drift slowly; a new brand shows
+ * up within this.
+ */
+export const BRANDS_CACHE_TTL_MS = 10 * 60_000;
+
+type PublicBrands = Awaited<ReturnType<BrandsService['findAllUncached']>>;
+
 @Injectable()
 export class BrandsService {
   constructor(private prisma: PrismaService) {}
 
-  findAll() {
+  private cache: { promise: Promise<PublicBrands>; expiresAt: number } | null =
+    null;
+
+  /**
+   * The public list, shared for BRANDS_CACHE_TTL_MS. The promise is cached, so
+   * a burst of renders waits for one query instead of starting its own; a
+   * failure is not kept. Callers only serialise it.
+   */
+  findAll(now = Date.now()): Promise<PublicBrands> {
+    if (this.cache && this.cache.expiresAt > now) return this.cache.promise;
+    const promise = this.findAllUncached();
+    this.cache = { promise, expiresAt: now + BRANDS_CACHE_TTL_MS };
+    promise.catch(() => {
+      if (this.cache?.promise === promise) this.cache = null;
+    });
+    return promise;
+  }
+
+  private findAllUncached() {
     return this.prisma.brand.findMany({
       // A brand whose slug is empty has no landing page and no usable filter
       // value — production carries one such row (supplier name ","), created

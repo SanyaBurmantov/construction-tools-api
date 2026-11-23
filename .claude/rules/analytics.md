@@ -31,7 +31,10 @@ Request timing and SLOs, pg_stat_statements, facets cache, our page-view counter
   statements running > 1 s right now, tables read by full scans, dead rows.
   `PerfService` checks every minute in the API: ≥ `PERF_ALERT_SLOW_COUNT`
   (20) requests over 1 s within 5 min → «🐢 Сайт отвечает медленно» in the
-  Telegram alerts topic, at most hourly. The external uptime check
+  Telegram alerts topic, at most hourly. `/health/*` is left out of that
+  alert (`ALERT_IGNORED_ROUTES`; owner, 2026-11-23: a slow probe is only an
+  echo of the real routes, a failing one is the watchdog's and the uptime
+  check's job) but stays on the screen. The external uptime check
   (`deploy/uptime-check.sh`) fails a 200 that is slower than `MAX_SECONDS`
   (5 s; 8 s for the uncached `/api/products` it now also checks).
   Measured 2026-11-03 before any tuning: cached pages ~50 ms (≈30 rps at 20
@@ -45,8 +48,21 @@ Request timing and SLOs, pg_stat_statements, facets cache, our page-view counter
   A listing's total + facets (~0.5 s, most of its cost) are cached in the
   API's memory for **15 min** per filter set (`FACETS_CACHE_TTL_MS`; it was
   2 min), and `FacetsWarmupService` — in the API process, where that cache
-  lives — refreshes the whole catalogue and up to 40 category pages (header
-  strip, featured, roots) every 10 min, one at a time, before they expire.
+  lives — refreshes the whole catalogue, the home page's three rails
+  (`HOME_RAIL_FILTERS`: onSale, inStock, core+inStock) and up to 40 category
+  pages (header strip, featured, roots) every 10 min, one at a time, before
+  they expire. The rails were missing until 2026-11-23: the home page
+  re-renders every minute, their three summaries expired together and the
+  render fired ~12 heavy queries at once — 2–3 s each on two cores, and every
+  request in that second (`/health/ready`, `/products/:slug`) queued behind
+  them. Same day: `GET /brands` (a published-product count for all ~650
+  brands, asked by every catalogue render) was the database's biggest cost —
+  512 000 calls × 164 ms since 03.11 — and is now shared for 10 min
+  (`BRANDS_CACHE_TTL_MS`); and `onSale` queries read the whole catalogue to
+  find nothing (0 discounted products) until the partial index
+  `Product_on_sale_idx` (`WHERE "oldPrice" > "priceValue"`, no bound value in
+  the predicate so Prisma's generic plans can use it; not in schema.prisma,
+  like the FTS indexes).
   The route table also counts **DB operations per request**
   (`perf/query-context.ts`: an AsyncLocalStorage store opened by the timing
   middleware, counted by a `$use` in `PrismaService`) — a route averaging

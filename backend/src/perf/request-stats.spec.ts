@@ -84,6 +84,25 @@ describe('RequestStats', () => {
     });
   });
 
+  it('keeps /health out of the slow alert but on the screen', () => {
+    const stats = new RequestStats();
+    for (const route of ['/health/ready', '/health', '/products']) {
+      stats.record({
+        method: 'GET',
+        route,
+        url: route,
+        status: 200,
+        ms: 1600,
+        now: 1000,
+      });
+    }
+    expect(stats.slowInWindow(300_000, 2000)).toBe(1);
+    expect(stats.slowRoutesInWindow(300_000, 2000)).toEqual([
+      { route: 'GET /products', count: 1, maxMs: 1600 },
+    ]);
+    expect(stats.recentSlow()).toHaveLength(3);
+  });
+
   it('percentile handles empty and small samples', () => {
     expect(percentile([], 0.95)).toBe(0);
     expect(percentile([7], 0.95)).toBe(7);
