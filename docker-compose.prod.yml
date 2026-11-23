@@ -415,8 +415,15 @@ services:
     depends_on:
       - frontend
       - backend
+    # `edge` gives Caddy an IPv6 address so Docker forwards IPv6 visitors with
+    # ip6tables instead of its userland proxy: through the proxy every IPv6
+    # visitor reached Caddy as the bridge gateway 172.18.0.1 — one address for
+    # every rate limit (18–22.11.2026: ~2 300 «429» on the price list shared
+    # by all of them) and no real address in the error log. app-network is
+    # left as it was, so a rollback to a compose file without `edge` works.
     networks:
       - app-network
+      - edge
 
 volumes:
   postgres_data:
@@ -427,3 +434,9 @@ volumes:
 networks:
   app-network:
     driver: bridge
+  edge:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd5b:9c3e:7a41::/64
