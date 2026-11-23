@@ -256,7 +256,22 @@ const [
     {
       default: () => ({ data: [], pagination: { page: 1, limit: PAGE_SIZE, total: 0, pages: 0 } }),
       transform: response => ({ ...response, data: response.data.map(toCardProduct) }),
-      watch: [queryParams]
+      watch: [queryParams],
+      /**
+       * Nuxt's default, except while the admin-only supplier filter is on.
+       * A client-side navigation loads the target page's cached payload
+       * (`_payload.json`, rendered by the server for nobody — the session
+       * cookie never reaches SSR) and took the products from it: the API was
+       * never asked, so clicking a supplier left the unfiltered grid until a
+       * reload (2026-11-23). With `selectedSource` set the payload cannot be
+       * right, so the browser asks the API with the admin's own session.
+       */
+      getCachedData: (key, nuxtApp, ctx) => {
+        if (selectedSource.value) return undefined
+        if (nuxtApp.isHydrating) return nuxtApp.payload.data[key]
+        if (ctx.cause !== 'refresh:manual' && ctx.cause !== 'refresh:hook') return nuxtApp.static.data[key]
+        return undefined
+      }
     }
   ),
   useCategoryTree(),
