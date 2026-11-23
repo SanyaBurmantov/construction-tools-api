@@ -1,11 +1,18 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { createHash } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import { mkdir, rename, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Writable } from 'node:stream';
+import { finished } from 'node:stream/promises';
 import { PrismaService } from '../prisma/prisma.service';
 import { PriceListQueryDto } from './dto/b2b.dto';
 
@@ -18,20 +25,129 @@ const STOCK_LABEL: Record<string, string> = {
 
 /**
  * The price list as XLSX — what a purchaser compares in their own sheet.
- * Streamed: the whole catalogue is ~50k rows, which would not belong in a
- * 512 MB heap as one workbook. Rows are read in id-cursor chunks and
+ * Streamed: the whole catalogue is ~120k rows (2026-11), which would not
+ * belong in the heap as one workbook. Rows are read in id-cursor chunks and
  * committed as they go. Public data only: our price, never a supplier.
  */
 const PRICE_LIST_MAX_WAITING = 3;
 
+/** A built file is served as is for this long, then rebuilt on demand. */
+export const PRICE_LIST_FRESH_MS = 60 * 60 * 1000;
+/** Built files kept (whole catalogue + categories/brands people asked for). */
+const PRICE_LIST_MAX_FILES = 60;
+
+export type PriceListFile = {
+  path: string;
+  filename: string;
+  size: number;
+  builtAt: number;
+};
+
 @Injectable()
 export class PriceListService {
+  private readonly logger = new Logger(PriceListService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
-   * One price list at a time, a few more waiting, the rest 503: the whole
-   * catalogue is a minute of streaming, and the per-IP @Throttle does not
-   * bound five clients asking at once (audit 2026-10-30).
+   * Built files on the container's disk, by filter. Not shared, not kept
+   * across a restart: the first request after a deploy builds again.
+   */
+  private readonly dir =
+    process.env.PRICE_LIST_CACHE_DIR || join(tmpdir(), 'gost-price-list');
+  private readonly files = new Map<string, PriceListFile>();
+  private readonly building = new Map<string, Promise<PriceListFile>>();
+
+  /**
+   * The file for this filter, built at most once an hour.
+   *
+   * It used to be built per request: one at a time, three waiting, the rest
+   * 503. With 120k products a build takes minutes, and a crawler from Alibaba
+   * Cloud (112 rotating addresses, 18–23.11.2026) asked for it all day long —
+   * the slot was never free, and a buyer pressing «Скачать прайс» got
+   * «формируется для другого покупателя» ~530 times in a day. Now every
+   * request for one filter shares one build; a fresh file is sent from disk
+   * without touching the database, and a stale one is still sent at once
+   * while the new one is built behind it.
+   */
+  async file(query: PriceListQueryDto): Promise<PriceListFile> {
+    const key = priceListKey(query);
+    const cached = this.files.get(key);
+    if (cached && Date.now() - cached.builtAt < PRICE_LIST_FRESH_MS) {
+      return cached;
+    }
+    if (cached) {
+      this.build(key, query).catch((error: unknown) =>
+        this.logger.warn(`Price list rebuild deferred: ${String(error)}`),
+      );
+      return cached;
+    }
+    return this.build(key, query);
+  }
+
+  /** One build per filter at a time; every caller of it waits for the same. */
+  private build(key: string, query: PriceListQueryDto) {
+    const running = this.building.get(key);
+    if (running) return running;
+    const promise = (async () => {
+      // Resolved first, so an unknown category is a clean 404, and outside
+      // the slot, so a 404 never waits behind a build.
+      const prepared = await this.prepare(query);
+      return this.exclusive(() => this.writeFile(key, prepared));
+    })().finally(() => this.building.delete(key));
+    this.building.set(key, promise);
+    return promise;
+  }
+
+  private async writeFile(
+    key: string,
+    prepared: Awaited<ReturnType<PriceListService['prepare']>>,
+  ): Promise<PriceListFile> {
+    await mkdir(this.dir, { recursive: true });
+    const name = createHash('sha1').update(key).digest('hex').slice(0, 16);
+    const path = join(this.dir, `${name}.xlsx`);
+    const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+    const started = Date.now();
+    try {
+      const out = createWriteStream(tmp);
+      await this.write(prepared, out);
+      await finished(out);
+      // A rename replaces the file atomically; a download already reading
+      // the old one keeps its descriptor.
+      await rename(tmp, path);
+    } catch (error) {
+      await rm(tmp, { force: true });
+      throw error;
+    }
+    const { size } = await stat(path);
+    const file = {
+      path,
+      filename: prepared.filename,
+      size,
+      builtAt: Date.now(),
+    };
+    this.files.delete(key);
+    this.files.set(key, file);
+    this.logger.log(
+      `Built price list "${prepared.title}": ${Math.round(size / 1024)} KB in ${Math.round((Date.now() - started) / 1000)} s`,
+    );
+    await this.prune();
+    return file;
+  }
+
+  /** Oldest built files go first once there are too many. */
+  private async prune() {
+    for (const [key, file] of this.files) {
+      if (this.files.size <= PRICE_LIST_MAX_FILES) break;
+      this.files.delete(key);
+      await rm(file.path, { force: true });
+    }
+  }
+
+  /**
+   * One build at a time, a few more waiting, the rest 503: a build reads the
+   * whole catalogue, and a crawler asking for many different categories must
+   * not run them side by side (audit 2026-10-30).
    */
   private running = false;
   private readonly waiting: Array<() => void> = [];
@@ -40,7 +156,7 @@ export class PriceListService {
     if (this.running) {
       if (this.waiting.length >= PRICE_LIST_MAX_WAITING)
         throw new ServiceUnavailableException(
-          'Прайс-лист сейчас формируется для другого покупателя, повторите через минуту',
+          'Прайс-лист сейчас формируется, повторите через минуту',
         );
       // `finally` hands the slot over without clearing `running`.
       await new Promise<void>((resolve) => this.waiting.push(resolve));
@@ -192,4 +308,13 @@ export class PriceListService {
     sheet.commit();
     await workbook.commit();
   }
+}
+
+/** The cache key of a filter: the same list is the same file. */
+export function priceListKey(query: PriceListQueryDto) {
+  return JSON.stringify([
+    query.categorySlug ?? '',
+    query.brandSlug ?? '',
+    query.inStock ? 1 : 0,
+  ]);
 }

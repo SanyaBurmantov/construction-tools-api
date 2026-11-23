@@ -5,7 +5,14 @@ import { TelegramService } from '../notifications/telegram.service';
 import { MailService } from '../notifications/mail.service';
 import { DocumentsService } from './documents.service';
 import { LeadsService } from './leads.service';
-import { PriceListService } from './price-list.service';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  PRICE_LIST_FRESH_MS,
+  PriceListService,
+  priceListKey,
+} from './price-list.service';
 import { normalizeLines, repointLines } from './purchase-lists.service';
 import {
   SELLER_DEFAULTS,
@@ -287,6 +294,106 @@ describe('PriceListService', () => {
     expect(sheet.getRow(4).getCell(2).value).toBe('Товар 0');
     expect(sheet.getRow(4).getCell(6).value).toBe('под заказ');
     expect(sheet.rowCount).toBe(6);
+  });
+});
+
+describe('PriceListService.file (built once, sent many times)', () => {
+  const row = {
+    id: 'p1',
+    sku: 'S1',
+    name: 'Дрель',
+    slug: 'drel',
+    priceValue: 100,
+    stockStatus: 'in_stock',
+    brand: { name: 'Bosch' },
+    category: { name: 'Дрели' },
+  };
+  let dir: string;
+  let now: jest.SpyInstance<number, []>;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'price-list-spec-'));
+    process.env.PRICE_LIST_CACHE_DIR = dir;
+    now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+  });
+
+  afterEach(async () => {
+    now.mockRestore();
+    delete process.env.PRICE_LIST_CACHE_DIR;
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  function serviceWith(findMany: jest.Mock) {
+    const prisma = { product: { findMany } } as unknown as PrismaService;
+    return new PriceListService(prisma);
+  }
+
+  it('gives concurrent requests one build, and a fresh file without the DB', async () => {
+    const findMany = jest.fn(() => Promise.resolve([row]));
+    const service = serviceWith(findMany);
+
+    const [a, b, c] = await Promise.all([
+      service.file({}),
+      service.file({}),
+      service.file({}),
+    ]);
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(a).toBe(b);
+    expect(b).toBe(c);
+    expect(a.filename).toBe('gost-by-price.xlsx');
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      (await readFile(a.path)) as unknown as ArrayBuffer,
+    );
+    expect(workbook.getWorksheet('Прайс')!.getRow(4).getCell(2).value).toBe(
+      'Дрель',
+    );
+
+    now.mockReturnValue(1_000_000 + PRICE_LIST_FRESH_MS - 1);
+    await service.file({});
+    expect(findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a stale file at once and rebuilds it behind', async () => {
+    let release: () => void = () => undefined;
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([row])
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve([{ ...row, name: 'Перфоратор' }]);
+          }),
+      );
+    const service = serviceWith(findMany);
+    const first = await service.file({});
+
+    now.mockReturnValue(1_000_000 + PRICE_LIST_FRESH_MS + 1);
+    const stale = await service.file({});
+    expect(stale).toBe(first);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(findMany).toHaveBeenCalledTimes(2);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    now.mockReturnValue(1_000_000 + PRICE_LIST_FRESH_MS + 2);
+    const rebuilt = await service.file({});
+    expect(rebuilt).not.toBe(first);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      (await readFile(rebuilt.path)) as unknown as ArrayBuffer,
+    );
+    expect(workbook.getWorksheet('Прайс')!.getRow(4).getCell(2).value).toBe(
+      'Перфоратор',
+    );
+  });
+
+  it('keys a file by its filter', () => {
+    expect(priceListKey({})).toBe(priceListKey({ inStock: false }));
+    expect(priceListKey({ categorySlug: 'dreli' })).not.toBe(
+      priceListKey({ brandSlug: 'dreli' }),
+    );
   });
 });
 
