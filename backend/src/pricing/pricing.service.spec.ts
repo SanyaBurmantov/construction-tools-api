@@ -83,7 +83,6 @@ describe('PricingService.applyCost', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    process.env.PRICING_SPIKE_THRESHOLD_PERCENT = '50';
   });
 
   afterEach(() => {
@@ -130,48 +129,21 @@ describe('PricingService.applyCost', () => {
     );
   });
 
-  // A supplier typo downwards must not sell at a loss.
-  it('blocks an implausible cost drop and keeps the old price', async () => {
-    const { service, productUpdate, historyCreate } = buildService({
-      ...baseProduct,
-    });
+  // No spike guard (owner, 2026-11-23): the supplier's price, both ways.
+  it('applies a large drop at once', async () => {
+    const { service, productUpdate } = buildService({ ...baseProduct });
 
     const decision = await service.applyCost('p1', 10);
 
-    expect(decision.blocked).toBe(true);
-    expect(decision.reason).toBe('blocked_spike');
-    // Flag raised, price untouched, and the cost is NOT adopted.
-    expect(productUpdate).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { priceReviewNeeded: true },
-    });
-    expect(historyCreate).toHaveBeenCalledWith(
+    expect(decision.blocked).toBe(false);
+    expect(productUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          reason: 'blocked_spike',
-          costPrice: 10,
-          newPrice: 150,
-        }),
+        data: expect.objectContaining({ costPrice: 10 }),
       }),
     );
   });
 
-  // Every re-parse of the same typo trips the guard again.
-  it('records one history row per rejected cost, not one per parse', async () => {
-    const { service, productUpdate, historyCreate } = buildService(
-      { ...baseProduct, priceReviewNeeded: true },
-      [globalRule()],
-      { costPrice: 10 },
-    );
-
-    const decision = await service.applyCost('p1', 10);
-
-    expect(decision.blocked).toBe(true);
-    expect(productUpdate).not.toHaveBeenCalled();
-    expect(historyCreate).not.toHaveBeenCalled();
-  });
-
-  // A held rise from before 2026-11-23 goes live on the next parse.
+  // A cost held before 2026-11-23 goes live on the next parse.
   it('applies a large rise at once and clears the review flag', async () => {
     const { service, productUpdate } = buildService({
       ...baseProduct,

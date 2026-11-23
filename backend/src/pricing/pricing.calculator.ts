@@ -140,27 +140,3 @@ export function margin(price: number | null, cost: number | null) {
   const absolute = round2(price - cost);
   return { absolute, percent: round2((absolute / cost) * 100) };
 }
-
-/**
- * True when a cost **drop** is too large to trust — usually a supplier typo or
- * a parser picking up the wrong element. Such products keep their old price
- * and get flagged instead of going live with a broken one.
- *
- * A rise is never held (owner, 2026-11-23: «рост цен применяй сразу»). Holding
- * it kept the old, lower price on the storefront while the supplier already
- * charged more — a used DGM BP-1500 pump sat at 214.78 BYN against a 343.66
- * supplier price, 129 BYN under cost on every order. A typo upwards only
- * overprices one card; a typo downwards sells at a loss, so that is the one
- * a human checks.
- */
-export function isSuspiciousCostChange(
-  previousCost: number | null | undefined,
-  nextCost: number,
-  thresholdPercent: number,
-): boolean {
-  if (previousCost == null || previousCost <= 0) return false;
-  if (nextCost <= 0) return true;
-  if (nextCost >= previousCost) return false;
-  const drop = ((previousCost - nextCost) / previousCost) * 100;
-  return drop > thresholdPercent;
-}
