@@ -19,7 +19,7 @@ test('a path of ours becomes absolute, an absolute URL is kept', () => {
 })
 
 test('a photo is served through our IPX at 1200×630', () => {
-  const src = 'https://storage-1339.s3hoster.by/gost-by-media/v/58/1200.webp'
+  const src = 'https://storage-1339.s3hoster.by/gost-by-media/v/58/640.webp'
   assert.equal(
     ogImageUrl(SITE, src),
     `https://gost.by/_ipx/f_jpeg&q_85&fit_contain&b_ffffff&s_1200x630/${src}`,

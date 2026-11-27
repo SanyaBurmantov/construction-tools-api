@@ -1,13 +1,22 @@
 /**
  * Product photos copied to our S3 are stored already resized (backend
- * `media/image-variants.ts`): WebP whose longest side fits a cap of
- * 160/320/640/1200 px, never enlarged. The stored URL names the largest cap
- * the photo has — `…/v/ab/<sha1>/640.webp` means 160, 320 and 640 exist —
- * so a size is picked from the URL alone, with no IPX and no request to the
- * supplier. Any other URL (not copied yet, a banner, a placeholder) is
- * returned as is and keeps going through IPX where a component uses it.
+ * `media/image-variants.ts`): WebP whose longest side fits a cap of 320 or
+ * 640 px, never enlarged. The stored URL names the largest cap the photo
+ * has — `…/v/ab/<sha1>/640.webp` means 320 and 640 exist — so a size is
+ * picked from the URL alone, with no IPX and no request to the supplier.
+ * Any other URL (not copied yet, a banner, a placeholder) is returned as is
+ * and keeps going through IPX where a component uses it.
+ *
+ * Until 2026-11-27 there were four caps (160/320/640/1200). The 160 and 1200
+ * files are deleted (S3 room), but a URL naming 1200 may still sit in an old
+ * order line or a cached page, so it is read as «320 and 640»; a set whose
+ * only file is a 160 (a tiny original) keeps it. Same rules as the backend's
+ * `media/variant-url.ts`.
  */
-export const VARIANT_CAPS = [160, 320, 640, 1200] as const
+export const VARIANT_CAPS = [320, 640] as const
+
+/** Every cap a stored URL may name, the two old ones included. */
+const KNOWN_CAPS = [160, 320, 640, 1200]
 
 const VARIANT_URL = /^(.*\/v\/[0-9a-f]{2}\/[0-9a-f]{40}\/)(\d+)\.webp$/
 
@@ -16,11 +25,17 @@ export function parseVariantUrl(url: string | null | undefined): { prefix: strin
   const match = url ? VARIANT_URL.exec(url) : null
   if (!match) return null
   const top = Number(match[2])
-  return VARIANT_CAPS.includes(top as (typeof VARIANT_CAPS)[number]) ? { prefix: match[1]!, top } : null
+  return KNOWN_CAPS.includes(top) ? { prefix: match[1]!, top } : null
 }
 
 export function isStoredVariant(url: string | null | undefined): boolean {
   return parseVariantUrl(url) !== null
+}
+
+/** The sizes on disk for a set whose URL names `top`. */
+function storedCaps(top: number): number[] {
+  if (top < VARIANT_CAPS[0]) return [top]
+  return VARIANT_CAPS.filter(cap => cap <= top)
 }
 
 /**
@@ -32,8 +47,17 @@ export function mediaSrc<T extends string | null | undefined>(url: T, px: number
   const parsed = parseVariantUrl(url)
   if (!parsed) return url
   const need = px * density
-  const cap = VARIANT_CAPS.find(c => c >= need && c <= parsed.top) ?? parsed.top
+  const caps = storedCaps(parsed.top)
+  const cap = caps.find(c => c >= need) ?? caps[caps.length - 1]!
   return `${parsed.prefix}${cap}.webp`
+}
+
+/**
+ * The largest stored size — for whatever shows a photo as it is (the zoom,
+ * og:image, schema.org) and must never name a deleted 1200.
+ */
+export function mediaLargest<T extends string | null | undefined>(url: T): T | string {
+  return mediaSrc(url, Number.POSITIVE_INFINITY)
 }
 
 /** `src 1x, src 2x` for a stored photo in a `px`-wide box (one entry when both are the same file). */

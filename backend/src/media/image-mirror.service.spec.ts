@@ -137,16 +137,14 @@ describe('ImageMirrorService.tick', () => {
 
     expect(counts?.stored).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(puts).toEqual(
-      [160, 320, 640, 1200].map((cap) => variantKey(url, cap)),
-    );
+    expect(puts).toEqual([320, 640].map((cap) => variantKey(url, cap)));
     expect(mirrors.get(url)).toMatchObject({
       status: 'STORED',
-      key: variantKey(url, 1200),
+      key: variantKey(url, 640),
       contentType: 'image/webp',
     });
     expect(relinks).toEqual([
-      { sourceUrl: url, url: `${BASE}/${variantKey(url, 1200)}` },
+      { sourceUrl: url, url: `${BASE}/${variantKey(url, 640)}` },
     ]);
   });
 

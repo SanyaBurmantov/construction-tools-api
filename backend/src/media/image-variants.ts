@@ -2,18 +2,25 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { VARIANT_CAPS } from './variant-url';
 
-export { VARIANT_CAPS, capOfVariant, variantUrlFor } from './variant-url';
+export {
+  VARIANT_CAPS,
+  KNOWN_CAPS,
+  capOfVariant,
+  storedCaps,
+  variantUrlFor,
+} from './variant-url';
 
 /**
  * Product photos are stored in S3 already resized, so the storefront serves
  * them as plain files and IPX never touches them (no supplier fetch, no
  * resize on our frontend container).
  *
- * Every photo becomes WebP at a few **caps** — the longest side fits in that
+ * Every photo becomes WebP at two **caps** — the longest side fits in that
  * many pixels, never enlarged. The storefront's boxes are 44–480 px wide at
  * 1x/2x (cards 300, rows 140, gallery 480, thumbnails 44/60) plus the zoom,
- * and each maps to the smallest cap that covers it:
- *   160 → thumbnails, 320 → cards, 640 → gallery and 2x cards, 1200 → zoom.
+ * and each maps to the smallest cap that covers it, else the largest:
+ *   320 → thumbnails and cards, 640 → 2x cards, the gallery and the zoom.
+ * There were four (160/320/640/1200) until 2026-11-27 — see variant-url.ts.
  * Caps above the original's own size are not generated — the largest stored
  * one holds the original's pixels — and the stored URL names that largest
  * cap, so the storefront knows which sizes exist from the URL alone
