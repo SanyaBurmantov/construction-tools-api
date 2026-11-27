@@ -192,7 +192,7 @@ const breadcrumbs = computed(() => {
 /* ---- SEO --------------------------------------------------------------- */
 const images = computed(() => product.value?.images ?? [])
 const canonicalUrl = computed(() => absoluteUrl(`/product/${slug.value}`))
-const ogImage = computed(() => ogImageUrl(siteUrl, images.value[0]?.url))
+const ogImage = computed(() => ogImageUrl(siteUrl, mediaLargest(images.value[0]?.url)))
 
 /**
  * «Цена обновлена 28.10.2026» — the last time a supplier's price was read.
@@ -284,7 +284,7 @@ useHead(() => {
   // supplier's advert (see metaDescription), so it is not used here. Cut to
   // ~1000 characters at a sentence: some supplier texts are thousands long.
   productLd.description = jsonLdDescription(p.descriptionFull) || metaDescription.value
-  if (images.value.length) productLd.image = images.value.map((image) => image.url)
+  if (images.value.length) productLd.image = images.value.map((image) => mediaLargest(image.url))
   if (p.brand?.name) productLd.brand = { '@type': 'Brand', name: p.brand.name }
   if (p.priceValue != null && p.priceValue > 0) {
     const validUntil = priceValidUntil(priceCheckedAt.value)

@@ -1,4 +1,9 @@
-import { s3ConfigFromEnv, signS3Request } from './s3-client';
+import {
+  deleteObjectsXml,
+  parseDeleteErrors,
+  s3ConfigFromEnv,
+  signS3Request,
+} from './s3-client';
 
 describe('signS3Request', () => {
   // "Example: GET Object" from the AWS Signature V4 documentation for S3
@@ -40,5 +45,28 @@ describe('s3ConfigFromEnv', () => {
       secretKey: 'b',
       region: 'us-east-1',
     });
+  });
+});
+
+describe('DeleteObjects body and answer', () => {
+  it('lists every key, escaped, in quiet mode', () => {
+    const xml = deleteObjectsXml(['v/ab/1/160.webp', 'b/a&b.webp']);
+    expect(xml).toContain('<Quiet>true</Quiet>');
+    expect(xml).toContain('<Object><Key>v/ab/1/160.webp</Key></Object>');
+    expect(xml).toContain('<Key>b/a&amp;b.webp</Key>');
+  });
+
+  it('reads the refused keys and nothing else', () => {
+    const answer = `<?xml version="1.0" encoding="UTF-8"?>
+<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+<Deleted><Key>v/ab/1/1200.webp</Key></Deleted>
+<Error><Key>v/ab/2/160.webp</Key><Code>AccessDenied</Code><Message>no</Message></Error>
+<Error><Key>b/a&amp;b.webp</Key><Code>InternalError</Code></Error>
+</DeleteResult>`;
+    expect(parseDeleteErrors(answer)).toEqual([
+      { key: 'v/ab/2/160.webp', code: 'AccessDenied' },
+      { key: 'b/a&b.webp', code: 'InternalError' },
+    ]);
+    expect(parseDeleteErrors('<DeleteResult></DeleteResult>')).toEqual([]);
   });
 });

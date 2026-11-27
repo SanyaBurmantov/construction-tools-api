@@ -3,7 +3,9 @@ import {
   capOfVariant,
   capsFor,
   renderVariants,
+  storedCaps,
   variantKey,
+  variantUrlFor,
 } from './image-variants';
 
 const photo = (width: number, height: number, alpha = false) =>
@@ -22,12 +24,35 @@ const photo = (width: number, height: number, alpha = false) =>
 
 describe('capsFor', () => {
   it('stops at the first cap that covers the photo', () => {
-    expect(capsFor(2000)).toEqual([160, 320, 640, 1200]);
-    expect(capsFor(1200)).toEqual([160, 320, 640, 1200]);
-    expect(capsFor(750)).toEqual([160, 320, 640, 1200]);
-    expect(capsFor(640)).toEqual([160, 320, 640]);
-    expect(capsFor(300)).toEqual([160, 320]);
-    expect(capsFor(90)).toEqual([160]);
+    expect(capsFor(2000)).toEqual([320, 640]);
+    expect(capsFor(750)).toEqual([320, 640]);
+    expect(capsFor(640)).toEqual([320, 640]);
+    expect(capsFor(300)).toEqual([320]);
+    expect(capsFor(90)).toEqual([320]);
+  });
+});
+
+describe('storedCaps / variantUrlFor', () => {
+  const base = 'https://s3.example/gost-by-media/v/ab/' + 'a'.repeat(40);
+
+  it('knows which files a set has, old four-size sets included', () => {
+    expect(storedCaps(640)).toEqual([320, 640]);
+    expect(storedCaps(320)).toEqual([320]);
+    // 1200 and 160 of the old sets are deleted; 640 is their largest now.
+    expect(storedCaps(1200)).toEqual([320, 640]);
+    // An original under 160 px kept its single file.
+    expect(storedCaps(160)).toEqual([160]);
+  });
+
+  it('never points at a deleted 160 or 1200', () => {
+    expect(variantUrlFor(`${base}/1200.webp`, 112)).toBe(`${base}/320.webp`);
+    expect(variantUrlFor(`${base}/1200.webp`, 960)).toBe(`${base}/640.webp`);
+    expect(variantUrlFor(`${base}/640.webp`, 600)).toBe(`${base}/640.webp`);
+    expect(variantUrlFor(`${base}/320.webp`, 960)).toBe(`${base}/320.webp`);
+    expect(variantUrlFor(`${base}/160.webp`, 320)).toBe(`${base}/160.webp`);
+    expect(variantUrlFor('https://dukon.by/a.jpg', 320)).toBe(
+      'https://dukon.by/a.jpg',
+    );
   });
 });
 
@@ -48,8 +73,12 @@ describe('variantKey / capOfVariant', () => {
 
 describe('renderVariants', () => {
   it('fits each cap inside the box, never enlarges, and writes WebP', async () => {
+    const small = await renderVariants(await photo(200, 100));
+    expect(small.map((v) => v.cap)).toEqual([320]);
+    expect((await sharp(small[0].body).metadata()).width).toBe(200);
+
     const variants = await renderVariants(await photo(900, 600));
-    expect(variants.map((v) => v.cap)).toEqual([160, 320, 640, 1200]);
+    expect(variants.map((v) => v.cap)).toEqual([320, 640]);
     const sizes = await Promise.all(
       variants.map(async (v) => {
         const meta = await sharp(v.body).metadata();
@@ -58,10 +87,8 @@ describe('renderVariants', () => {
       }),
     );
     expect(sizes).toEqual([
-      [160, 107],
       [320, 213],
       [640, 427],
-      [900, 600],
     ]);
   });
 

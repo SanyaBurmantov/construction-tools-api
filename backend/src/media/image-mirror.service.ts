@@ -69,9 +69,10 @@ type Outcome = 'stored' | 'relinked' | 'failed' | 'host-down' | 's3-error';
  *   (th-tool.by blocks the prod server) is skipped for 30 min instead of
  *   costing each of its photos a timeout.
  * - Stored already resized (media/image-variants.ts): WebP at caps
- *   160/320/640/1200, and `ProductImage.url` names the largest — the
- *   storefront picks a size from it and IPX never fetches a copied photo.
- *   The original is not kept; the 1200 cap is the zoom.
+ *   320/640, and `ProductImage.url` names the largest — the storefront
+ *   picks a size from it and IPX never fetches a copied photo. The original
+ *   is not kept; 640 is also the zoom (160 and 1200 were dropped on
+ *   2026-11-27, MediaSlimService clears the old sets).
  * - The keys come from the URL alone and the largest cap is written last, so
  *   a copy that already exists is found by HEAD and never downloaded twice.
  * - Above S3_MEDIA_MAX_GB (30) copying stops — the bucket also holds the

@@ -80,7 +80,7 @@ describe('mailItems', () => {
     );
     expect(html).toContain('Дрель &lt;X&gt;');
     expect(html).toContain('href="https://gost.by/product/drel"');
-    expect(html).toContain(STORED.replace('1200.webp', '160.webp'));
+    expect(html).toContain(STORED.replace('1200.webp', '320.webp'));
     expect(html).not.toContain('1200.webp');
     expect(html).toContain('https://dukon.by/upload/1.jpg');
     expect(html).toContain('100,00&nbsp;Br');

@@ -116,7 +116,7 @@
         @click="openZoom"
       >
         <!-- Resized (480 / 960 for retina) instead of the supplier's 1200px
-             original; the zoom below keeps the original. -->
+             original; the zoom below takes our largest stored size. -->
         <ProductThumb
           :key="selectedImage.url"
           :src="selectedImage.url"
@@ -173,7 +173,7 @@
       >
         <img
           v-if="hasImage && selectedImage"
-          :src="selectedImage.url"
+          :src="mediaLargest(selectedImage.url)"
           :alt="selectedImage.alt || name"
           width="960"
           height="960"

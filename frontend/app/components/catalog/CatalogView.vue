@@ -684,7 +684,7 @@ useSeoMeta({
   ogType: 'website',
   ogUrl: canonicalUrl,
   // A shared category link previews its first product rather than the logo.
-  ogImage: () => ogImageUrl(siteUrl, products.value?.data?.[0]?.images?.[0]?.url),
+  ogImage: () => ogImageUrl(siteUrl, mediaLargest(products.value?.data?.[0]?.images?.[0]?.url)),
   ogImageWidth: () => (products.value?.data?.[0]?.images?.[0]?.url ? OG_IMAGE_WIDTH : undefined),
   ogImageHeight: () => (products.value?.data?.[0]?.images?.[0]?.url ? OG_IMAGE_HEIGHT : undefined),
   twitterCard: 'summary_large_image',

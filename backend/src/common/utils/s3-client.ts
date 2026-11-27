@@ -3,8 +3,8 @@ import { fetchWithTimeout } from './fetch-with-timeout';
 
 /**
  * A minimal S3 client: AWS Signature V4 over `fetch`, path-style URLs. It is
- * what hoster.by's MinIO needs for a few calls — put, head, bucket and its
- * policy — and costs no dependency (`@aws-sdk/client-s3` is ~3 MB of modules
+ * what hoster.by's MinIO needs for a few calls — put, head, a batch delete,
+ * bucket and its policy — and costs no dependency (`@aws-sdk/client-s3` is ~3 MB of modules
  * for four requests, the same reasoning that removed axios).
  *
  * Configuration (`S3_*`, shared with deploy/backup-db.sh):
@@ -211,6 +211,34 @@ export class S3Client {
     return Number(res.headers.get('content-length') ?? 0);
   }
 
+  /**
+   * Deletes up to 1000 keys in one request (S3 DeleteObjects, quiet mode).
+   * A key that does not exist counts as deleted. Returns the keys S3 refused,
+   * with its reason; throws when the request itself fails.
+   */
+  async deleteObjects(
+    bucket: string,
+    keys: string[],
+  ): Promise<Array<{ key: string; code: string }>> {
+    if (keys.length === 0) return [];
+    if (keys.length > MAX_DELETE_KEYS) {
+      throw new Error(`deleteObjects: ${keys.length} keys, at most 1000`);
+    }
+    const body = deleteObjectsXml(keys);
+    const res = await this.request(
+      'POST',
+      `${this.objectUrl(bucket)}?delete=`,
+      body,
+      {
+        'content-type': 'application/xml',
+        // MinIO and S3 refuse a multi-object delete without it.
+        'content-md5': createHash('md5').update(body).digest('base64'),
+      },
+    );
+    await this.expectOk(res, `delete ${keys.length} objects`);
+    return parseDeleteErrors(await res.text());
+  }
+
   /** Creates the bucket; one that is already ours is fine. */
   async ensureBucket(bucket: string): Promise<void> {
     const res = await this.request(
@@ -234,6 +262,49 @@ export class S3Client {
     );
     await this.expectOk(res, `policy ${bucket}`);
   }
+}
+
+export const MAX_DELETE_KEYS = 1000;
+
+const xmlEscape = (value: string) =>
+  value.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&apos;',
+      })[c]!,
+  );
+
+/** The DeleteObjects body: quiet, so the answer lists only failures. */
+export function deleteObjectsXml(keys: string[]): string {
+  return `<?xml version="1.0" encoding="UTF-8"?><Delete><Quiet>true</Quiet>${keys
+    .map((key) => `<Object><Key>${xmlEscape(key)}</Key></Object>`)
+    .join('')}</Delete>`;
+}
+
+/** The `<Error>` entries of a DeleteObjects answer. */
+export function parseDeleteErrors(
+  xml: string,
+): Array<{ key: string; code: string }> {
+  const unescape = (value: string) =>
+    value
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&');
+  const errors: Array<{ key: string; code: string }> = [];
+  for (const [, entry] of xml.matchAll(/<Error>([\s\S]*?)<\/Error>/g)) {
+    const key = /<Key>([\s\S]*?)<\/Key>/.exec(entry)?.[1];
+    if (key === undefined) continue;
+    const code = /<Code>([\s\S]*?)<\/Code>/.exec(entry)?.[1] ?? 'Unknown';
+    errors.push({ key: unescape(key), code });
+  }
+  return errors;
 }
 
 /** Anyone may read an object by its exact key; listing stays closed. */
